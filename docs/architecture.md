@@ -76,34 +76,34 @@ async function convert(file /* File */) -> Promise<{
   - `h1-h6` → `#`…`######`；`p` → 段落；`ul/ol/li` → `- 1.`；`table` → GFM 表格；`a` → `[文本](href)`；`strong/em/code` → `**/*/``；`blockquote` → `>`；`img` → `![alt](src)`；注释/script/style 丢弃。
 - 输出限制：单文件 ≤50MB 护栏同上。
 
-### 4.2 docx —— A线已实现 ✅（mammoth 1.12.2 内联；拍板 2026-09-04：保留 GFM 表格）
+### 4.2 docx —— A线已实现 ✅（mammoth 1.12.2 vendor 分文件；拍板 2026-09-04：保留 GFM 表格）
 - 路径：`mammoth.convertToHtml({ arrayBuffer })` → HTML（含 `<table>` 元素）→ 复用 §4.1 的 `htmlToMarkdown`（GFM 表格：表头行 + `| --- |` 分隔行）；`result.messages` 非空 → 转 warnings。
 - 图片处理：v1 不对 docx 内图片做 OCR/外链，mammoth 默认忽略图片即符合零外发；warnings 注明「已忽略 N 张图片」。
 - 契约：C6（GFM 表格结构断言，gfmTableIssues）+ keyTokens（`DOC2MD-DOCX-OK-2026` 等）——共享 htmlToMarkdown 的 TXT/HTML 回归由 text-html 契约用例保障。
 
-### 4.3 pdf —— B线已实现 ✅（pdf.js 3.11.174 内联 + tesseract OCR 降级）
-- 文本层：`pdfjs-dist@3.11.174`（Apache-2.0，**legacy UMD 内联**，全局 `pdfjsLib`）；
-  worker 以 `<script type="text/plain">` 数据块内联，运行时转 blob URL 赋 `GlobalWorkerOptions.workerSrc`（零外发）。
-- 扫描页/无文本层（全书文本量 < 10 字符）：tesseract.js LSTM OCR（见 §4.6 资源说明），逐页 render（scale 2）→ canvas → PNG → 识别。
+### 4.3 pdf —— B线已实现 ✅（pdf.js 3.11.174 vendor 分文件 + tesseract OCR 降级）
+- 文本层：`pdfjs-dist@3.11.174`（Apache-2.0，**legacy UMD** 同源分文件 `vendor/pdfjs.pdf.min.js`，全局 `pdfjsLib`）；
+  worker 同源文件 `./vendor/pdfjs.pdf.worker.min.js` 赋 `GlobalWorkerOptions.workerSrc`（T9′，零外发；file:// 下 pdf.js 自动回退主线程 fake worker）。
+- 扫描页/无文本层（全书文本量 < 10 字符）：tesseract.js LSTM OCR（见 §4.5 资源说明），逐页 render（scale 2）→ canvas → PNG → 识别。
 - 输出：`<!-- page N/M -->` 分页注释 + 正文；`backend='pdfjs'`（文本层）或 `'tesseract'`（OCR 降级）。
 - 错误处理：损坏 PDF（getDocument reject）→ `convert()` 捕获 → `转换失败：<原因>`。
 
-### 4.4 xlsx —— B线已实现 ✅（read-excel-file 5.8.7 内联）
-- `read-excel-file@5.8.7`（MIT）官方 browser bundle 内联（UMD，全局 `readXlsxFile`，内嵌 fflate/@xmldom）。
+### 4.4 xlsx —— B线已实现 ✅（read-excel-file 5.8.7 vendor 分文件）
+- `read-excel-file@5.8.7`（MIT）官方 browser bundle 同源分文件 `vendor/read-excel-file.min.js`（UMD，全局 `readXlsxFile`，内嵌 fflate/@xmldom）。
 - 每 sheet 一张 GFM 表；`### Sheet: <名>` 分隔；第一行作表头；单元格 `|` 转义 `\|`。
 - 单元格格式化（与参考 `dsh-file-upload-convert.js` 口径一致）：`null/undefined → ''`、`Date → toISOString().slice(0,10)`（UTC YYYY-MM-DD）、其余 `String(v)`。
 - 护栏：每 sheet 前 1000 行、最多前 5 个 sheet；超出 → warnings + 说明行（`truncated` 语义由 convert 层 meta 携带）。
 - `backend='read-excel-file'`；空 sheet → `（空 sheet）`。
 
-### 4.5 image —— B线已实现 ✅（tesseract.js 6.0.1 内联 OCR）
-- `tesseract.js@6.0.1`（Apache-2.0）UMD 内联（全局 `Tesseract`）→ LSTM OCR（`oem=1`）。
-- 引擎资源：worker 入口 = patch blob（覆写 importScripts，把 core 请求重定向到本地 blob）+ worker 本体；
-  `tesseract.js-core@6.0.0`（Apache-2.0，wasm 单文件自包含）simd/non-simd 双版本内嵌；
-  语言数据 `@tesseract.js-data/{eng,chi_sim}@1.0.0`（MIT）`4.0.0_best_int`（LSTM 量化版）**同源懒加载 `langs/`（DD-14，2026-09-04 首载优化拍板）**：裸 `.traineddata`（gunzip 后写入），`langPath: './langs/'`、`gzip: false`；由 SW cache-first 与 tesseract IDB 缓存双兜底（断网/二次 OCR 可复用）。
+### 4.5 image —— B线已实现 ✅（tesseract.js 6.0.1 vendor 分文件 OCR）
+- `tesseract.js@6.0.1`（Apache-2.0）同源分文件 `vendor/tesseract.tesseract.min.js`（UMD，全局 `Tesseract`）→ LSTM OCR（`oem=1`）。
+- 引擎资源（T9′ 全部 vendor 分文件 → 运行时 blob）：worker 入口 = patch blob（**fetch `./vendor/tesseract.worker.min.js`** 后拼接；覆写 importScripts，把 core 请求重定向到本地 blob）+ worker 本体；
+  `tesseract.js-core@6.0.0`（Apache-2.0，wasm 单文件自包含）simd/non-simd 双版本 **`vendor/tesseract-core-{simd-,}lstm.wasm.js`** fetch → blob；
+  语言数据 `@tesseract.js-data/{eng,chi_sim}@1.0.0`（MIT）`4.0.0_best_int`（LSTM 量化版）**同源懒加载 `langs/`（DD-14）**：裸 `.traineddata`（gunzip 后写入），`langPath: './langs/'`、`gzip: false`；由 SW cache-first 与 tesseract IDB 缓存双兜底（断网/二次 OCR 可复用）。
 - 默认 `eng+chi_sim`；输出纯文本 + warnings（空结果 / 置信度 <60% 提示）；`backend='tesseract'`。
 - ⚠️ **已知限制（2026-09-04 实测）**：契约样例 `sample.png` 曾为合成 5×7 点阵字体（0 为斜杠零、2 为折线形），与 tesseract 训练分布差异过大——
   LSTM/legacy 引擎、放大/逐字符识别均无法正确识别 `DOC2MD`/`2026`。QA 已于 DD-8 将 '0' 改标准字形重生成样例（保留断言），**2026-09-04 B 线重测：`HELLO DOC2MD 2026` 三令牌全中（懒加载首次 427ms）**。
-- 首载体积：index.html 由 16.4MB → **10.2MB**（语言包 6.2MB 外置；core js 7.9MB 仍内联——后续如需进一步瘦身可再拍板 core 懒加载）。
+- 首载体积（T9′，DD-15）：index.html **32KB**（仅应用逻辑）+ vendor/（mammoth 636KB / pdfjs 1.4MB / tesseract 176KB / core 7.9MB / read-excel 39KB）+ langs/（5.2MB+2.5MB）——**全部同源分文件，无内联**；SW PRECACHE 全量（sw.js v3）断网离线全功能。
 
 ## 5. 错误处理策略（全部本地化，中文友好）
 
@@ -116,15 +116,15 @@ async function convert(file /* File */) -> Promise<{
 | 转换器异常 | `error: '转换失败：<原因>'`（异常 message 只给开发者，UI 显示友好文案） |
 | sniff → 范围外类型（pptx 等） | `error: '该格式不在 v1 支持范围（PPTX 等），见 README'` |
 
-## 6. 零外发清单（B线复查完成，2026-09-04 实测）
+## 6. 零外发清单（T9′ 全面拆分后复查定版，2026-09-04 实测）
 
-- [x] index.html 中无 `http(s)://` 加载资源（`<script src>`/`<link>`/`fetch`/`XHR`/`WebSocket`/`new Worker(url)` 外链）
-  —— 所有库/worker/wasm/语言包均为文本数据块内联；`tesseract.js` 的 `corePath`/`langPath` 传约定占位域名（`https://doc2md.local/…`），内部被 blob 拦截重定向，永不真正请求。
-- [x] pdf.js：worker 内联（text/plain 数据块 → blob URL），无 `workerSrc` 指向 CDN
-- [x] tesseract.js：`workerPath`/`corePath`/`langPath` 全部本地（blob 或内联），默认值不指向 CDN
-- [x] 转换结束 Network 面板：**除页面自身与测试数据外零请求**（2026-09-04 浏览器实测：txt/html/docx/xlsx/pdf/图片 OCR + 边界用例全流程无外域请求、无 console error）
-- [x] 每个内联库头部注释保留「包名 版本 许可 来源」
-- [x] `sw.js` 只缓存/响应同源请求、无外域 `fetch`（E线 PWA 已按此实现，见 §8；后续改动复查确认）
+- [x] index.html/vendor/langs 中无 `https://` 外域加载资源（`<script src>`/`<link>`/`fetch`/`XHR`/`WebSocket`/`new Worker(url)` 仅同源相对路径）
+  —— 库为 `vendor/` 同源分文件（`<script src="./vendor/…">`）；OCR core/worker 经同源 `fetch` → blob；语言包 `langs/` 同源懒加载；`tesseract.js` 的 `corePath` 传约定占位域名（`https://doc2md.local/…`），内部被 blob 拦截重定向，永不真正请求。
+- [x] pdf.js：worker 同源文件（`./vendor/pdfjs.pdf.worker.min.js`），无 `workerSrc` 指向 CDN；file:// 下 pdf.js 自动回退主线程 fake worker（功能可用，性能降级——已在 README 注明）
+- [x] tesseract.js：`workerPath`/`corePath`/`langPath` 全部本地（vendor 同源 fetch→blob / langs/ 同源），默认值不指向 CDN
+- [x] 转换结束 Network 面板：**零外域请求**（2026-09-04 浏览器实测：txt/html/docx/xlsx/pdf/图片 OCR + 边界用例全流程仅同源请求、无 console error）
+- [x] 每个分文件库头部注释保留「包名 版本 许可 来源」（vendor/*.js 源文件均含；内联头注释随拆分移除，声明随文件保留）
+- [x] `sw.js` 只缓存/响应同源请求、无外域 `fetch`（v3：PRECACHE 含 vendor/* + langs/*，断网离线全功能）
 
 ## 7. 测试挂钩（C线用）
 

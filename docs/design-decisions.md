@@ -95,3 +95,12 @@
 - **实现**：① `.tmp/lazy-lang-extract.mjs`：提取 `embed-tess-lang` base64 → gunzip → `langs/{eng,chi_sim}.traineddata`（SHA：eng `5dc5d8d6…`、chi_sim `9784f7c9…`；gz SHA 与 vendor 一致 `45b4cb34…`/`b8a23f10…`）；② 删 6.2MB 内联块 → index.html **16.4MB → 10.2MB（-38%）**；③ BLINE patch 只保留 core importScripts 拦截（删语言包 fetch 拦截，否则 404 杀懒加载）；④ createWorker 参数更新；⑤ warmup 触发与函数删除（lazy-init）。
 - **验收（真浏览器 http 服务 + 插桩）**：首次 OCR → `HELLO DOC2MD 2026` 三令牌全中（**427ms**，QA DD-10 真实字体样例）；**依赖确证**：临时移走 `langs/` 后二次 OCR 仍成功 = tesseract IDB 缓存命中（首次确从 `langs/` 同源拉取并写入缓存）→ 断网可复用链路成立；docx 回归 103ms（GFM 保留）；主线程资源无外域；console error=0；离线断言：index.html 无 `embed-tess-lang`、langs/ 大小/SHA 与提取记录一致。
 - **保留说明**：core js（7.9MB）仍内联（本任务范围仅语言包；如需再瘦身另拍板 core 懒加载）；`file://` 直开下 OCR 懒加载受浏览器 file:// fetch 限制（预期内，README/审查清单注明；同源 HTTP/SW 环境不受影响）。
+
+## DD-15 · 全面拆分 vendor 分文件（首载彻底优化，T9′）— 2026-09-04 B线
+
+- **现象（线上反馈）**：DD-14 后首载 10.2MB 仍偏大（弱网分钟级）；大头 = core js 7.9MB 内联 + 库体集中。
+- **根因**：「单文件」红线把所有库集中进 index.html——浏览器须下载全部字节才完成解析；同源分文件可并行加载 + 压缩传输（库多为文本，gzip 后小得多）。
+- **拍板（用户，红线 2 微调）**：「单文件离线」→「**单目录离线**」：交付物 = index.html（32KB 应用逻辑）+ vendor/（库分文件）+ langs/（语言包）+ PWA 资源；`<script src="./vendor/…">` 同源相对路径（file:// 双击同目录可加载）；SW PRECACHE 全量（v3）断网全功能。零外发不变（全同源；CDN 仍禁）。
+- **实现**：① `.tmp/split-vendor.mjs` 删 8 个内联块（mammoth/pdfjs UMD+worker/tesseract UMD+worker/core×2/read-excel）→ 4 个 `<script src>` 引入（库先应用后）；② BLINE：pdf worker 改相对路径（file:// 下 pdf.js 自动回退主线程 fake worker）；OCR core/worker 改 `fetch('./vendor/…')` → blob（patch 拦截不变）；③ sw.js：CACHE_NAME v3，PRECACHE += vendor/*（8）+ langs/*（2）。
+- **验收**：① 体积——index.html **32KB**（首屏 gzip ≈270KB，vs 16.4MB 降 ≈98%）；全资产 gzip 8.15MB；② 真浏览器全功能回归——6 样例全中（txt 1ms / html 2ms / docx 31ms / xlsx 4ms / pdf 159ms / OCR 425ms）、零外域、console 0、net 实证 vendor 同源 fetch（`./vendor/tesseract-core-*.wasm.js` 等）；③ SW v3 注册 + PRECACHE 24 项（vendor 8/8 + langs 2/2 全量）；④ file:// 双击——页面 + 4 库（mammoth/pdfjsLib/Tesseract/readXlsxFile）全部加载成功（用户拖文件路径无 fetch 依赖；OCR 的 BLINE fetch 在 file:// 受限——README 注明，HTTP/SW 环境全功能）。
+- **回声**：AGENTS.md 红线 2 更新；README/RELEASE-CHECKLIST/architecture §4/§6 同步；契约断言零改动（tests/ 未动；C4 零外发断言仅认同源请求，兼容）。

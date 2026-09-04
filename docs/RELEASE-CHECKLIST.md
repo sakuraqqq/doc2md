@@ -61,8 +61,8 @@ git push --dry-run origin v0.1.1
 
 ## 4. npm pack 类核对（本项目无 npm 包，等价清单）
 
-- 交付物 = **静态站**（index.html 16.4MB 单文件 + manifest.json + sw.js + icons/）；`package.json` 保持 `private: true`，**不发布 npm 包**。
-- 等价核对：Pages 部署目录清单（工作流上传根目录；部署后核对 index.html/manifest/sw/icons 齐）、发布记录留存：版本 + 测试结果 + 各产物 SIZE + SHA256（见下方记录区）。
+- 交付物 = **静态站**（index.html ≈32KB 应用逻辑 + **vendor/（8 个库分文件）+ langs/（OCR 语言包）** + manifest.json + sw.js + icons/——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
+- 等价核对：Pages 部署目录清单（工作流上传根目录；部署后核对 index.html/manifest/sw/icons/vendor/*/langs/* 齐）、发布记录留存：版本 + 测试结果 + 各产物 SIZE + SHA256（见下方记录区）。
 - 若未来发布 npm 包：`npm pack --dry-run --json`（**必须 --json**，plain 输出看不见清单）核对 LICENSE/产物/源码/入口都在清单。
 
 ## 5. 观察期
