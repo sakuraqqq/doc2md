@@ -174,3 +174,23 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 - 发布后第一时间用真实用户文档验收（本日证实 GFM 表格/公式路径可用；真实数据比合成样例更能暴露边界）。
 - 决策史：DD-14 / DD-15 / DD-16（真实数据验收）；发布记录：`docs/RELEASE.md` v0.1.0 区已回填。
 
+---
+
+## 2026-09-05 · P0 修复（审查报告 §1.1/§1.2/§1.3）+ 契约先红 + 独立验收闭环
+
+### 时间线
+
+| 时间 | 事件 | 备注 |
+|---|---|---|
+| - | **契约先红 t1（qa-dev）** `348c676`：新增契约组 D（htmlToMarkdown 精确快照 10 例，期望字符串内联为断言，Review §3.5 建议的快照文件字节锁未采用——快照即断言、与 B 组解耦）+ 契约组 E（sniff 快照 4 例）；CONTRACT.md §2/§7/§8 登记；基线 c8d42ad 实测 **12 红 + 2 绿**（E3/E4 现实现已符合，如实登记未造红） | 断言即规格：改期望值=改口径=拍板 |
+| - | **P0 修复（conv-dev）** `c24f8ab`：仅动 index.html —— ① `htmlToMarkdown` 重写：去全局 `out.join(' ')`，改片段流+相邻拼接规则（CJK 相邻不补、`[A-Za-z0-9]` 相邻才补、标点前不补）；UL/OL 递归缩进（缩进=父标记宽度）、LI 内子节点 walker、BLOCKQUOTE 逐行 `> `（多段以裸 `>` 分隔）、TABLE 单元格 walker（`<br>`→空格 + rowspan/colspan warning）、锚包图片 `[![alt](src)](href)`、标题 `<br>` 字面保留；② `sniff`：%PDF 搜索 ≤1024 + BOM 文本优先 + 二进制启发式（4KB 采样 NUL/控制字符 >30% → unknown/binary）；docx/text 调用点传 ctx.warnings | diff 核验：tests/vendor/ 零改动 |
+| - | **独立验收（qa-dev，修验分离）**：宿主浏览器实测真实 index.html → D 组 10/10 绿、E 组 4/4 绿；A0/B 12 项子断言绿；C 组近似复验 6/6（令牌全中/零外发/耗时达标，OCR 冷启动按 T-1 豁免）；真实文档：codex §1.1 四用例干净、real-tables.docx 干净 2×2 GFM 表格、sample.html 完整、`6月2日实验.docx`（与桌面原件 SHA 一致）复转成功无 error（171ms、6 标题 + 2 列 11 行表格、图片 data URI 内嵌=§2.4 既有行为非回归） | **console 捕获/手机视口断言以用户机终端为准**（本沙箱无法 spawn 浏览器） |
+
+### 根因一句话
+htmlToMarkdown 把块级内容解析成「文本序列」再全局 `join(' ')`，以及 UL/OL/BLOCKQUOTE/TABLE/A 直接取 `textContent`——前者行内空格注入、后者结构丢失；sniff 只认 `startsWith('%PDF-')` 且无二进制启发式，垃圾前缀 PDF 与 exe 改装都落回 text。
+
+### 防再犯
+- 契约组 D/E 精确快照已入库（断言即规格）；今后 htmlToMarkdown/sniff 任何改动先跑 `npm test` 的 D/E 组（有浏览器环境）。
+- 快照口径细则（缩进宽度/`<br>` 处理/引用空行等）已定稿在 CONTRACT.md §8，调整走拍板。
+- E3（普通 zip 归 zip 还是 unknown）定版待拍板后回填 CONTRACT.md §8。
+
