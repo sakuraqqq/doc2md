@@ -55,9 +55,7 @@
 - **产物 SHA256**：<发布时回读填写>
 - **发布动作**：<用户终端按 docs/RELEASE-CHECKLIST.md §2 执行后回填>
 - **观察期**：<待填>
-- **备注**：v0.1.1 backlog（用户拍板 + 手机找茬清单 `docs/doc2md-手机端找茬验证清单.md`——12 项带优先级）：
-  1. **docx 图片抽出 + 引用路径**（真实文档 3KB 正文/204KB 文件，base64 占 98%——用户实测）；
-  2. **图片 alt 修正**（mammoth 输出 Word 的 AI 描述「图片包含 室内…」——用文件名/题注/空 alt）；
-  3. **公式 → LaTeX**（docx 公式现为纯文本 i=d2/d1，考虑 OMML → `$\LaTeX$`）；
-  4. **#4 corePath 伪域名改造**（找茬头号：依赖 importScripts 拦截细节，WebView 升级即真请求 doc2md.local → C2/零外发风险）；
-  5. #1/#2 SW 预缓存 22MB → 按需缓存（手机首载）；#3 OCR 内存/分页限流；#5 PDF 阅读顺序；#6 已列；#8 语言包 gz；#10-12 顺手修；Capacitor 拍板（架构 §8.4）。
+- **备注**：v0.1.1 backlog（用户拍板 + 手机找茬清单 `docs/doc2md-手机端找茬验证清单.md` + **Codex 代码审查 `docs/doc2md-代码审查报告-2026-09-05.md`（队长已逐条核实属实）**）：
+  - **P0 首批（内容正确性）**：①htmlToMarkdown 行内空格注入（`out.join(' ')` 全局加空格 → "重 点"/"world ."）；②列表/表格/引用/锚点 textContent 丢结构化（嵌套列表展平、单元格内格式丢失、锚包图片空链）；③sniff PDF 兜底缺失（架构 §3 声称搜 %PDF≤1024 未实现）+ 未知二进制回 text（exe 转成乱码"成功"）——修完同步补精确快照测试；
+  - **P1 二批**：④corePath 伪域名同源化（红线相关）；⑤SW 预缓存 ≈18MB 分段缓存；⑥PDF 逐页 OCR+进度；⑦GBK/GB18030 文本回退；⑧xlsx meta.truncated 字段落地（含 totalRows 只计已读 sheet 的语义修正）；⑨docx 图片抽取（用户排期项：base64 占 98%/alt 修正/LaTeX 公式——并入此批）；
+  - **P2 三批**：UI 键盘可达/忙碌锁定/清空按钮、徽标文案「单文件→单目录」、架构 §8.2 cache-first 文档同步、vendor 版本化文件名、测试快照补全。
