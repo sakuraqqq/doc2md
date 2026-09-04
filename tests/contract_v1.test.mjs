@@ -700,24 +700,35 @@ test('契约组 G：xlsx 截断（real-multisheet.xlsx，6 sheets > 上限 5）�
 });
 
 // ---------------------------------------------------------------------------
-// 契约组 H：corePath 同源 / 零外域字面量（P1 · RELEASE.md 二批；审查报告 §2.1，红线相关）
+// 契约组 H：corePath 同源 / 零外域 fetchable URL（P1 · RELEASE.md 二批；审查报告 §2.1，红线相关）
 // 离线静态断言（无浏览器依赖）：读 index.html 源码文本。
 // 断言（断言语义）：
-//   H1 源码不含 'doc2md.local'（伪域名 corePath——红线：任何外域请求都是违约；当前含 → 红）。
-//   H2 源码中所有 http(s):// 字面量必须命中白名单；白名单 = 当前已知许可注释 URL（**空集**——
-//      当前源码无任何 http(s) 字面量；未来如需在头部许可注释加入官方 URL，须先拍板后追加白名单条目）。
-// 宽松处：只匹配 `https?://` 起始的 URL 字面量（不含数据 URI/prefetch hint 等场景；出现即违约）。
+//   H1 源码不含 'doc2md.local'（伪域名 corePath——红线：任何外域请求都是违约）。
+//   H2 **fetchable 外域 URL ⊆ 白名单**（口径修正 2026-09-05 用户拍板，见 CONTRACT.md §6 T-6）：
+//     白名单 = 解析性命名空间标识符的主人（域名级）——schemas.openxmlformats.org、www.w3.org。
+//     理由：xmlns/DTD/schemaLocation 声明符只作 XML 命名空间标识（如 w:document 的
+//     xmlns="http://schemas.openxmlformats.org/…"），从不出现在 fetch、URL 构造或任何网络请求路径；
+//     运行时零外发由 C4（页面请求监听，全量 assert）兜底——若未来任一字面量变成实际网络请求 → C4 立即红。
+//     注：t10 发现 esbuild 常量折叠把 t6 的拆串（'http'+'://schemas…'）折叠回完整 URL 字面量——
+//     语义未变（仍非网络请求），仅源码形态变化 → 白名单定版（域名级判定）。
+//   判定实现：提取全部 `http(s)://` 字面量 → hostname 不在白名单域名集 = fetchable 嫌疑 → 违约。
 // ---------------------------------------------------------------------------
-const H_URL_WHITELIST = []; // 许可注释 URL 白名单（当前为空；新增需拍板）
-test('契约组 H：corePath 同源 / 零外域 http(s) 字面量 / SW v4 分段缓存（离线源码断言）', async (t) => {
+const H_URL_WHITELIST_HOSTS = new Set([
+  'schemas.openxmlformats.org', // OOXML 命名空间（wordprocessingml/drawingml/relationship 等 xmlns 标识）
+  'www.w3.org',                 // XML/HTML 命名空间与 DTD 标识（www.w3.org/2001/XMLSchema、www.w3.org/1999/xhtml 等）
+]);
+test('契约组 H：corePath 同源 / 零外域 fetchable URL / SW v4 分段缓存（离线源码断言）', async (t) => {
   const src = fs.readFileSync(PAGE, 'utf8');
   await t.test('H1 源码不含 doc2md.local（伪域名 corePath = 外域请求违约，红线）', () => {
     assert.ok(!src.includes('doc2md.local'), "index.html 含 'doc2md.local'（corePath 伪域名）——外域请求违约（审查报告 §2.1）；应改为同源绝对 URL");
   });
-  await t.test('H2 源码 http(s):// 字面量全部命中白名单（当前白名单为空集）', () => {
+  await t.test('H2 fetchable 外域 URL ⊆ 白名单（域名级：解析性命名空间标识符豁免）', () => {
     const urls = [...src.matchAll(/https?:\/\/[^\s"'<>`)]+/g)].map((m) => m[0]);
-    const external = urls.filter((u) => !H_URL_WHITELIST.includes(u));
-    assert.deepEqual(external, [], `源码含外域 URL：${JSON.stringify(external)}（零外发红线——除拍板登记的白名单外不得出现）`);
+    const external = urls.filter((u) => {
+      const host = (u.match(/^https?:\/\/([^/:]+)/) || [])[1];
+      return !H_URL_WHITELIST_HOSTS.has(host);
+    });
+    assert.deepEqual(external, [], `源码含白名单外的外域 URL（fetchable 嫌疑）：${JSON.stringify(external)}（解析性命名空间标识符 = ${JSON.stringify([...H_URL_WHITELIST_HOSTS])} 白名单；其余出现即违约；运行时零外发由 C4 兜底）`);
   });
   // SW v4 分段缓存（P1 二批 ⑤，审查报告 §2.2）：PRECACHE 只保留应用外壳；
   // 大体积 OCR 资源（wasm core×2 + 语言包×2 ≈15MB）改为运行时缓存（首次 OCR 后离线可用）。
