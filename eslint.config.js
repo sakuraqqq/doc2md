@@ -18,7 +18,7 @@ import globals from 'globals';
 import prettier from 'eslint-config-prettier';
 
 const COMMON = {
-  languageOptions: { ecmaVersion: 'latest', sourceType: 'module', globals: globals.node },
+  languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
   plugins: { sonarjs },
   rules: {
     ...js.configs.recommended.rules,
@@ -29,6 +29,26 @@ const COMMON = {
     // 历史超限清单见 docs/CODE-METRICS.md §3；重构（t8 后）应逐批清零。
     complexity: ['warn', { max: 10 }],
     'sonarjs/cognitive-complexity': ['warn', 15], // sonarjs 4.x schema：整数阈值
+  },
+};
+
+// 环境 globals（按 run-time 环境分离；t11 修正：src/ 为浏览器端代码——
+// window/document/navigator/fetch/Blob/TextDecoder/URL/DOMParser 等为运行时环境内置，
+// 此前被误报 no-undef（假阳）；tools/ 为 Node 端脚本）。
+const SRC = {
+  files: ['src/**/*.js'],
+  ...COMMON,
+  languageOptions: {
+    ...COMMON.languageOptions,
+    globals: globals.browser,
+  },
+};
+const TOOLS = {
+  files: ['tools/**/*.mjs'],
+  ...COMMON,
+  languageOptions: {
+    ...COMMON.languageOptions,
+    globals: globals.node,
   },
 };
 
@@ -47,7 +67,7 @@ export default [
       '*.log',
     ],
   },
-  { files: ['src/**/*.js'], ...COMMON },
-  { files: ['tools/**/*.mjs'], ...COMMON },
+  SRC,
+  TOOLS,
   prettier, // 关闭所有与 Prettier 冲突的规则（必须放最后）
 ];
