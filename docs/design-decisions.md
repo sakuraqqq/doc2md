@@ -31,3 +31,19 @@
 - **根因**：`html.replace(marker, blocks + marker)` 把 marker（`</script>\n<script>\n'use strict';`）整体替换，**marker 内的 `</script>`（即 mammoth 块的闭合标签）被移到 blocks 之后** → 两个库块之间缺闭合。
 - **拍板**：替换目标改为 `</script>\n` + blocks + `\n<script>\n'use strict';`（保留各自闭合/开启标签）；另加内联文件 `</script` 子串安全检查（全文件已验无此串）。
 - **验收**：修复后浏览器 10 个 script 块结构正确、四库全局对象全部就绪、全链路转换通过。
+
+## DD-8 · sample.png 零字形标准化（QA 拍板，DD-6 闭环）— 2026-09-04 QA
+
+- **现象**：DD-6 遗留——`tests/data/sample.png`（5×7 点阵「HELLO DOC2MD 2026」）OCR 识别 `HELLO DOCZMO ZHBZE`，DOC2MD/2026 失败（斜线/渐变零被 LSTM 归入 Z/B 类）；DD-6 已穷举 LSTM/legacy/放大/逐字符，引擎侧无解；列为「待 QA 拍板」。
+- **根因**：5×7 位图字形的斜线零（`10011/10101/11001` 三行渐变斜杠）与折线 2 不在 tesseract 训练分布中。
+- **拍板**（QA 于 t12 执行，断言即规格前提下唯一可走路径）：方案① 改 `gen-samples.mjs` 字形——`FONT['0']` 改为标准无斜线/无内点零（与纯数字词「2026」上下文配合，最利于与 O 区分）；**断言（HELLO/DOC2MD/2026）不变**；方案②（放宽 image 断言）不采纳——改断言=改口径=需用户拍板。
+- **修复**：字形替换后重新生成 `sample.png`（2457 B）与 `manifest.json`（其余 5 个样例字节不变，确定性已验证）。**顺带实测**：生成器宽度公式（1300px）与锁定样例一致，重跑字节级零漂移——DD-6 记载的「宽度公式 1225，重跑不一致」**未复现**，以实测为准（不盲改公式）。
+- **验收**：B1.image / B2 / B3 全绿（manifest 字节锁 + 格式特征）；**OCR 识别效果待浏览器环境复验**（本验收环境无浏览器 spawn 能力；若复验仍失败，唯一回退=方案②，需用户拍板）。
+
+## DD-9 · docx 转换路径未按 T-5 拍板落实（QA 验收发现，B 线已修复）— 2026-09-04 QA/B线
+
+- **现象**：t12 代码级验收发现 registry.docx 仍为 `mammoth.convertToMarkdown`（mammoth 直接 Markdown 输出）——不产 GFM 表格（无 `| --- |` 分隔行），C6 契约断言必红；与 2026-09-04 用户拍板 T-5「docx 保留 GFM 表格，路径=mammoth→HTML→复用 htmlToMarkdown」不符。
+- **根因**：T-5 拍板于 B 线 757a961（转换器实装）之后，实现未同步新口径（1036c12 只修了转义令牌命中，未改表格路径）。
+- **拍板**：按 T-5（已拍板）执行——`convertToHtml` + `htmlToMarkdown` 复用；`backend='mammoth'`（architecture §2 取值清单内）。
+- **修复**：B 线提交 6198e24（QA 审查确认实现与契约判定一致：tableToMd 首行充当表头 + `| --- |` 分隔行）。
+- **验收**：代码级审查通过（判定逻辑逐条核对）；浏览器端 C6 实测留待有浏览器环境的复验（本环境无浏览器 spawn 能力）。
