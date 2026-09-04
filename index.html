@@ -1133,7 +1133,8 @@ const registry = {
   },
   docx: async (file, buf) => {
     const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    const result = await window.mammoth.convertToMarkdown({ arrayBuffer });
+    // 拍板（2026-09-04 用户）：docx 保留 GFM 表格 —— mammoth→HTML（含 table 元素）→ 复用 htmlToMarkdown（A线实现，支持 GFM 表格）
+    const result = await window.mammoth.convertToHtml({ arrayBuffer });
     const warnings = [];
     if (result.messages && result.messages.length > 0) {
       const imgMsgs = result.messages.filter((m) => String(m.type || '').includes('image') || String(m.message || '').includes('image'));
@@ -1141,9 +1142,8 @@ const registry = {
       const other = result.messages.length - imgMsgs.length;
       if (other > 0) warnings.push('转换器提示 ' + other + ' 条消息（样式近似渲染）');
     }
-    // mammoth 对 run 文本做 Markdown 转义（`*_{}[]()#+-.! 前后加 \）；
-    // 逆处理还原字面文本（与源文档一致；| 不在转义集内，表格安全）。
-    const md = (result.value || '').trim().replace(/\\([`*_{}\[\]()#+\-.!])/g, '$1');
+    // DOMParser 还原 HTML 实体；共享 htmlToMarkdown（TXT/HTML 路径同款，回归由契约组 text-html 用例保障）
+    const md = htmlToMarkdown(result.value || '');
     return { markdown: md, warnings, backend: 'mammoth' };
   },
   xlsx: async (file, buf) => {
