@@ -57,6 +57,14 @@
 - **拍板**：修测试（M1 匹配面扩展为 body.innerText ∪ textarea/input/pre/code 的值/文本）；**不动断言条件**（令牌不变、可见性语义不变）；不要求实现改渲染媒介（textarea 合法合理）。
 - **验收**：修复后宿主浏览器重跑 M 组链路——命中（viaTextarea=true，0ms，无 console error）；C6 同步验证（docx 实测输出 `| 项目 | 状态 |\n| --- | --- |…` → gfmTableIssues=[] PASS）。
 
+## DD-12 · 契约 M 组 fileInput 可见性假设过窄（hidden input 标准设计）— 2026-09-04 QA
+
+- **现象**：用户机实测 `npm test` = **29/31 pass**（C 组双端全绿，系统 Edge 回退成功）；唯一红项 = M 组「手机视口 390×844」：`locator.waitFor: Timeout 10000ms -- waiting for locator('input[type=file]') to be visible`。
+- **根因**：实现按标准设计 `<input multiple hidden>`（由可见「选择文件」按钮触发），契约 `waitFor visible` 假设过窄——与 DD-11（textarea 媒介假设）同类：测试对实现媒介的预期过窄，非实现缺陷。
+- **拍板**：测试侧修正——`waitFor({ state: 'attached' })`（存在即可操作）+ 直接 `setInputFiles`（Playwright 对 hidden input 有效，无需 visible）；断言语义不变（file input → 输出区出现关键内容）；按钮点击触发路径由 UI 手工/宿主浏览器链路覆盖（不新增强制断言）。
+- **修复**：contract_v1.test.mjs M 组 waitFor 状态 visible→attached（详见该处注释）。
+- **验收**：以用户机复跑为准——预期 31/31（修复后 M 组在用户机系统 Edge 回退即可全绿，无需安装 chromium）；本沙箱仍禁 spawn，如实留待用户机复跑确认。
+
 ## 附录 · 宿主浏览器独立验收记录（t12，沙箱解锁替代路径）— 2026-09-04 QA
 
 - **背景**：本工作区沙箱禁止任何子进程 spawn（playwright fork/浏览器启动/node --test 均 EPERM）——复核工具面后发现 DSH **宿主浏览器工具（browser_*）由宿主进程管理**，不经过沙箱 spawn，成功打开页面（标题「doc2md — 文档转 Markdown（本地 · 离线 · 零外发）」）。
