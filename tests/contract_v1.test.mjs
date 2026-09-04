@@ -78,6 +78,16 @@ const VIEWPORTS = [
   { name: '手机 390×844', opts: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
 ];
 
+// real-* 真实样例（T-3 通路落地：真实样例清单，登记于 CONTRACT.md §3）。
+// 与 sample.* 不同：不做字节锁（内容允许随上游演进），仅做结构可读性校验（B3）——
+// 不绑定转换输出断言：C6 已锁 GFM 表格契约（sample.docx），real-* 作真实样本补强，
+// 避免复杂样式差异引发非契约性红（理由详见 CONTRACT.md §3）。
+const REAL_CASES = [
+  { file: 'real-tables.docx', kind: 'docx', note: 'mammoth 官方测试集（含 2×2 表格）' },
+  { file: 'real-schema.xlsx', kind: 'xlsx', note: 'read-excel-file 官方测试集（结构/表头）' },
+  { file: 'real-date.xlsx', kind: 'xlsx', note: 'read-excel-file 官方测试集（日期类型）' },
+];
+
 // ---------------------------------------------------------------------------
 // 契约组 A：目标页面就绪
 // ---------------------------------------------------------------------------
@@ -138,6 +148,29 @@ test('契约组 B：固定样例数据有效（6 样例 × 5 类，脱敏/中文
     const ihdrH = png.readUInt32BE(20);
     assert.ok(ihdrW >= 500 && ihdrH >= 50, `PNG 尺寸异常 ${ihdrW}×${ihdrH}`);
   });
+
+  // real-* 真实样例：结构可读性校验（非字节锁、非行为契约；内容可随上游演进）
+  for (const r of REAL_CASES) {
+    await t.test(`B3.${r.file} real-* 样例可读性（${r.kind}：zip 结构 + 必需部件）`, () => {
+      const p = nodePath.join(DATA, r.file);
+      assert.ok(fs.existsSync(p), `${r.file} 缺失——请上游重新下载放回 tests/data/（登记见 CONTRACT.md §3）`);
+      const entries = readZip(fs.readFileSync(p)); // 解压失败即抛错
+      if (r.kind === 'docx') {
+        assert.ok(entries.some((e) => e.name === 'word/document.xml'), `${r.file} 缺 word/document.xml`);
+        const xml = entries.find((e) => e.name === 'word/document.xml').data.toString('utf8');
+        assert.ok(
+          /<w:tbl[\s>]/.test(xml),
+          `${r.file} 未含表格（w:tbl）——${r.note} 应含表格；若上游版本变更，请同步更新 CONTRACT.md §3 登记`
+        );
+      } else {
+        assert.ok(entries.some((e) => e.name === 'xl/workbook.xml'), `${r.file} 缺 xl/workbook.xml`);
+        assert.ok(
+          entries.some((e) => e.name.startsWith('xl/worksheets/sheet') && !e.name.endsWith('/') && !e.name.endsWith('.rels')),
+          `${r.file} 缺 xl/worksheets/sheet*.xml`
+        );
+      }
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
