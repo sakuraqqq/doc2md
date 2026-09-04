@@ -174,6 +174,22 @@ function decodeText(buf) {
       return new TextDecoder('utf-16le').decode(swap);
     }
   }
+  // 无 BOM：GBK/GB18030 兜底（P1 二批，审查报告 §1.4）
+  const probeN = Math.min(buf.byteLength, 4096);
+  const tolerant = new TextDecoder('utf-8'); // 容错解码（不抛）
+  const headTxt = tolerant.decode(buf.subarray(0, probeN));
+  // ① HTML：<meta charset="gb2312|gbk|gb18030|big5"> → gb18030 全量重解（浏览器原生支持该 label）
+  if (/<meta[^>]+charset\s*=\s*["']?\s*(gb2312|gbk|gb18030|big5)\b/i.test(headTxt)) {
+    try { return new TextDecoder('gb18030').decode(buf); }
+    catch (e) { /* 极端环境不支持 gb18030：保持原行为 */ }
+  }
+  // ② 纯文本/其余：容错解码替换字符占比 >30%（≈ fatal 试解失败）→ 回退 gb18030
+  let bad = 0, tot = 0;
+  for (const ch of headTxt) { tot++; if (ch === '\uFFFD') bad++; }
+  if (tot > 0 && bad / tot > 0.30) {
+    try { return new TextDecoder('gb18030').decode(buf); }
+    catch (e) { /* 保持原行为 */ }
+  }
   return new TextDecoder('utf-8', { fatal: false }).decode(buf);
 }
 
@@ -458,7 +474,7 @@ function htmlToMarkdown(html, ctx) {
   return blocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/* ---------- B线资源：vendor 同源分文件 → 运行时 blob 化（T9′；零外发：全同源相对路径） ---------- */
+/* ---------- B线资源：vendor 同源分文件（T9′；零外发：全同源相对路径） ---------- */
 const BLINE = (() => {
   const fetchTxt = (p) => fetch(p).then((r) => {
     if (!r.ok) throw new Error('资源加载失败 ' + p + ' (HTTP ' + r.status + ')');
@@ -472,31 +488,43 @@ const BLINE = (() => {
       if (!pdfWorkerUrl) pdfWorkerUrl = './vendor/pdfjs.pdf.worker.min.js';
       return pdfWorkerUrl;
     },
-    /* tesseract worker 入口：fetch vendor 源 → patch blob（仅拦截 core importScripts → 本地 blob）+ worker 本体 */
+    /* tesseract worker 入口：fetch vendor 源 → patch blob（P1 二批，审查报告 §2.1：corePath 已同源化，
+     * patch 降级为「仅当 URL 指向外域时抛错」双保险——同源/相对路径直接 importScripts）+ worker 本体 */
     async tessWorkerUrl() {
       if (tessWorkerUrl) return tessWorkerUrl;
-      const coreUrls = {
-        'simd-lstm': URL.createObjectURL(new Blob([await fetchTxt('./vendor/tesseract-core-simd-lstm.wasm.js')], { type: 'text/javascript' })),
-        'lstm': URL.createObjectURL(new Blob([await fetchTxt('./vendor/tesseract-core-lstm.wasm.js')], { type: 'text/javascript' })),
-      };
       const patch = [
-        'var __B_CORE = ' + JSON.stringify(coreUrls) + ';',
         'var __B_I = self.importScripts.bind(self);',
         'self.importScripts = function (u) {',
         '  var url = String(u || "");',
-        '  if (url.indexOf("tesseract-core") >= 0) {',
-        '    if (url.indexOf("-lstm") >= 0) return __B_I(url.indexOf("simd") >= 0 ? __B_CORE["simd-lstm"] : __B_CORE["lstm"]);',
-        '    return __B_I(__B_CORE["lstm"]);',
+        '  if (/^(https?:)?\\/\\//.test(url)) {',
+        '    var o = new URL(url, self.location.href);',
+        '    if (o.origin !== self.location.origin) throw new Error("零外发红线：拒绝加载外域资源 " + url);',
         '  }',
         '  return __B_I(url);',
         '};',
       ].join('\n');
-      // patch（importScripts 拦截）+ tesseract worker 本体，同一 blob 入口
       tessWorkerUrl = URL.createObjectURL(new Blob([patch + '\n' + await fetchTxt('./vendor/tesseract.worker.min.js')], { type: 'text/javascript' }));
       return tessWorkerUrl;
     },
   };
 })();
+
+/* ---------- OCR 资源就绪检测（SW 分段缓存 v4 后：首次 OCR 提示下载量，此后离线可用） ---------- */
+let ocrAssetsChecked = false;
+async function ocrAssetsWarm() {
+  // SW 未接管（file:// 双击 / SW 未注册）→ 资源即本地相对路径，无需下载提示
+  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return true;
+  try {
+    for (const key of await caches.keys()) {
+      const c = await caches.open(key);
+      const core = (await c.match('./vendor/tesseract-core-simd-lstm.wasm.js')) || (await c.match('./vendor/tesseract-core-lstm.wasm.js'));
+      const eng = await c.match('./langs/eng.traineddata');
+      const chi = await c.match('./langs/chi_sim.traineddata');
+      if (core && eng && chi) return true;
+    }
+  } catch (e) { /* 检测失败不阻塞 OCR */ }
+  return false;
+}
 
 /* ---------- OCR worker 单例（lazy-init；语言包同源懒加载 langs/（DD-14），首次 OCR 冷启动按 T-1 档位豁免） ---------- */
 let ocrWorkerPromise = null;
@@ -505,10 +533,16 @@ function getOcrWorker() {
     ocrWorkerPromise = (async () => {
       const T = window.Tesseract;
       if (!T) throw new Error('tesseract.js 未加载');
-      // langPath 同源相对路径（resolvePaths 基于 window.location 解析为绝对 URL；禁止外域）
+      // 首次 OCR 提示（仅 SW 已接管且 core/语言包未缓存时）：下载量提示后离线可用（SW 分段缓存 v4）
+      if (!ocrAssetsChecked) {
+        ocrAssetsChecked = true;
+        if (!(await ocrAssetsWarm())) setStatus('首次 OCR 需下载约 12 MB（此后离线可用）——正在准备…');
+      }
+      // corePath 同源绝对 URL（P1 二批，审查报告 §2.1；不再使用伪域名——零外发红线）
+      const corePath = new URL('./vendor/', location.href).href;
       const worker = await T.createWorker(['eng', 'chi_sim'], 1, {
         workerPath: await BLINE.tessWorkerUrl(),
-        corePath: 'https://doc2md.local/tesseract-core/',
+        corePath: corePath,
         langPath: './langs/',
         gzip: false,
         workerBlobURL: false,
@@ -522,6 +556,59 @@ function getOcrWorker() {
 /* ---------- xlsx 格式化工具（口径与参考 dsh-file-upload-convert.js 一致） ---------- */
 const XLSX_SHEET_LIMIT = 5;
 const XLSX_ROW_LIMIT = 1000;
+
+/* ZIP 中央目录读取指定条目（零依赖：浏览器内置 DecompressionStream('deflate-raw')；用于 xlsx sheet 名列表） */
+async function zipEntry(buf, wantedName) {
+  const n = buf.byteLength;
+  if (n < 22) return null;
+  for (let i = n - 22; i >= Math.max(0, n - 65557); i--) {
+    if (buf[i] === 0x50 && buf[i + 1] === 0x4B && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
+      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      const count = dv.getUint16(i + 10, true);
+      let off = dv.getUint32(i + 16, true);
+      for (let k = 0; k < count; k++) {
+        if (off + 46 > n || dv.getUint32(off, true) !== 0x02014b50) return null;
+        const method = dv.getUint16(off + 10, true);
+        const compSize = dv.getUint32(off + 20, true);
+        const nameLen = dv.getUint16(off + 28, true);
+        const extraLen = dv.getUint16(off + 30, true);
+        const commentLen = dv.getUint16(off + 32, true);
+        const localOff = dv.getUint32(off + 42, true);
+        const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
+        if (name === wantedName) {
+          const ln = dv.getUint16(localOff + 26, true);
+          const le = dv.getUint16(localOff + 28, true);
+          const data = buf.subarray(localOff + 30 + ln + le, localOff + 30 + ln + le + compSize);
+          if (method === 0) return data;
+          if (typeof DecompressionStream === 'undefined') return null; // 极端环境：无法解压
+          const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+          return new Uint8Array(await new Response(stream).arrayBuffer());
+        }
+        off += 46 + nameLen + extraLen + commentLen;
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+/* xlsx sheet 名称列表：bundle 未导出 readSheetNames（t4 实测 G 组红根因），自读 xl/workbook.xml */
+async function xlsxSheetNames(buf) {
+  try {
+    const xml = await zipEntry(buf, 'xl/workbook.xml');
+    if (!xml) return null;
+    const text = new TextDecoder().decode(xml)
+      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'");
+    const names = [];
+    const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
+    let m;
+    while ((m = re.exec(text))) names.push(m[1]);
+    return names.length > 0 ? names : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function xlsxCellText(v) {
   if (v === null || v === undefined) return '';
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -538,35 +625,21 @@ function xlsxRowsToMd(rows) {
   return [header, sep, ...body].join('\n');
 }
 
-/* ---------- PDF 扫描页 OCR 降级（架构 §4.3：文本量 ≈ 0 → tesseract OCR） ---------- */
-async function ocrPdfToMarkdown(buf) {
-  const warnings = [];
-  const doc = await window.pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise;
-  const pageCount = doc.numPages;
-  const parts = [];
-  try {
-    for (let i = 1; i <= pageCount; i++) {
-      const page = await doc.getPage(i);
-      try {
-        const viewport = page.getViewport({ scale: 2 });
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.floor(viewport.width));
-        canvas.height = Math.max(1, Math.floor(viewport.height));
-        const ctx = canvas.getContext('2d');
-        await page.render({ canvasContext: ctx, viewport }).promise;
-        const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
-        const worker = await getOcrWorker();
-        const r = await worker.recognize(blob);
-        const text = (((r && r.data) || {}).text || '').trim();
-        parts.push(`<!-- page ${i}/${pageCount} -->\n\n${text}`);
-      } finally {
-        page.cleanup();
-      }
-    }
-  } finally {
-    await doc.destroy();
-  }
-  return { markdown: parts.join('\n\n').replace(/\n{3,}/g, '\n\n').trim(), warnings, backend: 'tesseract' };
+/* ---------- PDF 单页 OCR 降级（P1 二批，审查报告 §2.3：逐页判断，扫描页才 OCR；进度回填 #status） ---------- */
+async function ocrPageToText(page, idx, pageCount) {
+  setStatus(`OCR 第 ${idx}/${pageCount} 页…`);
+  const viewport = page.getViewport({ scale: 2 });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(viewport.width));
+  canvas.height = Math.max(1, Math.floor(viewport.height));
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+  const worker = await getOcrWorker();
+  const r = await worker.recognize(blob);
+  const text = (((r && r.data) || {}).text || '').trim();
+  setStatus(`第 ${idx}/${pageCount} 页 OCR 完成`);
+  return text;
 }
 
 /* ---------- 转换器注册表（契约见 docs/architecture.md） ---------- */
@@ -577,7 +650,8 @@ const registry = {
     const doc = await window.pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise;
     const pageCount = doc.numPages;
     const pages = [];
-    let textLen = 0;
+    const warnings = [];
+    let ocrCount = 0;
     try {
       for (let i = 1; i <= pageCount; i++) {
         const page = await doc.getPage(i);
@@ -592,9 +666,15 @@ const registry = {
             }
           }
           if (line !== '') lines.push(line);
-          const text = lines.join('\n');
-          textLen += text.length;
-          pages.push({ idx: i, text: text.trim() });
+          const text = lines.join('\n').trim();
+          // 逐页判断（审查报告 §2.3）：单页文本量 <10 字符 → 该页 OCR 降级；其余页直接取文本层
+          if (text.length < 10) {
+            const ocrText = await ocrPageToText(page, i, pageCount);
+            if (ocrText) { ocrCount++; pages.push({ idx: i, text: ocrText }); }
+          } else {
+            pages.push({ idx: i, text });
+            setStatus(`转换中：第 ${i}/${pageCount} 页`);
+          }
         } finally {
           page.cleanup();
         }
@@ -602,11 +682,10 @@ const registry = {
     } finally {
       await doc.destroy();
     }
-    // 文本层总量 ≈ 0（<10 字符）→ 判定扫描页，走 OCR 降级
-    if (textLen < 10) return ocrPdfToMarkdown(buf);
+    if (ocrCount > 0) warnings.push(`书中有 ${ocrCount} 页无文本层，已用 OCR 识别（结果可能有误差）`);
     let out = '';
     for (const p of pages) out += `<!-- page ${p.idx}/${pageCount} -->\n\n${p.text}\n\n`;
-    return { markdown: out.replace(/\n{3,}/g, '\n\n').trim(), warnings: [], backend: 'pdfjs' };
+    return { markdown: out.replace(/\n{3,}/g, '\n\n').trim(), warnings, backend: ocrCount > 0 ? 'tesseract' : 'pdfjs' };
   },
   docx: async (file, buf) => {
     const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -628,27 +707,30 @@ const registry = {
     const RX = window.readXlsxFile;
     if (!RX) throw new Error('read-excel-file 库未加载');
     const readXlsx = typeof RX === 'function' ? RX : (RX.default || RX);
-    const readSheetNames = RX.readSheetNames || (RX.default && RX.default.readSheetNames);
     const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    const sheetNames = readSheetNames ? await readSheetNames(ab) : [];
+    // sheet 名称列表：自读 xl/workbook.xml（bundle 未导出 readSheetNames——t4 G 组实测）；解析失败回退单 sheet
+    const sheetNames = await xlsxSheetNames(buf);
     const names = sheetNames && sheetNames.length > 0 ? sheetNames : [null];
+    const readNames = names.slice(0, XLSX_SHEET_LIMIT);
     const parts = [];
     const warnings = [];
     let truncated = false;
     let totalRows = 0;
-    for (const name of names.slice(0, XLSX_SHEET_LIMIT)) {
+    for (const name of readNames) {
       const rows = await readXlsx(ab, name ? { sheet: name } : undefined);
       totalRows += rows.length;
       const kept = rows.slice(0, XLSX_ROW_LIMIT);
       if (kept.length < rows.length) truncated = true;
       parts.push(`### Sheet: ${name === null ? 'Sheet1' : name}\n\n${xlsxRowsToMd(kept)}`);
     }
-    if (names.length > XLSX_SHEET_LIMIT) {
-      parts.push(`> 另有 ${names.length - XLSX_SHEET_LIMIT} 个 sheet 未读取（v1 上限 ${XLSX_SHEET_LIMIT} 个）`);
+    const skipped = names.length - readNames.length;
+    if (skipped > 0) {
+      parts.push(`> 另有 ${skipped} 个 sheet 未读取（v1 上限 ${XLSX_SHEET_LIMIT} 个）`);
       truncated = true;
     }
-    if (truncated) warnings.push(`已截断：每 sheet 保留前 ${XLSX_ROW_LIMIT} 行、最多 ${XLSX_SHEET_LIMIT} 个 sheet（全簿共 ${totalRows} 行）`);
-    return { markdown: parts.join('\n\n').trim(), warnings, backend: 'read-excel-file' };
+    // 文案（审查报告 §1.5）：只计已读 sheet 的行数，语义正确
+    if (truncated) warnings.push(`已截断：已读取前 ${readNames.length} 个 sheet 共 ${totalRows} 行（每 sheet 保留前 ${XLSX_ROW_LIMIT} 行；另有 ${skipped} 个 sheet 未读取）`);
+    return { markdown: parts.join('\n\n').trim(), warnings, truncated, backend: 'read-excel-file' };
   },
   image: async (file, buf) => {
     const worker = await getOcrWorker();
@@ -697,6 +779,7 @@ async function convert(file) {
     const res = await registry[s.type](file, buf);
     meta.backend = res.backend || null;
     meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
+    meta.truncated = !!res.truncated; // 契约字段同步（审查报告 §1.5：转换器截断结果落地）
     return { markdown: res.markdown || '', meta, error: undefined };
   } catch (e) {
     return done({ error: '转换失败：' + (e && e.message ? e.message : '未知错误') });

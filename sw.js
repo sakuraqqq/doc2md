@@ -1,13 +1,15 @@
 /* ============================================================
  * sw.js — doc2md service worker（PWA 离线缓存）
- * 版本：doc2md-sw-v3（T9′：PRECACHE 含 vendor/* 与 langs/*——单目录离线全功能）
+ * 版本：doc2md-sw-v4（P1 二批 ⑤ 分段缓存：PRECACHE 只保留应用外壳——
+ *       index/manifest/图标 + 转换器主库与 worker 入口；剔除两个 wasm core 与语言包）
  * 红线：零外发 —— 只缓存/响应同源请求；绝不 fetch 外域资源；SW 自身零外部依赖。
- * 策略：install 预缓存（PRECACHE）+ 同源 GET cache-first（miss 时网络并写入）；
- *       导航请求离线时回退到预缓存的 index.html（离线可用）。
+ * 策略：install 预缓存（PRECACHE，Promise.allSettled——单资源失败不阻塞安装）+ 同源 GET
+ *       cache-first（miss 时网络并写入——core/语言包走此路径：首次 OCR 同源加载后写缓存，
+ *       此后离线可用）；导航请求离线时回退到预缓存的 index.html（离线可用）。
  * 注意：service worker 仅在 http(s)/localhost 生效（file:// 双击打开时静默跳过，
  *       此时页面以同目录相对路径加载 vendor/ 与 langs/，天然离线可用）。
  * ============================================================ */
-const CACHE_NAME = 'doc2md-sw-v3';
+const CACHE_NAME = 'doc2md-sw-v4';
 const PRECACHE = [
   './',
   './index.html',
@@ -21,17 +23,17 @@ const PRECACHE = [
   './vendor/pdfjs.pdf.worker.min.js',
   './vendor/tesseract.tesseract.min.js',
   './vendor/tesseract.worker.min.js',
-  './vendor/tesseract-core-simd-lstm.wasm.js',
-  './vendor/tesseract-core-lstm.wasm.js',
   './vendor/read-excel-file.min.js',
-  './langs/eng.traineddata',
-  './langs/chi_sim.traineddata',
+  // v4 起不再预缓存（运行时缓存，首次 OCR 后离线可用）：
+  //   ./vendor/tesseract-core-simd-lstm.wasm.js
+  //   ./vendor/tesseract-core-lstm.wasm.js  （两 core 二选一，预缓存 2 个 ≈8MB 浪费）
+  //   ./langs/eng.traineddata / chi_sim.traineddata（合计 ≈7.4MB）
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE))
+      .then((cache) => Promise.allSettled(PRECACHE.map((u) => cache.add(u))))
       .then(() => self.skipWaiting())
   );
 });
@@ -65,7 +67,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 资源（index.html/manifest/图标等）：cache-first，miss 则网络并写入缓存
+  // 资源：cache-first，miss 则网络并写入缓存（v4：OCR core/wasm + 语言包首次加载即被此路径缓存；
+  // 运行时缓存已覆盖，无需预缓存）
   event.respondWith(
     caches.match(req).then((hit) =>
       hit ||
