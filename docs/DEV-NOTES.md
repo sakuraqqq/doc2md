@@ -118,7 +118,7 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 - 坑记录：raw.githubusercontent / api.github.com 本轮被安全工具拦截（t13 时 api 可用；间歇）→ chrome_navigate 直读 GitHub 页成功（DSH 宿主浏览器不经过沙箱/安全工具）。
 
 ### 待办（用户侧）
-- 发布后：设置 Topics（OUTREACH §1）、awesome Issue 推荐（§2.2 模板）、博客成稿（§3 提纲）、RELEASE.md v0.1.1 回填、GIF 补录、badge 生效确认。
+- 发布后：设置 Topics（OUTREACH §1，已做）、awesome Issue 推荐（§2.2 模板）、博客成稿（§3 提纲）、RELEASE.md 回填（已做）；**GIF 补录 → 拍板不做**（2026-09-04：拖放/上传为浏览器直觉操作；README/RELEASE-CHECKLIST/OUTREACH 已同步）
 
 ---
 
