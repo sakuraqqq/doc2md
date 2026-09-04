@@ -134,3 +134,19 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 - 依赖确证：临时移走 `langs/` → 二次 OCR 仍成功 = tesseract IDB 缓存命中（首次确从 langs/ 拉取并写入）——断网可复用链路成立（SW cache-first 另行兜底）。
 - 回归：docx（real-tables.docx）103ms GFM 保留；离线断言（无 embed-tess-lang、langs/ SHA 一致）全过。
 
+---
+
+## 2026-09-04 · B线 T9′：全面拆分 vendor 分文件（首载彻底优化）
+
+### 做了什么（用户拍板 DD-15，红线 2「单文件」→「单目录」）
+- `.tmp/split-vendor.mjs`：删除 index.html 全部 8 个内联库块 → 4 个 `<script src="./vendor/…">`（mammoth/pdfjs/tesseract/read-excel；顺序保留）。
+- BLINE：pdf worker → 相对路径 `./vendor/pdfjs.pdf.worker.min.js`（file:// 自动回退 fake worker）；OCR core/worker → `fetch('./vendor/…')` → blob（patch 不变，零外发）。
+- sw.js：CACHE_NAME v3 + PRECACHE 全量（vendor 8 + langs 2）。
+- 文档：AGENTS.md 红线 2 / README / RELEASE-CHECKLIST / architecture §4+§6 / DD-15 同步。
+
+### 实测（真浏览器 http://127.0.0.1:64107，插桩）
+- 全功能回归 6/6 全中（txt 1 / html 2 / docx 31 / xlsx 4 / pdf 159 / OCR 425 ms）；零外域；console 0；net 实证 vendor 同源 fetch。
+- 体积：index.html **32KB**（gzip 11.5KB）；**首屏 gzip ≈270KB**（index + 4 库 + PWA），全资产 gzip 8.15MB——vs 原 16.4MB 单文件降 ≈98%。
+- SW v3：注册成功 + PRECACHE 24 项（vendor 8/8 + langs 2/2 全量）。
+- file:// 双击：页面 + 4 库加载成功（拖文件路径无 fetch 依赖）；OCR 在 file:// 受限（BLINE fetch）——README 已注明。
+

@@ -7,7 +7,7 @@
   <a href="https://sakuraqqq.github.io/doc2md/manifest.json"><img alt="pwa" src="https://img.shields.io/badge/PWA-installable-blueviolet.svg"></a>
 </p>
 
-> 参考 Microsoft MarkItDown 的「文档 → Markdown」思路，做一个**纯前端网页版**：单文件、离线可用、PWA 可装到手机主屏，全部转换在你的浏览器本地完成。
+> 参考 Microsoft MarkItDown 的「文档 → Markdown」思路，做一个**纯前端网页版**：单目录离线（`index.html` + `vendor/` + `langs/`，双击即用）、断网可用（PWA 缓存全功能）、可装到手机主屏，全部转换在你的浏览器本地完成。
 > 仓库：<https://github.com/sakuraqqq/doc2md>（v1 阶段）。
 
 ## 一句话
@@ -24,7 +24,7 @@
 
 - 市面上的转换工具大多要上传文件、注册账号或装 Python 环境；MarkItDown 是 CLI/服务端思路，网页版体验友好但基本都走云端。
 - 大多数「文档转 Markdown」网页版要么在服务器转（有隐私风险），要么依赖 CDN（断网即废）。
-- 本项目把这两条路都堵上：**零外发 + 单文件离线 + PWA 离线缓存**，一个 `index.html` 就是一个完整的工具。
+- 本项目把这两条路都堵上：**零外发 + 单目录离线（index+`vendor/`+`langs/`，同源分文件）+ PWA 离线缓存**，`index.html`（32KB 应用逻辑）+ 本地库文件就是一个完整的工具。
 
 ## 功能一览（v1）
 
@@ -34,14 +34,14 @@
 | DOCX | mammoth → HTML → Markdown | ✅ | 标题/列表/**GFM 表格**/加粗等（T-5 拍板：保留表格） |
 | PDF | pdf.js + tesseract.js OCR | ✅ | 文本层直取；扫描页/无文本层自动 OCR 降级（eng+chi_sim） |
 | XLSX | read-excel-file | ✅ | 多 sheet → GFM 表格，日期/数字格式化 |
-| 图片（PNG/JPG/…） | tesseract.js OCR | ✅ | eng+chi_sim（LSTM 量化，语言包本地内联） |
+| 图片（PNG/JPG/…） | tesseract.js OCR | ✅ | eng+chi_sim（LSTM 量化，语言包 `langs/` 同源懒加载） |
 | PWA | manifest + service worker | ✅ | 添加到主屏（standalone）+ 离线缓存（SW precache + 离线回退） |
 
-全部库（mammoth / pdf.js / tesseract.js / read-excel-file）与 OCR 语言包**内联进单文件**，worker/WASM 走本地 blob——无任何 CDN 引用。
+全部库（mammoth / pdf.js / tesseract.js / read-excel-file）与 OCR 语言包为**同源分文件**（`vendor/` + `langs/`，`index.html` 仅 32KB 应用逻辑）；worker/WASM 本地 blob——无任何 CDN 引用。
 
 ## 为什么这么定（口径）
 
-- **零外发是红线**：v1 所有转换在本地浏览器完成，不上传任何文件/数据；worker 的 `fetch`/`importScripts` 被拦截到本地 blob（决策史 DD-4），语言包 base64 内联；任何网络能力需在 README + 审查清单显式声明后才可加。
+- **零外发是红线**：v1 所有转换在本地浏览器完成，不上传任何文件/数据；worker 的 `fetch`/`importScripts` 被拦截到本地 blob（决策史 DD-4），语言包 `langs/` 同源懒加载（DD-14）；任何网络能力需在 README + 审查清单显式声明后才可加。
 - **不信任扩展名**：按 magic bytes 嗅探（docx=zip+word/、pdf=%PDF、xlsx=zip+xl/…），扩展名只作辅助。
 - **范围控制**：v1 只做 5 类格式；音频转录、EPUB、PPTX 等 v2 再议。
 - **PWA 先行，Capacitor 后置**：手机体验先走零打包成本的 PWA（已验证离线）；原生套壳（Capacitor）只做了可行性记录（见 `docs/architecture.md` §8.4），是否做待 PWA 上线后按反馈拍板。
@@ -59,12 +59,13 @@
 
 ```
 doc2md/
-├── index.html              # 单文件应用（内联全部库/worker/WASM/语言包，≈16MB；无外部依赖）
-├── manifest.json / sw.js   # PWA：安装清单 + 离线 Service Worker
+├── index.html              # 应用逻辑（≈32KB：注册表/嗅探/UI/挂钩；库全部同源分文件引入）
+├── manifest.json / sw.js   # PWA：安装清单 + 离线 Service Worker（v3：precache 全量 vendor/langs）
 ├── icons/                  # PWA 图标（192/180/512/512-maskable，tools/gen-icons.mjs 生成）
-├── vendor/                 # 内联源的原始构建件（mammoth/pdf.js/tesseract/read-excel-file/tessdata；审查用）
+├── vendor/                 # 库同源分文件（mammoth/pdf.js/tesseract/core/read-excel-file；构建件+审查用）
+├── langs/                  # OCR 语言包（eng/chi_sim，同源懒加载；SW 预缓存）
 ├── tools/
-│   ├── embed-bline.mjs     # 单文件组装（B线资源嵌入；决策史 DD-7）
+│   ├── embed-bline.mjs     # 单文件组装（历史：B线资源嵌入；DD-7——T9′ 拆分后仅存档）
 │   ├── gen-icons.mjs       # PWA 图标生成（零依赖）
 │   ├── gen-sample-image.ps1# 契约样例图片生成（Windows GDI+，固定资产）
 │   └── verify-ocr.mjs      # 离线 OCR 实证（npm run verify:ocr）
