@@ -368,8 +368,17 @@ test('契约组 M：手机视口 UI 端到端（390×844：file input → 输出
         const t0 = Date.now();
         await input.setInputFiles(nodePath.join(DATA, 'sample.txt'));
         const tok = 'DOC2MD-TXT-OK-2026';
+        // 输出媒介匹配面（DD-11，2026-09-04 实测修正）：body.innerText 不含 textarea.value 等
+        // 表单控件值——实现把 markdown 渲染进 <textarea class="md">（便于复制），故匹配面须含
+        // textarea/pre/code 等元素的值/文本；断言语义不变（结果对用户可见即命中）。
         await page.waitForFunction(
-          (token) => (document.body.innerText || '').includes(token),
+          (token) => {
+            if ((document.body.innerText || '').includes(token)) return true;
+            for (const el of document.querySelectorAll('textarea, input, pre, code')) {
+              if ((el.value || el.textContent || '').includes(token)) return true;
+            }
+            return false;
+          },
           tok,
           { timeout: 20000 }
         );

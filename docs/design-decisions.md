@@ -48,7 +48,20 @@
 - **根因**：点阵字体与真实字体字形分布差异大，LSTM/legacy 均无解（DD-6 穷举证据）；真实字体才是 OCR 训练分布内的输入。
 - **拍板**（2026-09-04 用户）：真实字体（Arial 72px，黑字白底 880×180）渲染 `HELLO DOC2MD 2026`；断言（HELLO/DOC2MD/2026）不变；样例由 `tools/gen-sample-image.ps1`（Windows GDI+，零依赖）生成一次，产出为固定资产 `tests/lib/assets/sample-image.png`，`gen-samples.mjs` 只做确定性字节复制（**无公式漂移空间**——DD-8 期间「1225px 漂移」争议经实测未复现，新方案从机制上根除）。
 - **修复**：① 新建 `tools/gen-sample-image.ps1`（UTF-8 BOM，GDI+ AntiAliasGridFit，Arial 72px）；② `gen-samples.mjs` 删除点阵 FONT/buildPng，改为资产复制；③ 重生成 `sample.png`（7982 B / SHA FAA64C29…）与 `manifest.json` 字节锁同步（其余 5 个样例字节不变）。
-- **验收**：**离线 OCR PASS**——`npm run verify:ocr`（node 版 tesseract.js v6 + 本地 vendor/tessdata eng+chi_sim best_int，worker 270ms）输出 `"HELLO DOC2MD 2026"`，置信度 **93%**，三令牌全命中。B1/B2/B3 全绿。浏览器端 C 组复验待有浏览器环境（本沙箱无 spawn 能力，如实）。
+- **验收**：**离线 OCR PASS**——`npm run verify:ocr`（node 版 tesseract.js v6 + 本地 vendor/tessdata eng+chi_sim best_int，worker 270ms）输出 `"HELLO DOC2MD 2026"`，置信度 **93%**，三令牌全命中。B1/B2/B3 全绿。浏览器端 C 组复验后补（见附录「宿主浏览器独立验收记录」）。
+
+## DD-11 · 契约 M1 输出媒介假设缺陷（textarea.value 不在 innerText）— 2026-09-04 QA
+
+- **现象**：t12 浏览器端验收（DSH 宿主浏览器真实 UI 链路）观察：上传 sample.txt 后页面 `#results` 已渲染「完成：共 1 个文件」、`<textarea class="md">` 内容含全部令牌——但契约 M1 断言（`document.body.innerText.includes(tok)` 轮询）**永不命中**（15s 超时误报红）。
+- **根因**：实现把 Markdown 渲染进 `<textarea>`（便于复制/下载），而浏览器 **`innerText` 不含表单控件（textarea/input）的 value**——契约「输出区文本」匹配面假设过窄，属测试脚本自身缺陷（断言条件语义未变：结果对用户可见即命中）。
+- **拍板**：修测试（M1 匹配面扩展为 body.innerText ∪ textarea/input/pre/code 的值/文本）；**不动断言条件**（令牌不变、可见性语义不变）；不要求实现改渲染媒介（textarea 合法合理）。
+- **验收**：修复后宿主浏览器重跑 M 组链路——命中（viaTextarea=true，0ms，无 console error）；C6 同步验证（docx 实测输出 `| 项目 | 状态 |\n| --- | --- |…` → gfmTableIssues=[] PASS）。
+
+## 附录 · 宿主浏览器独立验收记录（t12，沙箱解锁替代路径）— 2026-09-04 QA
+
+- **背景**：本工作区沙箱禁止任何子进程 spawn（playwright fork/浏览器启动/node --test 均 EPERM）——复核工具面后发现 DSH **宿主浏览器工具（browser_*）由宿主进程管理**，不经过沙箱 spawn，成功打开页面（标题「doc2md — 文档转 Markdown（本地 · 离线 · 零外发）」）。
+- **验收结果**（真实浏览器，页面经本地静态服务 http://127.0.0.1:58699 加载）：text-txt(builtin, 1ms) / text-html(builtin-html, 2ms) / docx(mammoth, 27ms, GFM 表格 C6 ✓) / xlsx(read-excel-file, 3ms) / pdf(pdfjs, 164ms) / image(tesseract, 104ms, HELLO/DOC2MD/2026 全命中)——**C1/C2/C3/C4/C5 全部实测通过**（令牌全命中、转换期 console 零错误、performance resource 零外发、无 error 返回、全 <500ms）；M 组 UI 链路 0ms 渲染命中（DD-11 修复后）。`__doc2md` 挂钩 ✓。
+- **边界如实**：宿主浏览器为桌面视口（无法模拟 390×844/isMobile/hasTouch）——**手机视口与 Playwright 完整版断言仍需适格环境终验**；load 期错误以页面功能正常（转换、渲染、交互齐全）为旁证。
 
 ## DD-9 · docx 转换路径未按 T-5 拍板落实（QA 验收发现，B 线已修复）— 2026-09-04 QA/B线
 
