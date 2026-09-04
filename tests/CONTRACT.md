@@ -121,11 +121,12 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **当前（本报告时点）**：A0 绿（T1 交付 index.html + `__doc2md` 挂钩）；B 组全绿（8 项子断言：B0 + B1×6 + B2 格式特征）；C/M 组红。
-  C/M 组红的**两个如实原因**：
-  1. 本工作区沙箱禁止启动浏览器进程（`spawn EPERM`，系统 Edge 亦被拒）——环境限制，非契约断言失败（见第 5 节）；
-  2. 即便有浏览器：pdf/xlsx/image 三类的转换器 T1 未实现（架构文档 §4.3-4.5 标注 🚧 占位返回 error）→ C5「convert 不返回 error」等断言将如实红，直到 B 线（T3）落地。
-- **转绿路径 1**：在正常开发机/CI 执行 `npm test`（或装 chromium）→ text/docx 用例应转绿（T1 已实现 TEXT/HTML + DOCX），pdf/xlsx/image 仍红（占位 error）。
-- **转绿路径 2**：B 线完成 PDF/XLSX/图片 OCR → 12 用例 + M 组全绿。
-- **未跑到的断言**（本时点无法执行，非跳过）：C1-C5、M1-M2 的真实断言体（浏览器可用后即真实运行）。
+- **t12 验收时点（2026-09-04，最新）**：A0 绿；B 组全绿（B0 + B1×6 + B2 + B3×3 = 11 项子断言）；C/M 组**仍红，唯一原因=本工作区沙箱禁止浏览器进程 spawn**（playwright chromium
+  安装器 `child_process.fork` EPERM、系统 Edge/Chrome executablePath EPERM、node --test 子进程隔离 EPERM——同一根因，已穷尽无解路径；见第 5 节）。
+  **实现侧已就绪**（B 线 6198e24/757a961）：五类转换器齐备（text/html、docx=T-5 表格路径、pdf=pdfjs+OCR 降级、xlsx、image=tesseract LSTM 量化 + T-1 预热 load+300ms）；
+  `__doc2md` 挂钩与契约一致；QA 已拍板 DD-8（sample.png 零字形标准化，断言不变）并重生成样例（655→2457B 仅 png 变化）。
+- **转绿路径（唯一剩余步骤）**：在**可启动浏览器的环境**（用户终端/正常 CI）执行
+  `npm install && node node_modules/@playwright/test/cli.js install chromium && npm test`（或 `npm run test:direct`）——
+  预期：text-txt/text-html/docx/xlsx/pdf 全绿；image 若 OCR 仍不识别新字形 → 走拍板点回退（放宽断言需用户拍板，禁止单边改）。
+- **未跑到的断言**（本时点无法执行，非跳过）：C1-C5+C6、M1-M2 的真实断言体（浏览器可用后即真实运行）。
 - **不予放宽**：若 OCR 冷启动或真实 PDF 中文样例导致个别断言长期红 → 走拍板点 T-1/T-2，先拍板后改契约（改断言 = 改口径）。
