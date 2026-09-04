@@ -6,8 +6,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
-import { buildZip } from './lib/zipio.mjs';
+import { buildZip, crc32 } from './lib/zipio.mjs';
 
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data');
 fs.mkdirSync(OUT, { recursive: true });
@@ -161,6 +162,156 @@ function sampleImage() {
   return fs.readFileSync(asset);
 }
 
+/* ---------------- 大图 PNG（确定性噪声真彩，用于图片抽取阈值样例） ----------------
+ * 约定（契约组 I）：sample-images.docx 内「小图」= sample-image.png（≈8KB <100KB 阈值）、
+ * 「大图」= 本函数生成 512×512 RGB 噪声 PNG（不可压缩，≈786KB >100KB 阈值）。
+ * 确定性：mulberry32 固定 seed；PNG 用 node:zlib deflate（zlib 封装）+ crc32（zipio），
+ * 重复生成字节相同。
+ */
+function noisePng(w, h, seed) {
+  let s = seed >>> 0;
+  const rnd = () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const raw = Buffer.alloc(w * h * 3);
+  for (let i = 0; i < raw.length; i++) raw[i] = Math.floor(rnd() * 256);
+  const pngChunk = (type, data) => {
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    out.write(type, 4, 'ascii');
+    data.copy(out, 8);
+    out.writeUInt32BE(crc32(Buffer.concat([Buffer.from(type, 'ascii'), data])), 8 + data.length);
+    return out;
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; ihdr[9] = 2; // 8-bit, RGB
+  // [10..12] = 0（无隔行）
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', zlib.deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/* ---------------- real-multisheet.xlsx（6 sheets，> 上限 5；契约组 G） ----------------
+ * 与 sample.xlsx 同构的合成 xlsx（确定性），但含 6 个 sheet（每 sheet 表头 + 1 行数据），
+ * 触发「最多前 5 个 sheet」截断路径。命名遵循 T-3：新样例、不覆盖既有 sample.*。
+ */
+function buildMultiSheetXlsx() {
+  const N = 6;
+  const shared = ['项目', '状态', 'DOC2MD-XLSX-MULTI-2026'];
+  const ss = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${shared.length}" uniqueCount="${shared.length}">${shared.map((s) => `<si><t>${s}</t></si>`).join('')}</sst>`;
+  const sheets = '';
+  const sheetXml = (i) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>
+<row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="s"><v>1</v></c></row>
+</sheetData></worksheet>`;
+  const wbSheet = (i) => `<sheet name="Sheet${i}" sheetId="${i}" r:id="rId${i}"/>`;
+  const wb = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${Array.from({ length: N }, (_, i) => wbSheet(i + 1)).join('')}</sheets></workbook>`;
+  const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+${Array.from({ length: N }, (_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('\n')}
+<Relationship Id="rId${N + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+</Relationships>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+${Array.from({ length: N }, (_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('\n')}
+<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'xl/workbook.xml', data: Buffer.from(wb, 'utf8') },
+    { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from(wbRels, 'utf8') },
+    { name: 'xl/sharedStrings.xml', data: Buffer.from(ss, 'utf8') },
+    ...Array.from({ length: N }, (_, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: Buffer.from(sheetXml(i + 1), 'utf8') })),
+  ]);
+}
+
+/* ---------------- sample-images.docx（2 图：小图 <100KB + 大图 >100KB；契约组 I） ----------------
+ * 合成 docx：两段各含一张 w:drawing 图片（rId7=image1.png 小图、rId8=image2.png 大图）。
+ * 图片无 alt（descr=""）——断言「alt 非 AI 描述」覆盖的正是「文件名/题注/空 alt」口径。
+ */
+const IMG_DRAWING = (id, name, rid) => `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="3600000" cy="1200000"/><wp:docPr id="${id}" name="${name}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}" descr=""/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="3600000" cy="1200000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
+
+function buildImagesDocx(smallPng, bigPng) {
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>
+<w:p><w:r><w:t>图片抽取样例（小图 + 大图）：图片引入关系 rId7/rId8</w:t></w:r></w:p>
+<w:p><w:r>${IMG_DRAWING(1, 'small', 'rId7')}</w:r></w:p>
+<w:p><w:r>${IMG_DRAWING(2, 'large', 'rId8')}</w:r></w:p>
+<w:p><w:r><w:t>关键令牌：DOC2MD-IMG-2026</w:t></w:r></w:p>
+</w:body></w:document>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="png" ContentType="image/png"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+<Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image2.png"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'word/document.xml', data: Buffer.from(doc, 'utf8') },
+    { name: 'word/_rels/document.xml.rels', data: Buffer.from(docRels, 'utf8') },
+    { name: 'word/media/image1.png', data: smallPng },
+    { name: 'word/media/image2.png', data: bigPng },
+  ]);
+}
+
+/* ---------------- sample-math.docx（OMML 公式；契约组 J） ----------------
+ * 合成 docx：word/document.xml 含 <m:oMath><m:r><m:t>x²</m:t></m:r></m:oMath>——
+ * 契约断言：转换输出该类公式时须带 $...$ / $$...$$ LaTeX 标记（当前实现为纯文本/空 → 红）。
+ */
+function buildMathDocx() {
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body>
+<w:p><w:r><w:t>公式样例：</w:t></w:r><m:oMath><m:r><m:t>x²</m:t></m:r></m:oMath></w:p>
+<w:p><w:r><w:t>关键令牌：DOC2MD-MATH-2026</w:t></w:r></w:p>
+</w:body></w:document>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'word/document.xml', data: Buffer.from(doc, 'utf8') },
+  ]);
+}
+
 /* ---------------- 组装 ---------------- */
 console.log('doc2md 契约测试样例生成 → tests/data/');
 put('sample.txt', Buffer.from(TXT, 'utf8'));
@@ -180,11 +331,14 @@ put('sample.xlsx', buildZip([
 ]));
 put('sample.pdf', buildPdf());
 put('sample.png', sampleImage());
+put('real-multisheet.xlsx', buildMultiSheetXlsx());
+put('sample-images.docx', buildImagesDocx(sampleImage(), noisePng(512, 512, 42)));
+put('sample-math.docx', buildMathDocx());
 
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
