@@ -1,0 +1,42 @@
+# .codeclimate.yml — CodeClimate 质量门配置（防屎山 ① 度量；用户侧接入说明见 docs/CODE-METRICS.md）
+#
+# ⚠️ 启用前提（用户侧）：CodeClimate 平台需 GitHub OAuth 授权（本任务只提供配置与说明，
+#    连接授权由用户终端完成；未连接前本文件不生效，度量以 npm run metrics 本地报告为准）。
+version: '2'
+checks:
+  # 重复代码（与 jscpd 阈值口径一致；默认 50 行阈值调低为 5 行——doc2md 代码行数普遍很短）
+  duplicate-code:
+    enabled: true
+    config:
+      threshold: 5
+  # 圈复杂度（与 eslint complexity max 10 呼应）
+  argument-count:
+    enabled: true
+    config:
+      threshold: 5
+  file-lines:
+    enabled: true
+    config:
+      threshold: 500
+  method-complexity:
+    enabled: true
+    config:
+      threshold: 10
+  method-lines:
+    enabled: true
+    config:
+      threshold: 40
+  # 认知复杂度由 ESLint sonarjs 规则守门（CodeClimate 无对等 check），此处不重复配置
+exclude_patterns:
+  - 'vendor/'
+  - 'langs/'
+  - 'node_modules/'
+  - 'tests/'
+  - 'icons/'
+  - 'docs/'
+  - '参考/'
+  - '.tmp/'
+  - 'patches/'
+  - '*.min.js'
+  - 'sw.js'
+  - 'manifest.json'
