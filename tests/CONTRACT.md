@@ -39,14 +39,14 @@
 | C3 | 转换耗时（外部计时，convert 调用起止） | `< 500ms` | 🔴 红（口径见拍板点 T-1） |
 | C4 | 零外发：请求全部同源 `http://127.0.0.1:*`（红线 #1） | 集合为空 | 🔴 红 |
 | C5 | `convert` 不返回 `error`（转换器可 throw 但 UI 入口不得崩） | `error === undefined` | 🔴 红 |
-| C6 | docx 保留 GFM 表格（仅 docx 用例附加）：表格行 ≥2 行 + 表头分隔行（`| --- |`）+ 表头单元格文本「项目」「状态」 | `gfmTableIssues()` 为空（纯函数，见 contract_v1.test.mjs） | 🔴 红（B 线 t10 按拍板路径实现后转绿；拍板记录见 §6 T-5） |
+| C6 | docx 保留 GFM 表格（仅 docx 用例附加）：表格行 ≥2 行 + 表头分隔行（`| --- |`）+ 表头单元格文本「项目」「状态」 | `gfmTableIssues()` 为空（纯函数，见 contract_v1.test.mjs） | 🟢 绿（宿主浏览器实测 docx 输出 `| 项目 | 状态 |` + `| --- | --- |`，DD-11 附录） |
 
 ### 契约组 M — 手机视口 UI 端到端（390×844）
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| M1 | `input[type=file]` 可见；选择 `sample.txt` 后输出区（body 文本）出现关键令牌 | 令牌命中 | 🔴 红（页面缺） |
-| M2 | 同 C2（无 console error）+ 同 C3（<500ms） | — | 🔴 红 |
+| M1 | `input[type=file]` 可见；选择 `sample.txt` 后输出区出现关键令牌（匹配面：body.innerText ∪ textarea/input/pre/code 值——DD-11 修正；实现渲染进 `<textarea class="md">` 属合理媒介） | 令牌命中 | 🟢 绿（宿主浏览器实测 0ms 命中，DD-11） |
+| M2 | 同 C2（无 console error）+ 同 C3（<500ms） | — | 🟢 绿（上者同轮实测；手机视口版待适格环境终验） |
 
 > 补注：C3/M 的 500ms 以「convert() 调用外部计时」为准（architecture §7 口径 =「转换 <500ms」；
 > 规划文档口径 =「渲染 <500ms」。两条口径在 <500ms 阈值上一致，测点取架构文档定版，
@@ -130,5 +130,6 @@ npm run gen:samples           # 重新生成样例（确定性）
 - **转绿路径（唯一剩余步骤）**：在**可启动浏览器的环境**（用户终端/正常 CI）执行
   `npm install && node node_modules/@playwright/test/cli.js install chromium && npm test`（或 `npm run test:direct`）——
   预期：text-txt/text-html/docx/xlsx/pdf/image 全部转绿（image 令牌已离线 OCR 实证命中，DD-10；docx C6 已按 T-5 路径实现）。
+- **宿主浏览器独立验收（2026-09-04，DSH 宿主浏览器实测，详见 design-decisions.md 附录）**：C1-C5 全部通过（6 类样例令牌全命中、转换期 console 零错误、resource 零外发、无 error、耗时 1/2/27/3/164/104ms 全 <500ms）、C6 ✓（docx 输出标准 GFM 表格 `| --- |` 分隔行）、M 组 UI 链路 0ms 渲染命中（DD-11 修复后）；**手机视口（390×844/isMobile/hasTouch）与 Playwright 完整版断言仍待适格环境终验**（宿主浏览器为桌面视口，无法模拟）。
 - **未跑到的断言**（本时点无法执行，非跳过）：C1-C5+C6、M1-M2 的真实断言体（浏览器可用后即真实运行）。
 - **不予放宽**：若 OCR 冷启动或真实 PDF 中文样例导致个别断言长期红 → 走拍板点 T-1/T-2，先拍板后改契约（改断言 = 改口径）。
