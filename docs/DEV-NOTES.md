@@ -79,3 +79,8 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 - DD-7 组装脚本 marker 替换把 mammoth 闭合标签挪走（pdfjsLib/mammoth undefined）→ 修复 + 记录。
 - 沙箱环境链：npm.ps1/curl.exe/后台+管道 均被 workspace-write 拒；绕行 = npm 复制进工作区 + node 直调 npm-cli.js + 无管道后台（**记 DEV-NOTES：沙箱可执行外部程序仅限工作区内路径，限制进程 stdio 管道**）。
 
+### 追加（2026-09-04 拍板落地）：docx 保留 GFM 表格
+- 用户拍板：docx 保留 GFM 表格（不扁平化）→ docx 路径改为 `mammoth.convertToHtml` → 复用 A 线 `htmlToMarkdown`（GFM 表格）。
+- 实测（本地 http + chrome）：sample.docx → `| 项目 | 状态 |` + `| --- | --- |` + `| 文档转换 | 进行中 |`；双令牌命中；59ms；txt/html/xlsx/pdf 回归零破坏；零外域请求；console error=0。
+- 同步：architecture.md §4.2 定版（GFM 路径 + C6 契约说明）。
+

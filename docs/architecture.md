@@ -76,9 +76,10 @@ async function convert(file /* File */) -> Promise<{
   - `h1-h6` → `#`…`######`；`p` → 段落；`ul/ol/li` → `- 1.`；`table` → GFM 表格；`a` → `[文本](href)`；`strong/em/code` → `**/*/``；`blockquote` → `>`；`img` → `![alt](src)`；注释/script/style 丢弃。
 - 输出限制：单文件 ≤50MB 护栏同上。
 
-### 4.2 docx —— A线已实现 ✅（mammoth 1.12.2 内联）
-- `mammoth.convertToMarkdown({ arrayBuffer })` → `result.value`（Markdown），`result.messages` 非空 → 转 warnings。
+### 4.2 docx —— A线已实现 ✅（mammoth 1.12.2 内联；拍板 2026-09-04：保留 GFM 表格）
+- 路径：`mammoth.convertToHtml({ arrayBuffer })` → HTML（含 `<table>` 元素）→ 复用 §4.1 的 `htmlToMarkdown`（GFM 表格：表头行 + `| --- |` 分隔行）；`result.messages` 非空 → 转 warnings。
 - 图片处理：v1 不对 docx 内图片做 OCR/外链，mammoth 默认忽略图片即符合零外发；warnings 注明「已忽略 N 张图片」。
+- 契约：C6（GFM 表格结构断言，gfmTableIssues）+ keyTokens（`DOC2MD-DOCX-OK-2026` 等）——共享 htmlToMarkdown 的 TXT/HTML 回归由 text-html 契约用例保障。
 
 ### 4.3 pdf —— B线已实现 ✅（pdf.js 3.11.174 内联 + tesseract OCR 降级）
 - 文本层：`pdfjs-dist@3.11.174`（Apache-2.0，**legacy UMD 内联**，全局 `pdfjsLib`）；
