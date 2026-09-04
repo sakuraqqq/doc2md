@@ -6,9 +6,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { deflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
-import { buildZip, crc32 } from './lib/zipio.mjs';
+import { buildZip } from './lib/zipio.mjs';
 
 const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data');
 fs.mkdirSync(OUT, { recursive: true });
@@ -146,66 +145,20 @@ function buildPdf() {
   return Buffer.from(body, 'ascii');
 }
 
-/* ---------------- PNG（位图字体 OCR 样例） ---------------- */
-const FONT = {
-  H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
-  E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
-  L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
-  O: ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
-  D: ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
-  C: ['01111', '10000', '10000', '10000', '10000', '10000', '01111'],
-  M: ['10001', '11011', '10101', '10101', '10001', '10001', '10001'],
-  '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
-  // QA 拍板（2026-09-04，DD-8）：0 改为标准无斜线/无内点字形——斜线零（10011/10101/11001 渐变
-  // 斜杠）经 DD-6 穷举验证被 LSTM 归入 Z/B 类（HELLO DOCZMO ZHBZE）；标准零与数字上下文
-  // （纯数字词「2026」）配合最利于与 O 区分。断言（HELLO/DOC2MD/2026）不变。
-  '0': ['01110', '10001', '10001', '10001', '10001', '10001', '01110'],
-  '6': ['00110', '01000', '10000', '11110', '10001', '10001', '01110'],
-  ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
-};
-
-function buildPng(text, scale = 10, gap = 25, pad = 25) {
-  const gw = 5 * scale;
-  const gh = 7 * scale;
-  const width = pad * 2 + text.length * gw + (text.length - 1) * gap;
-  const height = pad * 2 + gh;
-  const pixels = new Uint8Array(width * height).fill(255);
-  for (let i = 0; i < text.length; i++) {
-    const font = FONT[text[i]] || FONT[' '];
-    const x0 = pad + i * (gw + gap);
-    const y0 = pad;
-    for (let fy = 0; fy < 7; fy++) {
-      for (let fx = 0; fx < 5; fx++) {
-        if (font[fy][fx] !== '1') continue;
-        for (let dy = 0; dy < scale; dy++) {
-          for (let dx = 0; dx < scale; dx++) {
-            pixels[(y0 + fy * scale + dy) * width + (x0 + fx * scale + dx)] = 0;
-          }
-        }
-      }
-    }
+/* ---------------- PNG 样例（真实字体资产） ----------------
+ * 用户拍板（2026-09-04，DD-10）：弃点阵位图字体，改真实无衬线字体（Arial）渲染，保证 OCR 可识别
+ * HELLO/DOC2MD/2026 全部令牌。图像由 tools/gen-sample-image.ps1（Windows GDI+）生成一次，
+ * 提交为固定资产 tests/lib/assets/sample-image.png；本生成器只做确定性字节复制（无公式漂移空间）。
+ */
+function sampleImage() {
+  const asset = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'assets', 'sample-image.png');
+  if (!fs.existsSync(asset)) {
+    throw new Error(
+      'tests/lib/assets/sample-image.png 缺失——先运行：powershell -NoProfile -ExecutionPolicy Bypass -File tools\\gen-sample-image.ps1 ' +
+      '（Windows GDI+ 渲染 Arial；产出提交进仓库后，本生成器即确定性复制）'
+    );
   }
-  // 灰度 PNG（color type 0, bit depth 8），每行 filter=0
-  const raw = Buffer.alloc((width + 1) * height);
-  for (let y = 0; y < height; y++) {
-    raw[y * (width + 1)] = 0;
-    Buffer.from(pixels.subarray(y * width, (y + 1) * width)).copy(raw, y * (width + 1) + 1);
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 0; // color type: grayscale
-  const chunk = (type, data) => {
-    const t = Buffer.from(type, 'ascii');
-    const out = Buffer.alloc(12 + data.length);
-    out.writeUInt32BE(data.length, 0);
-    t.copy(out, 4);
-    data.copy(out, 8);
-    out.writeUInt32BE(crc32(Buffer.concat([t, data])), 8 + data.length);
-    return out;
-  };
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+  return fs.readFileSync(asset);
 }
 
 /* ---------------- 组装 ---------------- */
@@ -226,12 +179,12 @@ put('sample.xlsx', buildZip([
   { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(XLSX_SHEET, 'utf8') },
 ]));
 put('sample.pdf', buildPdf());
-put('sample.png', buildPng('HELLO DOC2MD 2026'));
+put('sample.png', sampleImage());
 
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为位图字体 OCR 样例（HELLO DOC2MD 2026）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
