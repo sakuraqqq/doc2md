@@ -116,7 +116,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 | 编号 | 议题 | 拍板定案（2026-09-04，用户确认按推荐采纳） | 落地说明 |
 |---|---|---|---|
-| T-1 | 耗时口径：规划文档「渲染 <500ms」 vs architecture「转换 <500ms」 | ✅ **已拍板**：convert() 外部计时 <500ms 为主口径；图片 OCR 冷启动（WASM/模型载入）按档位处理——**预热不计入** | C3/M2 断言保持 convert() 外部计时 <500ms；image 预热机制（预热钩子或分阶段计时，需 B 线 tesseract 封装配合）由 T4 落地，在此之前 image 冷启动红为契约预期 |
+| T-1 | 耗时口径：规划文档「渲染 <500ms」 vs architecture「转换 <500ms」 | ✅ **已拍板**：convert() 外部计时 <500ms 为主口径；图片 OCR 冷启动（WASM/模型载入）按档位处理——**预热不计入** | C3/M2 断言保持 convert() 外部计时 <500ms；image 预热机制（预热钩子或分阶段计时，需 B 线 tesseract 封装配合）由 T4 落地，在此之前 image 冷启动红为契约预期。**2026-09-04 追加（T8′ 首载优化拍板，DD-14）**：预热钩子取消，语言包改为**同源懒加载**（`langs/`，lazy-init）——首次 OCR 冷启动含本地模型加载，按 T-1 档位豁免；「预热不计入」口径相应调整为「lazy-init 冷启动不计入」；断言数字与结构不变 |
 | T-2 | PDF 样例为纯拉丁文本层 | ✅ **已拍板**：保持现状（合成中文 PDF 需 CJK 字体嵌入，复杂度高；中文已由 txt/html/docx/xlsx 覆盖，注明即可） | 交付注释已含「PDF 样例=拉丁文本层」；如需中文 PDF 样例 → `real-*.pdf` 新增，不改契约样例 |
 | T-3 | 样例归属 | ✅ **已拍板**：真实样例强制 `real-*` 前缀，严禁覆盖 `sample.*`（manifest 字节锁兜底） | ✅ **已落地**（2026-09-04）：`real-tables.docx`/`real-schema.xlsx`/`real-date.xlsx` 已入库并登记于 §3（B3 结构校验绿）；⚠️ 已发生一次真实冲突（20:37 A 线覆盖 sample.docx，被 B1/B2 字节锁发现并恢复） |
 | T-4 | package.json 归属 | ✅ **已拍板**：四脚本语义保留（`test` / `test:direct` / `test:contract` / `gen:samples`）；devDependencies 合并追加不改语义 | 其他线扩展 package.json 时按此合并 |

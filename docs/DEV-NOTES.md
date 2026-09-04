@@ -120,3 +120,17 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 ### 待办（用户侧）
 - 发布后：设置 Topics（OUTREACH §1）、awesome Issue 推荐（§2.2 模板）、博客成稿（§3 提纲）、RELEASE.md v0.1.1 回填、GIF 补录、badge 生效确认。
 
+---
+
+## 2026-09-04 · B线 T8′：OCR 语言包同源懒加载（首载优化）
+
+### 做了什么（用户拍板，DD-14）
+- 语言包 base64 内联 → `langs/` 同源懒加载：`.tmp/lazy-lang-extract.mjs` 提取（base64→gz→gunzip）写入 `langs/eng.traineddata`（5,199,098B / SHA `5dc5d8d6…`）、`langs/chi_sim.traineddata`（2,471,033B / SHA `9784f7c9…`）；删除 6.2MB 内联块 → **index.html 16.4MB → 10.2MB（-38%）**。
+- index.html 应用脚本：BLINE patch 只保留 core importScripts 拦截（删语言包 fetch 拦截）；`createWorker` 改 `langPath: './langs/'` + `gzip: false`；warmup 触发/函数删除（lazy-init）。T-1 口径注明于 CONTRACT §6（lazy-init 冷启动豁免），DD-14 落盘。
+- 同步：architecture §4.5（langs/ 懒加载 + SW/IDB 双缓存 + 首载体积说明）。
+
+### 实测（真浏览器 http://127.0.0.1:54863，插桩）
+- 首次 OCR：`HELLO DOC2MD 2026` 三令牌全中（427ms；QA DD-10 真实字体样例）；主线程资源无外域；console error=0。
+- 依赖确证：临时移走 `langs/` → 二次 OCR 仍成功 = tesseract IDB 缓存命中（首次确从 langs/ 拉取并写入）——断网可复用链路成立（SW cache-first 另行兜底）。
+- 回归：docx（real-tables.docx）103ms GFM 保留；离线断言（无 embed-tess-lang、langs/ SHA 一致）全过。
+

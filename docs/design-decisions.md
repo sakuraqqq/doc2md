@@ -86,3 +86,12 @@
 - **拍板**：按 T-5（已拍板）执行——`convertToHtml` + `htmlToMarkdown` 复用；`backend='mammoth'`（architecture §2 取值清单内）。
 - **修复**：B 线提交 6198e24（QA 审查确认实现与契约判定一致：tableToMd 首行充当表头 + `| --- |` 分隔行）。
 - **验收**：代码级审查通过（判定逻辑逐条核对）；浏览器端 C6 实测留待有浏览器环境的复验（本环境无浏览器 spawn 能力）。
+
+## DD-14 · 语言包 base64 内联 → 同源懒加载（首载优化，T8′）— 2026-09-04 B线
+
+- **现象（线上反馈）**：index.html 单文件 16.4MB；其中语言包内嵌（eng 2.95MB + chi_sim 1.72MB gz → base64 约 6.2MB）占首载大头之一（仅首次 OCR 才用到），首访等待明显。
+- **根因**：t10 为「单文件离线 + 零外发」把语言包整体 base64 内联；体积大且非首屏必需——内联收益低、代价高。
+- **拍板（用户，T8′）**：语言包改**同源懒加载**——`langs/` 目录（gunzip 后裸 `.traineddata`：eng 5.20MB / chi_sim 2.47MB）；`langPath: './langs/'`、`gzip: false`；零外发不变（同源 fetch）；SW cache-first + tesseract IDB 缓存双兜底（断网/二次 OCR 复用）。**T-1 口径同步调整**：预热钩子取消 → lazy-init 首次 OCR 冷启动（含本地模型加载）按 T-1 档位豁免（CONTRACT §6 T-1 注明，断言结构不变）。
+- **实现**：① `.tmp/lazy-lang-extract.mjs`：提取 `embed-tess-lang` base64 → gunzip → `langs/{eng,chi_sim}.traineddata`（SHA：eng `5dc5d8d6…`、chi_sim `9784f7c9…`；gz SHA 与 vendor 一致 `45b4cb34…`/`b8a23f10…`）；② 删 6.2MB 内联块 → index.html **16.4MB → 10.2MB（-38%）**；③ BLINE patch 只保留 core importScripts 拦截（删语言包 fetch 拦截，否则 404 杀懒加载）；④ createWorker 参数更新；⑤ warmup 触发与函数删除（lazy-init）。
+- **验收（真浏览器 http 服务 + 插桩）**：首次 OCR → `HELLO DOC2MD 2026` 三令牌全中（**427ms**，QA DD-10 真实字体样例）；**依赖确证**：临时移走 `langs/` 后二次 OCR 仍成功 = tesseract IDB 缓存命中（首次确从 `langs/` 同源拉取并写入缓存）→ 断网可复用链路成立；docx 回归 103ms（GFM 保留）；主线程资源无外域；console error=0；离线断言：index.html 无 `embed-tess-lang`、langs/ 大小/SHA 与提取记录一致。
+- **保留说明**：core js（7.9MB）仍内联（本任务范围仅语言包；如需再瘦身另拍板 core 懒加载）；`file://` 直开下 OCR 懒加载受浏览器 file:// fetch 限制（预期内，README/审查清单注明；同源 HTTP/SW 环境不受影响）。
