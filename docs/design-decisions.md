@@ -65,6 +65,14 @@
 - **修复**：contract_v1.test.mjs M 组 waitFor 状态 visible→attached（详见该处注释）。
 - **验收**：以用户机复跑为准——预期 31/31（修复后 M 组在用户机系统 Edge 回退即可全绿，无需安装 chromium）；本沙箱仍禁 spawn，如实留待用户机复跑确认。
 
+## DD-13 · npm test 脚本语义定版「node --test 自动发现」— 2026-09-04 用户拍板
+
+- **现象**：用户机（适格环境）实测 `npm test`（= `node --test tests/`）在 **Node 24 下报目录参数解析失败**（用户机复现）；改造为 `node --test`（自动发现）后用户机实测 29/31（C 组双端全绿，自动发现生效——31 个用例全部被发现）。
+- **根因**：Node 24 test runner 对显式目录参数的行为不一致（用户机复现）；另注：本工作区沙箱中 `node --test tests/` 呈现为 `spawn EPERM`（环境禁子进程/管道，与 Node 目录解析为**不同现象**，两者已分别登记）。
+- **拍板**（2026-09-04 用户）：`test` 脚本语义定为 **`node --test`（自动发现）**；自动发现排除 node_modules、匹配 `*.test.mjs`（contract_v1.test.mjs ✓），`tests/` 是仓库唯一测试源——语义与「tests/ 目录参数」等价；`test:direct`（沙箱同进程兜底）/`test:contract`/`gen:samples`/`verify:ocr` 一律保留。
+- **修复**：593e074 已落实（package.json 1 行改动，`node --test tests/` → `node --test`）；本记录为文档补齐。
+- **验收**：用户机 29/31（自动发现生效）+ DD-12 修复后预期 31/31；沙箱内 `test:direct` 兜底行为不变（断言相同）。
+
 ## 附录 · 宿主浏览器独立验收记录（t12，沙箱解锁替代路径）— 2026-09-04 QA
 
 - **背景**：本工作区沙箱禁止任何子进程 spawn（playwright fork/浏览器启动/node --test 均 EPERM）——复核工具面后发现 DSH **宿主浏览器工具（browser_*）由宿主进程管理**，不经过沙箱 spawn，成功打开页面（标题「doc2md — 文档转 Markdown（本地 · 离线 · 零外发）」）。

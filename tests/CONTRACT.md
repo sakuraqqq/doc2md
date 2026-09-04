@@ -85,15 +85,17 @@
 1. `index.html` 经本地静态服务加载：`http://127.0.0.1:<port>/index.html`（测试自带 `tests/lib/server.mjs`，仅 127.0.0.1 随机端口；file:// 下 wasm/blob worker 受限）。
 2. 暴露 `window.__doc2md = { convert, sniff, registry }`（architecture.md §7）。
 3. `convert(file: File) → Promise<{ markdown: string, meta: { elapsedMs: number, ... }, error?: string }>`；转换器可 throw，`convert` 顶层捕获转 `error`，UI 不崩。
-4. 页面含 `input[type=file]`（M 组驱动全 UI 链路）。
-5. 转换结果渲染进页面 body 文本（M 组断言）；C 组直接走挂钩，不依赖 UI 结构。
+4. 页面含 `input[type=file]`（可为 hidden 标准设计，由可见按钮触发；M 组以 attached 状态驱动全 UI 链路——DD-12）。
+5. 转换结果对用户可见（body.innerText 或 textarea/input/pre/code 值——DD-11）；C 组直接走挂钩，不依赖 UI 结构。
 
-M 组手机视口 UI 端到端（390×844）：M1/M2 同状态 —— 🔴 红（原因同 C 组）。
+M 组手机视口 UI 端到端（390×844）：M1/M2 状态见 §2（用户机 29/31 中 C 组双端全绿；M 组 DD-12 修复待复跑确认）。
 
 ## 5. 运行方法
 
 ```bash
-npm test                      # = node --test tests/（全量：A/B/C/M 组；标准方式）
+npm test                      # = node --test（自动发现；语义定版 2026-09-04，见 DD-13——Node 24 下
+                              #   `node --test tests/` 目录参数解析失败（用户机复现）；自动发现匹配
+                              #   *.test.mjs，tests/ 为唯一测试源，语义与目录参数等价）
 npm run test:direct           # 同进程直跑契约文件（沙箱等无法 spawn 子进程的环境用，断言相同）
 npm run test:contract         # 仅契约文件（node --test）
 npm run gen:samples           # 重新生成样例（确定性）
