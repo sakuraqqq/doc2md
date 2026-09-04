@@ -72,9 +72,9 @@
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| F1 | `decodeText`(GBK '中文测试') → 输出含「中文测试」（字节 D6D0CEC4B2E2CAD4 = CP936/GB2312 兼容码） | 纯函数 includes | 🔴 红（实测输出乱码 `���Ĳ���`——无 BOM 一律 UTF-8 容错） |
-| F2 | `convert`(GBK .txt) → markdown 含「中文测试」 | includes | 🔴 红（实测同乱码） |
-| F3 | `convert`(GBK HTML，含 `<meta charset="gbk">`) → markdown 含「中文测试GBK段落」 | includes | 🔴 红（实测乱码 `���Ĳ���GBK����`） |
+| F1 | `decodeText`(GBK '中文测试') → 输出含「中文测试」（字节 D6D0CEC4B2E2CAD4 = CP936/GB2312 兼容码） | 纯函数 includes | 🟢 绿（契约先红 t4 实测乱码；t5 5707557 GBK 回退后 2026-09-05 独立验收命中，见 §7） |
+| F2 | `convert`(GBK .txt) → markdown 含「中文测试」 | includes | 🟢 绿（同上，convert 全链路命中） |
+| F3 | `convert`(GBK HTML，含 `<meta charset="gbk">`) → markdown 含「中文测试GBK段落」 | includes | 🟢 绿（同上；meta charset 分支重解命中） |
 
 ### 契约组 G — xlsx 多 sheet 截断（2026-09-05 新增：契约先红 t4；审查报告 §1.5）
 
@@ -82,31 +82,35 @@
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| G1 | `meta.truncated === true`（6 sheets > 上限 5） | strict | 🔴 红（恒 false——convert 顶层未同步转换器结果；且**根因比 §1.5 记录更深一层**：浏览器 bundle 未导出 `readSheetNames` → 实际只读 1 个 sheet，截断分支不触发） |
-| G2 | warnings 任一含「前 5 个 sheet」（语义核心词；宽松：不绑定句式） | 子串 | 🔴 红（实测 warnings=[]；当前文案「全簿共 N 行」且不触发） |
-| G3 | 输出恰 5 个 `### Sheet:` 分区（只读前 5 个） | 计数 === 5 | 🔴 红（实测 1） |
+| G1 | `meta.truncated === true`（6 sheets > 上限 5） | strict | 🟢 绿（t5 5707557：xlsxSheetNames 自读 workbook.xml + convert 顶层 `meta.truncated = !!res.truncated` 同步；独立验收实测 true，见 §7） |
+| G2 | warnings 任一含「前 5 个 sheet」（语义核心词；宽松：不绑定句式） | 子串 | 🟢 绿（独立验收实测「已读取前 5 个 sheet 共 10 行…另有 1 个 sheet 未读取」） |
+| G3 | 输出恰 5 个 `### Sheet:` 分区（只读前 5 个） | 计数 === 5 | 🟢 绿（独立验收实测 5） |
 
-### 契约组 H — corePath 同源 / 零外域字面量（2026-09-05 新增：契约先红 t4；审查报告 §2.1，红线相关）
+### 契约组 H — corePath 同源 / 零外域字面量 / SW v4 分段缓存（2026-09-05 新增：契约先红 t4；审查报告 §2.1/§2.2，红线相关）
 
-离线静态断言（读 index.html 源码，无浏览器依赖）。
+离线静态断言（读 index.html/sw.js 源码，无浏览器依赖）。H3-H6 为 t7 独立验收新增（任务授权：SW v4 分段缓存 PRECACHE 清单断言）。
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| H1 | 源码不含 `doc2md.local`（伪域名 corePath = 外域请求违约） | !includes | 🔴 红（实测含 `corePath: 'https://doc2md.local/tesseract-core/'`） |
-| H2 | 源码中所有 `https?://` 字面量 ⊆ 白名单（当前白名单 = **空集**；新增许可注释 URL 须先拍板） | deepEqual [] | 🔴 红（实测`外域 URL = ["https://doc2md.local/tesseract-core/"]`） |
+| H1 | 源码不含 `doc2md.local`（伪域名 corePath = 外域请求违约） | !includes | 🟢 绿（t5 5707557：corePath 同源化 `new URL('./vendor/', location.href)`；patch 降级为外域抛错双保险） |
+| H2 | 源码中所有 `https?://` 字面量 ⊆ 白名单（当前白名单 = **空集**；新增许可注释 URL 须先拍板） | deepEqual [] | 🟢 绿（独立验收 grep 实测 index.html 零 http(s) 字面量——fflate 内联未引入；OMML 命名空间拆串拼接） |
+| H3 | sw.js `CACHE_NAME = 'doc2md-sw-v4'`（分段缓存版本，PRECACHE 变更必须 bump） | match | 🟢 绿（t7 新增断言，离线实测通过） |
+| H4 | PRECACHE 不含 OCR 大资源（core wasm ×2 + langs 语言包 ×2） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过——v4 起运行时缓存） |
+| H5 | PRECACHE 包含应用外壳（index/manifest/图标/4 主库 + pdf/tess worker 入口） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过） |
+| H6 | SW install 使用 `Promise.allSettled`（单资源失败不阻塞安装） | match | 🟢 绿（t7 新增断言，离线实测通过） |
 
 ### 契约组 I — docx 图片抽取（2026-09-05 新增：契约先红 t4；审查报告 §2.4）
 
 样例 `sample-images.docx`（小图 sample-image.png ≈8KB <100KB + 大图 512×512 噪声 PNG ≈786KB >100KB；均无 alt）。
-**阈值口径 = 100KB 由实现定版，本组只锁两个样例的归属行为。**
+**阈值口径 = 100KB（`DOCX_IMG_EMBED_MAX`；t6 定版 100KB），本组只锁两个样例的归属行为。**
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| I1 | 大图 → `![alt](assets/…)` 相对引用 ≥1 处 | match ≥1 | 🔴 红（实测 0——全部内嵌 data URI） |
-| I2 | 小图 → `data:image/` 内嵌 ≥1 处 | match ≥1 | 🟢 绿（当前全内嵌 2 处——如实登记，不强行造红） |
-| I3 | `meta.assets` 为数组且 ≥1 项（抽取清单） | Array.isArray | 🔴 红（实测 meta 无该字段） |
-| I4 | `data:image/` 恰 1 处（样例恰 2 图：小图内嵌、大图抽取） | 计数 === 1 | 🔴 红（实测 2） |
-| I5 | 全部 alt 不含「图片包含」「AI 生成」（×Word AI 描述；口径 = 文件名/题注/空 alt） | !includes | 🟢 绿（当前 alt 为空串——如实登记） |
+| I1 | 大图 → `![alt](assets/…)` 相对引用 ≥1 处 | match ≥1 | 🟢 绿（t6 413dcbc 图片抽取；独立验收实测 `![large](assets/sample-images-1.png)`） |
+| I2 | 小图 → `data:image/` 内嵌 ≥1 处 | match ≥1 | 🟢 绿（独立验收实测 1 处 data URI） |
+| I3 | `meta.assets` 为数组且 ≥1 项（抽取清单） | Array.isArray | 🟢 绿（独立验收实测 meta.assets=[{name:'assets/sample-images-1.png',size:786738,blob}]） |
+| I4 | `data:image/` 恰 1 处（样例恰 2 图：小图内嵌、大图抽取） | 计数 === 1 | 🟢 绿（独立验收实测 1） |
+| I5 | 全部 alt 不含「图片包含」「AI 生成」（×Word AI 描述；口径 = 文件名/题注/空 alt） | !includes | 🟢 绿（t6 alt = docPr name 去扩展名；独立验收实测 alt=['small','large']） |
 
 ### 契约组 J — docx OMML 公式 → LaTeX 标记（2026-09-05 新增：契约先红 t4；backlog #LaTeX）
 
@@ -115,7 +119,7 @@
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| J1 | LaTeX 围栏公式存在 | match `/\$[^$\n]*x\^?2[^$\n]*\$/` | 🔴 红（实测 mammoth 忽略 OMML——连 `x²` 文本都不输出） |
+| J1 | LaTeX 围栏公式存在 | match `/\$[^$\n]*x\^?2[^$\n]*\$/` | 🟢 绿（t6 413dcbc：占位令牌法 + texText 上标归一化；独立验收实测 `公式样例：$x^2$`） |
 
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
@@ -201,7 +205,14 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 契约先红 t4（最新，新增契约组 F/G/H/I/J）**：P1 二批五组断言全部登记（断言语义见 §2 各表；
+- **2026-09-05 P1 修复后独立验收 t7（最新，修验分离）**：conv-dev(t5) `5707557`（corePath 同源/SW v4 分段缓存/PDF 逐页 OCR+进度/GBK 回退/xlsx truncated，仅 index.html+sw.js）+ core-dev(t6) `413dcbc`（docx 图片抽取/alt 口径/OMML→LaTeX + fflate 0.7.5 内联，仅 index.html）。
+  diff 审查：tests/vendor 零误动；t4 断言未被实现方修改（t5/t6 文件清单仅 index.html/sw.js）；实现方在 t6 以 `'http'+'://schemas…'` 拆串保留命名空间字符串，H2（零 http(s) 字面量）不受 fflate 内联影响——grep 实测 index.html 零 `https?://`。
+  qa-dev 独立复验（宿主浏览器实测真实页面，非静态推断）：**D 10/10、E 4/4、F 3/3、G 3/3、H 组 6/6（H1-H2 红→绿 + t7 新增 H3-H6 SW PRECACHE 断言全绿）、I 5/5、J 1/1 全绿**；A0/B 组 12 项子断言绿；**C/M 组沙箱受限（无法 spawn 浏览器）以用户机为准**——上轮用户机已 47/47 全绿（e5380ca），本轮 65 项断言（含 C/M 双端）用户机终验命令：`npm install && node node_modules/@playwright/test/cli.js install chromium && npm test`。
+  真实文档复验：① `6月2日实验.docx`（与桌面原件 SHA `FED30AF8…` 一致）→ 转换成功无 error（200.6ms，backend=mammoth），**图片抽取** `assets/6月2日实验-1.jpg`（151,218 B，meta.assets），**alt = `图片 1`**（docPr 名去扩展名——不再有「图片包含 室内…AI 生成」），GFM 表格 11 行/标题/加粗完整；② real-multisheet.xlsx → `meta.truncated=true` + 「已读取前 5 个 sheet 共 10 行…另有 1 个 sheet 未读取」+ 恰 5 个 Sheet 分区；③ GBK 文本 '中文测试' → decodeText/convert 均命中；④ sample-math.docx（OMML x²）→ `公式样例：$x^2$`。
+  OCR/PDF 路径：sample.pdf 走文本层（146.7ms、pdfjs、token 命中，无 OCR warning）；sample.png OCR 回归 PASS（corePath 同源化后 389.7ms、HELLO/DOC2MD/2026 全中）；**逐页判定插桩实证**（运行时 setStatus 观察，不落盘）：空白单页 PDF → `OCR 第 1/1 页…`+`完成`；混合双页（第 1 页文本层 + 第 2 页空白）→ 第 1 页直接文本层 + 第 2 页 `OCR 第 2/2 页…`（评审报告 §2.3 修复达成）。
+  实测核验：index.html 87,020 B / SHA256 `64164118…`、sw.js 3,492 B / SHA256 `409A486D…`（= 提交 413dcbc，工作树 t7 前干净）；SW v4 注册成功（controller=sw.js）。
+  登记：§2 各表状态红→绿 + §7 本条；DEV-NOTES 2026-09-05 P1 修复与独立验收。
+- **2026-09-05 契约先红 t4（新增契约组 F/G/H/I/J）**：P1 二批五组断言全部登记（断言语义见 §2 各表；
   样例见 §3「P1 契约组样例」）。基线 a61f9c3 宿主浏览器实测：**12 红 + 2 绿**——F1-F3 / G1-G3 / H1-H2 / I1 / I3 / I4 / J1 = 🔴 红
   （与 RELEASE.md P1 二批、审查报告 §1.4/§1.5/§2.1/§2.4/backlog LaTeX 一致）；
   **I2 / I5 = 🟢 绿**（当前实现把全部图片内嵌为 data URI ≥1 → I2 恰好满足；样例无 alt → alt 断言恰好满足——
