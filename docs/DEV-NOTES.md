@@ -231,3 +231,22 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - SW 分段缓存：PRECACHE 变更必须 bump CACHE_NAME（H3 断言锁版本）；大体积 OCR 资源一律运行时缓存。
 - 图片阈值（100KB）与 alt 口径（docPr 名）已由实现定版 + I 组断言锁行为；调整走拍板。
 
+---
+
+## 2026-09-05 · 防屎山② 重构 t8：src 模块化 + esbuild 构建
+
+### 做了什么（conv-dev）
+- **scaffold**：`src/template.html`（从 index.html 逐字节抽取 shell：head/样式/body DOM/vendor `<script src>` 标记/fflate 内联/静态文案 + `<!-- __APP_BUNDLE__ -->` 标记——应用脚本区 43,737 字符被替换为标记）；`tools/build.mjs`（esbuild IIFE bundle → 注入模板 → index.html；自检「bundle 须含 "use strict"」+「标记唯一」；幂等）；package.json 加 `"build": "node tools/build.mjs"`（与防屎山① 的 eslint/prettier devDeps 共存——只提交我的一行 hunk，不吞他人工作）。
+- **迁移**：`src/` 10 模块按域拆分（sniff/html2md/bline/ocr/pdf/xlsx/docx/convert/ui/app），+import/export 接线（决策史注释全部保留）；无循环依赖（ui.js 零依赖，pdf/ocr 复用 setStatus；registry+convert 独立 convert.js——任务清单未列，按「统一入口域」自建并已在 architecture §1.1 说明）；docx 域含 fflate 解包/重打包、OMML、图片抽取（core-dev t6 产物一并迁入）。
+- **验证（宿主浏览器原生 ESM 直载 src/，等价复现契约断言）**：D 10/10、E 4/4、F 3/3、G 3/3、I 5/5、J 1/1、C 6/6 + C6 GFM 全绿；console error 0；外域请求 0（fetch + resource 双审计）；OCR（sample.png 452ms）/PDF（163ms）/docx（含图片+公式样例）回归通过；src/ 静态合规（无 doc2md.local、无 http(s) 字面量——H1/H2 语义）；模板 shell 与 index.html 除应用脚本区外逐字节一致（round-trip 断言 true）。
+
+### ⚠️ 已上报的阻断（沙箱边界）
+- **esbuild 原生服务进程 = pipe-spawn，本沙箱 EPERM**（Node child_process 默认 pipe 捕获被拒；stdio inherit/ignore 也不行——esbuild 内部协议固定 pipe）。唯一升权重试已被用户拒绝 → 不再重试。
+- **直接影响**：`node tools/build.mjs` 无法在本工作区环境执行 → index.html 暂未用构建产物替换（仍为重构前内联版，行为等价已验证）。**在可 spawn 环境（用户终端/CI）执行一次 `npm run build` 即得新 index.html**（模板注入逻辑已 dry-run 实测幂等 + 正确；esbuild 输出确定性）。
+- 预期产物 diff 说明：index.html 仅「应用 `<script>` 块」变化（内联应用 → esbuild IIFE bundle），shell 零漂移；vendor/langs/sw.js/manifest/icons 零变化。
+
+### 防再犯
+- 改代码只改 `src/`；每改动跑 `node tools/build.mjs`（产物随 src/ 同行提交，`git diff index.html` 应零——幂等验收）。
+- 契约组 H 的「零外域 URL 字面量」同样约束 `src/`：XML 命名空间等继续用拆串拼接（docx.js 已示范）。
+- 沙箱 spawn 受限（esbuild/浏览器/npm 包装器）是登记过的环境事实：构建与浏览器组断言留待用户机/CI 终验；命令记录于 CONTRACT.md §5（构造器/浏览器回退链同款模式）。
+
