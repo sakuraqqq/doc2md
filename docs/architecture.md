@@ -23,6 +23,28 @@ registry[type](file, buf) ── 转换器实现 ──────────�
 - 入口：`convert(file)` → `Promise<{ markdown, meta, error? }>`（UI 唯一入口；C线测试也走它）。
 - 全程**零网络**：嗅探、转换、输出全在本地内存完成；无 fetch / XHR / WebSocket / `<script src>` / CDN worker / WASM 外拉。
 
+### 1.1 源码结构与构建流程（t8 防屎山② 定版；index.html 是构建产物，禁止手改）
+
+- **源码真相在 `src/`（ES Module，按域拆分）**：
+
+| 模块 | 域 | 要点 |
+|---|---|---|
+| `sniff.js` | 类型嗅探/文本解码 | sniff、headAscii、decodeText（含 GBK 兜底）、normWs、startsWith |
+| `html2md.js` | HTML→Markdown 结构化 | BLOCK_TAGS/INLINE_TRANSPARENT、片段流行走器（joinFrags/fragFor/collectFrags）、列表/表格/引用/标题块级转换、htmlToMarkdown |
+| `bline.js` | B线资源层 | vendor 同源 URL（pdf worker、tesseract worker 入口 + 外域抛错 patch） |
+| `ocr.js` | OCR 资源/WORKER | ocrAssetsWarm（SW 分段缓存就绪检测 + 首载下载量提示）、getOcrWorker（lazy-init 单例） |
+| `pdf.js` | PDF 转换器 | pdfjs 加载、逐页文本层/OCR 判断（单页 <10 字符）、page N/M 进度 |
+| `xlsx.js` | XLSX 转换器 | zipEntry（中央目录 + DecompressionStream）、xlsxSheetNames（workbook.xml 自读）、表格格式化、截断口径 |
+| `docx.js` | DOCX 转换器 | fflate 解包/重打包、OMML→LaTeX（占位令牌法）、图片阈值抽取（≤100KB 内嵌/＞→meta.assets）、alt 口径 |
+| `convert.js` | 注册表/统一入口 | registry = { pdf, docx, xlsx, image, text }、convert()（护栏/嗅探调度/meta 同步） |
+| `ui.js` | UI | setStatus/fmtSize/renderResult/downloadMd/downloadZip/剪贴板 |
+| `app.js` | 入口 | 事件接线（拖放/选择）、__doc2md 测试挂钩、SW 注册 |
+
+- **构建流程**：`npm run build`（= `node tools/build.mjs`）→ esbuild bundle `src/app.js`（IIFE，无压缩）→ 注入 `src/template.html` 的 `<!-- __APP_BUNDLE__ -->` 标记 → 输出 `index.html`。
+- **模板**：`src/template.html` = head/样式/body DOM/静态文案 + vendor `<script src>` 标记 + fflate 内联标记 + bundle 标记；与 index.html 的 shell 逐字节一致（无平凡漂移）。
+- **契约**：构建幂等（重跑产物字节一致，`git diff index.html` 应为零）；产物行为等价（65 断言为验收）；vendor/langs/SW/PWA 资源不参与构建、零变化；改代码只改 `src/`，改完必跑 `npm run build`。
+- **测试挂钩不变**：`window.__doc2md = { convert, sniff, registry, htmlToMarkdown, decodeText, MAX_BYTES }`（契约 C/D/E/F 组依赖；由 app.js 暴露）。
+
 ## 2. 接口定义（B线照抄，勿改）
 
 ```js
