@@ -1343,12 +1343,18 @@ function downloadMd(text, fileName) {
 
 /* 拖放 + 选择 */
 dropzone.addEventListener('click', () => fileInput.click());
-dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('over'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
-dropzone.addEventListener('drop', (e) => {
+/* 拖放：document 级拦截——防止浏览器默认「下载/打开」被拖入的文件；
+ * 页面任意位置均可拖放（不止 dropzone 内）；dragover 默认行为必须连续拦住，否则浏览器会接管 */
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  if (dropzone.contains(e.target)) dropzone.classList.add('over');
+});
+window.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+window.addEventListener('drop', (e) => {
   e.preventDefault();
   dropzone.classList.remove('over');
-  handleFiles(e.dataTransfer.files);
+  const dropped = e.dataTransfer && e.dataTransfer.files;
+  if (dropped && dropped.length) handleFiles(dropped);
 });
 fileInput.addEventListener('change', () => {
   handleFiles(fileInput.files);
