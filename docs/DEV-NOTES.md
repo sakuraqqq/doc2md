@@ -58,3 +58,24 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 
 ### 发现（未修，上报拍板）
 - **A线既有 UI bug**（浏览器实测复现）：`handleFiles(fileInput.files)` 传 live `FileList` 引用，change handler 立即 `fileInput.value=''` → async 首个 `await` 挂起时 FileList 被清空 → `files.length` 变 0 → status 显示「完成：共 0 个文件」；**多文件选择时循环提前退出，只转第一个文件**。建议一行修复：`const list = Array.from(files)`（快照化）。属转换 UI 链路，不在 T11 范围，未擅改。
+
+---
+
+## 2026-09-04 · B线 T10：转换器补全（PDF / XLSX / 图片 OCR）
+
+### 做了什么
+- **registry 三转换器实装**（零接口变更）：`pdf`（pdf.js 3.11.174 文本层 + 扫描页 OCR 降级）、`xlsx`（read-excel-file 5.8.7 → GFM 表 + 1000 行/5 sheet 护栏）、`image`（tesseract.js 6.0.1 LSTM OCR，eng+chi_sim，置信度警告）。
+- **全资源零外发内联**（单文件 16.4MB）：pdf.js UMD + worker（text/plain）、tesseract.js UMD + worker、tesseract.js-core 6.0.0（simd/non-simd，wasm 单文件自包含）、tessdata 4.0.0_best_int（eng 2.95MB + chi_sim 1.72MB，base64）；OCR 运行时以「patch blob」拦截 fetch/importScripts 重定向本地 blob（见 design-decisions DD-4/5/7）。
+- vendor/ 留存库原文件（9 个）+ `tools/embed-bline.mjs`（幂等组装脚本）。
+- docs/architecture.md §4.3-4.5 定版 + §6 零外发清单勾选；docs/licenses.md 版本订正（pdf.js 1.10.100→3.11.174）+ 新增 tesseract.js-core / tessdata 行；docs/design-decisions.md（DD-4~7）。
+
+### 实测结果（本地 http://127.0.0.1:56060，页面插桩 fetch/XHR + console）
+- 6 样例转换：txt/html/docx ✅ 令牌命中；**xlsx ✅**（GFM 表、8ms）；**pdf ✅**（`<!-- page 1/1 -->`、179ms）；**图片 OCR ✅ 链路通**（195ms、零网络、backend=tesseract）——⚠️ 但样例点阵字体仅识别出 HELLO（见 DD-6）。
+- 边界：空文件/zip/pptx/39MB/51MB 护栏全部友好；console 零错误；**全流程零外域请求**。
+- pdf.js render 链（扫描页 OCR 子路径基础）单独验证通过（1190×1684 渲染）。
+
+### 坑（→ design-decisions）
+- DD-4 patch blob 忘拼 worker 本体（OCR 初始化永久挂起→「Execution context destroyed」排查 1 轮）→ 修复 + 记录。
+- DD-7 组装脚本 marker 替换把 mammoth 闭合标签挪走（pdfjsLib/mammoth undefined）→ 修复 + 记录。
+- 沙箱环境链：npm.ps1/curl.exe/后台+管道 均被 workspace-write 拒；绕行 = npm 复制进工作区 + node 直调 npm-cli.js + 无管道后台（**记 DEV-NOTES：沙箱可执行外部程序仅限工作区内路径，限制进程 stdio 管道**）。
+

@@ -9,10 +9,12 @@
 |---|---|---|---|---|---|---|
 | 1 | markitdown | github.com/microsoft/markitdown（main） | 上游最新（仅参考，不打包） | **MIT** | 官方仓库 `LICENSE` 原文（browser 直读）："MIT License / Copyright (c) Microsoft Corporation" 全文 | ✅ 可商用，保留版权声明 |
 | 2 | markitdown-node | github.com/leoning60/markitdown-node（npm: markitdown-node） | 1.5.2（仅参考） | **MIT** | npm registry 元数据 `"license": "MIT"`（registry.npmjs.org/markitdown-node 直查）+ 仓库主页 | ✅ 可商用（社区实现，非微软官方，参考用） |
-| 3 | pdf.js（pdfjs-dist） | github.com/mozilla/pdf.js（master） | 本地 1.10.100 | **Apache-2.0** | ① 官方仓库 `LICENSE` 原文（browser 直读）："Apache License Version 2.0" 全文；② 本地安装包 package.json `"license": "Apache-2.0"` | ✅ 可商用；随分发附 Apache-2.0 文本 + 保留版权声明 |
+| 3 | pdf.js（pdfjs-dist） | github.com/mozilla/pdf.js（master） | **3.11.174**（B线内联；曾记录 1.10.100 已订正） | **Apache-2.0** | ① 官方仓库 `LICENSE` 原文（browser 直读）："Apache License Version 2.0" 全文；② npm 安装包 package.json `"license": "Apache-2.0"` + 内联文件头部 `@licstart` 版权声明 | ✅ 可商用；随分发附 Apache-2.0 文本 + 保留版权声明 |
 | 4 | mammoth | github.com/mwilliamson/mammoth.js（master） | **1.12.2**（已内联） | **BSD-2-Clause** | ① 官方仓库 `LICENSE` 原文（browser 直读）："Copyright (c) 2013, Michael Williamson…" 的 BSD 2 条条件文本；② 本地 npm 包 package.json `"license": "BSD-2-Clause"` | ✅ 可商用；保留版权声明与许可文本 |
 | 5 | read-excel-file | gitlab.com/catamphetamine/read-excel-file（npm 同源） | 本地 5.8.7 | **MIT** | 本地安装包 package.json `"license": "MIT"`（作者 catamphetamine） | ✅ 可商用，保留版权声明 |
 | 6 | tesseract.js | github.com/naptha/tesseract.js（master） | 本地 6.0.1 | **Apache-2.0** | 本地安装包 package.json `"license": "Apache-2.0"` | ✅ 可商用；随分发附 Apache-2.0 文本 + NOTICE（若上游有）+ 版权声明 |
+| 7 | tesseract.js-core | npm: tesseract.js-core（github.com/naptha/tesseract.js-core） | 本地 6.0.0（wasm 单文件内联） | **Apache-2.0** | 本地安装包 package.json `"license": "Apache-2.0"` | ✅ 可商用；附 Apache-2.0 文本与声明 |
+| 8 | tessdata（语言包数据） | npm: @tesseract.js-data/{eng,chi_sim}@1.0.0（naptha/tessdata 发布通道） | 4.0.0_best_int（eng/chi_sim，base64 内联） | **MIT** | 本地安装包 package.json `"license": "MIT"`（一手证据）；上游数据源自 tesseract-ocr/tessdata（Apache-2.0），本项目跟随 npm 包声明 | ✅ 可商用，保留声明 |
 
 ## 使用与分发义务（本项目执行清单）
 
