@@ -1,7 +1,7 @@
 {
   "label": "doc2md 契约测试固定样例 v1",
   "generator": "tests/gen-samples.mjs（确定性输出，可复现）",
-  "note": "脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）",
+  "note": "脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）",
   "files": {
     "sample.txt": {
       "bytes": 260,
@@ -26,6 +26,18 @@
     "sample.png": {
       "bytes": 7982,
       "sha256": "faa64c2940697b462a89c328131ef74549dbe69a2a1ccb4d147db7440a899ce6"
+    },
+    "real-multisheet.xlsx": {
+      "bytes": 3608,
+      "sha256": "0333c47365d9e72b2de52e10502d37baa71f65a25c06905f0e125570fe0d3096"
+    },
+    "sample-images.docx": {
+      "bytes": 795623,
+      "sha256": "290192afc6ddc10e303251f2bb43c90fcc0a1f8414b5e9626352b8bbee94eea9"
+    },
+    "sample-math.docx": {
+      "bytes": 1026,
+      "sha256": "942a748e8ecd19ad6c0d2b3c480fae10c69422240f791eb943d686d05604268c"
     }
   }
 }

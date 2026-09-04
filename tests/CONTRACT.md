@@ -68,6 +68,55 @@
 | E3 | 普通 zip（PK 魔数，无 word//xl//ppt/ 部件）→ `zip` 或 `unknown`，不得判回 `text` | `type ∈ {zip, unknown}` | 🟢 绿（c8d42ad 已判 `zip`；c24f8ab 后仍 `zip`——zip/unknown 定版待实现拍板，见 §8 口径说明） |
 | E4 | 空文件（0 字节）→ `unknown`(empty) | `deepEqual({type:'unknown',detail:'empty'})` | 🟢 绿（c8d42ad 已如此；c24f8ab 后仍如此） |
 
+### 契约组 F — GBK/GB18030 中文解码（2026-09-05 新增：契约先红 t4；审查报告 §1.4）
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| F1 | `decodeText`(GBK '中文测试') → 输出含「中文测试」（字节 D6D0CEC4B2E2CAD4 = CP936/GB2312 兼容码） | 纯函数 includes | 🔴 红（实测输出乱码 `���Ĳ���`——无 BOM 一律 UTF-8 容错） |
+| F2 | `convert`(GBK .txt) → markdown 含「中文测试」 | includes | 🔴 红（实测同乱码） |
+| F3 | `convert`(GBK HTML，含 `<meta charset="gbk">`) → markdown 含「中文测试GBK段落」 | includes | 🔴 红（实测乱码 `���Ĳ���GBK����`） |
+
+### 契约组 G — xlsx 多 sheet 截断（2026-09-05 新增：契约先红 t4；审查报告 §1.5）
+
+样例 `real-multisheet.xlsx`（6 sheets 合成，gen-samples 确定性；T-3 新名不动既有锁）。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| G1 | `meta.truncated === true`（6 sheets > 上限 5） | strict | 🔴 红（恒 false——convert 顶层未同步转换器结果；且**根因比 §1.5 记录更深一层**：浏览器 bundle 未导出 `readSheetNames` → 实际只读 1 个 sheet，截断分支不触发） |
+| G2 | warnings 任一含「前 5 个 sheet」（语义核心词；宽松：不绑定句式） | 子串 | 🔴 红（实测 warnings=[]；当前文案「全簿共 N 行」且不触发） |
+| G3 | 输出恰 5 个 `### Sheet:` 分区（只读前 5 个） | 计数 === 5 | 🔴 红（实测 1） |
+
+### 契约组 H — corePath 同源 / 零外域字面量（2026-09-05 新增：契约先红 t4；审查报告 §2.1，红线相关）
+
+离线静态断言（读 index.html 源码，无浏览器依赖）。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| H1 | 源码不含 `doc2md.local`（伪域名 corePath = 外域请求违约） | !includes | 🔴 红（实测含 `corePath: 'https://doc2md.local/tesseract-core/'`） |
+| H2 | 源码中所有 `https?://` 字面量 ⊆ 白名单（当前白名单 = **空集**；新增许可注释 URL 须先拍板） | deepEqual [] | 🔴 红（实测`外域 URL = ["https://doc2md.local/tesseract-core/"]`） |
+
+### 契约组 I — docx 图片抽取（2026-09-05 新增：契约先红 t4；审查报告 §2.4）
+
+样例 `sample-images.docx`（小图 sample-image.png ≈8KB <100KB + 大图 512×512 噪声 PNG ≈786KB >100KB；均无 alt）。
+**阈值口径 = 100KB 由实现定版，本组只锁两个样例的归属行为。**
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| I1 | 大图 → `![alt](assets/…)` 相对引用 ≥1 处 | match ≥1 | 🔴 红（实测 0——全部内嵌 data URI） |
+| I2 | 小图 → `data:image/` 内嵌 ≥1 处 | match ≥1 | 🟢 绿（当前全内嵌 2 处——如实登记，不强行造红） |
+| I3 | `meta.assets` 为数组且 ≥1 项（抽取清单） | Array.isArray | 🔴 红（实测 meta 无该字段） |
+| I4 | `data:image/` 恰 1 处（样例恰 2 图：小图内嵌、大图抽取） | 计数 === 1 | 🔴 红（实测 2） |
+| I5 | 全部 alt 不含「图片包含」「AI 生成」（×Word AI 描述；口径 = 文件名/题注/空 alt） | !includes | 🟢 绿（当前 alt 为空串——如实登记） |
+
+### 契约组 J — docx OMML 公式 → LaTeX 标记（2026-09-05 新增：契约先红 t4；backlog #LaTeX）
+
+样例 `sample-math.docx`（`<m:oMath><m:r><m:t>x²</m:t></m:r></m:oMath>`，gen-samples 确定性）。
+断言语义：输出含 `$…$` 或 `$$…$$` 围栏且内容含 `x²` 或 `x^2`（宽松：不绑定 OMML→LaTeX 转换细节）。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| J1 | LaTeX 围栏公式存在 | match `/\$[^$\n]*x\^?2[^$\n]*\$/` | 🔴 红（实测 mammoth 忽略 OMML——连 `x²` 文本都不输出） |
+
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
@@ -82,6 +131,17 @@
 
 生成器：`tests/gen-samples.mjs`（确定性输出，重复运行字节不变）；重生成：`npm run gen:samples`。
 图像样例：由 `tools/gen-sample-image.ps1`（Windows GDI+）生成一次并提交为固定资产，生成器只做字节复制（无公式漂移空间）。
+
+### P1 契约组样例（2026-09-05 t4 新增，合成·确定性·进 manifest 字节锁）
+
+| 文件 | 类别 | 用途（契约组） | 验证规模（生成器实测） | 登记规则 |
+|---|---|---|---|---|
+| `real-multisheet.xlsx` | XLSX（合成） | 契约组 G——6 sheets（> 上限 5）触发截断语义 | 3,608 B / SHA `0333C473…`；zip 合法，`xl/workbook.xml` 含 6×`<sheet>`，sheet1-6.xml 齐 | 字节锁（manifest）；名字沿用任务指定 real- 前缀，内容为合成确定性 |
+| `sample-images.docx` | DOCX（合成） | 契约组 I——小图（sample-image.png ≈8KB <100KB）+ 大图（512×512 噪声 PNG ≈786KB >100KB），均无 alt（descr=""） | 795,623 B / SHA `290192AF…`；zip 合法，`word/media/image1.png`+`image2.png`，document.xml 含 2×`w:drawing`（rId7/rId8） | 字节锁（manifest）；新名不动既有 sample.* |
+| `sample-math.docx` | DOCX（合成） | 契约组 J——OMML 公式 `x²`（`<m:oMath>` 包裹 `<m:r><m:t>`） | 1,026 B / SHA `942A748E…`；zip 合法，document.xml 含 1×`m:oMath` | 字节锁（manifest）；新名不动既有 sample.* |
+
+> 生成器幂等已验：`npm run gen:samples` 连续两次运行，三个新样例 SHA 完全一致；
+> manifest 仅追加新条目，既有 6 条 `sample.*` 锁条目未变（diff 验证）。
 
 ### 真实样例清单（T-3 通路落地：用户终端自 GitHub 上游下载，2026-09-04 登记）
 
@@ -141,7 +201,16 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 修复后独立验收（最新，修验分离）**：conv-dev `c24f8ab`（P0 三件：行内空格注入/结构丢失/sniff 兜底+二进制启发式，仅动 index.html 的 htmlToMarkdown/sniff 及其两个调用点；diff 核验：tests/vendor/ 零改动，磁盘 index.html 39,401 B / SHA256 `A4976017F6E3C8B85FC6C90D7120C076A9B7FA10295D4ABB1EBEB7BE3267618A` = 提交 blob `301886f`）。
+- **2026-09-05 契约先红 t4（最新，新增契约组 F/G/H/I/J）**：P1 二批五组断言全部登记（断言语义见 §2 各表；
+  样例见 §3「P1 契约组样例」）。基线 a61f9c3 宿主浏览器实测：**12 红 + 2 绿**——F1-F3 / G1-G3 / H1-H2 / I1 / I3 / I4 / J1 = 🔴 红
+  （与 RELEASE.md P1 二批、审查报告 §1.4/§1.5/§2.1/§2.4/backlog LaTeX 一致）；
+  **I2 / I5 = 🟢 绿**（当前实现把全部图片内嵌为 data URI ≥1 → I2 恰好满足；样例无 alt → alt 断言恰好满足——
+  如实登记，不强行造红）。转绿条件：实现按 P1 二批修复 GBK 兜底解码（§1.4）、xlsx 截断同步 meta+文案+
+  **另行解决 bundle 无 readSheetNames 导出的问题**、corePath 同源化（§2.1）、图片阈值抽取+meta.assets+
+  alt 口径（§2.4）、OMML→LaTeX 后，本组无需修改自动转绿。实现注意（t4 验收时实测发现）：当前
+  xlsx 路径因 bundle 缺 readSheetNames 实际只读 1 个 sheet——与 sample.xlsx 以往断言不冲突，但
+  多 sheet 功能整体未生效，修复 G 组时一并处理。
+- **2026-09-05 修复后独立验收（修验分离）**：conv-dev `c24f8ab`（P0 三件：行内空格注入/结构丢失/sniff 兜底+二进制启发式，仅动 index.html 的 htmlToMarkdown/sniff 及其两个调用点；diff 核验：tests/vendor/ 零改动，磁盘 index.html 39,401 B / SHA256 `A4976017F6E3C8B85FC6C90D7120C076A9B7FA10295D4ABB1EBEB7BE3267618A` = 提交 blob `301886f`）。
   qa-dev 独立复验（宿主浏览器实测，非静态推断）：**契约组 D 10/10 绿**、**契约组 E 4/4 绿**（E1/E2 红→绿，E3/E4 保持绿）；A0/B 组 12 项子断言全绿；C 组近似的宿主浏览器复验 6/6（令牌全命中、零外发、耗时 0.6/0.6/16.6/2.9/137.7/389.6ms，OCR 冷启动按 T-1 口径豁免；**console.capture 与 390×844/isMobile/hasTouch 无法在宿主浏览器精确模拟——C/M 组完整断言以用户机为准**）；真实文档复验：codex §1.1 四用例输出干净 ✓（=D1），real-tables.docx → 干净 2×2 GFM 表格（无 warnings），sample.html → 标题/中文段落/GFM 表格/图片引用完整，`6月2日实验.docx`（182,306 B，与桌面原件 SHA `FED30AF8…` 一致）→ 转换成功无 error、171ms、中文无乱码、6 标题 + 2 列 11 行表格（图片 data URI 内嵌与审查报告 §2.4 登记的既有行为一致，非本次回归）。登记于 DEV-NOTES 2026-09-05。
 - **t12 验收时点（2026-09-04，修复前记录）**：A0 绿；B 组全绿（B0 + B1×6 + B2 + B3×3 = 11 项子断言）；C/M 组**仍红，唯一原因=本工作区沙箱禁止浏览器进程 spawn**（playwright chromium
   安装器 `child_process.fork` EPERM、系统 Edge/Chrome executablePath EPERM、node --test 子进程隔离 EPERM——同一根因，已穷尽无解路径；见第 5 节）。
