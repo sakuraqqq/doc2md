@@ -1,0 +1,37 @@
+# tests.yml — doc2md CI 质量门（防屎山 ③ 守门）
+# 模板：cola（可乐工厂效率计算器）tests.yml；按任务书扩展为 checks job：
+#   lint → npm test → pwa-audit → verify:ocr（push/PR 触发）
+# 说明：
+#   - npm test（node --test）需要 chromium：install 步骤提供（--with-deps 含系统依赖）
+#   - OCR 相关步骤（verify:ocr / image 契约用例）需要 vendor/tessdata 与 langs/（仓库全量检出）
+#   - Lint 对象 = src/**/*.js + tools/**/*.mjs（见 eslint.config.js 白名单策略）
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright browser (chromium)
+        run: npx playwright install --with-deps chromium
+      - name: Lint (ESLint: src/ + tools/)
+        run: npm run lint
+      - name: Contract tests (node --test)
+        run: npm test
+      - name: PWA audit (static)
+        run: node tests/pwa-audit.mjs
+      - name: OCR verification (offline tesseract)
+        run: npm run verify:ocr
