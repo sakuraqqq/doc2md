@@ -205,7 +205,22 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 P1 修复后独立验收 t7（最新，修验分离）**：conv-dev(t5) `5707557`（corePath 同源/SW v4 分段缓存/PDF 逐页 OCR+进度/GBK 回退/xlsx truncated，仅 index.html+sw.js）+ core-dev(t6) `413dcbc`（docx 图片抽取/alt 口径/OMML→LaTeX + fflate 0.7.5 内联，仅 index.html）。
+- **2026-09-05 防屎山独立验收 t10（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `eee7ca1`（t8 构建产物：src/ 10 模块拆分 + esbuild IIFE bundle 注入 index.html；src/ 自 a7b61b2 未变）。**结论：整体行为等价成立（重构无回归），但发现 1 个契约回归 + 3 个守门缺陷 + 2 个脚本过时——清单如下（均只报告未修改，处置待队长拍板）**。
+  **实测结果**（宿主浏览器实测真实 index.html + test:direct）：
+  - ✅ 全量回归**非 H2 部分全绿**：A0 + B 组 11/11（test:direct 真跑）+ D 10/10 + E 4/4 + F 3/3 + C 6/6（token/GFM/耗时 1/1/32/3/148/442ms/零外域/console0）+ G 3/3 + I 5/5 + J 1/1 + M1 近似（真实 UI 链路 309ms 命中；390×844/isMobile 无法宿主模拟，留用户机）+ H1/H3/H4/H5/H6 绿。
+  - ✅ 真实文档复转：`6月2日实验.docx` → 219ms 无 error、图抽取 `assets/6月2日实验-1.jpg`（151,218 B）、alt=`图片 1`、GFM 表格/H2 标题完整。
+  - ✅ PWA audit 46/48、OCR 复验 PASS（HELLO/DOC2MD/2026，93%，440ms）、构建护层 = round-trip 断言（产物 bundle 块替换回 MARKER 后与 src/template.html **逐字节相等**——壳零漂移成立）、bundle 10/10 模块标记齐、`__doc2md` 挂钩面与架构一致（6 符号）。
+  - 🔴 **[契约回归·阻塞] H2 红**：eee7ca1 产物含 `http://schemas.openxmlformats.org/` 字面量——esbuild **常量折叠** `'http'+'://…'` 拆串（t6/t8 为满足 H2 在源码级拆串，折叠使产物级失守）；**t7 登记的「H 组 6/6 绿」基于重构前单体版，eee7ca1 后 H2 复红**。候选处置：① H2 白名单登记命名空间标识符（改断言=拍板）；② src 侧改运行时拼装（非折叠可逃，代码丑）；③ 其他——队长拍板。
+  - 🟠 **[守门缺陷·高] lint 72 errors 未通过且无例外登记**：根因 = `eslint.config.js` globals 仅 `globals.node` **漏 `globals.browser`**（≈60 个 `window/document/… no-undef` 全为配置假阳性；src/ 是浏览器代码）；配置修复后仍有真实 error ≈12 个：`INLINE_TRANSPARENT` 未用（死代码，见下）、`catch(e)` 空块×6、`no-ignored-exceptions`×4（有意吞错、无登记）、`no-nested-conditional`×3、`no-unenclosed-multiline-block`×5（疑似 prettier 重排假阳性，待查）、`super-linear-regex`（sniff.js:37 回溯风险）、`renderResult(idx,total)` 未用参数。t9「守门生效」实际未达成（CI 必然红）。
+  - 🟠 **[评审项·中] 模块行数超标**：html2md.js 245 行、docx.js 203 行（>200 行「无巨型模块」标准；t8 无例外声明——拆分粒度待拍板）。
+  - 🟡 **[低] pwa-audit.mjs 过时**：2 失败（SW `addAll` 检查 vs 契约 H6 `Promise.allSettled`；SW 注册文本模式 vs bundle 排版）——脚本未随 t7/t8 更新，产品侧 H3-H6 全绿=策略正确。
+  - 🟡 **[低] CODE-METRICS §5 认知偏差声明不符**：`ommlParts` 认知 metrics=44 vs sonarjs 官方=33（偏差 11 分，非 §5 声称 1-2 分；**圈复杂度列双侧（metrics↔eslint）逐一相等=真实可信**，认知列为近似偏大参考）。
+  - 🟡 **[低] 死代码**：src/html2md.js `INLINE_TRANSPARENT` 未使用（bundle 中被 tree-shake，产物零残留）。
+  - ℹ️ **[已知限制] 构建幂等本环境不可复验**：esbuild service spawn EPERM（尝试 node 直跑 + 一次性升权重试被用户拒绝——不再重试）。幂等/新鲜度最终验收命令（用户机）：`npm run build && git diff --exit-code index.html`。
+  - 实测核验：index.html 80,840 B / SHA256 `5D6C148A21064B4E7C0B231EA333310386F3E0408E8EF82A34B4E4E6200BCC63`（= 提交 eee7ca1 工作树干净）；test:direct 44 tests（19 pass / 25 fail，fail 24 项=浏览器 spawn 基建红 + H2 1 项=上述契约回归）。
+  - **用户机终验预期修正**：`npm install && npm run build && npm test` 预期非 65/65——**H2 必红**（产物字面量收缩静态命中）；修复/拍板 H2 后可报 65/65。其余 64 项断言均绿（C/M 双端在用户机可跑）。
+  - 处置建议（待队长拍板，本验收方不改）：H2 走白名单登记（命名空间标识符非网络 URL，语义与 H2 红线「零外发」一致）；lint 修 globals.browser + 真实小项修/登记；模块行数/认知声明/pwa-audit 更新放文档任务或 P2。
+- **2026-09-05 P1 修复后独立验收 t7（修验分离）**：conv-dev(t5) `5707557`（corePath 同源/SW v4 分段缓存/PDF 逐页 OCR+进度/GBK 回退/xlsx truncated，仅 index.html+sw.js）+ core-dev(t6) `413dcbc`（docx 图片抽取/alt 口径/OMML→LaTeX + fflate 0.7.5 内联，仅 index.html）。
   diff 审查：tests/vendor 零误动；t4 断言未被实现方修改（t5/t6 文件清单仅 index.html/sw.js）；实现方在 t6 以 `'http'+'://schemas…'` 拆串保留命名空间字符串，H2（零 http(s) 字面量）不受 fflate 内联影响——grep 实测 index.html 零 `https?://`。
   qa-dev 独立复验（宿主浏览器实测真实页面，非静态推断）：**D 10/10、E 4/4、F 3/3、G 3/3、H 组 6/6（H1-H2 红→绿 + t7 新增 H3-H6 SW PRECACHE 断言全绿）、I 5/5、J 1/1 全绿**；A0/B 组 12 项子断言绿；**C/M 组沙箱受限（无法 spawn 浏览器）以用户机为准**——上轮用户机已 47/47 全绿（e5380ca），本轮 65 项断言（含 C/M 双端）用户机终验命令：`npm install && node node_modules/@playwright/test/cli.js install chromium && npm test`。
   真实文档复验：① `6月2日实验.docx`（与桌面原件 SHA `FED30AF8…` 一致）→ 转换成功无 error（200.6ms，backend=mammoth），**图片抽取** `assets/6月2日实验-1.jpg`（151,218 B，meta.assets），**alt = `图片 1`**（docPr 名去扩展名——不再有「图片包含 室内…AI 生成」），GFM 表格 11 行/标题/加粗完整；② real-multisheet.xlsx → `meta.truncated=true` + 「已读取前 5 个 sheet 共 10 行…另有 1 个 sheet 未读取」+ 恰 5 个 Sheet 分区；③ GBK 文本 '中文测试' → decodeText/convert 均命中；④ sample-math.docx（OMML x²）→ `公式样例：$x^2$`。
