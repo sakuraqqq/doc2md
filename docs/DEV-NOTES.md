@@ -39,3 +39,22 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 ### 待办／拍板遗留
 - 用户终端执行全局 safe.directory 永久配置（尚未执行，见上）。
 - 原 `router-bootstrap.mjs` `session/event` 处理器使用 `bandOf`/`extractText` 但未导入（疑似遗留 bug，仅 weak 模式真实用户消息触发）——待拍板是否顺手修。
+
+---
+
+## 2026-09-04 · E线 T11：PWA 与手机适配
+
+### 做了什么
+- PWA 三件套：`manifest.json`（display standalone + 192/512/maskable 图标）、`sw.js`（precache + cache-first + 导航离线回退 `./index.html`，`CACHE_NAME` 版本化）、`icons/`（192/180/512/512-maskable，`tools/gen-icons.mjs` 零依赖生成，确定性字节）。
+- `index.html`：head 加 manifest/theme-color/apple-touch-icon/mobile-web-app meta；`.chip` 11px→12px + 新增 `--accent-soft: #8ab6ff`（chip 对比度 4.28→6.23:1）；`@media ≤600px` 扩展（`.btn min-height 44px`、拖放区 `min-height 300px`、字号 14px、卡片按钮 `flex` 撑满、主图 22px）。
+- `docs/architecture.md`：§6 零外发清单补 `sw.js` 检查项；新增 §8（PWA 交付物 / SW 离线策略 / 手机适配规格 / Capacitor 可行性记录——**未安装任何 Capacitor 依赖**，等拍板）。
+- `tests/pwa-audit.mjs`：E 线静态验收（零依赖），**48/48 绿**：manifest 字段/图标 IHDR 尺寸/sw.js 语法与策略/CSS 规格/WCAG AA 对比度 11 组（全部 ≥4.5，最低 4.76）。
+
+### 实测结果（browser 实测，本地 http://127.0.0.1:50117，server.mjs）
+- SW 注册成功（scope=/、active、ready、controller=true）；precache 7 资源齐 ✓。
+- **真离线验证**：kill 服务器后 reload → 页面完整加载（SW 缓存兜底；图标 transferSize=0、fetch 1ms 命中缓存）✓。
+- 手机视口 390×844：选择 sample → 转换成功（令牌命中）；.btn 实际高度 44px；拖放区 300px；字号 14px ✓。
+- 「添加到主屏」交互未做（本地无安装 UI）；安装前置条件（manifest 完整 + SW 控制 + icons）全部满足，真机安装留待发布后验证。
+
+### 发现（未修，上报拍板）
+- **A线既有 UI bug**（浏览器实测复现）：`handleFiles(fileInput.files)` 传 live `FileList` 引用，change handler 立即 `fileInput.value=''` → async 首个 `await` 挂起时 FileList 被清空 → `files.length` 变 0 → status 显示「完成：共 0 个文件」；**多文件选择时循环提前退出，只转第一个文件**。建议一行修复：`const list = Array.from(files)`（快照化）。属转换 UI 链路，不在 T11 范围，未擅改。
