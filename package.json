@@ -11,6 +11,12 @@
     "test:contract": "node --test tests/contract_v1.test.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0"
+    "@playwright/test": "^1.49.0",
+    "@tesseract.js-data/chi_sim": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "esbuild": "^0.28.2",
+    "pdfjs-dist": "^3.11.174",
+    "read-excel-file": "^5.8.7",
+    "tesseract.js": "^6.0.1"
   }
 }
