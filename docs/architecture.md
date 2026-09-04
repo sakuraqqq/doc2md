@@ -109,9 +109,56 @@ async function convert(file /* File */) -> Promise<{
 - [ ] pdf.js：worker 内联（或 `disableWorker:true` + legacy build），无 `workerSrc` 指向 CDN
 - [ ] tesseract.js：`workerPath`/`corePath`/`langPath` 全部本地（blob 或内联），默认值不指向 CDN
 - [ ] 转换结束 F12 Network 面板：**除 file:// 自身外零请求**
-- [ ] 每个内联库头部注释保留「包名 版本 许可 来源」
+- [x] 每个内联库头部注释保留「包名 版本 许可 来源」
+- [ ] `sw.js` 只缓存/响应同源请求、无外域 `fetch`（E线 PWA 已按此实现，见 §8；后续改动复查确认）
 
 ## 7. 测试挂钩（C线用）
 
 - `window.__doc2md = { convert, sniff, registry }` 暴露于页面（便于契约测试直接调用，无需模拟 UI）。
 - 合同测试断言「转换结果关键内容存在 / 无 console error / 转换 <500ms / 手机视口 390×844」，样例在 `tests/data/`（脱敏，含中文/表格/图片页）。
+
+## 8. PWA 与手机适配（E线，2026-09-04 实施）
+
+> 目标：手机浏览器「添加到主屏幕」= 类 App 体验；离线可用（断网可打开、可转换——转换本身全内存本地，断网也行）。
+> **红线相容性**：PWA 资源（manifest/sw/图标）全部同源本地文件，零外发；不经网络加载任何外域内容。
+
+### 8.1 交付物
+
+| 文件 | 说明 |
+|---|---|
+| `manifest.json` | Web App Manifest：name/short_name/描述图标/`display: standalone`/theme_color |
+| `sw.js` | service worker：预缓存 + cache-first 离线策略（版本 `CACHE_NAME`，bump 即换缓存） |
+| `icons/icon-192.png` / `icon-512.png` | 安装图标（RGBA，any purpose） |
+| `icons/icon-512-maskable.png` | maskable 图标（内容缩至 88% 安全区，背景铺满） |
+| `icons/icon-180.png` | iOS `apple-touch-icon`（180×180 规格） |
+| `tools/gen-icons.mjs` | 图标生成器（零依赖：node 内置 zlib；确定性输出，重跑字节不变） |
+
+`index.html` 心智：head 增加 manifest/theme-color/icon/apple-touch/mobile-web-app meta；body 末尾 SW 注册（仅 http(s)/localhost，file:// 静默跳过，不产生 console.error）。
+
+### 8.2 service worker 离线策略
+
+- **install**：`cache.addAll(PRECACHE)`（`./`、`index.html`、`manifest.json`、4 个图标）+ `skipWaiting`。
+- **activate**：删除非当前 `CACHE_NAME` 的旧缓存 + `clients.claim()`。
+- **fetch**：
+  - 仅处理**同源 GET**；外域/非 GET 一律不拦截（页面本无外域引用，双保险）。
+  - 导航请求：cache-first，离线时回退 `caches.match('./index.html')` —— **离线打开可用**。
+  - 其余同源资源：cache-first，miss 则网络并写入缓存（运行时缓存兜底）。
+- **版本管理**：修改 PRECACHE 或策略 → bump `CACHE_NAME`（如 `doc2md-sw-v2`）→ 旧缓存 activate 时自动清理。
+- **局限**：SW 仅 http(s)/localhost 生效；`file://` 双击打开时应用仍离线可用（单文件本质），PWA 安装提示不出现（无桌面安装入口）——这是浏览器的平台限制，如实记录。
+
+### 8.3 手机适配规格（照 cola GLM 评审教训）
+
+| 项 | 规格 | 落地 |
+|---|---|---|
+| 触控目标 | ≥44px（高度；宽度随内容但按钮补 `flex` 撑满） | `@media ≤600px`：`.btn { min-height: 44px }`、`.card-actions .btn { flex: 1 1 auto }` |
+| 字号 | ≥12px（正文 ≥14px） | `.chip` 11px→12px；移动端正文/按钮 14px、拖放区主提示 22px |
+| 对比度 | 普通文本 ≥4.5:1（WCAG AA） | `--accent-soft: #8ab6ff` 用于 chip（on 蓝底 ≈6.7:1）；全站色对经 audit 脚本核验 |
+| 大拖放区 | 手机全宽、高度 ≥300px | `#dropzone { min-height: 300px }` |
+| 中屏布局让位 | 卡片元信息换行、不横向溢出 | `main max-width 960px` + flex-wrap + `≤600px` 断点 |
+
+### 8.4 Capacitor 套壳可行性（只记录，未实施；是否做等拍板）
+
+- 路径：`npm i @capacitor/core @capacitor/cli` → `npx cap add android|ios` → `npx cap sync` → Android Studio / Xcode 打包。
+- 兼容性：Capacitor = 本地 WebView 容器，**零外发型单文件 App 完全兼容**（无服务端、无 CDN）；PWA 资源（manifest/SW）在容器内保留（SW 在 WebView 内通常生效或可绕过）。
+- 代价：需要原生工具链（Android Studio ≥1GB / macOS + Xcode）、签名与商店发布流程、版本维护成本；与 PWA（零打包成本）相比收益在「商店分发 + 原生能力（分享/文件系统）」。
+- v1 决策建议：**先 PWA 验证**（本阶段），Capacitor 视 PWA 上线后反馈再拍板。**本仓库未安装任何 Capacitor 依赖**（范围外变更需拍板）。
