@@ -194,3 +194,20 @@ htmlToMarkdown 把块级内容解析成「文本序列」再全局 `join(' ')`�
 - 快照口径细则（缩进宽度/`<br>` 处理/引用空行等）已定稿在 CONTRACT.md §8，调整走拍板。
 - E3（普通 zip 归 zip 还是 unknown）定版待拍板后回填 CONTRACT.md §8。
 
+---
+
+## 2026-09-05 · P1 契约先红 t4：F/G/H/I/J 五组断言
+
+### 做了什么（qa-dev）
+- **样例**（gen-samples.mjs 扩展，确定性·幂等·manifest 字节锁）：`real-multisheet.xlsx`（6 sheets）、`sample-images.docx`（小图 ≈8KB + 大图 512×512 噪声 PNG ≈786KB——噪声用 mulberry32 固定 seed + node:zlib + zipio.crc32 零依赖生成）、`sample-math.docx`（OMML `x²`）。既有 6 条 `sample.*` 锁条目零改动；幂等已验（连续两次生成 SHA 相同）。
+- **断言**（contract_v1.test.mjs 追加 F/G/H/I/J 五组 14 例）：F=GBK 解码（decodeText 纯函数 + convert 全链路 + `<meta charset="gbk">` HTML）；G=xlsx 截断（meta.truncated + 「前 5 个 sheet」文案 + 恰 5 个 Sheet 分区）；H=corePath 同源（**离线源码断言**：不含 doc2md.local + http(s) 字面量 ⊆ 白名单[空集]）；I=图片抽取（大图 assets 引用 + 小图 data URI + meta.assets + 恰 1 处 data URI + alt 非 AI 描述）；J=OMML→LaTeX（`$…$/$$…$$` 围栏含 x²/x^2）。
+- **登记**：CONTRACT.md §2 五组表 + §3「P1 契约组样例」+ §7 状态；断言语义（精确度/宽松处）全部写明在测试注释与 §2 表中。
+
+### 实测（基线 a61f9c3，宿主浏览器）
+- **12 红 + 2 绿**：F1-F3 / G1-G3 / H1-H2 / I1 / I3 / I4 / J1 红（实测值均已记录在 CONTRACT.md §2）；I2（data URI ≥1）与 I5（alt 非 AI 描述）当前恰好绿——如实登记，不强行造红。
+- **新发现（超出审查报告 §1.5 记录的根因）**：vendor/read-excel-file.min.js 浏览器 bundle **未导出 readSheetNames**（UMD 只导主函数）→ index.html xlsx 路径恒取 `[null]` → 多 sheet 功能整体未生效、截断分支不触发。G 组修复需实现方自行解决 sheet 列表读取（bundle 内只有主函数——方案选择是实现方的拍板点候选，需在任务报告中说明）。
+
+### 防再犯
+- P1 二批契约先红已入库；H 组无浏览器依赖可离线跑，F/G/I/J 有浏览器环境即真实断言。
+- 新样例一律 gen-samples 确定性生成 + manifest 字节锁；T-3 约定：新名不覆盖既有 sample.* 锁。
+

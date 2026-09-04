@@ -566,3 +566,286 @@ test('契约组 E：sniff 精确快照 —— 契约先红（E1/E2 红；E3/E4 �
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 F：GBK/GB18030 中文解码（P1 · RELEASE.md 二批；审查报告 §1.4）
+// 依据：审查报告 §1.4（P1：无 BOM 的 GBK 文本/HTML 当前按 UTF-8 容错解码 → 乱码「转换成功」）。
+// 断言（断言语义）：
+//   F1 纯函数：decodeText(bytes) 输出必须含「中文测试」（字节 = CP936/GB2312 兼容码，见下）。
+//   F2 全链路：convert(.txt GBK 字节) → markdown 含「中文测试」。
+//   F3 GBK HTML：含 <meta charset="gbk"> 的 GBK 编码 HTML → convert → markdown 含「中文测试GBK段落」。
+// 契约先红：当前 decodeText 只认 BOM/UTF-16，无 BOM 一律 UTF-8 容错 → 三例均乱码（红）。
+// 字节来源（确定性，Node 无 GBK 编码器故硬编码）：'中文测试'.encode('GBK') = D6D0 CEC4 B2E2 CAD4。
+// ---------------------------------------------------------------------------
+const GBK_ZHONGWEN = [0xD6, 0xD0, 0xCE, 0xC4, 0xB2, 0xE2, 0xCA, 0xD4]; // '中文测试'（GBK/CP936）
+// '<html><head><meta charset="gbk"></head><body><p>中文测试GBK段落</p></body></html>'（GBK 编码，ASCII 字符同码位）
+const GBK_HTML = [
+  0x3c, 0x68, 0x74, 0x6d, 0x6c, 0x3e, 0x3c, 0x68, 0x65, 0x61, 0x64, 0x3e, 0x3c, 0x6d, 0x65, 0x74,
+  0x61, 0x20, 0x63, 0x68, 0x61, 0x72, 0x73, 0x65, 0x74, 0x3d, 0x22, 0x67, 0x62, 0x6b, 0x22, 0x3e,
+  0x3c, 0x2f, 0x68, 0x65, 0x61, 0x64, 0x3e, 0x3c, 0x62, 0x6f, 0x64, 0x79, 0x3e, 0x3c, 0x70, 0x3e,
+  0xd6, 0xd0, 0xce, 0xc4, 0xb2, 0xe2, 0xca, 0xd4, 0x47, 0x42, 0x4b, 0xb6, 0xce, 0xc2, 0xe4, 0x3c,
+  0x2f, 0x70, 0x3e, 0x3c, 0x2f, 0x62, 0x6f, 0x64, 0x79, 0x3e, 0x3c, 0x2f, 0x68, 0x74, 0x6d, 0x6c,
+  0x3e,
+]; // '中文测试GBK段落' = D6D0CEC4B2E2CAD4 'GBK' B6CEC2E4
+
+test('契约组 F：GBK 中文解码 —— 契约先红（当前无 BOM 一律 UTF-8 容错 → 乱码）', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await t.test('F1 decodeText 纯函数：GBK 字节「中文测试」→ 输出含「中文测试」', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), GBK_ZHONGWEN);
+        assert.ok(actual.includes('中文测试'), `decodeText 输出未含「中文测试」：${JSON.stringify(actual)}（GBK 兜底解码缺失，审查报告 §1.4）`);
+      });
+      await t.test('F2 convert 全链路：GBK .txt → markdown 含「中文测试」', async () => {
+        const res = await page.evaluate(
+          (bytes) => window.__doc2md.convert(new File([new Uint8Array(bytes)], 'gbk.txt')),
+          GBK_ZHONGWEN
+        );
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
+        assert.ok(res.markdown.includes('中文测试'), `GBK 文本转换输出未含「中文测试」：${JSON.stringify(res.markdown)}`);
+      });
+      await t.test('F3 GBK HTML（<meta charset="gbk">）：convert → markdown 含「中文测试GBK段落」', async () => {
+        const res = await page.evaluate(
+          (bytes) => window.__doc2md.convert(new File([new Uint8Array(bytes)], 'gbk.html')),
+          GBK_HTML
+        );
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
+        assert.ok(res.markdown.includes('中文测试GBK段落'), `GBK HTML 转换输出未含「中文测试GBK段落」：${JSON.stringify(res.markdown)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 G：xlsx 多 sheet 截断（P1 · RELEASE.md 二批；审查报告 §1.5）
+// 样例：tests/data/real-multisheet.xlsx（6 sheet 合成样例，gen-samples 确定性生成；T-3 新名不覆盖既有锁）。
+// 断言（断言语义）：
+//   G1 meta.truncated === true（6 sheets > 上限 5；当前 convert 顶层 meta 未同步转换器结果 → 恒 false，红）。
+//   G2 warnings 任一含「前 5 个 sheet」（语义核心词；当前文案为「全簿共 N 行」且因 readSheetNames 缺失
+//      warning 为空 → 红）。宽松处：只约束「前 5 个 sheet」子串，不绑定具体句式。
+//   G3 输出恰好 5 个 `### Sheet:` 分区（v1 上限每 sheet 一对一输出；只读前 5 个）。
+// 契约先红：当前浏览器 bundle 未导出 readSheetNames → 实际只读 1 个 sheet，三例均红（实测：
+// truncated=false、warnings=[]、Sheet 分区 1 个）。注意：根因比审查报告 §1.5 记录的更深一层
+// （bundle 无 readSheetNames 导出），实现方须自行解决 sheet 列表读取后使其转绿。
+// ---------------------------------------------------------------------------
+test('契约组 G：xlsx 截断（real-multisheet.xlsx，6 sheets > 上限 5）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  assert.ok(fs.existsSync(nodePath.join(DATA, 'real-multisheet.xlsx')), 'real-multisheet.xlsx 缺失——请运行 npm run gen:samples');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'real-multisheet.xlsx')).toString('base64');
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'real-multisheet.xlsx'));
+        },
+        { b64 }
+      );
+      assert.equal(res.error, undefined, `convert 返回错误: ${res.error}`);
+      await t.test('G1 meta.truncated === true（6 sheets > 上限 5）', () => {
+        assert.equal(res.meta.truncated, true, `meta.truncated=${res.meta.truncated}——转换器截断结果未同步到 meta（审查报告 §1.5）`);
+      });
+      await t.test('G2 warnings 含「前 5 个 sheet」语义', () => {
+        const w = (res.meta.warnings || []).join(' ');
+        assert.ok(w.includes('前 5 个 sheet'), `warnings 未含「前 5 个 sheet」：${JSON.stringify(res.meta.warnings)}`);
+      });
+      await t.test('G3 输出恰好 5 个 ### Sheet: 分区（只读前 5 个）', () => {
+        const n = ((res.markdown || '').match(/### Sheet:/g) || []).length;
+        assert.equal(n, 5, `### Sheet: 分区数=${n}（期望 5——v1 上限 5 个 sheet，超出后需 warning + meta.truncated）`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 H：corePath 同源 / 零外域字面量（P1 · RELEASE.md 二批；审查报告 §2.1，红线相关）
+// 离线静态断言（无浏览器依赖）：读 index.html 源码文本。
+// 断言（断言语义）：
+//   H1 源码不含 'doc2md.local'（伪域名 corePath——红线：任何外域请求都是违约；当前含 → 红）。
+//   H2 源码中所有 http(s):// 字面量必须命中白名单；白名单 = 当前已知许可注释 URL（**空集**——
+//      当前源码无任何 http(s) 字面量；未来如需在头部许可注释加入官方 URL，须先拍板后追加白名单条目）。
+// 宽松处：只匹配 `https?://` 起始的 URL 字面量（不含数据 URI/prefetch hint 等场景；出现即违约）。
+// ---------------------------------------------------------------------------
+const H_URL_WHITELIST = []; // 许可注释 URL 白名单（当前为空；新增需拍板）
+test('契约组 H：corePath 同源 / 零外域 http(s) 字面量（离线源码断言）—— 契约先红', async (t) => {
+  const src = fs.readFileSync(PAGE, 'utf8');
+  await t.test('H1 源码不含 doc2md.local（伪域名 corePath = 外域请求违约，红线）', () => {
+    assert.ok(!src.includes('doc2md.local'), "index.html 含 'doc2md.local'（corePath 伪域名）——外域请求违约（审查报告 §2.1）；应改为同源绝对 URL");
+  });
+  await t.test('H2 源码 http(s):// 字面量全部命中白名单（当前白名单为空集）', () => {
+    const urls = [...src.matchAll(/https?:\/\/[^\s"'<>`)]+/g)].map((m) => m[0]);
+    const external = urls.filter((u) => !H_URL_WHITELIST.includes(u));
+    assert.deepEqual(external, [], `源码含外域 URL：${JSON.stringify(external)}（零外发红线——除拍板登记的白名单外不得出现）`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 I：docx 图片抽取（P1 · RELEASE.md 二批；审查报告 §2.4 建议方案「阈值抽取 + alt 口径」）
+// 样例：tests/data/sample-images.docx（合成：小图 sample-image.png ≈8KB <100KB + 大图 512×512 噪声 PNG
+//       ≈786KB >100KB；均无 alt（descr=""）；gen-samples 确定性生成；T-3 新名）。
+// 断言（断言语义；阈值口径 = 100KB 由实现定版，本组只锁两个样例的归属行为）：
+//   I1 大图 → `![alt](assets/…)` 相对引用（匹配 /!\[[^\]]*\]\(assets\/[^)]+\)/ ≥1 处；当前 0 → 红）。
+//   I2 小图 → data URI 内嵌（data:image/ ≥1 处；当前 2 处 → 已绿，如实登记）。
+//   I3 meta.assets 为数组且 ≥1 项（抽取清单；当前 meta 无 assets 字段 → 红）。
+//   I4 data:image/ 恰 1 处（样例恰好 2 图：小图内嵌、大图抽取；当前 2 → 红）。
+//   I5 所有图片 alt 不得含「图片包含」「AI 生成」（≠ Word AI 描述 alt；口径 = 文件名/题注/空 alt；
+//       当前 alt 为空串 → 已绿，如实登记）。
+// ---------------------------------------------------------------------------
+const IMG_AI_ALT_BANNED = ['图片包含', 'AI 生成'];
+test('契约组 I：docx 图片抽取（sample-images.docx：小图内嵌 + 大图 assets 引用 + meta.assets）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  assert.ok(fs.existsSync(nodePath.join(DATA, 'sample-images.docx')), 'sample-images.docx 缺失——请运行 npm run gen:samples');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-images.docx')).toString('base64');
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-images.docx'));
+        },
+        { b64 }
+      );
+      assert.equal(res.error, undefined, `convert 返回错误: ${res.error}`);
+      const md = res.markdown || '';
+      const dataUriCount = (md.match(/data:image\//g) || []).length;
+      const alts = [...md.matchAll(/!\[([^\]]*)\]\(/g)].map((m) => m[1]);
+      await t.test('I1 大图 → ![...](assets/…) 相对引用（≥1）', () => {
+        const refs = md.match(/!\[[^\]]*\]\(assets\/[^)]+\)/g) || [];
+        assert.ok(refs.length >= 1, `未发现 assets/ 图片引用（当前实现把全部图片内嵌为 data URI——审查报告 §2.4）：${JSON.stringify(refs)}`);
+      });
+      await t.test('I2 小图 → data URI 内嵌（≥1）', () => {
+        assert.ok(dataUriCount >= 1, '输出无 data:image/ 内嵌——小图（<100KB）应在阈值内内嵌');
+      });
+      await t.test('I3 meta.assets 为数组且 ≥1 项（抽取清单）', () => {
+        assert.ok(Array.isArray(res.meta.assets) && res.meta.assets.length >= 1, `meta.assets=${JSON.stringify(res.meta.assets)}——图片抽取清单未随 meta 返回`);
+      });
+      await t.test('I4 data:image/ 恰 1 处（小图内嵌、大图抽取）', () => {
+        assert.equal(dataUriCount, 1, `data:image/ 出现 ${dataUriCount} 次（样例恰 2 图：大图 >100KB 应抽取为 assets 引用、仅小图内嵌）`);
+      });
+      await t.test('I5 alt 不得为 Word AI 描述（不含「图片包含」「AI 生成」）', () => {
+        for (const a of alts) {
+          for (const banned of IMG_AI_ALT_BANNED) {
+            assert.ok(!a.includes(banned), `alt 含 AI 描述片段「${banned}」：${JSON.stringify(a)}（alt 口径 = 文件名/题注/空 alt）`);
+          }
+        }
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 J：docx OMML 公式 → LaTeX 标记（P1 · RELEASE.md 二批；backlog #LaTeX）
+// 样例：tests/data/sample-math.docx（合成：<m:oMath><m:r><m:t>x²</m:t></m:r></m:oMath>；gen-samples 确定性）。
+// 断言（断言语义）：输出含 LaTeX 围栏 $…$ 或 $$…$$，且内容含 x² 或 x^2（宽松：围栏 1 或 2 个 $、
+// 内容 x² 或 x^2 均可；不绑定 OMML→LaTeX 的具体转换细节）。
+// 契约先红：当前 mammoth 对 OMML 忽略（实测输出连 x² 文本都不含）→ 无 $ 围栏，红。
+// ---------------------------------------------------------------------------
+test('契约组 J：docx OMML 公式 → $…$ LaTeX 标记（sample-math.docx）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  assert.ok(fs.existsSync(nodePath.join(DATA, 'sample-math.docx')), 'sample-math.docx 缺失——请运行 npm run gen:samples');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-math.docx')).toString('base64');
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-math.docx'));
+        },
+        { b64 }
+      );
+      assert.equal(res.error, undefined, `convert 返回错误: ${res.error}`);
+      await t.test('J1 输出含 $…$/$$…$$ 围栏且内容含 x²/x^2', () => {
+        const md = res.markdown || '';
+        assert.match(
+          md,
+          /\$[^$\n]*x\^?2[^$\n]*\$/,
+          `输出未含 LaTeX 围栏公式：${JSON.stringify(md.slice(0, 300))}（OMML 公式须转 $…$/$$…$$；当前实现忽略 OMML → 连 x² 文本都未输出，审查报告 backlog LaTeX）`
+        );
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
