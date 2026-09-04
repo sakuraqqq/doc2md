@@ -7,7 +7,7 @@
  * 注意：service worker 仅在 http(s)/localhost 生效（file:// 双击打开时静默跳过，
  *       此时页面本身体积=单文件，天然离线可用）。
  * ============================================================ */
-const CACHE_NAME = 'doc2md-sw-v1';
+const CACHE_NAME = 'doc2md-sw-v2';
 const PRECACHE = [
   './',
   './index.html',
@@ -41,18 +41,16 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return; // 外域交给默认网络（页面本无外域引用）
 
   if (req.mode === 'navigate') {
-    // 导航：缓存优先；离线时回退预缓存 index.html（离线可用）
+    // 导航：网络优先（刷新即最新，修复线上更新被旧缓存卡住的问题）；
+    // 离线时回退预缓存 index.html（离线可用）
     event.respondWith(
-      caches.match(req).then((hit) =>
-        hit ||
-        fetch(req)
-          .then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(req, copy));
-            return res;
-          })
-          .catch(() => caches.match('./index.html'))
-      )
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+          return res;
+        })
+        .catch(() => caches.match('./index.html').then((hit) => hit || caches.match('./')))
     );
     return;
   }
