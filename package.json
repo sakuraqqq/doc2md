@@ -1,0 +1,16 @@
+{
+  "name": "doc2md",
+  "version": "0.1.0",
+  "description": "开源的「文档转 Markdown」工具：纯前端、离线、全本地转换（PDF/DOCX/XLSX/图片OCR/TXT·HTML）· v1。契约测试用于网页版与手机视口双端断言。",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "gen:samples": "node tests/gen-samples.mjs",
+    "test": "node --test tests/",
+    "test:direct": "node tests/contract_v1.test.mjs",
+    "test:contract": "node --test tests/contract_v1.test.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
