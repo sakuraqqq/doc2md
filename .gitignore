@@ -1,0 +1,30 @@
+# --- Node / 依赖 ---
+node_modules/
+.npm-cache/
+.pnpm-store/
+pnpm-lock.yaml
+
+# --- 构建产物 ---
+dist/
+build/
+out/
+*.tgz
+*.tar.gz
+
+# --- 本地测试 / 会话产物 ---
+test-output/
+tests/output/
+browser-screenshots/
+pastes/
+.tmp/
+.dshhome*/
+*.log
+
+# --- AgentTeams 团队运行时状态（含 inbox 会话数据，不入库）---
+.agent-teams/
+
+# --- 系统 / 编辑器 ---
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
