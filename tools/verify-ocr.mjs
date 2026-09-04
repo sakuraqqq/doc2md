@@ -5,10 +5,12 @@
 // 不带浏览器即可复验图像样例的 OCR 可读性（用户拍板 DD-10 的落地证据）。
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 import { createWorker } from 'tesseract.js';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+// Windows 安全路径：new URL(import.meta.url).pathname 在 Windows 会得 /C:/…（编码路径），必须 fileURLToPath
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // 准备 .traineddata（解压 .gz 到临时目录；engine=1 LSTM 用 best_int 量化模型）
 const langDir = path.join(ROOT, '.tmp', 'ocr-lang');
