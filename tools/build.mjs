@@ -24,6 +24,9 @@ const result = await build({
   format: 'iife',
   platform: 'browser',
   target: ['es2020'],
+  // ESM 语义蕴含严格模式但不会物化 "use strict" 指令（esbuild 打 IIFE 同理）——显式注入头部，
+  // 与原 index.html 应用脚本顶部的 'use strict'; 语义一致；下方自检据此成立
+  banner: { js: '"use strict";' },
   write: false,
   logLevel: 'silent',
 });
