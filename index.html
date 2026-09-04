@@ -182,8 +182,9 @@ async function sniff(buf) {
   const head = buf.subarray(0, 65536);
   if (head.length === 0) return { type: 'unknown', detail: 'empty' };
   const ascii = headAscii(head);
-  // PDF
-  if (startsWith(head, [0x25, 0x50, 0x44, 0x46])) return { type: 'pdf' };
+  // PDF：先认首部；再兜底「偶有前置垃圾字节」——前 1024 字节内搜首个 %PDF（architecture §3）
+  const pdfAt = ascii.indexOf('%PDF');
+  if (pdfAt >= 0 && pdfAt <= 1024) return { type: 'pdf' };
   // 图片
   if (startsWith(head, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) return { type: 'image', detail: 'png' };
   if (head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF) return { type: 'image', detail: 'jpeg' };
@@ -198,87 +199,246 @@ async function sniff(buf) {
     if (ascii.includes('ppt/')) return { type: 'pptx' };
     return { type: 'zip' };
   }
+  // BOM 文本优先：UTF-16/UTF-8 BOM 先判为文本（UTF-16 含大量 NUL，必须先于二进制启发式，审查报告 §1.3 建议 #3）
+  if (startsWith(head, [0xEF, 0xBB, 0xBF]) || startsWith(head, [0xFF, 0xFE]) || startsWith(head, [0xFE, 0xFF])) {
+    return { type: 'text' };
+  }
+  // 二进制启发式：头部 4KB 采样，NUL/控制字符（<0x09/0x0A/0x0D 之外的 0x00-0x08、0x0E-0x1F）占比 >30% → unknown(binary)
+  const sample = head.subarray(0, 4096);
+  let ctrl = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const b = sample[i];
+    if (b <= 0x08 || (b >= 0x0E && b <= 0x1F)) ctrl++;
+  }
+  if (sample.length > 0 && ctrl / sample.length > 0.30) return { type: 'unknown', detail: 'binary' };
   return { type: 'text' };
 }
 
 /* ---------- HTML → Markdown（结构化转换） ---------- */
-function htmlToMarkdown(html) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script, style, noscript, head, template').forEach((n) => n.remove());
-  const out = [];
-  const walk = (node, depth) => {
-    node.childNodes.forEach((child) => {
-      if (child.nodeType === 3) { // text
-        const t = child.textContent.replace(/\s+/g, ' ').trim();
-        if (t !== '') out.push(t);
-        return;
-      }
-      if (child.nodeType !== 1) return; // 只处理元素
-      const tag = child.tagName;
-      if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') {
-        out.push('\n' + '#'.repeat(+tag[1]) + ' ' + child.textContent.replace(/\s+/g, ' ').trim() + '\n');
-      } else if (tag === 'P' || tag === 'DIV' || tag === 'SECTION' || tag === 'ARTICLE' || tag === 'HEADER' || tag === 'FOOTER' || tag === 'MAIN' || tag === 'ASIDE' || tag === 'FIGURE' || tag === 'FIGCAPTION') {
-        out.push('\n');
-        walk(child, depth + 1);
-        out.push('\n');
-      } else if (tag === 'BR') {
-        out.push('\n');
-      } else if (tag === 'HR') {
-        out.push('\n---\n');
-      } else if (tag === 'UL' || tag === 'OL') {
-        out.push('\n');
-        let i = 0;
-        child.querySelectorAll(':scope > li').forEach((li) => {
-          const marker = tag === 'OL' ? (++i + '. ') : '- ';
-          out.push(marker + li.textContent.replace(/\s+/g, ' ').trim() + '\n');
-        });
-      } else if (tag === 'LI') {
-        out.push('- ' + child.textContent.replace(/\s+/g, ' ').trim());
-      } else if (tag === 'BLOCKQUOTE') {
-        out.push('\n> ' + child.textContent.replace(/\s+/g, ' ').trim() + '\n');
-      } else if (tag === 'PRE') {
-        out.push('\n```\n' + child.textContent.replace(/^\n|\n$/g, '') + '\n```\n');
-      } else if (tag === 'TABLE') {
-        out.push('\n' + tableToMd(child) + '\n');
-      } else if (tag === 'IMG') {
-        const alt = child.getAttribute('alt') || '';
-        const src = child.getAttribute('src') || '';
-        out.push(`![${alt}](${src})`);
-      } else if (tag === 'A') {
-        const href = child.getAttribute('href') || '';
-        const text = child.textContent.replace(/\s+/g, ' ').trim();
-        out.push(`[${text}](${href})`);
-      } else if (tag === 'STRONG' || tag === 'B') {
-        out.push('**' + child.textContent.replace(/\s+/g, ' ').trim() + '**');
-      } else if (tag === 'EM' || tag === 'I') {
-        out.push('*' + child.textContent.replace(/\s+/g, ' ').trim() + '*');
-      } else if (tag === 'CODE') {
-        out.push('`' + child.textContent.trim() + '`');
-      } else if (tag === 'SPAN') {
-        out.push(child.textContent.replace(/\s+/g, ' ').trim());
-      } else {
-        walk(child, depth + 1);
-      }
-    });
-  };
-  walk(doc.body, 0);
-  const raw = out.join(' ');
-  // 清理：行首空格 / 中文标点前空格（代码块行除外）
-  const lines = raw.split('\n');
-  let inCode = false;
-  const cleaned = lines.map((l) => {
-    if (/^```/.test(l.trim())) { inCode = !inCode; return l; }
-    if (inCode) return l;
-    return l.replace(/^ +/, '').replace(/ +(?=[，。；：！？、）】」』])/g, '').replace(/ +$/, '');
-  }).join('\n');
-  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
+// P0 修复（2026-09-05，审查报告 §1.1/§1.2）：
+// 行内拼接不再全局 out.join(' ')——改为「片段流 + 相邻拼接规则」：
+//   文本节点空白原样保留（块级边界才 trim）；行内标记（**/*/`/[ ]()）贴靠原文本；
+//   仅当相邻两段可见字符均为 [A-Za-z0-9] 且原边界无空白时补一个空格；CJK 相邻不补；标点前不补。
+// 结构：UL/OL 递归缩进（OL start 属性/序号递增）；LI 内子节点 walker 保留行内格式；
+//   BLOCKQUOTE 块级子元素逐行 > 前缀（多段支持）；TABLE 单元格子节点 walker（GFM 转义 |/换行、
+//   <br>→空格、rowspan/colspan 检测 warning）；A 包图片 [![alt](src)](href)；H1-H6 内 <br> 软换行保留。
+const BLOCK_TAGS = new Set(['H1','H2','H3','H4','H5','H6','P','UL','OL','LI','DL','DT','DD','BLOCKQUOTE','TABLE','PRE','HR','DIV','SECTION','ARTICLE','HEADER','FOOTER','MAIN','ASIDE','FIGURE','FIGCAPTION','ADDRESS','NAV']);
+// 透明行内标签：子节点按行内递归
+const INLINE_TRANSPARENT = new Set(['SPAN','U','S','SMALL','SUB','SUP','KBD','SAMP','MARK','ABBR','BDI','BDO','FONT','CITE','DFN','Q','TIME','INS','DEL','NOBR']);
+
+function normWs(s) { return s.replace(/\s+/g, ' '); }
+function firstVisible(s) { const m = /^\s*(\S)/.exec(s); return m ? m[1] : null; }
+function lastVisible(s) { const m = /(\S)\s*$/.exec(s); return m ? m[1] : null; }
+
+// 行内片段拼接：贴靠 + 相邻规则（见函数头注释）。
+// 片段 { t: markdown 文本, vStart/vEnd: 可见首/尾字符（无可见字符如 BR/IMG 为 null） }
+function joinFrags(frags) {
+  let t = '';
+  let curV = null;
+  for (const f of frags) {
+    if (f.t === '') continue;
+    if (t === '') { t = f.t; curV = f.vEnd !== null ? f.vEnd : null; continue; }
+    if (/\s$/.test(t) || /^\s/.test(f.t)) t += f.t;
+    else if (curV !== null && f.vStart !== null && /[A-Za-z0-9]/.test(curV) && /[A-Za-z0-9]/.test(f.vStart)) t += ' ' + f.t;
+    else t += f.t;
+    curV = f.vEnd !== null ? f.vEnd : null;
+  }
+  return t;
 }
-function tableToMd(table) {
+
+// 行内片段收集（mode: 'newline' → BR 换行；'br' → 标题内字面 <br>；'space' → 表格单元格 <br>→空格）
+function collectFrags(node, mode, out) {
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === 3) {
+      const t = normWs(child.textContent);
+      if (t !== '') out.push({ t: t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+      return;
+    }
+    if (child.nodeType !== 1) return;
+    fragFor(child, mode, out);
+  });
+  return out;
+}
+
+// 单个元素 → 行内片段（含其子节点递归）
+function fragFor(el, mode, out) {
+  const tag = el.tagName;
+  if (tag === 'BR') {
+    out.push({ t: mode === 'br' ? '<br>' : (mode === 'space' ? ' ' : '\n'), vStart: null, vEnd: null });
+    return;
+  }
+  if (tag === 'STRONG' || tag === 'B') {
+    const inner = joinFrags(collectFrags(el, mode, [])).trim();
+    if (inner) out.push({ t: '**' + inner + '**', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+    return;
+  }
+  if (tag === 'EM' || tag === 'I') {
+    const inner = joinFrags(collectFrags(el, mode, [])).trim();
+    if (inner) out.push({ t: '*' + inner + '*', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+    return;
+  }
+  if (tag === 'CODE') {
+    const c = el.textContent.trim();
+    if (c) out.push({ t: '`' + c + '`', vStart: firstVisible(c), vEnd: lastVisible(c) });
+    return;
+  }
+  if (tag === 'A') {
+    const href = el.getAttribute('href') || '';
+    const inner = joinFrags(collectFrags(el, mode, [])).trim();
+    if (!inner) return;
+    // 锚包图片：<a><img…></a> → [![alt](src)](href)（审查报告 §1.2 建议 #4）
+    if (el.querySelector('img') && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
+      out.push({ t: '[' + inner + '](' + href + ')', vStart: null, vEnd: null });
+      return;
+    }
+    out.push({ t: '[' + inner + '](' + href + ')', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+    return;
+  }
+  if (tag === 'IMG') {
+    const alt = el.getAttribute('alt') || '';
+    const src = el.getAttribute('src') || '';
+    out.push({ t: '![' + alt + '](' + src + ')', vStart: null, vEnd: null });
+    return;
+  }
+  // 透明/未知/块级标签出现在行内位置：子节点按行内平铺（与旧 textContent 抽取语义对齐）
+  collectFrags(el, mode, out);
+}
+function inlineTrim(node, mode) { return joinFrags(collectFrags(node, mode, [])).trim(); }
+
+// 块级转换：容器 → 块字符串数组（每块内部用 \n 分行；块间由调用方以空行分隔）
+function blockifyContainer(el, ctx) {
+  const blocks = [];
+  let frags = [];
+  const flush = () => {
+    const t = joinFrags(frags).trim();
+    frags = [];
+    if (t !== '') blocks.push(t);
+  };
+  for (const child of Array.from(el.childNodes)) {
+    if (child.nodeType === 3) {
+      const t = normWs(child.textContent);
+      if (t !== '') frags.push({ t: t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+      continue;
+    }
+    if (child.nodeType !== 1) continue;
+    if (BLOCK_TAGS.has(child.tagName)) {
+      flush();
+      blocks.push(...blockOfEl(child, ctx));
+    } else {
+      fragFor(child, 'newline', frags);
+    }
+  }
+  flush();
+  return blocks;
+}
+function blockOfEl(el, ctx) {
+  const tag = el.tagName;
+  if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') {
+    const inner = inlineTrim(el, 'br');
+    return inner !== '' ? ['#'.repeat(+tag[1]) + ' ' + inner] : [];
+  }
+  if (tag === 'P') {
+    const inner = inlineTrim(el, 'newline');
+    return inner !== '' ? [inner] : [];
+  }
+  if (tag === 'UL' || tag === 'OL') {
+    const s = listElToMd(el, 0);
+    return s !== '' ? [s] : [];
+  }
+  if (tag === 'BLOCKQUOTE') {
+    const s = quoteElToMd(el, ctx);
+    return s !== '' ? [s] : [];
+  }
+  if (tag === 'TABLE') {
+    const s = tableToMd(el, ctx);
+    return s !== '' ? [s] : [];
+  }
+  if (tag === 'PRE') {
+    return ['```\n' + el.textContent.replace(/^\n|\n$/g, '') + '\n```'];
+  }
+  if (tag === 'HR') return ['---'];
+  if (tag === 'BR') return [''];
+  if (tag === 'LI') {
+    const inner = inlineTrim(el, 'newline');
+    return inner !== '' ? ['- ' + inner] : [];
+  }
+  // DIV/SECTION/…/DL/DT/DD 等容器：子块递归
+  return blockifyContainer(el, ctx).filter((b) => b !== '');
+}
+
+// 列表：递归缩进（每层缩进 = 父级标记宽度：'1. '=3、'- '=2；CommonMark 嵌套列表最小缩进）
+function listElToMd(listEl, indent) {
+  const isOL = listEl.tagName === 'OL';
+  let n = isOL ? (parseInt(listEl.getAttribute('start'), 10) || 1) : 1;
+  const lines = [];
+  for (const li of listEl.children) {
+    if (li.tagName !== 'LI') continue;
+    lines.push(...liToLines(li, indent, isOL, n));
+    if (isOL) n++;
+  }
+  return lines.filter((l) => l !== '').join('\n');
+}
+function liToLines(li, indent, isOL, num) {
+  const prefix = ' '.repeat(indent);
+  const marker = isOL ? (num + '. ') : '- ';
+  const lines = [];
+  const frags = [];
+  let nested = false; // li 内是否出现嵌套列表
+  for (const child of Array.from(li.childNodes)) {
+    if (child.nodeType === 3) {
+      const t = normWs(child.textContent);
+      if (t !== '') frags.push({ t: t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+      continue;
+    }
+    if (child.nodeType !== 1) continue;
+    const tag = child.tagName;
+    if (tag === 'UL' || tag === 'OL') {
+      const head = joinFrags(frags).trim();
+      if (head !== '') lines.push(prefix + marker + head);
+      frags.length = 0;
+      nested = true;
+      const sub = listElToMd(child, indent + marker.length);
+      if (sub) sub.split('\n').forEach((l) => lines.push(l));
+    } else {
+      // LI 内子节点 walker：保留行内格式（fragFor 走元素级片段；P/DIV 等容器由 fragFor 平铺）
+      fragFor(child, 'newline', frags);
+    }
+  }
+  const tail = joinFrags(frags).trim();
+  if (tail !== '') {
+    const cont = prefix + (nested ? ' '.repeat(marker.length) : marker);
+    const tl = tail.split('\n');
+    lines.push(cont + tl[0]);
+    for (let i = 1; i < tl.length; i++) lines.push(prefix + ' '.repeat(marker.length) + tl[i]);
+  }
+  return lines;
+}
+
+// 引用：块级子元素逐个处理，每行 > 前缀；多段间以裸 > 行分隔
+function quoteElToMd(quoteEl, ctx) {
+  const parts = blockifyContainer(quoteEl, ctx).filter((p) => p !== '');
+  const out = [];
+  parts.forEach((p, i) => {
+    if (i > 0) out.push('>');
+    p.split('\n').forEach((l) => out.push(l.trim() === '' ? '>' : '> ' + l));
+  });
+  return out.join('\n');
+}
+
+function tableToMd(table, ctx) {
   const rows = [];
   table.querySelectorAll('tr').forEach((tr) => {
     const cells = [];
     tr.querySelectorAll(':scope > th, :scope > td').forEach((c) => {
-      cells.push(c.textContent.replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|'));
+      const rs = parseInt(c.getAttribute('rowspan') || '1', 10) || 1;
+      const cs = parseInt(c.getAttribute('colspan') || '1', 10) || 1;
+      if ((rs > 1 || cs > 1) && ctx && ctx.warnings) {
+        const w = '表格含合并单元格（rowspan/colspan），已按普通单元格展平（v1 不支持合并单元格结构）';
+        if (!ctx.warnings.includes(w)) ctx.warnings.push(w);
+      }
+      // 单元格内子节点 walker（行内格式保留）；<br>→空格（审查报告 §1.2 建议 #2）；GFM 转义 |/换行
+      let cell = joinFrags(collectFrags(c, 'space', [])).trim();
+      cells.push(cell.replace(/\|/g, '\\|').replace(/\n/g, ' '));
     });
     if (cells.length) rows.push(cells);
   });
@@ -289,6 +449,13 @@ function tableToMd(table) {
   const sep = '| ' + norm[0].map(() => '---').join(' | ') + ' |';
   const body = norm.slice(1).map((r) => '| ' + r.join(' | ') + ' |');
   return [header, sep, ...body].join('\n');
+}
+
+function htmlToMarkdown(html, ctx) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script, style, noscript, head, template').forEach((n) => n.remove());
+  const blocks = blockifyContainer(doc.body, ctx || null);
+  return blocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /* ---------- B线资源：vendor 同源分文件 → 运行时 blob 化（T9′；零外发：全同源相对路径） ---------- */
@@ -453,7 +620,8 @@ const registry = {
       if (other > 0) warnings.push('转换器提示 ' + other + ' 条消息（样式近似渲染）');
     }
     // DOMParser 还原 HTML 实体；共享 htmlToMarkdown（TXT/HTML 路径同款，回归由契约组 text-html 用例保障）
-    const md = htmlToMarkdown(result.value || '');
+    // ctx.warnings：透出表格合并单元格等结构性提示（P0 修复 §1.2）
+    const md = htmlToMarkdown(result.value || '', { warnings });
     return { markdown: md, warnings, backend: 'mammoth' };
   },
   xlsx: async (file, buf) => {
@@ -499,7 +667,11 @@ const registry = {
     const probe = text.slice(0, 2000);
     const looksHtml = name.endsWith('.html') || name.endsWith('.htm') ||
       /<(!doctype|html|body|div|p|h[1-6]|table|ul|ol|section|article)\b/i.test(probe);
-    if (looksHtml) return { markdown: htmlToMarkdown(text), backend: 'builtin-html' };
+    if (looksHtml) {
+      const warnings = [];
+      const md = htmlToMarkdown(text, { warnings });
+      return { markdown: md, warnings, backend: 'builtin-html' };
+    }
     return { markdown: text.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim(), backend: 'builtin' };
   },
 };
