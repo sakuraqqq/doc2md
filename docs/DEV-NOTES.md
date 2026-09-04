@@ -271,3 +271,22 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - **用户机终验预期修正**：`npm install && npm run build && npm test` 当前**预期 ≠65/65**（H2 必红），其余 64 项绿；H2 处置后报全绿。
 - 实测核验：index.html 80,840 B / SHA256 `5D6C148A21064B4E7C0B231EA333310386F3E0408E8EF82A34B4E4E6200BCC63`；test:direct 44 tests = 19 pass（A/B/H 非 H2 之 6 + …）/ 25 fail（24 = 浏览器 spawn 基建红 + H2 契约回归）。
 
+## 2026-09-05 · 防屎山收官回归验收 t13（core-dev，修验分离）
+
+### 验证了什么（基线 70b8818 = t11 + t12）
+- **H2 白名单版生效**：test:direct H 组 6/6 全绿（fetchable 外域 URL ⊆ 域名级白名单；T-6 用户拍板已登记 CONTRACT §6；t10 的 H2 阻塞关闭）；lint 0 error（28 warn 全复杂度类——t12 声称 23 与实际 28 小出入）。
+- **全量回归 64/65**（宿主浏览器等价复验 + test:direct 真跑）：A0/B11/11/H6/6 真跑；D10/10、E4/4、F3/3、C6/6、G3/3、I5/5、J1/1、M1 近似 303ms——全部绿；唯一未跑 = 浏览器组真机（spawn 基建，等价复验通过）。
+- **t12 diff 语义抽查**：死码删除（INLINE_TRANSPARENT）/正则线性化（sniff charset——1 边缘差异：首 meta 无 charset 不继续找后续，② 兜底保护）/catch{} 化/三嵌套扁平化/Promise.catch 化（ocr 更宽容方向）/renderResult 参数删除（app 同步）——**行为等价**。
+- **bundle round-trip 再次 = true**；真实文档复转 221ms 全绿（图/表格/4×H2/alt）。
+- metrics 复现：超限 21（decodeText 因线性化升为库最高 cyc32/cog56——**报告未同步，登记缺口**）。
+
+### 发现（报告队长，未修改）
+1. **[高] t12 未提交 index.html 产物**——仓库=src(新)+产物(旧 eee7ca1)；语义等价但「产物=最新 src」未达成；用户机 `npm run build && git diff --exit-code index.html` 必非零（构建一致性验收前置被破坏）→ 建议 t12 补产物提交后再终验幂等；新产物行为未实证（静态等价，用户机 build 后闭环）。
+2. **[中] CODE-METRICS.md 过期**（decodeText 32/56 未登记；行号数字全过期）。
+3. **[低] t12「23 warn」声称 vs 实际 28**（登记）。
+4. **[登记] 边缘差异×2**（sniff 多 meta / ocr 更宽容——方向安全，无断言风险）。
+
+### 环境事实
+- 用户机终验：**补产物后** `npm install && npm run build && npm test` → 预期 65/65；当前缺产物状态跑 = 64/65 契约绿 + build 变更工作树（非契约红，但幂等验收受阻）。
+- 实测核验：index.html 80,840 B / SHA256 `5D6C148A21064B4E7C0B231EA333310386F3E0408E8EF82A34B4E4E6200BCC63`；test:direct 44 tests = 21 pass / 23 fail（全为浏览器 spawn 基建红）。
+
