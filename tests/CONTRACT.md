@@ -56,17 +56,17 @@
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| D1.*（4） | 行内加粗/斜体/代码相邻中英文、ASCII 标点：输出与快照**逐字符相等**（纯函数字符串相等断言；见 §8 快照清单） | `htmlToMarkdown(html) === expected` | 🔴 红（基线 c8d42ad 实测 4/4 不符——`out.join(' ')` 注入多余空格，审查报告 §1.1） |
-| D2.*（6） | 嵌套 ol 缩进递归 / li 内行内加粗·链接 / 表格单元格 `<b>`+`<br>` / 多段 blockquote 逐行 `> ` / 锚包图片 / 标题内 `<br>` 软换行（见 §8 快照清单） | 同上 | 🔴 红（基线 c8d42ad 实测 6/6 不符——UL/OL/BLOCKQUOTE/表格/锚点 textContent 抽取丢结构，审查报告 §1.2） |
+| D1.*（4） | 行内加粗/斜体/代码相邻中英文、ASCII 标点：输出与快照**逐字符相等**（纯函数字符串相等断言；见 §8 快照清单） | `htmlToMarkdown(html) === expected` | 🟢 绿（契约先红 c8d42ad 实测 4/4 不符；c24f8ab 修复后 2026-09-05 独立验收 4/4 命中，见 §7） |
+| D2.*（6） | 嵌套 ol 缩进递归 / li 内行内加粗·链接 / 表格单元格 `<b>`+`<br>` / 多段 blockquote 逐行 `> ` / 锚包图片 / 标题内 `<br>` 软换行（见 §8 快照清单） | 同上 | 🟢 绿（契约先红 c8d42ad 实测 6/6 不符；c24f8ab 修复后 2026-09-05 独立验收 6/6 命中，见 §7） |
 
 ### 契约组 E — sniff 精确快照（2026-09-05 新增：契约先红 t1）
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| E1 | `junk:%PDF-1.4\n`（垃圾前缀）→ `pdf`（找首个 `%PDF` 位置 ≤1024，architecture §3） | `deepEqual({type:'pdf'})` | 🔴 红（基线 c8d42ad：判 `text`——实现只认 `startsWith("%PDF-")`，审查报告 §1.3） |
-| E2 | `MZ…`（exe 魔数 + 控制字节）→ `unknown`(binary)（不得落 `text`） | `deepEqual({type:'unknown',detail:'binary'})` | 🔴 红（基线 c8d42ad：判 `text`——无二进制启发式，审查报告 §1.3） |
-| E3 | 普通 zip（PK 魔数，无 word//xl//ppt/ 部件）→ `zip` 或 `unknown`，不得判回 `text` | `type ∈ {zip, unknown}` | 🟢 绿（基线 c8d42ad：已判 `zip`——如实报告，不强行造红；zip/unknown 定版待实现拍板，见 §8 口径说明） |
-| E4 | 空文件（0 字节）→ `unknown`(empty) | `deepEqual({type:'unknown',detail:'empty'})` | 🟢 绿（基线 c8d42ad：已如此——如实报告，不强行造红） |
+| E1 | `junk:%PDF-1.4\n`（垃圾前缀）→ `pdf`（找首个 `%PDF` 位置 ≤1024，architecture §3） | `deepEqual({type:'pdf'})` | 🟢 绿（契约先红 c8d42ad 判 `text`；c24f8ab 修复后 2026-09-05 独立验收 `{type:'pdf'}` 命中，见 §7） |
+| E2 | `MZ…`（exe 魔数 + 控制字节）→ `unknown`(binary)（不得落 `text`） | `deepEqual({type:'unknown',detail:'binary'})` | 🟢 绿（契约先红 c8d42ad 判 `text`；c24f8ab 修复后 2026-09-05 独立验收 `{type:'unknown',detail:'binary'}` 命中，见 §7） |
+| E3 | 普通 zip（PK 魔数，无 word//xl//ppt/ 部件）→ `zip` 或 `unknown`，不得判回 `text` | `type ∈ {zip, unknown}` | 🟢 绿（c8d42ad 已判 `zip`；c24f8ab 后仍 `zip`——zip/unknown 定版待实现拍板，见 §8 口径说明） |
+| E4 | 空文件（0 字节）→ `unknown`(empty) | `deepEqual({type:'unknown',detail:'empty'})` | 🟢 绿（c8d42ad 已如此；c24f8ab 后仍如此） |
 
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
@@ -141,7 +141,9 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **t12 验收时点（2026-09-04，最新）**：A0 绿；B 组全绿（B0 + B1×6 + B2 + B3×3 = 11 项子断言）；C/M 组**仍红，唯一原因=本工作区沙箱禁止浏览器进程 spawn**（playwright chromium
+- **2026-09-05 修复后独立验收（最新，修验分离）**：conv-dev `c24f8ab`（P0 三件：行内空格注入/结构丢失/sniff 兜底+二进制启发式，仅动 index.html 的 htmlToMarkdown/sniff 及其两个调用点；diff 核验：tests/vendor/ 零改动，磁盘 index.html 39,401 B / SHA256 `A4976017F6E3C8B85FC6C90D7120C076A9B7FA10295D4ABB1EBEB7BE3267618A` = 提交 blob `301886f`）。
+  qa-dev 独立复验（宿主浏览器实测，非静态推断）：**契约组 D 10/10 绿**、**契约组 E 4/4 绿**（E1/E2 红→绿，E3/E4 保持绿）；A0/B 组 12 项子断言全绿；C 组近似的宿主浏览器复验 6/6（令牌全命中、零外发、耗时 0.6/0.6/16.6/2.9/137.7/389.6ms，OCR 冷启动按 T-1 口径豁免；**console.capture 与 390×844/isMobile/hasTouch 无法在宿主浏览器精确模拟——C/M 组完整断言以用户机为准**）；真实文档复验：codex §1.1 四用例输出干净 ✓（=D1），real-tables.docx → 干净 2×2 GFM 表格（无 warnings），sample.html → 标题/中文段落/GFM 表格/图片引用完整，`6月2日实验.docx`（182,306 B，与桌面原件 SHA `FED30AF8…` 一致）→ 转换成功无 error、171ms、中文无乱码、6 标题 + 2 列 11 行表格（图片 data URI 内嵌与审查报告 §2.4 登记的既有行为一致，非本次回归）。登记于 DEV-NOTES 2026-09-05。
+- **t12 验收时点（2026-09-04，修复前记录）**：A0 绿；B 组全绿（B0 + B1×6 + B2 + B3×3 = 11 项子断言）；C/M 组**仍红，唯一原因=本工作区沙箱禁止浏览器进程 spawn**（playwright chromium
   安装器 `child_process.fork` EPERM、系统 Edge/Chrome executablePath EPERM、node --test 子进程隔离 EPERM——同一根因，已穷尽无解路径；见第 5 节）。
   **实现侧已就绪**（B 线 6198e24/757a961）：五类转换器齐备（text/html、docx=T-5 表格路径、pdf=pdfjs+OCR 降级、xlsx、image=tesseract LSTM 量化 + T-1 预热 load+300ms）；
   `__doc2md` 挂钩与契约一致。**image 样例**：用户拍板（DD-10）真实字体 Arial 重渲染（7982 B），**离线 OCR 实证 PASS（HELLO/DOC2MD/2026 全命中，置信度 93%，npm run verify:ocr）**——
