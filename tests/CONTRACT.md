@@ -45,8 +45,8 @@
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| M1 | `input[type=file]` 可见；选择 `sample.txt` 后输出区出现关键令牌（匹配面：body.innerText ∪ textarea/input/pre/code 值——DD-11 修正；实现渲染进 `<textarea class="md">` 属合理媒介） | 令牌命中 | 🟢 绿（宿主浏览器实测 0ms 命中，DD-11） |
-| M2 | 同 C2（无 console error）+ 同 C3（<500ms） | — | 🟢 绿（上者同轮实测；手机视口版待适格环境终验） |
+| M1 | `input[type=file]` 存在（attached；DD-12 修正——实现为标准 `<input hidden>` 由可见按钮触发，waitFor visible 假设过窄，Playwright setInputFiles 对 hidden input 有效）；选择 `sample.txt` 后输出区出现关键令牌（匹配面：body.innerText ∪ textarea/input/pre/code 值——DD-11 修正） | 令牌命中 | 🟢 绿（宿主浏览器实测 0ms 命中；用户机 29/31 中 M 唯一红项已按 DD-12 修复，复跑预期全绿） |
+| M2 | 同 C2（无 console error）+ 同 C3（<500ms） | — | 🟢 绿（用户机 29/31 中 C 组双端全绿；M 组待复跑确认） |
 
 > 补注：C3/M 的 500ms 以「convert() 调用外部计时」为准（architecture §7 口径 =「转换 <500ms」；
 > 规划文档口径 =「渲染 <500ms」。两条口径在 <500ms 阈值上一致，测点取架构文档定版，

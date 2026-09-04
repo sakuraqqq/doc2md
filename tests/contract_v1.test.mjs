@@ -363,8 +363,12 @@ test('契约组 M：手机视口 UI 端到端（390×844：file input → 输出
         page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
         page.on('pageerror', (e) => consoleErrors.push('pageerror: ' + e.message));
         await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+        // DD-12（2026-09-04，用户机实测 29/31 唯一红项）：实现按标准设计把 file input 置为
+        // `<input multiple hidden>`（由可见按钮触发），契约 waitFor visible 假设过窄——
+        // 改为 state:'attached'（存在即操作）；Playwright setInputFiles 对 hidden input 有效。
+        // 断言语义不变（file input → 输出区出现关键内容）。按钮点击路径由 UI 手工/宿主浏览器链路覆盖。
         const input = page.locator('input[type=file]');
-        await input.waitFor({ state: 'visible', timeout: 10000 });
+        await input.waitFor({ state: 'attached', timeout: 10000 });
         const t0 = Date.now();
         await input.setInputFiles(nodePath.join(DATA, 'sample.txt'));
         const tok = 'DOC2MD-TXT-OK-2026';
