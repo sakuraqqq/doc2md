@@ -103,3 +103,20 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 ### 发现（上报拍板）
 - `package.json` `"test": "node --test"` 与 CONTRACT.md §5 记载 `node --test tests/` 不一致（T-4「四脚本语义保留」）；当前行为等价（仅 contract_v1.test.mjs 匹配），建议发布前恢复 `--test tests/` 或补拍板——已写入 RELEASE-CHECKLIST §6。
 
+---
+
+## 2026-09-04 · E线 T14：曝光与复盘（T7′）
+
+### 做了什么（仅文案/清单/提纲；零发布动作）
+- README 终极版增量：标题下加 shields.io 徽章行（license/stars/demo-online/PWA-installable；std 徽章在发布后数据生效）+ 全库内容校对（t13 版主体保留：英文要点/截图/GIF 占位/在线体验链接/许可表/Topics）。
+- `docs/OUTREACH.md`（曝光行动清单）：① Topics 推荐 10 项（doc-to-markdown/markdown/pdf/docx/xlsx/ocr/offline/pwa/single-file/privacy）；② awesome-* 收录——候选 3 个：**mansucache/awesome-markdown 已核实**（中文列表，README 明示 **Issue 推荐收录通道**，含「转换工具→转成图片」板块，建议新增「转成 Markdown」子项，贡献指南+awesome-lint 已配；CC0-1.0）+ Issue 推荐模板全文；hemanth/awesome-pwa、dp1620/awesome-markdown-devtools 为候选（提交前按其 CONTRIBUTING 走 fork→PR + awesome-lint，本轮 raw/api 网络受限未核实，已注明待发布后复核）；③ 博客提纲 7 节（§3 按「引子/选型/OCR 坑/契约测试/手机端/复盘/下一步」每节配素材出处与配图建议）。
+- `docs/RELEASE.md`：发布记录模板（版本+来源 commit/tag+测试结果+产物 SHA256 表+动作+观察期+备注）+ v0.1.1 预留区（含已知事项注记）。
+- 未动：tests/、docs/architecture.md、contract 等（红线：只做文案）。
+
+### 核验
+- 回读核验（大小+SHA256 见报告）；awesome 列表匹配度以浏览器直读核实（mansucache/awesome-markdown：Contents「转换工具」板块 + Issue 通道 + CC0-1.0）。
+- 坑记录：raw.githubusercontent / api.github.com 本轮被安全工具拦截（t13 时 api 可用；间歇）→ chrome_navigate 直读 GitHub 页成功（DSH 宿主浏览器不经过沙箱/安全工具）。
+
+### 待办（用户侧）
+- 发布后：设置 Topics（OUTREACH §1）、awesome Issue 推荐（§2.2 模板）、博客成稿（§3 提纲）、RELEASE.md v0.1.1 回填、GIF 补录、badge 生效确认。
+
