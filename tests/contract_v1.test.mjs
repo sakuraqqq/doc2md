@@ -709,7 +709,7 @@ test('契约组 G：xlsx 截断（real-multisheet.xlsx，6 sheets > 上限 5）�
 // 宽松处：只匹配 `https?://` 起始的 URL 字面量（不含数据 URI/prefetch hint 等场景；出现即违约）。
 // ---------------------------------------------------------------------------
 const H_URL_WHITELIST = []; // 许可注释 URL 白名单（当前为空；新增需拍板）
-test('契约组 H：corePath 同源 / 零外域 http(s) 字面量（离线源码断言）—— 契约先红', async (t) => {
+test('契约组 H：corePath 同源 / 零外域 http(s) 字面量 / SW v4 分段缓存（离线源码断言）', async (t) => {
   const src = fs.readFileSync(PAGE, 'utf8');
   await t.test('H1 源码不含 doc2md.local（伪域名 corePath = 外域请求违约，红线）', () => {
     assert.ok(!src.includes('doc2md.local'), "index.html 含 'doc2md.local'（corePath 伪域名）——外域请求违约（审查报告 §2.1）；应改为同源绝对 URL");
@@ -718,6 +718,33 @@ test('契约组 H：corePath 同源 / 零外域 http(s) 字面量（离线源码
     const urls = [...src.matchAll(/https?:\/\/[^\s"'<>`)]+/g)].map((m) => m[0]);
     const external = urls.filter((u) => !H_URL_WHITELIST.includes(u));
     assert.deepEqual(external, [], `源码含外域 URL：${JSON.stringify(external)}（零外发红线——除拍板登记的白名单外不得出现）`);
+  });
+  // SW v4 分段缓存（P1 二批 ⑤，审查报告 §2.2）：PRECACHE 只保留应用外壳；
+  // 大体积 OCR 资源（wasm core×2 + 语言包×2 ≈15MB）改为运行时缓存（首次 OCR 后离线可用）。
+  const SW = nodePath.join(ROOT, 'sw.js');
+  assert.ok(fs.existsSync(SW), 'sw.js 缺失——PWA 资源不完整');
+  const sw = fs.readFileSync(SW, 'utf8');
+  const precacheBlock = sw.match(/const PRECACHE = \[([\s\S]*?)\];/);
+  assert.ok(precacheBlock, 'sw.js 未定义 PRECACHE 数组');
+  const precache = [...precacheBlock[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  await t.test('H3 sw.js CACHE_NAME = doc2md-sw-v4（分段缓存版本，PRECACHE 变更必须 bump）', () => {
+    assert.match(sw, /const CACHE_NAME = 'doc2md-sw-v4'/, 'CACHE_NAME 非 v4——SW 缓存策略与 PRECACHE 清单版本不匹配');
+  });
+  await t.test('H4 PRECACHE 不含 OCR 大资源（tesseract core wasm ×2 + langs 语言包 ×2）', () => {
+    const big = precache.filter((u) => /tesseract-core-.*\.wasm\.js|langs\/.*\.traineddata/.test(u));
+    assert.deepEqual(big, [], `PRECACHE 仍预缓存大体积 OCR 资源：${JSON.stringify(big)}（分段缓存 v4：首次 OCR 后运行时缓存即离线可用）`);
+  });
+  await t.test('H5 PRECACHE 包含应用外壳（index/manifest/图标/4 转换器主库 + pdf/tess worker 入口）', () => {
+    const need = [
+      './index.html', './manifest.json', './icons/icon-192.png', './icons/icon-512.png',
+      './vendor/mammoth.browser.min.js', './vendor/pdfjs.pdf.min.js', './vendor/pdfjs.pdf.worker.min.js',
+      './vendor/tesseract.tesseract.min.js', './vendor/tesseract.worker.min.js', './vendor/read-excel-file.min.js',
+    ];
+    const missing = need.filter((u) => !precache.includes(u));
+    assert.deepEqual(missing, [], `PRECACHE 缺少应用外壳条目：${JSON.stringify(missing)}`);
+  });
+  await t.test('H6 SW install 使用 Promise.allSettled（单资源失败不阻塞安装）', () => {
+    assert.match(sw, /Promise\.allSettled\s*\(/, 'install 未使用 Promise.allSettled——任一 PRECACHE 资源失败会整体失败（审查报告 §2.2 建议『Promise.allSettled』）');
   });
 });
 

@@ -211,3 +211,23 @@ htmlToMarkdown 把块级内容解析成「文本序列」再全局 `join(' ')`�
 - P1 二批契约先红已入库；H 组无浏览器依赖可离线跑，F/G/I/J 有浏览器环境即真实断言。
 - 新样例一律 gen-samples 确定性生成 + manifest 字节锁；T-3 约定：新名不覆盖既有 sample.* 锁。
 
+---
+
+## 2026-09-05 · P1 修复（t5/t6）+ 独立验收闭环（t7）
+
+### 时间线
+
+| 时间 | 事件 | 备注 |
+|---|---|---|
+| - | **P1 修复（conv-dev t5）** `5707557`：仅 index.html + sw.js —— ① GBK 兜底解码（meta charset gb2312/gbk/gb18030/big5 → TextDecoder('gb18030')；否则容错解码替换字符 >30% 回退）；② corePath 同源化（`new URL('./vendor/', location.href)`）+ patch 降级为「外域抛错」双保险；③ SW v4 分段缓存（PRECACHE 剔除 2 core + 2 语言包 ≈15MB → 运行时缓存；install 用 Promise.allSettled；首次 OCR 提示「需下载约 12 MB」）；④ PDF 逐页 OCR（单页 <10 字符 → 该页 OCR，其余文本层）+ 进度 setStatus；⑤ xlsx truncated（自读 workbook.xml 解决 bundle 无 readSheetNames；`meta.truncated = !!res.truncated` 同步；文案「已读取前 5 个 sheet 共 N 行」） | t4 断言 F/G/H 全部转绿路径 |
+| - | **P1 修复（core-dev t6）** `413dcbc`：仅 index.html（+fflate 0.7.5 内联，MIT 许可注释保留）—— ① docx 图片阈值抽取（≤100KB data URI 内嵌 / >100KB → meta.assets + `![alt](assets/…)`；alt = docPr name 去扩展名——禁 Word AI 描述）；② OMML→LaTeX（占位令牌法：oMath 原位替换 ⟦MATHn⟧ → 重打包 zip → mammoth → 注入 $..$/$$..$$；Unicode 上/下标归一化；复杂结构退化=纯文本+warning）；③「下载 .md + 图片（zip）」按钮（fflate zipSync 本地打包，零外发） | t4 断言 I/J 转绿路径 |
+| - | **独立验收（qa-dev t7，修验分离）**：宿主浏览器实测 → D 10/10、E 4/4、F 3/3、G 3/3、H 6/6（H1-H2 红→绿 + 新增 H3-H6 SW PRECACHE 清单断言）、I 5/5、J 1/1 **全绿**；A0/B 12 项子断言绿；真实文档：`6月2日实验.docx` 图片抽出（assets/6月2日实验-1.jpg 151KB）+ alt「图片 1」+ 结构完整；real-multisheet truncated ✓；GBK ✓；`$x^2$` ✓；OCR/PDF：sample.pdf 文本层 ✓、sample.png OCR 回归 ✓（corePath 同源化后）、扫描页/混合页逐页判定插桩实证 ✓（setStatus 运行时观察，不落盘）；SW v4 注册 ✓ | C/M 组（console/手机视口）沙箱受限以用户机为准（上轮 47/47；本轮 65 项用户机终验命令见 CONTRACT.md §7） |
+
+### 根因一句话
+P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「实现缺失」——t5/t6 按审查报告 §1.4/§1.5/§2.1/§2.3/§2.4 + backlog LaTeX 补齐；t7 独立验收确认五项转绿且无回归。
+
+### 防再犯
+- F/G/H/I/J 五组断言现全部转绿并入库；任何相关改动先跑 `npm test`（有浏览器环境即真实断言）。
+- SW 分段缓存：PRECACHE 变更必须 bump CACHE_NAME（H3 断言锁版本）；大体积 OCR 资源一律运行时缓存。
+- 图片阈值（100KB）与 alt 口径（docPr 名）已由实现定版 + I 组断言锁行为；调整走拍板。
+
