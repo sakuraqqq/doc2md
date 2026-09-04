@@ -398,3 +398,171 @@ test('契约组 M：手机视口 UI 端到端（390×844：file input → 输出
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 D：htmlToMarkdown 精确输出快照（浏览器 DOM 环境；纯函数字符串相等断言）
+// 依据：docs/doc2md-代码审查报告-2026-09-05.md §1.1（行内空格注入，P0）+ §1.2（textContent 抽取丢结构，P0）
+//       + §3.5（精确输出快照建议——无需新样例文件，期望字符串即断言本身）。
+// 纪律（断言即规格）：快照 = 规格；修改任何期望输出 = 改口径 = 拍板（见 CONTRACT.md §2 契约组 D + §8）。
+// 契约先红（基线 c8d42ad 实测）：D1×4 / D2×6 全部当前输出与快照不符（详细对照见 CONTRACT.md §8）；
+// 实现按审查报告修复 1.1/1.2 后本组无需修改自动转绿。
+// ---------------------------------------------------------------------------
+const HTML_MD_SNAPSHOTS = [
+  {
+    id: 'd1-1', group: 'D1 行内拼接（审查报告 §1.1）', name: '行内加粗 + ASCII 句点（句点前不加空格）',
+    html: '<p>Hello <b>world</b>.</p>', expected: 'Hello **world**.',
+  },
+  {
+    id: 'd1-2', group: 'D1 行内拼接（审查报告 §1.1）', name: '中文加粗紧贴（CJK 相邻不补空格）',
+    html: '<p>这是<b>重点</b>内容。</p>', expected: '这是**重点**内容。',
+  },
+  {
+    id: 'd1-3', group: 'D1 行内拼接（审查报告 §1.1）', name: '斜体/代码 + 句点',
+    html: '<p>The <em>quick</em> brown fox <code>jumps</code>.</p>', expected: 'The *quick* brown fox `jumps`.',
+  },
+  {
+    id: 'd1-4', group: 'D1 行内拼接（审查报告 §1.1）', name: '行内加粗 + 原文空格保留',
+    html: '<p>第<b>一</b>章 概述</p>', expected: '第**一**章 概述',
+  },
+  {
+    id: 'd2-1', group: 'D2 结构（审查报告 §1.2）', name: '嵌套 ol（子项缩进递归，序号递增）',
+    html: '<ol><li>one<ol><li>1.1</li><li>1.2</li></ol></li><li>two</li></ol>',
+    expected: '1. one\n   1. 1.1\n   2. 1.2\n2. two',
+  },
+  {
+    id: 'd2-2', group: 'D2 结构（审查报告 §1.2）', name: 'li 内行内加粗/链接',
+    html: '<ul><li><b>加粗项</b> 与链接 <a href="https://x">链接</a></li></ul>',
+    expected: '- **加粗项** 与链接 [链接](https://x)',
+  },
+  {
+    id: 'd2-3', group: 'D2 结构（审查报告 §1.2）', name: '表格单元格内 <b> 与 <br>（<br>→空格）',
+    html: '<table><tr><th>列A</th><th>列B</th></tr><tr><td><b>重点</b> A<br>B</td><td>C</td></tr></table>',
+    expected: '| 列A | 列B |\n| --- | --- |\n| **重点** A B | C |',
+  },
+  {
+    id: 'd2-4', group: 'D2 结构（审查报告 §1.2）', name: '多段 blockquote（逐行 > ，段间空行以 > 标记）',
+    html: '<blockquote><p>第一段</p><p>第二段</p></blockquote>',
+    expected: '> 第一段\n>\n> 第二段',
+  },
+  {
+    id: 'd2-5', group: 'D2 结构（审查报告 §1.2）', name: '锚包图片 [![alt](src)](href)',
+    html: '<a href="https://x/y.png"><img src="z.png" alt="图"></a>',
+    expected: '[![图](z.png)](https://x/y.png)',
+  },
+  {
+    id: 'd2-6', group: 'D2 结构（审查报告 §1.2）', name: '标题内 <br>（软换行保留为字面 <br>）',
+    html: '<h1>A<br>B</h1>',
+    expected: '# A<br>B',
+  },
+];
+
+test('契约组 D：htmlToMarkdown 精确输出快照 —— 契约先红（当前实现输出与快照不符，修复 1.1/1.2 后转绿）', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失（无可用浏览器）——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const hasFn = await page.evaluate(() => typeof window.__doc2md === 'object' && typeof window.__doc2md.htmlToMarkdown === 'function');
+      assert.ok(hasFn, '页面未暴露契约挂钩 window.__doc2md.htmlToMarkdown（docs/architecture.md §7；快照用例依赖）');
+      for (const s of HTML_MD_SNAPSHOTS) {
+        await t.test(s.id, async () => {
+          const actual = await page.evaluate((html) => window.__doc2md.htmlToMarkdown(html), s.html);
+          assert.equal(actual, s.expected, `快照 ${s.id}（${s.name}）输出与契约快照不符`);
+        });
+      }
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 E：sniff 精确快照（纯函数：输入字节 → 类型判定）
+// 依据：docs/doc2md-代码审查报告-2026-09-05.md §1.3（PDF 前置垃圾字节未兜底 + 未知二进制回 text，P0）
+//       + §3.5 + docs/architecture.md §3 嗅探规则。
+// 纪律（断言即规格）：见 CONTRACT.md §2 契约组 E + §8。
+// 契约先红（基线 c8d42ad 实测）：E1/E2 红（实现只认 startsWith("%PDF-")、unknown 无二进制启发式）；
+// E3/E4 当前已绿（ZIP 魔数识别 + 空文件判定已实现）——如实登记，不强行造红（见 CONTRACT.md §8 口径说明）。
+// ---------------------------------------------------------------------------
+const SNIFF_CASES = [
+  {
+    id: 'e1', name: '垃圾前缀 + %PDF-1.4（搜 %PDF 位置 ≤1024）',
+    bytes: [...new TextEncoder().encode('junk:%PDF-1.4\n')],
+    expected: { type: 'pdf' },
+  },
+  {
+    id: 'e2', name: 'MZ 魔数 + 控制字节（exe 改装）——未知二进制',
+    bytes: [0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xff, 0xff],
+    expected: { type: 'unknown', detail: 'binary' },
+  },
+  {
+    id: 'e3', name: '普通 zip（PK 魔数，无 word//xl//ppt/ 部件）',
+    bytes: [0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00],
+    allowedTypes: ['zip', 'unknown'],
+    notType: 'text',
+  },
+  {
+    id: 'e4', name: '空文件（0 字节）',
+    bytes: [],
+    expected: { type: 'unknown', detail: 'empty' },
+  },
+];
+
+test('契约组 E：sniff 精确快照 —— 契约先红（E1/E2 红；E3/E4 现绿，如实登记）', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const hasFn = await page.evaluate(() => typeof window.__doc2md === 'object' && typeof window.__doc2md.sniff === 'function');
+      assert.ok(hasFn, '页面未暴露契约挂钩 window.__doc2md.sniff（docs/architecture.md §7；快照用例依赖）');
+      for (const c of SNIFF_CASES) {
+        await t.test(c.id, async () => {
+          const res = await page.evaluate((bytes) => window.__doc2md.sniff(new Uint8Array(bytes)), c.bytes);
+          if (c.expected) {
+            assert.deepEqual(res, c.expected, `sniff 快照 ${c.id}（${c.name}）与契约不符`);
+          } else {
+            assert.ok(c.allowedTypes.includes(res.type), `sniff 快照 ${c.id}（${c.name}）type=${res.type} 不在允许集合 ${JSON.stringify(c.allowedTypes)}`);
+            if (c.notType) assert.notEqual(res.type, c.notType, `sniff 快照 ${c.id}（${c.name}）不得判回 ${c.notType}`);
+          }
+        });
+      }
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
