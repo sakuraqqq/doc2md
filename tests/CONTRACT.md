@@ -93,7 +93,7 @@
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
 | H1 | 源码不含 `doc2md.local`（伪域名 corePath = 外域请求违约） | !includes | 🟢 绿（t5 5707557：corePath 同源化 `new URL('./vendor/', location.href)`；patch 降级为外域抛错双保险） |
-| H2 | 源码中所有 `https?://` 字面量 ⊆ 白名单（当前白名单 = **空集**；新增许可注释 URL 须先拍板） | deepEqual [] | 🟢 绿（独立验收 grep 实测 index.html 零 http(s) 字面量——fflate 内联未引入；OMML 命名空间拆串拼接） |
+| H2 | `fetchable` 外域 URL ⊆ 白名单（域名级：`schemas.openxmlformats.org`/`www.w3.org` = 解析性命名空间标识符——xmlns/DTD 声明符，非网络请求；从不出现在 fetch/URL 构造；运行时零外发由 C4 兜底） | hostname ∈ 白名单 | 🟢 绿（**t11 口径修正，见 §6 T-6**：eee7ca1 构建产物实测唯一字面量 `http://schemas.openxmlformats.org/` 被白名单放行；t10 发现 esbuild 常量折叠把拆串折叠回完整 URL——语义未变，源码形态变化所致） |
 | H3 | sw.js `CACHE_NAME = 'doc2md-sw-v4'`（分段缓存版本，PRECACHE 变更必须 bump） | match | 🟢 绿（t7 新增断言，离线实测通过） |
 | H4 | PRECACHE 不含 OCR 大资源（core wasm ×2 + langs 语言包 ×2） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过——v4 起运行时缓存） |
 | H5 | PRECACHE 包含应用外壳（index/manifest/图标/4 主库 + pdf/tess worker 入口） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过） |
@@ -202,6 +202,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 | T-3 | 样例归属 | ✅ **已拍板**：真实样例强制 `real-*` 前缀，严禁覆盖 `sample.*`（manifest 字节锁兜底） | ✅ **已落地**（2026-09-04）：`real-tables.docx`/`real-schema.xlsx`/`real-date.xlsx` 已入库并登记于 §3（B3 结构校验绿）；⚠️ 已发生一次真实冲突（20:37 A 线覆盖 sample.docx，被 B1/B2 字节锁发现并恢复） |
 | T-4 | package.json 归属 | ✅ **已拍板**：四脚本语义保留（`test` / `test:direct` / `test:contract` / `gen:samples`）；devDependencies 合并追加不改语义 | 其他线扩展 package.json 时按此合并 |
 | T-5 | docx 保留 GFM 表格 | ✅ **已拍板**（2026-09-04 用户）：docx 转换保留 GFM 表格，路径 = **mammoth→HTML→复用 HTML→MD 转换器** | 已落地为 C6 断言（docx 用例附加）：表格行 ≥2 + `| --- |` 分隔行 + 表头单元格文本「项目」「状态」；样例 sample.docx 已含 2×2 中文表格（无需改样例）；先红后绿：B 线 t10 按此路径实现后转绿 |
+| T-6 | H2 白名单口径（2026-09-05 用户拍板，t10 发现 esbuild 常量折叠） | ✅ **已拍板**：断言语义改为「index.html 中 **fetchable 外域 URL ⊆ 白名单**」——白名单登记**解析性命名空间标识符**（域名级：`schemas.openxmlformats.org`、`www.w3.org`；理由注释：xmlns/DTD/schemaLocation 声明符，非网络请求、从不出现在 fetch/URL 构造）；运行时零外发由 C4（请求监听）兜底 | **已落地**（t11）：H2 改为域名级白名单判定（`H_URL_WHITELIST_HOSTS`）+ fetchable 语义注释；eee7ca1 构建产物实测复绿。**口径变更记录**：t10 发现 t6 的拆串（`'http'+'://schemas…'`）被 esbuild 常量折叠回完整 URL 字面量——语义未变（仍非网络请求），仅源码形态变化 → 白名单定版（域名级）；新增白名单域名须先在此拍板 |
 
 ## 7. 红绿状态与转绿路径（如实）
 
