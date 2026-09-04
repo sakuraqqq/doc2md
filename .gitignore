@@ -19,6 +19,7 @@ pastes/
 .tmp/
 .dshhome*/
 *.log
+.pw-browsers/
 
 # --- AgentTeams 团队运行时状态（含 inbox 会话数据，不入库）---
 .agent-teams/
