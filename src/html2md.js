@@ -9,8 +9,8 @@
 import { normWs } from './sniff.js';
 
 const BLOCK_TAGS = new Set(['H1','H2','H3','H4','H5','H6','P','UL','OL','LI','DL','DT','DD','BLOCKQUOTE','TABLE','PRE','HR','DIV','SECTION','ARTICLE','HEADER','FOOTER','MAIN','ASIDE','FIGURE','FIGCAPTION','ADDRESS','NAV']);
-// 透明行内标签：子节点按行内递归
-const INLINE_TRANSPARENT = new Set(['SPAN','U','S','SMALL','SUB','SUP','KBD','SAMP','MARK','ABBR','BDI','BDO','FONT','CITE','DFN','Q','TIME','INS','DEL','NOBR']);
+// 注：早期版本曾有 INLINE_TRANSPARENT（透明行内标签集合），P0 重构后 fragFor 已统一改「未知标签一律
+// 子节点行内平铺」（与旧 textContent 抽取语义对齐），该集合路径不可达——t12 按 lint 删除（行为等价，见 fragFor 注释）。
 
 function firstVisible(s) { const m = /^\s*(\S)/.exec(s); return m ? m[1] : null; }
 function lastVisible(s) { const m = /(\S)\s*$/.exec(s); return m ? m[1] : null; }
@@ -49,7 +49,12 @@ function collectFrags(node, mode, out) {
 function fragFor(el, mode, out) {
   const tag = el.tagName;
   if (tag === 'BR') {
-    out.push({ t: mode === 'br' ? '<br>' : (mode === 'space' ? ' ' : '\n'), vStart: null, vEnd: null });
+    // BR 三态（标题字面 <br> / 单元格空格 / 普通换行）——扁平 if 表达（t12：no-nested-conditional）
+    let brT;
+    if (mode === 'br') brT = '<br>';
+    else if (mode === 'space') brT = ' ';
+    else brT = '\n';
+    out.push({ t: brT, vStart: null, vEnd: null });
     return;
   }
   if (tag === 'STRONG' || tag === 'B') {
@@ -229,7 +234,7 @@ function tableToMd(table, ctx) {
   });
   if (rows.length === 0) return '';
   const width = Math.max(...rows.map((r) => r.length));
-  const norm = rows.map((r) => { while (r.length < width) r.push(''); return r; });
+  const norm = rows.map((r) => { while (r.length < width) { r.push(''); } return r; });
   const header = '| ' + norm[0].join(' | ') + ' |';
   const sep = '| ' + norm[0].map(() => '---').join(' | ') + ' |';
   const body = norm.slice(1).map((r) => '| ' + r.join(' | ') + ' |');

@@ -34,7 +34,9 @@ export async function zipEntry(buf, wantedName) {
           if (method === 0) return data;
           if (typeof DecompressionStream === 'undefined') return null; // 极端环境：无法解压
           const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-          return new Uint8Array(await new Response(stream).arrayBuffer());
+          // 解压失败按「无此条目」处理（调用方回退单 sheet）——Promise 级 .catch，线性无吞异常（t12）
+          const out = await new Response(stream).arrayBuffer().catch(() => null);
+          return out ? new Uint8Array(out) : null;
         }
         off += 46 + nameLen + extraLen + commentLen;
       }
@@ -46,19 +48,16 @@ export async function zipEntry(buf, wantedName) {
 
 /* xlsx sheet 名称列表：bundle 未导出 readSheetNames（t4 实测 G 组红根因），自读 xl/workbook.xml */
 export async function xlsxSheetNames(buf) {
-  try {
-    const xml = await zipEntry(buf, 'xl/workbook.xml');
-    if (!xml) return null;
-    const text = new TextDecoder().decode(xml)
-      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'");
-    const names = [];
-    const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
-    let m;
-    while ((m = re.exec(text))) names.push(m[1]);
-    return names.length > 0 ? names : null;
-  } catch (e) {
-    return null;
-  }
+  // zipEntry 自身对损坏/异常结构返回 null（不再 try/catch 吞异常——t12；解析失败即回退单 sheet）
+  const xml = await zipEntry(buf, 'xl/workbook.xml');
+  if (!xml) return null;
+  const text = new TextDecoder().decode(xml)
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'");
+  const names = [];
+  const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
+  let m;
+  while ((m = re.exec(text))) names.push(m[1]);
+  return names.length > 0 ? names : null;
 }
 
 function xlsxCellText(v) {
@@ -69,7 +68,7 @@ function xlsxCellText(v) {
 function xlsxRowsToMd(rows) {
   if (!rows || rows.length === 0) return '（空 sheet）';
   const width = Math.max(...rows.map((r) => r.length), 1);
-  const norm = rows.map((r) => { const c = r.slice(0, width); while (c.length < width) c.push(''); return c; });
+  const norm = rows.map((r) => { const c = r.slice(0, width); while (c.length < width) { c.push(''); } return c; });
   const esc = (s) => xlsxCellText(s).replace(/\|/g, '\\|').replace(/\s+/g, ' ');
   const header = '| ' + norm[0].map(esc).join(' | ') + ' |';
   const sep = '| ' + norm[0].map(() => '---').join(' | ') + ' |';

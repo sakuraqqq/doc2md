@@ -11,15 +11,17 @@ let ocrAssetsChecked = false;
 export async function ocrAssetsWarm() {
   // SW 未接管（file:// 双击 / SW 未注册）→ 资源即本地相对路径，无需下载提示
   if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return true;
-  try {
-    for (const key of await caches.keys()) {
-      const c = await caches.open(key);
-      const core = (await c.match('./vendor/tesseract-core-simd-lstm.wasm.js')) || (await c.match('./vendor/tesseract-core-lstm.wasm.js'));
-      const eng = await c.match('./langs/eng.traineddata');
-      const chi = await c.match('./langs/chi_sim.traineddata');
-      if (core && eng && chi) return true;
-    }
-  } catch (e) { /* 检测失败不阻塞 OCR */ }
+  // 线性写法（t12：no-ignored-exceptions）——各 Promise 级 .catch → null，任一失败即视为「未就绪」（与旧 try/catch→false 语义一致）
+  const keys = await caches.keys().catch(() => []);
+  for (const key of keys) {
+    const c = await caches.open(key).catch(() => null);
+    if (!c) continue;
+    const core = (await c.match('./vendor/tesseract-core-simd-lstm.wasm.js').catch(() => null)) ||
+      (await c.match('./vendor/tesseract-core-lstm.wasm.js').catch(() => null));
+    const eng = await c.match('./langs/eng.traineddata').catch(() => null);
+    const chi = await c.match('./langs/chi_sim.traineddata').catch(() => null);
+    if (core && eng && chi) return true;
+  }
   return false;
 }
 

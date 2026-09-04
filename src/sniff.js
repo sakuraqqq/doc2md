@@ -23,7 +23,7 @@ export function decodeText(buf) {
   if (startsWith(buf, [0xFE, 0xFF])) {
     // utf-16be：浏览器 TextDecoder 支持则用，否则字节交换
     try { return new TextDecoder('utf-16be').decode(buf.subarray(2)); }
-    catch (e) {
+    catch {
       const swap = new Uint8Array(buf.length - 2);
       for (let i = 2; i < buf.length; i += 2) { if (i + 1 < buf.length) { swap[i - 2] = buf[i + 1]; swap[i - 1] = buf[i]; } }
       return new TextDecoder('utf-16le').decode(swap);
@@ -33,17 +33,36 @@ export function decodeText(buf) {
   const probeN = Math.min(buf.byteLength, 4096);
   const tolerant = new TextDecoder('utf-8'); // 容错解码（不抛）
   const headTxt = tolerant.decode(buf.subarray(0, probeN));
-  // ① HTML：<meta charset="gb2312|gbk|gb18030|big5"> → gb18030 全量重解（浏览器原生支持该 label）
-  if (/<meta[^>]+charset\s*=\s*["']?\s*(gb2312|gbk|gb18030|big5)\b/i.test(headTxt)) {
-    try { return new TextDecoder('gb18030').decode(buf); }
-    catch (e) { /* 极端环境不支持 gb18030：保持原行为 */ }
+  // ① HTML：<meta charset="gb2312|gbk|gb18030|big5"> → gb18030 全量重解（浏览器原生支持该 label）。
+  //    线性写法（t12：super-linear-regex）：先定位 <meta> 标签切片，再以 indexOf 解析 charset 值（无回溯）
+  const metaIdx = headTxt.indexOf('<meta');
+  if (metaIdx >= 0) {
+    const metaEnd = headTxt.indexOf('>', metaIdx);
+    const metaAttr = metaEnd > metaIdx ? headTxt.slice(metaIdx, metaEnd + 1) : '';
+    const lower = metaAttr.toLowerCase();
+    const csIdx = lower.indexOf('charset');
+    if (csIdx >= 0) {
+      const afterCs = lower.slice(csIdx + 'charset'.length);
+      const eqIdx = afterCs.indexOf('=');
+      if (eqIdx >= 0) {
+        // 手工 trim（t12：不用边缘正则——linear 扫描空白/引号/分号/闭括号）
+        let val = afterCs.slice(eqIdx + 1);
+        const isTrimCh = (ch) => ch === ' ' || ch === '"' || ch === "'" || ch === ';' || ch === '>' || ch === '\t' || ch === '\r' || ch === '\n';
+        while (val.length > 0 && isTrimCh(val[0])) val = val.slice(1);
+        while (val.length > 0 && isTrimCh(val[val.length - 1])) val = val.slice(0, -1);
+        if (val === 'gb2312' || val === 'gbk' || val === 'gb18030' || val === 'big5') {
+          try { return new TextDecoder('gb18030').decode(buf); }
+          catch { /* 极端环境不支持 gb18030：保持原行为 */ }
+        }
+      }
+    }
   }
   // ② 纯文本/其余：容错解码替换字符占比 >30%（≈ fatal 试解失败）→ 回退 gb18030
   let bad = 0, tot = 0;
   for (const ch of headTxt) { tot++; if (ch === '\uFFFD') bad++; }
   if (tot > 0 && bad / tot > 0.30) {
     try { return new TextDecoder('gb18030').decode(buf); }
-    catch (e) { /* 保持原行为 */ }
+    catch { /* 保持原行为 */ }
   }
   return new TextDecoder('utf-8', { fatal: false }).decode(buf);
 }

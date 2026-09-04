@@ -26,7 +26,10 @@ function bytesToB64(bytes) {
 function extForContentType(ct) {
   const m = /^image\/([\w.+-]+)$/i.exec(String(ct || ''));
   const t = m ? m[1].toLowerCase() : 'png';
-  return t === 'jpeg' ? 'jpg' : (t === 'tiff' ? 'tif' : t);
+  // 扁平 if（t12：no-nested-conditional——jpeg/tiff 别名归一，其余原样）
+  if (t === 'jpeg') return 'jpg';
+  if (t === 'tiff') return 'tif';
+  return t;
 }
 function docxSafeBase(name) {
   const b = String(name || 'doc').replace(/\.docx$/i, '');
@@ -55,8 +58,8 @@ function ommlChild(el, local) {
 // 渲染 OMML 元素序列为 LaTeX 片段；df={degraded:boolean} 透传「遇到复杂结构退化」标记
 function ommlParts(el, parts, df) {
   if (ommlIs(el, 't')) { parts.push(texText(el.textContent)); return; }
-  if (ommlIs(el, 'r')) { for (const c of Array.from(el.children)) ommlParts(c, parts, df); return; }
-  if (ommlIs(el, 'oMath') || ommlIs(el, 'oMathPara')) { for (const c of Array.from(el.children)) ommlParts(c, parts, df); return; }
+  if (ommlIs(el, 'r')) { for (const c of Array.from(el.children)) { ommlParts(c, parts, df); } return; }
+  if (ommlIs(el, 'oMath') || ommlIs(el, 'oMathPara')) { for (const c of Array.from(el.children)) { ommlParts(c, parts, df); } return; }
   if (ommlIs(el, 'f')) {
     const num = ommlChild(el, 'num'), den = ommlChild(el, 'den');
     parts.push('\\frac{' + (num ? ommlConcat(num) : '') + '}{' + (den ? ommlConcat(den) : '') + '}');
@@ -91,7 +94,7 @@ function ommlParts(el, parts, df) {
   }
   // 复杂结构（nary 积分/求和、m 矩阵、limLow/limUpp、func、eqArr、groupChr、box…）→ v1 退化：保留全部文本
   const raw = texText(el.textContent || '').replace(/\s+/g, ' ').trim();
-  if (raw !== '') { parts.push(raw); if (df) df.degraded = true; return; }
+  if (raw !== '') { parts.push(raw); if (df) { df.degraded = true; } return; }
   for (const c of Array.from(el.children)) ommlParts(c, parts, df);
 }
 function ommlConcat(node) {
@@ -141,7 +144,10 @@ function docxInjectLatex(md, maths) {
   let out = md;
   maths.forEach((m, i) => {
     const tok = '⟦MATH' + (i + 1) + '⟧';
-    const rep = m.latex !== null ? (m.block ? '$$' + m.latex + '$$' : '$' + m.latex + '$') : (m.rawText || '');
+    // 扁平 if（t12：no-nested-conditional）——正常公式：块级 $$..$$ / 内联 $..$；退化公式：纯文本
+    let rep;
+    if (m.latex !== null) rep = m.block ? '$$' + m.latex + '$$' : '$' + m.latex + '$';
+    else rep = m.rawText || '';
     if (out.indexOf(tok) >= 0) out = out.split(tok).join(rep);
   });
   return out;
@@ -155,7 +161,7 @@ export async function docxConvert(file, buf) {
   if (!F) throw new Error('fflate 未加载');
   let entries;
   try { entries = F.unzipSync(buf); }
-  catch (e) { throw new Error('文件已损坏或不是有效的 Office 文档（zip 解压失败）'); }
+  catch { throw new Error('文件已损坏或不是有效的 Office 文档（zip 解压失败）'); }
   const docEntry = entries['word/document.xml'];
   if (!docEntry) throw new Error('文件已损坏或不是有效的 Office 文档（缺 word/document.xml）');
   let docXml = new TextDecoder('utf-8').decode(docEntry);
@@ -174,10 +180,9 @@ export async function docxConvert(file, buf) {
       imgIdx++;
       const alt = docxAltFromName(metaEntry.name);
       let bytes = null;
-      try {
-        const ab = await image.readAsArrayBuffer();
-        bytes = new Uint8Array(ab);
-      } catch (e) { bytes = null; }
+      // 读取失败按空图处理（上层已有 bytes==null → 空 src/alt 路径）：Promise 级 .catch，无 try/catch 吞异常
+      const ab = await image.readAsArrayBuffer().catch(() => null);
+      bytes = ab ? new Uint8Array(ab) : null;
       if (!bytes || bytes.length === 0) return { src: '', alt: '' };
       if (bytes.length <= DOCX_IMG_EMBED_MAX) {
         return { src: 'data:' + ct + ';base64,' + bytesToB64(bytes), alt };

@@ -19,7 +19,7 @@ export async function handleFiles(files) {
   for (let i = 0; i < list.length; i++) {
     const file = list[i];
     const result = await convert(file);
-    renderResult(file, result, i + 1, list.length);
+    renderResult(file, result);
   }
   setStatus('完成：共 ' + list.length + ' 个文件。');
 }
