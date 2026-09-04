@@ -150,3 +150,27 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 - SW v3：注册成功 + PRECACHE 24 项（vendor 8/8 + langs 2/2 全量）。
 - file:// 双击：页面 + 4 库加载成功（拖文件路径无 fetch 依赖）；OCR 在 file:// 受限（BLINE fetch）——README 已注明。
 
+---
+
+## 2026-09-04 · 发布日 + 首次线上反馈链（v0.1.0 上线日）
+
+### 时间线
+
+| 时间 | 事件 | 备注 |
+|---|---|---|
+| 晚 | v0.1.0 发布：`gh repo create`（用户终端）→ tag `v0.1.0` → push main + 单独 push tag（禁 `--tags`）；Pages deploy run1-5 全部成功 | 首次 deploy 失败一次：仓库 Pages 未启用（configure-pages 拿不到站点）→ 用户 Settings → Pages → Source=GitHub Actions 后 re-run 通过 |
+| - | **线上反馈①**：拖入 docx 被浏览器下载 | 根因=拖放监听仅 dropzone 局部；修复 `77fdc25`（document 级 dragover/drop 拦截，任意位置可拖放） |
+| - | **反馈②**：修复推送后用户仍见旧行为 | 根因=SW cache-first 命中缓存的旧 index.html（CACHE_NAME 未 bump → 永不更新）；修复 `3a8f193`（sw v2：导航 network-first + bump）——教训：SW 预缓存的应用必须配网络优先导航 |
+| - | **反馈③**：刷新图标一直转（16.4MB 首载） | 根因=tesseract 语言包 base64 内联（13MB+）；拍板懒加载 → `fd0c721`/`b0ab602`（langs/ 同源懒加载，首载 -38% → 10.2MB） |
+| - | **反馈④**：仍分钟级转圈（10.2MB） | 根因=pdfjs/tess core 仍内联；拍板全面拆分 → `ed0f057`（index.html 32KB + vendor/ 8 库分文件，首屏 gzip≈270KB；SW v3 预缓存 24 项离线全功能）——红线 2「单文件→单目录」DD-15 |
+| - | **真实数据验收**（换数据独立验收） | 用户真实论文《6月2日实验.docx》（表格/公式/图片）→ 转换完整：GFM 表格 10 行/加粗/公式/图片 base64 自包含；第三方引擎 read_document 仅解析出 2 行，我方 89 行全量 |
+
+### 根因一句话
+单文件内联策略（为满足「零外发+双击可用」）牺牲了首载体积，SW cache-first 又遮蔽线上更新——三个真实反馈暴露三层问题，各由一次拍板解决（DD-14/15）。
+
+### 防再犯
+- SW 导航一律 network-first（更新即时）；资产 cache-first + CACHE_NAME bump 机制保留。
+- 大体积资源（语言包/核心库）一律同源分文件 + SW 预缓存；base64 内联仅限小资源。
+- 发布后第一时间用真实用户文档验收（本日证实 GFM 表格/公式路径可用；真实数据比合成样例更能暴露边界）。
+- 决策史：DD-14 / DD-15 / DD-16（真实数据验收）；发布记录：`docs/RELEASE.md` v0.1.0 区已回填。
+

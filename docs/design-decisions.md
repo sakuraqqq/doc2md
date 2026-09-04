@@ -104,3 +104,12 @@
 - **实现**：① `.tmp/split-vendor.mjs` 删 8 个内联块（mammoth/pdfjs UMD+worker/tesseract UMD+worker/core×2/read-excel）→ 4 个 `<script src>` 引入（库先应用后）；② BLINE：pdf worker 改相对路径（file:// 下 pdf.js 自动回退主线程 fake worker）；OCR core/worker 改 `fetch('./vendor/…')` → blob（patch 拦截不变）；③ sw.js：CACHE_NAME v3，PRECACHE += vendor/*（8）+ langs/*（2）。
 - **验收**：① 体积——index.html **32KB**（首屏 gzip ≈270KB，vs 16.4MB 降 ≈98%）；全资产 gzip 8.15MB；② 真浏览器全功能回归——6 样例全中（txt 1ms / html 2ms / docx 31ms / xlsx 4ms / pdf 159ms / OCR 425ms）、零外域、console 0、net 实证 vendor 同源 fetch（`./vendor/tesseract-core-*.wasm.js` 等）；③ SW v3 注册 + PRECACHE 24 项（vendor 8/8 + langs 2/2 全量）；④ file:// 双击——页面 + 4 库（mammoth/pdfjsLib/Tesseract/readXlsxFile）全部加载成功（用户拖文件路径无 fetch 依赖；OCR 的 BLINE fetch 在 file:// 受限——README 注明，HTTP/SW 环境全功能）。
 - **回声**：AGENTS.md 红线 2 更新；README/RELEASE-CHECKLIST/architecture §4/§6 同步；契约断言零改动（tests/ 未动；C4 零外发断言仅认同源请求，兼容）。
+
+## DD-16 · 真实数据验收（换数据独立验收，发布日）— 2026-09-04 队长/用户
+
+- **现象**：v0.1.0 上线后，用户用真实论文《6月2日实验.docx》（桌面课程论文：标题/表格/公式/图文混排）转换，产物落 `Downloads/6月2日实验.md`。
+- **根因/背景**：契约全部用合成样例（`sample.*`）+ 上游测试集（`real-*`）锁定；真实用户文档是高维混合排版，是换数据独立验收（SOP 阶段 4/二阶段）的正确样本。
+- **拍板（无新口径）**：不做新增拍板——真实数据只做验证，不改契约/实现；若有缺失为「记录+后续优化项」。
+- **验收**：我方转换器 89 行全量（标题 #/##/#### 层级、GFM 表格「表格1 GK150电动机」10 行两列含表头分隔行、加粗、公式 i=d2/d1 及 n2=n1/i 文本、图片 base64 自包含）；**第三方引擎 read_document 仅解析出 2 行标题**——同文档转换完整性我方显著优于参照实现。
+- **后续优化项（不阻塞）**：图片以 base64 data-URI 内嵌（mammoth 默认）——md 自包含 ✓ 零外发 ✓；但 GitHub 等渲染器不显示 data URI（README 已注明策略）；v1 保持。
+- **回声**：RELEASE.md v0.1.0 区记录副产品（用户机 31/31 之外，真实文档验收作为换数据证据）；DEV-NOTES 发布日章节。
