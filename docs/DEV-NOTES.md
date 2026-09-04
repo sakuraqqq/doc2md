@@ -84,3 +84,22 @@ AgentTeams 成员的「首轮核心集」裁剪策略（router-bootstrap，旨�
 - 实测（本地 http + chrome）：sample.docx → `| 项目 | 状态 |` + `| --- | --- |` + `| 文档转换 | 进行中 |`；双令牌命中；59ms；txt/html/xlsx/pdf 回归零破坏；零外域请求；console error=0。
 - 同步：architecture.md §4.2 定版（GFM 路径 + C6 契约说明）。
 
+---
+
+## 2026-09-04 · D线 T13：发布网页版（T6′）物料
+
+### 做了什么（盘点后基于最新现状——B线 t3/t5 与 QA t12 已并行完成，index.html 已 16.4MB 全量，t11 PWA 修改经 grep 确认全部保留）
+- `LICENSE`（MIT，Copyright 2026 sakuraqqq）——盘点确认根目录此前**缺 LICENSE**。
+- `.github/workflows/deploy-pages.yml`：照 cola 同款（GitHub API 抓取验证：官方 pages 四步 + concurrency 组；纯静态零构建）。`.nojekyll`（空文件）。
+- `README.md` 升级终稿：中英 + 功能全绿表（5 类 + PWA）+ 口径 + 真实截图 `assets/screenshot.png`（宿主浏览器实测：sample.docx 结果卡含 GFM 表格）+ GIF 占位说明 + 在线体验链接（Pages 占位）+ 目录结构（B线后现状）+ 测试与质量 + 许可表（licenses.md 8 库）+ Topics 清单 + 发展路线。
+- `docs/RELEASE-CHECKLIST.md`：发布核对清单（物料表 → 仓库设置 → git 规范 bump→commit→tag→push main→push tag 单独+ dry-run 命令 → 发布后验证 6 项 → npm pack 等价核对 → 观察期 ≥3 天 → 已知不一致 → 环境备注）。
+- 未动 `docs/design-decisions.md`（B/QA 线在维护，已含 DD-4~12；E线 PWA 决策在 architecture.md §8.4）。
+
+### 实测/核验
+- `node tests/pwa-audit.mjs` 48/48（t11 产物，README 引用前复跑确认）。
+- 截图：真实 UI 渲染 1280×800（sample.docx → GFM 表格结果卡）。
+- 回读核验（大小 + SHA256 逐项，见任务报告）；git 本沙箱不可执行（已实测），commit/tag/push 留用户终端。
+
+### 发现（上报拍板）
+- `package.json` `"test": "node --test"` 与 CONTRACT.md §5 记载 `node --test tests/` 不一致（T-4「四脚本语义保留」）；当前行为等价（仅 contract_v1.test.mjs 匹配），建议发布前恢复 `--test tests/` 或补拍板——已写入 RELEASE-CHECKLIST §6。
+
