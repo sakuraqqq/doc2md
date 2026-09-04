@@ -22,8 +22,8 @@ export function fmtSize(n) {
 export async function copyText(text, btn) {
   try {
     await navigator.clipboard.writeText(text);
-  } catch (e) {
-    // file:// 下 clipboard API 可能受限：fallback execCommand
+  } catch {
+    // file:// 下 clipboard API 可能受限：fallback execCommand（异常无须引用，意图已注释——t12）
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
@@ -60,7 +60,7 @@ export async function downloadZip(text, fileName, assets, btn) {
     for (const a of assets || []) {
       try {
         files[a.name] = new Uint8Array(await a.blob.arrayBuffer());
-      } catch (e) { /* 单图读取失败跳过（其他图照常打包） */ }
+      } catch { /* 单图读取失败跳过（其他图照常打包） */ }
     }
     const z = F.zipSync(files);
     const url = URL.createObjectURL(new Blob([z], { type: 'application/zip' }));
@@ -71,13 +71,13 @@ export async function downloadZip(text, fileName, assets, btn) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
-  } catch (e) {
+  } catch {
     const old = btn.textContent;
     btn.textContent = '❌ 打包失败';
     setTimeout(() => { btn.textContent = old; }, 1500);
   }
 }
-export function renderResult(file, result, idx, total) {
+export function renderResult(file, result) {
   const card = document.createElement('div');
   card.className = 'card';
   const head = document.createElement('div');
@@ -129,7 +129,7 @@ export function renderResult(file, result, idx, total) {
     const btnCopy = document.createElement('button');
     btnCopy.className = 'btn';
     btnCopy.textContent = '📋 复制 Markdown';
-    btnCopy.addEventListener('click', (e) => copyText(ta.value, btnCopy));
+    btnCopy.addEventListener('click', () => copyText(ta.value, btnCopy));
     const btnDl = document.createElement('button');
     btnDl.className = 'btn' + (hasAssets ? '' : ' primary');
     btnDl.textContent = '⬇ 下载 .md';
