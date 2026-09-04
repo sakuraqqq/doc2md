@@ -50,6 +50,8 @@ const CASES = [
     file: 'sample.docx',
     keyTokens: ['DOC2MD-DOCX-OK-2026', '项目季度报告（样例）'],
     format: 'docx',
+    // 拍板（2026-09-04 用户）：docx 保留 GFM 表格（mammoth→HTML→复用 HTML→MD 转换器路径）
+    gfmTable: { headerCellTokens: ['项目', '状态'] },
   },
   {
     id: 'xlsx',
@@ -203,6 +205,24 @@ async function launchBrowser(chromium) {
   throw browserUnavailableError;
 }
 
+/**
+ * GFM 表格结构断言（纯函数，可离线验证）。
+ * 拍板（2026-09-04 用户）：docx 保留 GFM 表格——表格行 ≥2 + 表头分隔行（| --- |）+ 表头单元格文本。
+ * @returns {string[]} 问题列表；空数组 = 通过
+ */
+export function gfmTableIssues(markdown, headerCellTokens) {
+  const issues = [];
+  const lines = markdown.split(/\r?\n/).map((l) => l.trimEnd());
+  const tableLines = lines.filter((l) => /^\|.*\|$/.test(l));
+  if (tableLines.length < 2) issues.push(`GFM 表格行不足（${tableLines.length} 行，需 ≥2 行 | … | 结构）`);
+  const sep = tableLines.find((l) => /^\|[\s:|-]+\|$/.test(l) && l.includes('---'));
+  if (!sep) issues.push('缺少 GFM 表格表头分隔行（形如 | --- | --- |）');
+  for (const t of headerCellTokens) {
+    if (!markdown.includes(t)) issues.push(`表头单元格文本缺失：${t}`);
+  }
+  return issues;
+}
+
 /** 单样例单视口契约用例 */
 async function runConvertCase(chromium, base, c, viewport) {
   const browser = await launchBrowser(chromium);
@@ -237,6 +257,14 @@ async function runConvertCase(chromium, base, c, viewport) {
       assert.ok(
         res.markdown.includes(tok),
         `转换结果缺少关键内容「${tok}」（样例 ${c.file}，格式 ${c.format}）`
+      );
+    }
+    if (c.gfmTable) {
+      const issues = gfmTableIssues(res.markdown, c.gfmTable.headerCellTokens);
+      assert.deepEqual(
+        issues,
+        [],
+        `docx 转换结果未保留 GFM 表格：${issues.join('；')}（拍板 2026-09-04：docx 保留 GFM 表格，mammoth→HTML→复用 HTML→MD）`
       );
     }
     assert.deepEqual(consoleErrors, [], `console error 非零：${consoleErrors.join(' | ')}`);
