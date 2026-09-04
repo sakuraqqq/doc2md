@@ -15,6 +15,7 @@
 | 契约测试 | ⬜ 用户机复跑 | `npm test`：B 组全绿 + DD-11/DD-12 修复后 C/M 组预期全绿（用户机 29/31 → M 组修复后预期 31/31；宿主浏览器独立验收 C1-C6/M 已全通） |
 | PWA 静态验收 | ✅ 48/48 | `node tests/pwa-audit.mjs`（manifest/SW/图标/触控/对比度 WCAG AA） |
 | 离线 OCR 实证 | ✅ PASS | `npm run verify:ocr`（置信度 93%，HELLO/DOC2MD/2026 全命中） |
+| OCR 语言包（T8′ 懒加载） | ✅ 就绪 | **`langs/` 目录必须随 index.html 发布**（eng/chi_sim.traineddata，同源懒加载，DD-14；**缺它则 OCR 功能失效**——上次 16.4MB 单文件已不含语言包） |
 | 决策史 | ✅ 就绪 | `docs/design-decisions.md`（DD-4~12 真实案例：OCR blob 化/样例覆盖事故/单文件组装陷阱…） |
 | 许可表 | ✅ 就绪 | `docs/licenses.md`——8 库全部宽松（MIT/Apache-2.0/BSD-2），可商用；**Apache-2.0 义务：发布物附许可证文本副本 + 版权声明（licenses.md §2 执行清单，公开前逐条复核一遍）** |
 | 在线体验链接 | ⬜ Pages 发布后可访问 | README 已写 `https://sakuraqqq.github.io/doc2md/`（占位） |
