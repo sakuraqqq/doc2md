@@ -206,7 +206,21 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 防屎山独立验收 t10（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `eee7ca1`（t8 构建产物：src/ 10 模块拆分 + esbuild IIFE bundle 注入 index.html；src/ 自 a7b61b2 未变）。**结论：整体行为等价成立（重构无回归），但发现 1 个契约回归 + 3 个守门缺陷 + 2 个脚本过时——清单如下（均只报告未修改，处置待队长拍板）**。
+- **2026-09-05 防屎山收官回归验收 t13（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `70b8818`（t11 H2 白名单/配置假阳修复 + t12 src lint 真实错误清零）。**结论：H2 白名单版修复生效、lint 0 error 达成、t12 diff 语义等价（行为无变化）——全量回归 64/65 绿（另 1 项 = 浏览器组本环境不可跑，等价复验通过，用户机终验）**；发现 1 个交付缺口 + 2 个小项（均只报告未修改）。
+  **实测结果**（宿主浏览器实测真实 index.html + test:direct）：
+  - ✅ test:direct 真跑：A0 ✓ + B 11/11 ✓ + **H 组 6/6 全绿（t11 H2 白名单版生效**——`fetchable 外域 URL ⊆ 白名单`，`schemas.openxmlformats.org` 域名级放行；**t10 的 H2 阻塞已关闭**）。
+  - ✅ 宿主浏览器等价复验：D 10/10 + E 4/4 + F 3/3 + C 6/6（1/1/38/6/182/450ms）+ G 3/3 + I 5/5 + J 1/1 + M1 近似（真实 UI 链路 303ms 命中）。
+  - ✅ 真实文档复转：`6月2日实验.docx` → 221ms 无 error，图抽取 `assets/6月2日实验-1.jpg`（151,218 B）、alt=`图片 1`、GFM 表格、4×H2 标题完整（本文档无公式——公式由 J 样例覆盖）。
+  - ✅ **bundle round-trip 再次 = true**（产物壳与 src/template.html 逐字节一致，40 次以上往返不漂移）。
+  - ✅ **lint 0 error**（28 warn 全为复杂度类——t12 声称「23 warn」与实际 28 有小出入，登记；warn 不阻塞退出码，设计如此）。
+  - ✅ **t12 diff 语义抽查**：死码删除（`INLINE_TRANSPARENT`——fragFor 统一「未知标签行内平铺」，路径不可达）+ 正则等价（sniff charset 线性化——**1 边缘差异**：第一个 `<meta>` 无 charset 时不再继续找后续 meta 标签；由 ② 兜底（替换字符 >30% → gb18030）保护，无断言风险）+ 空 catch 注释（`catch {}` 标准形）+ 三/嵌套条件扁平化 + `Promise.catch(()=>null)` 化（ocr 方向「更宽容」：失败继续尝试下一 cache key——旧行为整体 false，差异方向安全）+ `renderResult` 未用参数删除（app.js 调用同步）。**行为等价成立**。
+  - 🟠 **[交付缺口·高] t12 未提交 index.html 构建产物**：当前仓库 = src(新 t12) + index.html（旧 eee7ca1 产物）——语义等价（diff 审查 + 断言保护）但**「产物=最新 src 构建」未达成**；**用户机 `npm run build && git diff --exit-code index.html` 必非零**（build 会更新 index.html）——t13 任务书第 2 项「构建一致性（用户机执行）」的前置条件被 t12 缺口破坏。**处置建议：t12 补产物提交（或队长拍板由实现方补交）后再做幂等终验**。另：**新产物行为未实证**（当前浏览器验证基于旧产物；新产物=旧产物行为等价（静态证明），用户机 build 后即闭环）。
+  - 🟡 **[低] CODE-METRICS.md 未随 t12 更新**：decodeText 线性化后复杂度**上升**（cyc 14→32、cog 22→56——全库最高，metrics 复现 21 超限但名单数字/行号过时）；t12 非「减复杂度」而是「以复杂度换正则性能」——报告 §2 对比未补。
+  - 🟡 **[登记·边缘差异×2]**：① sniff decodeText ①多 meta 标签（见上，②兜底）；② ocrAssetsWarm 更宽容（失败继续 next key）。
+  - ℹ️ 待用户机终验项：C/M 完整断言（双端视口 390×844/isMobile）+ 构建幂等（需 t12 补产物后）。
+  - 实测核验：index.html 80,840 B / SHA256 `5D6C148A21064B4E7C0B231EA333310386F3E0408E8EF82A34B4E4E6200BCC63`（= eee7ca1 产物，工作树干净）；test:direct 44 tests = 21 pass / 23 fail（23 全为浏览器 spawn 基建红，无断言红）。
+  - **用户机终验预期**：补产物后 `npm install && npm run build && npm test` → **65/65**（当前缺产物状态跑 = 64/65 + build 后 index.html 工作树变更——不构成契约红但破坏幂等验收，先补产物）。
+- **2026-09-05 防屎山独立验收 t10（core-dev 独立复验；修验分离——只验收不修改）**：基线 `eee7ca1`（t8 构建产物：src/ 10 模块拆分 + esbuild IIFE bundle 注入 index.html；src/ 自 a7b61b2 未变）。**结论：整体行为等价成立（重构无回归），但发现 1 个契约回归 + 3 个守门缺陷 + 2 个脚本过时——清单如下（均只报告未修改，处置待队长拍板）**。
   **实测结果**（宿主浏览器实测真实 index.html + test:direct）：
   - ✅ 全量回归**非 H2 部分全绿**：A0 + B 组 11/11（test:direct 真跑）+ D 10/10 + E 4/4 + F 3/3 + C 6/6（token/GFM/耗时 1/1/32/3/148/442ms/零外域/console0）+ G 3/3 + I 5/5 + J 1/1 + M1 近似（真实 UI 链路 309ms 命中；390×844/isMobile 无法宿主模拟，留用户机）+ H1/H3/H4/H5/H6 绿。
   - ✅ 真实文档复转：`6月2日实验.docx` → 219ms 无 error、图抽取 `assets/6月2日实验-1.jpg`（151,218 B）、alt=`图片 1`、GFM 表格/H2 标题完整。
