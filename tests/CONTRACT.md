@@ -61,9 +61,10 @@
 | `sample.docx` | DOCX | `DOC2MD-DOCX-OK-2026`、`项目季度报告（样例）` | 中文 + 2×2 表格 |
 | `sample.xlsx` | XLSX | `DOC2MD-XLSX-OK-2026`、`华东区` | 中文表头/数据（sharedStrings） |
 | `sample.pdf` | PDF | `DOC2MD-PDF-2026-OK`、`Doc2md Sample PDF` | 文本层（拉丁；拍板点 T-2） |
-| `sample.png` | 图片(OCR) | `HELLO`、`DOC2MD`、`2026` | 位图字体渲染（黑底白字…白底黑字），OCR 可读 |
+| `sample.png` | 图片(OCR) | `HELLO`、`DOC2MD`、`2026` | 真实字体（Arial 72px，880×180，黑字白底）渲染；离线 OCR 实证 PASS（置信度 93%，DD-10）；图像资产 `tests/lib/assets/sample-image.png`（tools/gen-sample-image.ps1 一键生成） |
 
 生成器：`tests/gen-samples.mjs`（确定性输出，重复运行字节不变）；重生成：`npm run gen:samples`。
+图像样例：由 `tools/gen-sample-image.ps1`（Windows GDI+）生成一次并提交为固定资产，生成器只做字节复制（无公式漂移空间）。
 
 ### 真实样例清单（T-3 通路落地：用户终端自 GitHub 上游下载，2026-09-04 登记）
 
@@ -124,9 +125,10 @@ npm run gen:samples           # 重新生成样例（确定性）
 - **t12 验收时点（2026-09-04，最新）**：A0 绿；B 组全绿（B0 + B1×6 + B2 + B3×3 = 11 项子断言）；C/M 组**仍红，唯一原因=本工作区沙箱禁止浏览器进程 spawn**（playwright chromium
   安装器 `child_process.fork` EPERM、系统 Edge/Chrome executablePath EPERM、node --test 子进程隔离 EPERM——同一根因，已穷尽无解路径；见第 5 节）。
   **实现侧已就绪**（B 线 6198e24/757a961）：五类转换器齐备（text/html、docx=T-5 表格路径、pdf=pdfjs+OCR 降级、xlsx、image=tesseract LSTM 量化 + T-1 预热 load+300ms）；
-  `__doc2md` 挂钩与契约一致；QA 已拍板 DD-8（sample.png 零字形标准化，断言不变）并重生成样例（655→2457B 仅 png 变化）。
+  `__doc2md` 挂钩与契约一致。**image 样例**：用户拍板（DD-10）真实字体 Arial 重渲染（7982 B），**离线 OCR 实证 PASS（HELLO/DOC2MD/2026 全命中，置信度 93%，npm run verify:ocr）**——
+  image 的 C1 令牌断言风险已闭环（浏览器端最终复验仍待有浏览器环境）。
 - **转绿路径（唯一剩余步骤）**：在**可启动浏览器的环境**（用户终端/正常 CI）执行
   `npm install && node node_modules/@playwright/test/cli.js install chromium && npm test`（或 `npm run test:direct`）——
-  预期：text-txt/text-html/docx/xlsx/pdf 全绿；image 若 OCR 仍不识别新字形 → 走拍板点回退（放宽断言需用户拍板，禁止单边改）。
+  预期：text-txt/text-html/docx/xlsx/pdf/image 全部转绿（image 令牌已离线 OCR 实证命中，DD-10；docx C6 已按 T-5 路径实现）。
 - **未跑到的断言**（本时点无法执行，非跳过）：C1-C5+C6、M1-M2 的真实断言体（浏览器可用后即真实运行）。
 - **不予放宽**：若 OCR 冷启动或真实 PDF 中文样例导致个别断言长期红 → 走拍板点 T-1/T-2，先拍板后改契约（改断言 = 改口径）。

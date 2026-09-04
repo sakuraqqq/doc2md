@@ -1,7 +1,7 @@
 {
   "label": "doc2md 契约测试固定样例 v1",
   "generator": "tests/gen-samples.mjs（确定性输出，可复现）",
-  "note": "脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为位图字体 OCR 样例（HELLO DOC2MD 2026）",
+  "note": "脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）",
   "files": {
     "sample.txt": {
       "bytes": 260,
@@ -24,8 +24,8 @@
       "sha256": "7cb6430bca244673678477175d2cb3a2121420a7199b21398aee2a284ae91594"
     },
     "sample.png": {
-      "bytes": 2457,
-      "sha256": "870b8eeb2778d3455c18858bd2da6cf6f88cbace6d96e407da0e9eeb85cb67ae"
+      "bytes": 7982,
+      "sha256": "faa64c2940697b462a89c328131ef74549dbe69a2a1ccb4d147db7440a899ce6"
     }
   }
 }
