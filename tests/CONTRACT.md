@@ -93,14 +93,14 @@ npm run gen:samples           # 重新生成样例（确定性）
 - 沙箱禁止启动浏览器进程（Explorer/Edge/Chrome 均 `spawn EPERM`）—— C/M 组在沙箱内只能以「无可用浏览器」如实红；在正常开发机/CI（能装 chromium 或调系统浏览器）自动转真实断言。
 - npm 安装：cache 指工作区内 `--cache .npm-cache`（全局规则），禁止写 AppData。
 
-## 6. 拍板点（开放，未拍板前契约不变，任何人不得单边调整）
+## 6. 拍板点（✅ 已拍板：2026-09-04，用户确认「按推荐采纳」——定案即口径，任何人不得单边调整）
 
-| 编号 | 议题 | 现状 | 选项（待拍板） |
+| 编号 | 议题 | 拍板定案（2026-09-04，用户确认按推荐采纳） | 落地说明 |
 |---|---|---|---|
-| T-1 | 耗时口径：规划文档「渲染 <500ms」 vs architecture「转换 <500ms」 | 契约取 convert() 外部计时 <500ms；图片 OCR 冷启动（WASM/模型载入）可能 >500ms | A 阈值分档（OCR 含预热放宽，其余 500ms）；B 只断 DOM 渲染耗时；C 转换前预热，预热不计入 |
-| T-2 | PDF 样例为纯拉丁文本层 | 合成中文 PDF 需 CJK 字体嵌入（复杂度高）；中文已由 txt/html/docx/xlsx 覆盖 | 保持现状；或 B 线补真实中文 PDF 样例（`real-*.pdf` 命名新增，不改契约样例） |
-| T-3 | 样例归属（⚠️ 已发生一次真实冲突） | 契约样例（合成但格式合法）由 C 线生成并锁 manifest.json；2026-09-04 20:37 实测 A线 T1 按「在 tests/data/ 放样例」指令写入的 `sample.docx`（1150B）**覆盖**了契约样例（1179B，含关键令牌）——被 B1/B2 字节锁断言当场发现，已 `npm run gen:samples` 恢复 | 「真实样例」一律以 `real-*` 前缀新增放 tests/data/；任何人不覆盖 `sample.*` 契约样例（覆盖 = 改口径 = 拍板；manifest 字节锁持续兜底） |
-| T-4 | package.json 归属 | 由 C 线创建（定义 `test` / `test:contract` / `gen:samples` 脚本 + devDependency `@playwright/test`） | A/B/D 线如需扩展 package.json，保留上述脚本名与 devDependencies 合并，不改语义 |
+| T-1 | 耗时口径：规划文档「渲染 <500ms」 vs architecture「转换 <500ms」 | ✅ **已拍板**：convert() 外部计时 <500ms 为主口径；图片 OCR 冷启动（WASM/模型载入）按档位处理——**预热不计入** | C3/M2 断言保持 convert() 外部计时 <500ms；image 预热机制（预热钩子或分阶段计时，需 B 线 tesseract 封装配合）由 T4 落地，在此之前 image 冷启动红为契约预期 |
+| T-2 | PDF 样例为纯拉丁文本层 | ✅ **已拍板**：保持现状（合成中文 PDF 需 CJK 字体嵌入，复杂度高；中文已由 txt/html/docx/xlsx 覆盖，注明即可） | 交付注释已含「PDF 样例=拉丁文本层」；如需中文 PDF 样例 → `real-*.pdf` 新增，不改契约样例 |
+| T-3 | 样例归属 | ✅ **已拍板**：真实样例强制 `real-*` 前缀，严禁覆盖 `sample.*`（manifest 字节锁兜底） | ⚠️ 已发生一次真实冲突（2026-09-04 20:37 A 线覆盖 sample.docx，被 B1/B2 字节锁发现并恢复）；请队长在 A/B 线间重申此规 |
+| T-4 | package.json 归属 | ✅ **已拍板**：四脚本语义保留（`test` / `test:direct` / `test:contract` / `gen:samples`）；devDependencies 合并追加不改语义 | 其他线扩展 package.json 时按此合并 |
 
 ## 7. 红绿状态与转绿路径（如实）
 
