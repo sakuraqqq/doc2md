@@ -36,6 +36,12 @@ console.log('[verify-ocr] confidence:', data.confidence);
 const hits = ['HELLO', 'DOC2MD', '2026'].map((t) => [t, text.includes(t)]);
 console.log('[verify-ocr] 令牌命中:', hits);
 const allHit = hits.every(([, ok]) => ok);
+// 收尾卫生：tesseract.js node 版会把解压的 .traineddata 缓存写进 process.cwd()（即使 langPath 在 .tmp）——
+// 清理根目录可能出现的缓存文件，避免污染仓库工作树（已实测复现 eng.traineddata）。
+for (const f of ['eng.traineddata', 'chi_sim.traineddata']) {
+  const p = path.join(ROOT, f);
+  if (fs.existsSync(p)) fs.rmSync(p, { force: true });
+}
 if (!allHit) {
   console.error('[verify-ocr] FAIL: 存在未命中令牌');
   process.exit(1);
