@@ -9,7 +9,7 @@
 | 项 | 状态 | 位置/说明 |
 |---|---|---|
 | LICENSE（MIT） | ✅ 就绪 | 根目录 `LICENSE` |
-| README 终稿（中英 + 功能 + 口径 + 截图 + 测试 + 许可 + 发展） | ✅ 就绪 | `README.md`；截图 ✅ `assets/screenshot.png`；**GIF `assets/demo.gif` 占位（发布前录制，可暂缺）** |
+| README 终稿（中英 + 功能 + 口径 + 截图 + 测试 + 许可 + 发展） | ✅ 就绪 | `README.md`；截图 ✅ `assets/screenshot.png`；演示 GIF **已拍板不做**（拖放/上传为直觉操作，2026-09-04） |
 | GitHub Pages workflow | ✅ 就绪 | `.github/workflows/deploy-pages.yml`（照 cola `deploy-pages.yml` 同款；纯静态零构建；Workflow 跑在 checkout 干净树上，`.gitignore` 已排除 node_modules/.tmp/.npm-cache，不会上传 Pages） |
 | `.nojekyll` | ✅ 就绪 | 根目录（Pages 免 Jekyll 处理） |
 | 契约测试 | ⬜ 用户机复跑 | `npm test`：B 组全绿 + DD-11/DD-12 修复后 C/M 组预期全绿（用户机 29/31 → M 组修复后预期 31/31；宿主浏览器独立验收 C1-C6/M 已全通） |

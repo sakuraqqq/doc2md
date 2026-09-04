@@ -44,7 +44,7 @@
 - **观察期**：开始 2026-09-04 → 复盘 ≥2026-09-07；反馈汇总：①拖放被浏览器接管下载（77fdc25 document 级拦截）②SW cache-first 卡线上更新（3a8f193 v2 网络优先）③16.4MB 首载分钟级（fd0c721/b0ab602 语言包懒加载→10.2MB）④仍慢（ed0f057 全面拆分→首屏 32KB/270KB gzip）；全部修复并真机复测通过
 - **备注**：
   - 红线 2 更新：单文件 → **单目录离线**（index + vendor/ + langs/；file:// 双击可用；SW v3 离线全功能）——DD-15
-  - GIF demo.gif 占位（README 已注明，发布后补录）；Topics/awesome 投稿/博客按 `docs/OUTREACH.md` §4 执行
+  - GIF demo.gif **已拍板不做**（2026-09-04：拖放/上传为浏览器直觉操作；README 已改说明）；Topics/awesome 投稿/博客按 `docs/OUTREACH.md` §4 执行
   - 图片以 base64 data-URI 内嵌（mammoth 默认，自包含策略；GitHub 渲染 data URI 不显示——README 已注明）
   - file:// 双击下 OCR/PDF worker 受限（HTTP/SW 环境正常）——README 已注明
 
