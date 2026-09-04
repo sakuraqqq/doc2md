@@ -4,20 +4,31 @@
   "description": "开源的「文档转 Markdown」工具：纯前端、离线、全本地转换（PDF/DOCX/XLSX/图片OCR/TXT·HTML）· v1。契约测试用于网页版与手机视口双端断言。",
   "private": true,
   "license": "MIT",
+  "type": "module",
   "scripts": {
     "build": "node tools/build.mjs",
     "gen:samples": "node tests/gen-samples.mjs",
     "test": "node --test",
     "test:direct": "node tests/contract_v1.test.mjs",
     "test:contract": "node --test tests/contract_v1.test.mjs",
-    "verify:ocr": "node tools/verify-ocr.mjs"
+    "verify:ocr": "node tools/verify-ocr.mjs",
+    "lint": "eslint \"src/**/*.js\" \"tools/**/*.mjs\"",
+    "format": "prettier --write \"src/**/*.js\" \"tools/**/*.mjs\"",
+    "metrics": "node tools/metrics.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.49.0",
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "esbuild": "^0.28.2",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-sonarjs": "^4.2.0",
+    "globals": "^17.12.0",
+    "jscpd": "^5.1.2",
     "pdfjs-dist": "^3.11.174",
+    "prettier": "^3.9.6",
     "read-excel-file": "^5.8.7",
     "tesseract.js": "^6.0.1"
   }

@@ -4,7 +4,6 @@
 // 内联库头部注释保留「包名 版本 许可 来源」（licenses.md 义务）。
 import fs from 'node:fs';
 
-const root = process.cwd();
 const read = (p) => fs.readFileSync(p, 'utf8');
 const readB = (p) => fs.readFileSync(p);
 
