@@ -146,662 +146,864 @@
 
 </script>
 <script>
-'use strict';
-/* ================= doc2md 应用 =================
- * 架构契约见 docs/architecture.md（B线实现 pdf/xlsx/image 时不得改接口）
- */
-const MAX_BYTES = 50 * 1024 * 1024; // 50MB 护栏
-
-/* ---------- 工具 ---------- */
-function startsWith(u8, sig) {
-  if (u8.length < sig.length) return false;
-  for (let i = 0; i < sig.length; i++) if (u8[i] !== sig[i]) return false;
-  return true;
-}
-function headAscii(buf) {
-  // 取前 64KB 转 latin1 字符串，用于 zip 目录名/文本特征搜索
-  const n = Math.min(buf.byteLength, 65536);
-  let s = '';
-  for (let i = 0; i < n; i++) s += String.fromCharCode(buf[i]);
-  return s;
-}
-function decodeText(buf) {
-  if (startsWith(buf, [0xEF, 0xBB, 0xBF])) return new TextDecoder('utf-8').decode(buf.subarray(3));
-  if (startsWith(buf, [0xFF, 0xFE])) return new TextDecoder('utf-16le').decode(buf.subarray(2));
-  if (startsWith(buf, [0xFE, 0xFF])) {
-    // utf-16be：浏览器 TextDecoder 支持则用，否则字节交换
-    try { return new TextDecoder('utf-16be').decode(buf.subarray(2)); }
-    catch (e) {
-      const swap = new Uint8Array(buf.length - 2);
-      for (let i = 2; i < buf.length; i += 2) { if (i + 1 < buf.length) { swap[i - 2] = buf[i + 1]; swap[i - 1] = buf[i]; } }
-      return new TextDecoder('utf-16le').decode(swap);
-    }
+"use strict";
+(() => {
+  // src/sniff.js
+  function startsWith(u8, sig) {
+    if (u8.length < sig.length) return false;
+    for (let i = 0; i < sig.length; i++) if (u8[i] !== sig[i]) return false;
+    return true;
   }
-  // 无 BOM：GBK/GB18030 兜底（P1 二批，审查报告 §1.4）
-  const probeN = Math.min(buf.byteLength, 4096);
-  const tolerant = new TextDecoder('utf-8'); // 容错解码（不抛）
-  const headTxt = tolerant.decode(buf.subarray(0, probeN));
-  // ① HTML：<meta charset="gb2312|gbk|gb18030|big5"> → gb18030 全量重解（浏览器原生支持该 label）
-  if (/<meta[^>]+charset\s*=\s*["']?\s*(gb2312|gbk|gb18030|big5)\b/i.test(headTxt)) {
-    try { return new TextDecoder('gb18030').decode(buf); }
-    catch (e) { /* 极端环境不支持 gb18030：保持原行为 */ }
+  function headAscii(buf) {
+    const n = Math.min(buf.byteLength, 65536);
+    let s = "";
+    for (let i = 0; i < n; i++) s += String.fromCharCode(buf[i]);
+    return s;
   }
-  // ② 纯文本/其余：容错解码替换字符占比 >30%（≈ fatal 试解失败）→ 回退 gb18030
-  let bad = 0, tot = 0;
-  for (const ch of headTxt) { tot++; if (ch === '\uFFFD') bad++; }
-  if (tot > 0 && bad / tot > 0.30) {
-    try { return new TextDecoder('gb18030').decode(buf); }
-    catch (e) { /* 保持原行为 */ }
-  }
-  return new TextDecoder('utf-8', { fatal: false }).decode(buf);
-}
-
-/* ---------- 类型嗅探（magic bytes，不信任扩展名） ---------- */
-async function sniff(buf) {
-  const head = buf.subarray(0, 65536);
-  if (head.length === 0) return { type: 'unknown', detail: 'empty' };
-  const ascii = headAscii(head);
-  // PDF：先认首部；再兜底「偶有前置垃圾字节」——前 1024 字节内搜首个 %PDF（architecture §3）
-  const pdfAt = ascii.indexOf('%PDF');
-  if (pdfAt >= 0 && pdfAt <= 1024) return { type: 'pdf' };
-  // 图片
-  if (startsWith(head, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) return { type: 'image', detail: 'png' };
-  if (head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF) return { type: 'image', detail: 'jpeg' };
-  if (ascii.startsWith('GIF8')) return { type: 'image', detail: 'gif' };
-  if (ascii.startsWith('BM')) return { type: 'image', detail: 'bmp' };
-  if (ascii.startsWith('RIFF') && ascii.slice(8, 12) === 'WEBP') return { type: 'image', detail: 'webp' };
-  if (ascii.startsWith('II*\u0000') || ascii.startsWith('MM\u0000*')) return { type: 'image', detail: 'tiff' };
-  // ZIP 系（docx/xlsx/pptx/zip）
-  if (head[0] === 0x50 && head[1] === 0x4B && (head[2] === 0x03 || head[2] === 0x05 || head[2] === 0x07)) {
-    if (ascii.includes('word/')) return { type: 'docx' };
-    if (ascii.includes('xl/')) return { type: 'xlsx' };
-    if (ascii.includes('ppt/')) return { type: 'pptx' };
-    return { type: 'zip' };
-  }
-  // BOM 文本优先：UTF-16/UTF-8 BOM 先判为文本（UTF-16 含大量 NUL，必须先于二进制启发式，审查报告 §1.3 建议 #3）
-  if (startsWith(head, [0xEF, 0xBB, 0xBF]) || startsWith(head, [0xFF, 0xFE]) || startsWith(head, [0xFE, 0xFF])) {
-    return { type: 'text' };
-  }
-  // 二进制启发式：头部 4KB 采样，NUL/控制字符（<0x09/0x0A/0x0D 之外的 0x00-0x08、0x0E-0x1F）占比 >30% → unknown(binary)
-  const sample = head.subarray(0, 4096);
-  let ctrl = 0;
-  for (let i = 0; i < sample.length; i++) {
-    const b = sample[i];
-    if (b <= 0x08 || (b >= 0x0E && b <= 0x1F)) ctrl++;
-  }
-  if (sample.length > 0 && ctrl / sample.length > 0.30) return { type: 'unknown', detail: 'binary' };
-  return { type: 'text' };
-}
-
-/* ---------- HTML → Markdown（结构化转换） ---------- */
-// P0 修复（2026-09-05，审查报告 §1.1/§1.2）：
-// 行内拼接不再全局 out.join(' ')——改为「片段流 + 相邻拼接规则」：
-//   文本节点空白原样保留（块级边界才 trim）；行内标记（**/*/`/[ ]()）贴靠原文本；
-//   仅当相邻两段可见字符均为 [A-Za-z0-9] 且原边界无空白时补一个空格；CJK 相邻不补；标点前不补。
-// 结构：UL/OL 递归缩进（OL start 属性/序号递增）；LI 内子节点 walker 保留行内格式；
-//   BLOCKQUOTE 块级子元素逐行 > 前缀（多段支持）；TABLE 单元格子节点 walker（GFM 转义 |/换行、
-//   <br>→空格、rowspan/colspan 检测 warning）；A 包图片 [![alt](src)](href)；H1-H6 内 <br> 软换行保留。
-const BLOCK_TAGS = new Set(['H1','H2','H3','H4','H5','H6','P','UL','OL','LI','DL','DT','DD','BLOCKQUOTE','TABLE','PRE','HR','DIV','SECTION','ARTICLE','HEADER','FOOTER','MAIN','ASIDE','FIGURE','FIGCAPTION','ADDRESS','NAV']);
-// 透明行内标签：子节点按行内递归
-const INLINE_TRANSPARENT = new Set(['SPAN','U','S','SMALL','SUB','SUP','KBD','SAMP','MARK','ABBR','BDI','BDO','FONT','CITE','DFN','Q','TIME','INS','DEL','NOBR']);
-
-function normWs(s) { return s.replace(/\s+/g, ' '); }
-function firstVisible(s) { const m = /^\s*(\S)/.exec(s); return m ? m[1] : null; }
-function lastVisible(s) { const m = /(\S)\s*$/.exec(s); return m ? m[1] : null; }
-
-// 行内片段拼接：贴靠 + 相邻规则（见函数头注释）。
-// 片段 { t: markdown 文本, vStart/vEnd: 可见首/尾字符（无可见字符如 BR/IMG 为 null） }
-function joinFrags(frags) {
-  let t = '';
-  let curV = null;
-  for (const f of frags) {
-    if (f.t === '') continue;
-    if (t === '') { t = f.t; curV = f.vEnd !== null ? f.vEnd : null; continue; }
-    if (/\s$/.test(t) || /^\s/.test(f.t)) t += f.t;
-    else if (curV !== null && f.vStart !== null && /[A-Za-z0-9]/.test(curV) && /[A-Za-z0-9]/.test(f.vStart)) t += ' ' + f.t;
-    else t += f.t;
-    curV = f.vEnd !== null ? f.vEnd : null;
-  }
-  return t;
-}
-
-// 行内片段收集（mode: 'newline' → BR 换行；'br' → 标题内字面 <br>；'space' → 表格单元格 <br>→空格）
-function collectFrags(node, mode, out) {
-  node.childNodes.forEach((child) => {
-    if (child.nodeType === 3) {
-      const t = normWs(child.textContent);
-      if (t !== '') out.push({ t: t, vStart: firstVisible(t), vEnd: lastVisible(t) });
-      return;
-    }
-    if (child.nodeType !== 1) return;
-    fragFor(child, mode, out);
-  });
-  return out;
-}
-
-// 单个元素 → 行内片段（含其子节点递归）
-function fragFor(el, mode, out) {
-  const tag = el.tagName;
-  if (tag === 'BR') {
-    out.push({ t: mode === 'br' ? '<br>' : (mode === 'space' ? ' ' : '\n'), vStart: null, vEnd: null });
-    return;
-  }
-  if (tag === 'STRONG' || tag === 'B') {
-    const inner = joinFrags(collectFrags(el, mode, [])).trim();
-    if (inner) out.push({ t: '**' + inner + '**', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
-    return;
-  }
-  if (tag === 'EM' || tag === 'I') {
-    const inner = joinFrags(collectFrags(el, mode, [])).trim();
-    if (inner) out.push({ t: '*' + inner + '*', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
-    return;
-  }
-  if (tag === 'CODE') {
-    const c = el.textContent.trim();
-    if (c) out.push({ t: '`' + c + '`', vStart: firstVisible(c), vEnd: lastVisible(c) });
-    return;
-  }
-  if (tag === 'A') {
-    const href = el.getAttribute('href') || '';
-    const inner = joinFrags(collectFrags(el, mode, [])).trim();
-    if (!inner) return;
-    // 锚包图片：<a><img…></a> → [![alt](src)](href)（审查报告 §1.2 建议 #4）
-    if (el.querySelector('img') && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
-      out.push({ t: '[' + inner + '](' + href + ')', vStart: null, vEnd: null });
-      return;
-    }
-    out.push({ t: '[' + inner + '](' + href + ')', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
-    return;
-  }
-  if (tag === 'IMG') {
-    const alt = el.getAttribute('alt') || '';
-    const src = el.getAttribute('src') || '';
-    out.push({ t: '![' + alt + '](' + src + ')', vStart: null, vEnd: null });
-    return;
-  }
-  // 透明/未知/块级标签出现在行内位置：子节点按行内平铺（与旧 textContent 抽取语义对齐）
-  collectFrags(el, mode, out);
-}
-function inlineTrim(node, mode) { return joinFrags(collectFrags(node, mode, [])).trim(); }
-
-// 块级转换：容器 → 块字符串数组（每块内部用 \n 分行；块间由调用方以空行分隔）
-function blockifyContainer(el, ctx) {
-  const blocks = [];
-  let frags = [];
-  const flush = () => {
-    const t = joinFrags(frags).trim();
-    frags = [];
-    if (t !== '') blocks.push(t);
-  };
-  for (const child of Array.from(el.childNodes)) {
-    if (child.nodeType === 3) {
-      const t = normWs(child.textContent);
-      if (t !== '') frags.push({ t: t, vStart: firstVisible(t), vEnd: lastVisible(t) });
-      continue;
-    }
-    if (child.nodeType !== 1) continue;
-    if (BLOCK_TAGS.has(child.tagName)) {
-      flush();
-      blocks.push(...blockOfEl(child, ctx));
-    } else {
-      fragFor(child, 'newline', frags);
-    }
-  }
-  flush();
-  return blocks;
-}
-function blockOfEl(el, ctx) {
-  const tag = el.tagName;
-  if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') {
-    const inner = inlineTrim(el, 'br');
-    return inner !== '' ? ['#'.repeat(+tag[1]) + ' ' + inner] : [];
-  }
-  if (tag === 'P') {
-    const inner = inlineTrim(el, 'newline');
-    return inner !== '' ? [inner] : [];
-  }
-  if (tag === 'UL' || tag === 'OL') {
-    const s = listElToMd(el, 0);
-    return s !== '' ? [s] : [];
-  }
-  if (tag === 'BLOCKQUOTE') {
-    const s = quoteElToMd(el, ctx);
-    return s !== '' ? [s] : [];
-  }
-  if (tag === 'TABLE') {
-    const s = tableToMd(el, ctx);
-    return s !== '' ? [s] : [];
-  }
-  if (tag === 'PRE') {
-    return ['```\n' + el.textContent.replace(/^\n|\n$/g, '') + '\n```'];
-  }
-  if (tag === 'HR') return ['---'];
-  if (tag === 'BR') return [''];
-  if (tag === 'LI') {
-    const inner = inlineTrim(el, 'newline');
-    return inner !== '' ? ['- ' + inner] : [];
-  }
-  // DIV/SECTION/…/DL/DT/DD 等容器：子块递归
-  return blockifyContainer(el, ctx).filter((b) => b !== '');
-}
-
-// 列表：递归缩进（每层缩进 = 父级标记宽度：'1. '=3、'- '=2；CommonMark 嵌套列表最小缩进）
-function listElToMd(listEl, indent) {
-  const isOL = listEl.tagName === 'OL';
-  let n = isOL ? (parseInt(listEl.getAttribute('start'), 10) || 1) : 1;
-  const lines = [];
-  for (const li of listEl.children) {
-    if (li.tagName !== 'LI') continue;
-    lines.push(...liToLines(li, indent, isOL, n));
-    if (isOL) n++;
-  }
-  return lines.filter((l) => l !== '').join('\n');
-}
-function liToLines(li, indent, isOL, num) {
-  const prefix = ' '.repeat(indent);
-  const marker = isOL ? (num + '. ') : '- ';
-  const lines = [];
-  const frags = [];
-  let nested = false; // li 内是否出现嵌套列表
-  for (const child of Array.from(li.childNodes)) {
-    if (child.nodeType === 3) {
-      const t = normWs(child.textContent);
-      if (t !== '') frags.push({ t: t, vStart: firstVisible(t), vEnd: lastVisible(t) });
-      continue;
-    }
-    if (child.nodeType !== 1) continue;
-    const tag = child.tagName;
-    if (tag === 'UL' || tag === 'OL') {
-      const head = joinFrags(frags).trim();
-      if (head !== '') lines.push(prefix + marker + head);
-      frags.length = 0;
-      nested = true;
-      const sub = listElToMd(child, indent + marker.length);
-      if (sub) sub.split('\n').forEach((l) => lines.push(l));
-    } else {
-      // LI 内子节点 walker：保留行内格式（fragFor 走元素级片段；P/DIV 等容器由 fragFor 平铺）
-      fragFor(child, 'newline', frags);
-    }
-  }
-  const tail = joinFrags(frags).trim();
-  if (tail !== '') {
-    const cont = prefix + (nested ? ' '.repeat(marker.length) : marker);
-    const tl = tail.split('\n');
-    lines.push(cont + tl[0]);
-    for (let i = 1; i < tl.length; i++) lines.push(prefix + ' '.repeat(marker.length) + tl[i]);
-  }
-  return lines;
-}
-
-// 引用：块级子元素逐个处理，每行 > 前缀；多段间以裸 > 行分隔
-function quoteElToMd(quoteEl, ctx) {
-  const parts = blockifyContainer(quoteEl, ctx).filter((p) => p !== '');
-  const out = [];
-  parts.forEach((p, i) => {
-    if (i > 0) out.push('>');
-    p.split('\n').forEach((l) => out.push(l.trim() === '' ? '>' : '> ' + l));
-  });
-  return out.join('\n');
-}
-
-function tableToMd(table, ctx) {
-  const rows = [];
-  table.querySelectorAll('tr').forEach((tr) => {
-    const cells = [];
-    tr.querySelectorAll(':scope > th, :scope > td').forEach((c) => {
-      const rs = parseInt(c.getAttribute('rowspan') || '1', 10) || 1;
-      const cs = parseInt(c.getAttribute('colspan') || '1', 10) || 1;
-      if ((rs > 1 || cs > 1) && ctx && ctx.warnings) {
-        const w = '表格含合并单元格（rowspan/colspan），已按普通单元格展平（v1 不支持合并单元格结构）';
-        if (!ctx.warnings.includes(w)) ctx.warnings.push(w);
-      }
-      // 单元格内子节点 walker（行内格式保留）；<br>→空格（审查报告 §1.2 建议 #2）；GFM 转义 |/换行
-      let cell = joinFrags(collectFrags(c, 'space', [])).trim();
-      cells.push(cell.replace(/\|/g, '\\|').replace(/\n/g, ' '));
-    });
-    if (cells.length) rows.push(cells);
-  });
-  if (rows.length === 0) return '';
-  const width = Math.max(...rows.map((r) => r.length));
-  const norm = rows.map((r) => { while (r.length < width) r.push(''); return r; });
-  const header = '| ' + norm[0].join(' | ') + ' |';
-  const sep = '| ' + norm[0].map(() => '---').join(' | ') + ' |';
-  const body = norm.slice(1).map((r) => '| ' + r.join(' | ') + ' |');
-  return [header, sep, ...body].join('\n');
-}
-
-function htmlToMarkdown(html, ctx) {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script, style, noscript, head, template').forEach((n) => n.remove());
-  const blocks = blockifyContainer(doc.body, ctx || null);
-  return blocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
-}
-
-/* ---------- B线资源：vendor 同源分文件（T9′；零外发：全同源相对路径） ---------- */
-const BLINE = (() => {
-  const fetchTxt = (p) => fetch(p).then((r) => {
-    if (!r.ok) throw new Error('资源加载失败 ' + p + ' (HTTP ' + r.status + ')');
-    return r.text();
-  });
-  let pdfWorkerUrl = null;
-  let tessWorkerUrl = null;
-  return {
-    /* pdf.js worker：同源文件路径（http(s) 下真 worker；file:// 下 pdf.js 自动回退主线程 fake worker） */
-    pdfWorkerUrl() {
-      if (!pdfWorkerUrl) pdfWorkerUrl = './vendor/pdfjs.pdf.worker.min.js';
-      return pdfWorkerUrl;
-    },
-    /* tesseract worker 入口：fetch vendor 源 → patch blob（P1 二批，审查报告 §2.1：corePath 已同源化，
-     * patch 降级为「仅当 URL 指向外域时抛错」双保险——同源/相对路径直接 importScripts）+ worker 本体 */
-    async tessWorkerUrl() {
-      if (tessWorkerUrl) return tessWorkerUrl;
-      const patch = [
-        'var __B_I = self.importScripts.bind(self);',
-        'self.importScripts = function (u) {',
-        '  var url = String(u || "");',
-        '  if (/^(https?:)?\\/\\//.test(url)) {',
-        '    var o = new URL(url, self.location.href);',
-        '    if (o.origin !== self.location.origin) throw new Error("零外发红线：拒绝加载外域资源 " + url);',
-        '  }',
-        '  return __B_I(url);',
-        '};',
-      ].join('\n');
-      tessWorkerUrl = URL.createObjectURL(new Blob([patch + '\n' + await fetchTxt('./vendor/tesseract.worker.min.js')], { type: 'text/javascript' }));
-      return tessWorkerUrl;
-    },
-  };
-})();
-
-/* ---------- OCR 资源就绪检测（SW 分段缓存 v4 后：首次 OCR 提示下载量，此后离线可用） ---------- */
-let ocrAssetsChecked = false;
-async function ocrAssetsWarm() {
-  // SW 未接管（file:// 双击 / SW 未注册）→ 资源即本地相对路径，无需下载提示
-  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return true;
-  try {
-    for (const key of await caches.keys()) {
-      const c = await caches.open(key);
-      const core = (await c.match('./vendor/tesseract-core-simd-lstm.wasm.js')) || (await c.match('./vendor/tesseract-core-lstm.wasm.js'));
-      const eng = await c.match('./langs/eng.traineddata');
-      const chi = await c.match('./langs/chi_sim.traineddata');
-      if (core && eng && chi) return true;
-    }
-  } catch (e) { /* 检测失败不阻塞 OCR */ }
-  return false;
-}
-
-/* ---------- OCR worker 单例（lazy-init；语言包同源懒加载 langs/（DD-14），首次 OCR 冷启动按 T-1 档位豁免） ---------- */
-let ocrWorkerPromise = null;
-function getOcrWorker() {
-  if (!ocrWorkerPromise) {
-    ocrWorkerPromise = (async () => {
-      const T = window.Tesseract;
-      if (!T) throw new Error('tesseract.js 未加载');
-      // 首次 OCR 提示（仅 SW 已接管且 core/语言包未缓存时）：下载量提示后离线可用（SW 分段缓存 v4）
-      if (!ocrAssetsChecked) {
-        ocrAssetsChecked = true;
-        if (!(await ocrAssetsWarm())) setStatus('首次 OCR 需下载约 12 MB（此后离线可用）——正在准备…');
-      }
-      // corePath 同源绝对 URL（P1 二批，审查报告 §2.1；不再使用伪域名——零外发红线）
-      const corePath = new URL('./vendor/', location.href).href;
-      const worker = await T.createWorker(['eng', 'chi_sim'], 1, {
-        workerPath: await BLINE.tessWorkerUrl(),
-        corePath: corePath,
-        langPath: './langs/',
-        gzip: false,
-        workerBlobURL: false,
-      });
-      return worker;
-    })().catch((e) => { ocrWorkerPromise = null; throw e; });
-  }
-  return ocrWorkerPromise;
-}
-
-/* ---------- xlsx 格式化工具（口径与参考 dsh-file-upload-convert.js 一致） ---------- */
-const XLSX_SHEET_LIMIT = 5;
-const XLSX_ROW_LIMIT = 1000;
-
-/* ZIP 中央目录读取指定条目（零依赖：浏览器内置 DecompressionStream('deflate-raw')；用于 xlsx sheet 名列表） */
-async function zipEntry(buf, wantedName) {
-  const n = buf.byteLength;
-  if (n < 22) return null;
-  for (let i = n - 22; i >= Math.max(0, n - 65557); i--) {
-    if (buf[i] === 0x50 && buf[i + 1] === 0x4B && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
-      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-      const count = dv.getUint16(i + 10, true);
-      let off = dv.getUint32(i + 16, true);
-      for (let k = 0; k < count; k++) {
-        if (off + 46 > n || dv.getUint32(off, true) !== 0x02014b50) return null;
-        const method = dv.getUint16(off + 10, true);
-        const compSize = dv.getUint32(off + 20, true);
-        const nameLen = dv.getUint16(off + 28, true);
-        const extraLen = dv.getUint16(off + 30, true);
-        const commentLen = dv.getUint16(off + 32, true);
-        const localOff = dv.getUint32(off + 42, true);
-        const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
-        if (name === wantedName) {
-          const ln = dv.getUint16(localOff + 26, true);
-          const le = dv.getUint16(localOff + 28, true);
-          const data = buf.subarray(localOff + 30 + ln + le, localOff + 30 + ln + le + compSize);
-          if (method === 0) return data;
-          if (typeof DecompressionStream === 'undefined') return null; // 极端环境：无法解压
-          const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-          return new Uint8Array(await new Response(stream).arrayBuffer());
+  function decodeText(buf) {
+    if (startsWith(buf, [239, 187, 191])) return new TextDecoder("utf-8").decode(buf.subarray(3));
+    if (startsWith(buf, [255, 254])) return new TextDecoder("utf-16le").decode(buf.subarray(2));
+    if (startsWith(buf, [254, 255])) {
+      try {
+        return new TextDecoder("utf-16be").decode(buf.subarray(2));
+      } catch (e) {
+        const swap = new Uint8Array(buf.length - 2);
+        for (let i = 2; i < buf.length; i += 2) {
+          if (i + 1 < buf.length) {
+            swap[i - 2] = buf[i + 1];
+            swap[i - 1] = buf[i];
+          }
         }
-        off += 46 + nameLen + extraLen + commentLen;
+        return new TextDecoder("utf-16le").decode(swap);
       }
+    }
+    const probeN = Math.min(buf.byteLength, 4096);
+    const tolerant = new TextDecoder("utf-8");
+    const headTxt = tolerant.decode(buf.subarray(0, probeN));
+    if (/<meta[^>]+charset\s*=\s*["']?\s*(gb2312|gbk|gb18030|big5)\b/i.test(headTxt)) {
+      try {
+        return new TextDecoder("gb18030").decode(buf);
+      } catch (e) {
+      }
+    }
+    let bad = 0, tot = 0;
+    for (const ch of headTxt) {
+      tot++;
+      if (ch === "\uFFFD") bad++;
+    }
+    if (tot > 0 && bad / tot > 0.3) {
+      try {
+        return new TextDecoder("gb18030").decode(buf);
+      } catch (e) {
+      }
+    }
+    return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+  }
+  function normWs(s) {
+    return s.replace(/\s+/g, " ");
+  }
+  async function sniff(buf) {
+    const head = buf.subarray(0, 65536);
+    if (head.length === 0) return { type: "unknown", detail: "empty" };
+    const ascii = headAscii(head);
+    const pdfAt = ascii.indexOf("%PDF");
+    if (pdfAt >= 0 && pdfAt <= 1024) return { type: "pdf" };
+    if (startsWith(head, [137, 80, 78, 71, 13, 10, 26, 10])) return { type: "image", detail: "png" };
+    if (head[0] === 255 && head[1] === 216 && head[2] === 255) return { type: "image", detail: "jpeg" };
+    if (ascii.startsWith("GIF8")) return { type: "image", detail: "gif" };
+    if (ascii.startsWith("BM")) return { type: "image", detail: "bmp" };
+    if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WEBP") return { type: "image", detail: "webp" };
+    if (ascii.startsWith("II*\0") || ascii.startsWith("MM\0*")) return { type: "image", detail: "tiff" };
+    if (head[0] === 80 && head[1] === 75 && (head[2] === 3 || head[2] === 5 || head[2] === 7)) {
+      if (ascii.includes("word/")) return { type: "docx" };
+      if (ascii.includes("xl/")) return { type: "xlsx" };
+      if (ascii.includes("ppt/")) return { type: "pptx" };
+      return { type: "zip" };
+    }
+    if (startsWith(head, [239, 187, 191]) || startsWith(head, [255, 254]) || startsWith(head, [254, 255])) {
+      return { type: "text" };
+    }
+    const sample = head.subarray(0, 4096);
+    let ctrl = 0;
+    for (let i = 0; i < sample.length; i++) {
+      const b = sample[i];
+      if (b <= 8 || b >= 14 && b <= 31) ctrl++;
+    }
+    if (sample.length > 0 && ctrl / sample.length > 0.3) return { type: "unknown", detail: "binary" };
+    return { type: "text" };
+  }
+
+  // src/html2md.js
+  var BLOCK_TAGS = /* @__PURE__ */ new Set(["H1", "H2", "H3", "H4", "H5", "H6", "P", "UL", "OL", "LI", "DL", "DT", "DD", "BLOCKQUOTE", "TABLE", "PRE", "HR", "DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "MAIN", "ASIDE", "FIGURE", "FIGCAPTION", "ADDRESS", "NAV"]);
+  function firstVisible(s) {
+    const m = /^\s*(\S)/.exec(s);
+    return m ? m[1] : null;
+  }
+  function lastVisible(s) {
+    const m = /(\S)\s*$/.exec(s);
+    return m ? m[1] : null;
+  }
+  function joinFrags(frags) {
+    let t = "";
+    let curV = null;
+    for (const f of frags) {
+      if (f.t === "") continue;
+      if (t === "") {
+        t = f.t;
+        curV = f.vEnd !== null ? f.vEnd : null;
+        continue;
+      }
+      if (/\s$/.test(t) || /^\s/.test(f.t)) t += f.t;
+      else if (curV !== null && f.vStart !== null && /[A-Za-z0-9]/.test(curV) && /[A-Za-z0-9]/.test(f.vStart)) t += " " + f.t;
+      else t += f.t;
+      curV = f.vEnd !== null ? f.vEnd : null;
+    }
+    return t;
+  }
+  function collectFrags(node, mode, out) {
+    node.childNodes.forEach((child) => {
+      if (child.nodeType === 3) {
+        const t = normWs(child.textContent);
+        if (t !== "") out.push({ t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+        return;
+      }
+      if (child.nodeType !== 1) return;
+      fragFor(child, mode, out);
+    });
+    return out;
+  }
+  function fragFor(el, mode, out) {
+    const tag = el.tagName;
+    if (tag === "BR") {
+      out.push({ t: mode === "br" ? "<br>" : mode === "space" ? " " : "\n", vStart: null, vEnd: null });
+      return;
+    }
+    if (tag === "STRONG" || tag === "B") {
+      const inner = joinFrags(collectFrags(el, mode, [])).trim();
+      if (inner) out.push({ t: "**" + inner + "**", vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+      return;
+    }
+    if (tag === "EM" || tag === "I") {
+      const inner = joinFrags(collectFrags(el, mode, [])).trim();
+      if (inner) out.push({ t: "*" + inner + "*", vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+      return;
+    }
+    if (tag === "CODE") {
+      const c = el.textContent.trim();
+      if (c) out.push({ t: "`" + c + "`", vStart: firstVisible(c), vEnd: lastVisible(c) });
+      return;
+    }
+    if (tag === "A") {
+      const href = el.getAttribute("href") || "";
+      const inner = joinFrags(collectFrags(el, mode, [])).trim();
+      if (!inner) return;
+      if (el.querySelector("img") && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
+        out.push({ t: "[" + inner + "](" + href + ")", vStart: null, vEnd: null });
+        return;
+      }
+      out.push({ t: "[" + inner + "](" + href + ")", vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+      return;
+    }
+    if (tag === "IMG") {
+      const alt = el.getAttribute("alt") || "";
+      const src = el.getAttribute("src") || "";
+      out.push({ t: "![" + alt + "](" + src + ")", vStart: null, vEnd: null });
+      return;
+    }
+    collectFrags(el, mode, out);
+  }
+  function inlineTrim(node, mode) {
+    return joinFrags(collectFrags(node, mode, [])).trim();
+  }
+  function blockifyContainer(el, ctx) {
+    const blocks = [];
+    let frags = [];
+    const flush = () => {
+      const t = joinFrags(frags).trim();
+      frags = [];
+      if (t !== "") blocks.push(t);
+    };
+    for (const child of Array.from(el.childNodes)) {
+      if (child.nodeType === 3) {
+        const t = normWs(child.textContent);
+        if (t !== "") frags.push({ t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+        continue;
+      }
+      if (child.nodeType !== 1) continue;
+      if (BLOCK_TAGS.has(child.tagName)) {
+        flush();
+        blocks.push(...blockOfEl(child, ctx));
+      } else {
+        fragFor(child, "newline", frags);
+      }
+    }
+    flush();
+    return blocks;
+  }
+  function blockOfEl(el, ctx) {
+    const tag = el.tagName;
+    if (tag === "H1" || tag === "H2" || tag === "H3" || tag === "H4" || tag === "H5" || tag === "H6") {
+      const inner = inlineTrim(el, "br");
+      return inner !== "" ? ["#".repeat(+tag[1]) + " " + inner] : [];
+    }
+    if (tag === "P") {
+      const inner = inlineTrim(el, "newline");
+      return inner !== "" ? [inner] : [];
+    }
+    if (tag === "UL" || tag === "OL") {
+      const s = listElToMd(el, 0);
+      return s !== "" ? [s] : [];
+    }
+    if (tag === "BLOCKQUOTE") {
+      const s = quoteElToMd(el, ctx);
+      return s !== "" ? [s] : [];
+    }
+    if (tag === "TABLE") {
+      const s = tableToMd(el, ctx);
+      return s !== "" ? [s] : [];
+    }
+    if (tag === "PRE") {
+      return ["```\n" + el.textContent.replace(/^\n|\n$/g, "") + "\n```"];
+    }
+    if (tag === "HR") return ["---"];
+    if (tag === "BR") return [""];
+    if (tag === "LI") {
+      const inner = inlineTrim(el, "newline");
+      return inner !== "" ? ["- " + inner] : [];
+    }
+    return blockifyContainer(el, ctx).filter((b) => b !== "");
+  }
+  function listElToMd(listEl, indent) {
+    const isOL = listEl.tagName === "OL";
+    let n = isOL ? parseInt(listEl.getAttribute("start"), 10) || 1 : 1;
+    const lines = [];
+    for (const li of listEl.children) {
+      if (li.tagName !== "LI") continue;
+      lines.push(...liToLines(li, indent, isOL, n));
+      if (isOL) n++;
+    }
+    return lines.filter((l) => l !== "").join("\n");
+  }
+  function liToLines(li, indent, isOL, num) {
+    const prefix = " ".repeat(indent);
+    const marker = isOL ? num + ". " : "- ";
+    const lines = [];
+    const frags = [];
+    let nested = false;
+    for (const child of Array.from(li.childNodes)) {
+      if (child.nodeType === 3) {
+        const t = normWs(child.textContent);
+        if (t !== "") frags.push({ t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+        continue;
+      }
+      if (child.nodeType !== 1) continue;
+      const tag = child.tagName;
+      if (tag === "UL" || tag === "OL") {
+        const head = joinFrags(frags).trim();
+        if (head !== "") lines.push(prefix + marker + head);
+        frags.length = 0;
+        nested = true;
+        const sub = listElToMd(child, indent + marker.length);
+        if (sub) sub.split("\n").forEach((l) => lines.push(l));
+      } else {
+        fragFor(child, "newline", frags);
+      }
+    }
+    const tail = joinFrags(frags).trim();
+    if (tail !== "") {
+      const cont = prefix + (nested ? " ".repeat(marker.length) : marker);
+      const tl = tail.split("\n");
+      lines.push(cont + tl[0]);
+      for (let i = 1; i < tl.length; i++) lines.push(prefix + " ".repeat(marker.length) + tl[i]);
+    }
+    return lines;
+  }
+  function quoteElToMd(quoteEl, ctx) {
+    const parts = blockifyContainer(quoteEl, ctx).filter((p) => p !== "");
+    const out = [];
+    parts.forEach((p, i) => {
+      if (i > 0) out.push(">");
+      p.split("\n").forEach((l) => out.push(l.trim() === "" ? ">" : "> " + l));
+    });
+    return out.join("\n");
+  }
+  function tableToMd(table, ctx) {
+    const rows = [];
+    table.querySelectorAll("tr").forEach((tr) => {
+      const cells = [];
+      tr.querySelectorAll(":scope > th, :scope > td").forEach((c) => {
+        const rs = parseInt(c.getAttribute("rowspan") || "1", 10) || 1;
+        const cs = parseInt(c.getAttribute("colspan") || "1", 10) || 1;
+        if ((rs > 1 || cs > 1) && ctx && ctx.warnings) {
+          const w = "\u8868\u683C\u542B\u5408\u5E76\u5355\u5143\u683C\uFF08rowspan/colspan\uFF09\uFF0C\u5DF2\u6309\u666E\u901A\u5355\u5143\u683C\u5C55\u5E73\uFF08v1 \u4E0D\u652F\u6301\u5408\u5E76\u5355\u5143\u683C\u7ED3\u6784\uFF09";
+          if (!ctx.warnings.includes(w)) ctx.warnings.push(w);
+        }
+        let cell = joinFrags(collectFrags(c, "space", [])).trim();
+        cells.push(cell.replace(/\|/g, "\\|").replace(/\n/g, " "));
+      });
+      if (cells.length) rows.push(cells);
+    });
+    if (rows.length === 0) return "";
+    const width = Math.max(...rows.map((r) => r.length));
+    const norm = rows.map((r) => {
+      while (r.length < width) r.push("");
+      return r;
+    });
+    const header = "| " + norm[0].join(" | ") + " |";
+    const sep = "| " + norm[0].map(() => "---").join(" | ") + " |";
+    const body = norm.slice(1).map((r) => "| " + r.join(" | ") + " |");
+    return [header, sep, ...body].join("\n");
+  }
+  function htmlToMarkdown(html, ctx) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    doc.querySelectorAll("script, style, noscript, head, template").forEach((n) => n.remove());
+    const blocks = blockifyContainer(doc.body, ctx || null);
+    return blocks.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  // src/docx.js
+  var DOCX_IMG_EMBED_MAX = 100 * 1024;
+  var _OOXML_SCHEMA = "http://schemas.openxmlformats.org/";
+  var OMML_NS = _OOXML_SCHEMA + "officeDocument/2006/math";
+  var W_NS = _OOXML_SCHEMA + "wordprocessingml/2006/main";
+  var PIC_NS = _OOXML_SCHEMA + "drawingml/2006/picture";
+  function bytesToB64(bytes) {
+    let s = "";
+    const CH = 32768;
+    for (let i = 0; i < bytes.length; i += CH) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CH, bytes.length)));
+    }
+    return btoa(s);
+  }
+  function extForContentType(ct) {
+    const m = /^image\/([\w.+-]+)$/i.exec(String(ct || ""));
+    const t = m ? m[1].toLowerCase() : "png";
+    return t === "jpeg" ? "jpg" : t === "tiff" ? "tif" : t;
+  }
+  function docxSafeBase(name) {
+    const b = String(name || "doc").replace(/\.docx$/i, "");
+    return b.replace(/[\\/:*?"<>|\s]+/g, "-").slice(0, 64) || "doc";
+  }
+  function docxAltFromName(name) {
+    const n = String(name || "").trim();
+    if (!n) return "";
+    return n.replace(/\.[A-Za-z0-9]{1,8}$/, "");
+  }
+  var SUP_TEX = { "\u2070": "^0", "\xB9": "^1", "\xB2": "^2", "\xB3": "^3", "\u2074": "^4", "\u2075": "^5", "\u2076": "^6", "\u2077": "^7", "\u2078": "^8", "\u2079": "^9", "\u207F": "^n", "\u1D43": "^a", "\u1D47": "^b", "\u1D9C": "^c", "\u1D48": "^d", "\u1D49": "^e", "\u1DA0": "^f", "\u1D4D": "^g", "\u02B0": "^h", "\u2071": "^i", "\u02B2": "^j", "\u1D4F": "^k", "\u02E1": "^l", "\u1D50": "^m", "\u1D52": "^o", "\u1D56": "^p", "\u02B3": "^r", "\u02E2": "^s", "\u1D57": "^t", "\u1D58": "^u", "\u1D5B": "^v", "\u02B7": "^w", "\u02E3": "^x", "\u02B8": "^y", "\u1DBB": "^z" };
+  var SUB_TEX = { "\u2080": "_0", "\u2081": "_1", "\u2082": "_2", "\u2083": "_3", "\u2084": "_4", "\u2085": "_5", "\u2086": "_6", "\u2087": "_7", "\u2088": "_8", "\u2089": "_9", "\u2090": "_a", "\u2091": "_e", "\u2095": "_h", "\u1D62": "_i", "\u2C7C": "_j", "\u2096": "_k", "\u2097": "_l", "\u2098": "_m", "\u2099": "_n", "\u2092": "_o", "\u209A": "_p", "\u1D63": "_r", "\u209B": "_s", "\u209C": "_t", "\u1D64": "_u", "\u1D65": "_v", "\u2093": "_x" };
+  function texText(s) {
+    let t = String(s || "");
+    for (const k in SUP_TEX) t = t.split(k).join(SUP_TEX[k]);
+    for (const k in SUB_TEX) t = t.split(k).join(SUB_TEX[k]);
+    return t;
+  }
+  function ommlIs(el, local) {
+    return !!(el && el.nodeType === 1 && el.localName === local && el.namespaceURI === OMML_NS);
+  }
+  function ommlChild(el, local) {
+    for (const c of Array.from(el.children)) if (ommlIs(c, local)) return c;
+    return null;
+  }
+  function ommlParts(el, parts, df) {
+    if (ommlIs(el, "t")) {
+      parts.push(texText(el.textContent));
+      return;
+    }
+    if (ommlIs(el, "r")) {
+      for (const c of Array.from(el.children)) ommlParts(c, parts, df);
+      return;
+    }
+    if (ommlIs(el, "oMath") || ommlIs(el, "oMathPara")) {
+      for (const c of Array.from(el.children)) ommlParts(c, parts, df);
+      return;
+    }
+    if (ommlIs(el, "f")) {
+      const num = ommlChild(el, "num"), den = ommlChild(el, "den");
+      parts.push("\\frac{" + (num ? ommlConcat(num) : "") + "}{" + (den ? ommlConcat(den) : "") + "}");
+      return;
+    }
+    if (ommlIs(el, "sSup")) {
+      const base = ommlChild(el, "e") || el, sup = ommlChild(el, "sup");
+      parts.push(ommlConcat(base) + "^{" + (sup ? ommlConcat(sup) : "") + "}");
+      return;
+    }
+    if (ommlIs(el, "sSub")) {
+      const base = ommlChild(el, "e") || el, sub = ommlChild(el, "sub");
+      parts.push(ommlConcat(base) + "_{" + (sub ? ommlConcat(sub) : "") + "}");
+      return;
+    }
+    if (ommlIs(el, "sSubSup")) {
+      const base = ommlChild(el, "e") || el, sub = ommlChild(el, "sub"), sup = ommlChild(el, "sup");
+      parts.push(ommlConcat(base) + "_{" + (sub ? ommlConcat(sub) : "") + "}^{" + (sup ? ommlConcat(sup) : "") + "}");
+      return;
+    }
+    if (ommlIs(el, "rad")) {
+      const deg = ommlChild(el, "deg"), e = ommlChild(el, "e");
+      const d = deg ? ommlConcat(deg) : "";
+      parts.push(d !== "" ? "\\sqrt[" + d + "]{" + ommlConcat(e || el) + "}" : "\\sqrt{" + ommlConcat(e || el) + "}");
+      return;
+    }
+    if (ommlIs(el, "d")) {
+      const lc = el.getAttribute("m:begChr") || el.getAttribute("begChr") || "(";
+      const rc = el.getAttribute("m:endChr") || el.getAttribute("endChr") || ")";
+      parts.push(lc + ommlConcat(el) + rc);
+      return;
+    }
+    const raw = texText(el.textContent || "").replace(/\s+/g, " ").trim();
+    if (raw !== "") {
+      parts.push(raw);
+      if (df) df.degraded = true;
+      return;
+    }
+    for (const c of Array.from(el.children)) ommlParts(c, parts, df);
+  }
+  function ommlConcat(node) {
+    const parts = [];
+    for (const c of Array.from(node.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, null);
+    return parts.join("");
+  }
+  function docxParseForMd(docXml, warnings) {
+    const doc = new DOMParser().parseFromString(docXml, "application/xml");
+    if (!doc.documentElement || doc.getElementsByTagName("parsererror").length) {
+      throw new Error("word/document.xml \u89E3\u6790\u5931\u8D25");
+    }
+    const imgNames = [];
+    for (const c of Array.from(doc.getElementsByTagNameNS(PIC_NS, "cNvPr"))) {
+      imgNames.push({ name: c.getAttribute("name") || "", descr: c.getAttribute("descr") || "" });
+    }
+    const maths = [];
+    let degradedCount = 0;
+    for (const om of Array.from(doc.getElementsByTagNameNS(OMML_NS, "oMath"))) {
+      if (!om.isConnected) continue;
+      let target = om, block = false;
+      for (let p = om.parentNode; p && p.nodeType === 1; p = p.parentNode) {
+        if (ommlIs(p, "oMathPara")) {
+          target = p;
+          block = true;
+          break;
+        }
+        if (p.localName === "p" && (p.namespaceURI === W_NS || p.namespaceURI === null)) break;
+      }
+      const df = { degraded: false };
+      const parts = [];
+      for (const c of Array.from(om.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
+      const latex = parts.join("").trim();
+      const rawText = texText(om.textContent || "").replace(/\s+/g, " ").trim();
+      if (df.degraded || latex === "" && rawText !== "") degradedCount++;
+      maths.push({ latex: latex !== "" ? latex : null, block, rawText });
+      const r = doc.createElementNS(W_NS, "w:r");
+      const t = doc.createElementNS(W_NS, "w:t");
+      t.textContent = "\u27E6MATH" + maths.length + "\u27E7";
+      r.appendChild(t);
+      target.parentNode.replaceChild(r, target);
+    }
+    if (degradedCount > 0) {
+      warnings.push(degradedCount + " \u4E2A\u590D\u6742\u516C\u5F0F\uFF08\u79EF\u5206/\u77E9\u9635/\u6C42\u548C\u7B49\uFF09\u5DF2\u6309\u7EAF\u6587\u672C\u4FDD\u7559\uFF08LaTeX \u652F\u6301\u8303\u56F4\u89C1 README\uFF09");
+    }
+    return { imgNames, maths, xml: new XMLSerializer().serializeToString(doc) };
+  }
+  function docxInjectLatex(md, maths) {
+    let out = md;
+    maths.forEach((m, i) => {
+      const tok = "\u27E6MATH" + (i + 1) + "\u27E7";
+      const rep = m.latex !== null ? m.block ? "$" + m.latex + "$" : "$" + m.latex + "$" : m.rawText || "";
+      if (out.indexOf(tok) >= 0) out = out.split(tok).join(rep);
+    });
+    return out;
+  }
+  async function docxConvert(file, buf) {
+    const warnings = [];
+    const assets = [];
+    const F = window.fflate;
+    if (!F) throw new Error("fflate \u672A\u52A0\u8F7D");
+    let entries;
+    try {
+      entries = F.unzipSync(buf);
+    } catch (e) {
+      throw new Error("\u6587\u4EF6\u5DF2\u635F\u574F\u6216\u4E0D\u662F\u6709\u6548\u7684 Office \u6587\u6863\uFF08zip \u89E3\u538B\u5931\u8D25\uFF09");
+    }
+    const docEntry = entries["word/document.xml"];
+    if (!docEntry) throw new Error("\u6587\u4EF6\u5DF2\u635F\u574F\u6216\u4E0D\u662F\u6709\u6548\u7684 Office \u6587\u6863\uFF08\u7F3A word/document.xml\uFF09");
+    let docXml = new TextDecoder("utf-8").decode(docEntry);
+    if (docXml.charCodeAt(0) === 65279) docXml = docXml.slice(1);
+    const parsed = docxParseForMd(docXml, warnings);
+    entries["word/document.xml"] = new TextEncoder().encode(parsed.xml);
+    const repacked = F.zipSync(entries);
+    const arrayBuffer = repacked.buffer.slice(repacked.byteOffset, repacked.byteOffset + repacked.byteLength);
+    let imgIdx = 0, imgSeq = 0;
+    const docBase = docxSafeBase(file.name);
+    const result = await window.mammoth.convertToHtml({ arrayBuffer }, {
+      convertImage: window.mammoth.images.imgElement(async (image) => {
+        const ct = image.contentType || "image/png";
+        const metaEntry = parsed.imgNames[imgIdx] || {};
+        imgIdx++;
+        const alt = docxAltFromName(metaEntry.name);
+        let bytes = null;
+        try {
+          const ab = await image.readAsArrayBuffer();
+          bytes = new Uint8Array(ab);
+        } catch (e) {
+          bytes = null;
+        }
+        if (!bytes || bytes.length === 0) return { src: "", alt: "" };
+        if (bytes.length <= DOCX_IMG_EMBED_MAX) {
+          return { src: "data:" + ct + ";base64," + bytesToB64(bytes), alt };
+        }
+        imgSeq++;
+        const name = "assets/" + docBase + "-" + imgSeq + "." + extForContentType(ct);
+        assets.push({ name, blob: new Blob([bytes], { type: ct }), size: bytes.length, type: ct });
+        return { src: name, alt };
+      })
+    });
+    if (result.messages && result.messages.length > 0) {
+      const nonImg = result.messages.filter((m) => !String(m.type || "").includes("image") && !String(m.message || "").includes("image"));
+      if (nonImg.length > 0) warnings.push("\u8F6C\u6362\u5668\u63D0\u793A " + nonImg.length + " \u6761\u6D88\u606F\uFF08\u6837\u5F0F\u8FD1\u4F3C\u6E32\u67D3\uFF09");
+    }
+    if (assets.length > 0) warnings.push(assets.length + " \u5F20\u56FE\u7247\uFF08\u5927\u4E8E 100KB\uFF09\u5DF2\u62BD\u53D6\u4E3A\u9644\u4EF6\uFF0C\u4E0B\u8F7D\u65F6\u968F zip \u4E00\u5E76\u53D6\u51FA");
+    const md0 = htmlToMarkdown(result.value || "", { warnings });
+    const md = docxInjectLatex(md0, parsed.maths);
+    return { markdown: md, warnings, assets, backend: "mammoth" };
+  }
+
+  // src/xlsx.js
+  var XLSX_SHEET_LIMIT = 5;
+  var XLSX_ROW_LIMIT = 1e3;
+  async function zipEntry(buf, wantedName) {
+    const n = buf.byteLength;
+    if (n < 22) return null;
+    for (let i = n - 22; i >= Math.max(0, n - 65557); i--) {
+      if (buf[i] === 80 && buf[i + 1] === 75 && buf[i + 2] === 5 && buf[i + 3] === 6) {
+        const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        const count = dv.getUint16(i + 10, true);
+        let off = dv.getUint32(i + 16, true);
+        for (let k = 0; k < count; k++) {
+          if (off + 46 > n || dv.getUint32(off, true) !== 33639248) return null;
+          const method = dv.getUint16(off + 10, true);
+          const compSize = dv.getUint32(off + 20, true);
+          const nameLen = dv.getUint16(off + 28, true);
+          const extraLen = dv.getUint16(off + 30, true);
+          const commentLen = dv.getUint16(off + 32, true);
+          const localOff = dv.getUint32(off + 42, true);
+          const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
+          if (name === wantedName) {
+            const ln = dv.getUint16(localOff + 26, true);
+            const le = dv.getUint16(localOff + 28, true);
+            const data = buf.subarray(localOff + 30 + ln + le, localOff + 30 + ln + le + compSize);
+            if (method === 0) return data;
+            if (typeof DecompressionStream === "undefined") return null;
+            const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+            return new Uint8Array(await new Response(stream).arrayBuffer());
+          }
+          off += 46 + nameLen + extraLen + commentLen;
+        }
+        return null;
+      }
+    }
+    return null;
+  }
+  async function xlsxSheetNames(buf) {
+    try {
+      const xml = await zipEntry(buf, "xl/workbook.xml");
+      if (!xml) return null;
+      const text = new TextDecoder().decode(xml).replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'");
+      const names = [];
+      const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
+      let m;
+      while (m = re.exec(text)) names.push(m[1]);
+      return names.length > 0 ? names : null;
+    } catch (e) {
       return null;
     }
   }
-  return null;
-}
-
-/* xlsx sheet 名称列表：bundle 未导出 readSheetNames（t4 实测 G 组红根因），自读 xl/workbook.xml */
-async function xlsxSheetNames(buf) {
-  try {
-    const xml = await zipEntry(buf, 'xl/workbook.xml');
-    if (!xml) return null;
-    const text = new TextDecoder().decode(xml)
-      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'");
-    const names = [];
-    const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
-    let m;
-    while ((m = re.exec(text))) names.push(m[1]);
-    return names.length > 0 ? names : null;
-  } catch (e) {
-    return null;
+  function xlsxCellText(v) {
+    if (v === null || v === void 0) return "";
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    return String(v);
   }
-}
-
-function xlsxCellText(v) {
-  if (v === null || v === undefined) return '';
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  return String(v);
-}
-function xlsxRowsToMd(rows) {
-  if (!rows || rows.length === 0) return '（空 sheet）';
-  const width = Math.max(...rows.map((r) => r.length), 1);
-  const norm = rows.map((r) => { const c = r.slice(0, width); while (c.length < width) c.push(''); return c; });
-  const esc = (s) => xlsxCellText(s).replace(/\|/g, '\\|').replace(/\s+/g, ' ');
-  const header = '| ' + norm[0].map(esc).join(' | ') + ' |';
-  const sep = '| ' + norm[0].map(() => '---').join(' | ') + ' |';
-  const body = norm.slice(1).map((r) => '| ' + r.map(esc).join(' | ') + ' |');
-  return [header, sep, ...body].join('\n');
-}
-
-/* ---------- PDF 单页 OCR 降级（P1 二批，审查报告 §2.3：逐页判断，扫描页才 OCR；进度回填 #status） ---------- */
-async function ocrPageToText(page, idx, pageCount) {
-  setStatus(`OCR 第 ${idx}/${pageCount} 页…`);
-  const viewport = page.getViewport({ scale: 2 });
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.floor(viewport.width));
-  canvas.height = Math.max(1, Math.floor(viewport.height));
-  const ctx = canvas.getContext('2d');
-  await page.render({ canvasContext: ctx, viewport }).promise;
-  const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
-  const worker = await getOcrWorker();
-  const r = await worker.recognize(blob);
-  const text = (((r && r.data) || {}).text || '').trim();
-  setStatus(`第 ${idx}/${pageCount} 页 OCR 完成`);
-  return text;
-}
-
-/* ---------- docx 图片抽取 / OMML 公式 → LaTeX（P1 · 审查报告 §2.4 / backlog LaTeX；契约组 I/J） ----------
- * 口径（任务书 t6 定版）：
- *  - 图片：≤100KB → data URI 内嵌；>100KB → 抽取进 meta.assets（{name:'assets/<doc名>-<序号>.<ext>', blob}），
- *    Markdown 引用 ![alt](assets/<doc名>-<序号>.<ext>)；alt = Word 图片名（docPr name）去扩展名，不用
- *    Word AI 描述（descr——mammoth 默认把它当 alt，正是审查报告 §2.4 要禁掉的口径）；名为空 → alt 空。
- *  - 公式：OMML → LaTeX（m:t 文本 + Unicode 上/下标字符归一化（如 x² → x^2）、m:f → \frac、m:sSup → a^{b}、
- *    m:sSub → a_{b}、m:sSubSup、m:rad → \sqrt、m:d → 定界符）；内联 $..$、块级（m:oMathPara）$$..$$；
- *    复杂结构（m:nary 积分/求和、m:m 矩阵、m:limLow/limUpp/func/eqArr/groupChr/box 等）v1 退化 =
- *    提取全部文本按纯文本保留 + warning（README 注明支持范围）。
- *  - 顺序保持 = 占位令牌法：document.xml 中每个 oMath（或被 oMathPara 包裹的整块）原位替换为
- *    <w:r><w:t>⟦MATHn⟧</w:t></w:r> 文本节点 → 重新打包 zip → 喂 mammoth（文本流顺序天然一致）→
- *    Markdown 生成后再把 ⟦MATHn⟧ 替换为 $..$/$$..$$，公式不位移。
- */
-const DOCX_IMG_EMBED_MAX = 100 * 1024; // 100KB 阈值（契约组 I 口径：<= 内嵌，> 抽取）
-// XML 命名空间标识符（仅用于 DOM 匹配/序列化，非网络请求——拆串拼接以保持契约 H2「零外域 URL 字面量」成立）
-const _OOXML_SCHEMA = 'http' + '://schemas.openxmlformats.org/';
-const OMML_NS = _OOXML_SCHEMA + 'officeDocument/2006/math';
-const W_NS = _OOXML_SCHEMA + 'wordprocessingml/2006/main';
-const PIC_NS = _OOXML_SCHEMA + 'drawingml/2006/picture';
-
-function bytesToB64(bytes) {
-  let s = '';
-  const CH = 0x8000;
-  for (let i = 0; i < bytes.length; i += CH) {
-    s += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CH, bytes.length)));
+  function xlsxRowsToMd(rows) {
+    if (!rows || rows.length === 0) return "\uFF08\u7A7A sheet\uFF09";
+    const width = Math.max(...rows.map((r) => r.length), 1);
+    const norm = rows.map((r) => {
+      const c = r.slice(0, width);
+      while (c.length < width) c.push("");
+      return c;
+    });
+    const esc = (s) => xlsxCellText(s).replace(/\|/g, "\\|").replace(/\s+/g, " ");
+    const header = "| " + norm[0].map(esc).join(" | ") + " |";
+    const sep = "| " + norm[0].map(() => "---").join(" | ") + " |";
+    const body = norm.slice(1).map((r) => "| " + r.map(esc).join(" | ") + " |");
+    return [header, sep, ...body].join("\n");
   }
-  return btoa(s);
-}
-function extForContentType(ct) {
-  const m = /^image\/([\w.+-]+)$/i.exec(String(ct || ''));
-  const t = m ? m[1].toLowerCase() : 'png';
-  return t === 'jpeg' ? 'jpg' : (t === 'tiff' ? 'tif' : t);
-}
-function docxSafeBase(name) {
-  const b = String(name || 'doc').replace(/\.docx$/i, '');
-  return b.replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 64) || 'doc';
-}
-// alt 口径：Word 图片名（docPr name）去扩展名；名为空 → 空 alt
-function docxAltFromName(name) {
-  const n = String(name || '').trim();
-  if (!n) return '';
-  return n.replace(/\.[A-Za-z0-9]{1,8}$/, '');
-}
-// Unicode 上/下标字符 → LaTeX 标记（Word 常直接存 x² 样式的上标字符进 m:t）
-const SUP_TEX = { '⁰': '^0', '¹': '^1', '²': '^2', '³': '^3', '⁴': '^4', '⁵': '^5', '⁶': '^6', '⁷': '^7', '⁸': '^8', '⁹': '^9', 'ⁿ': '^n', 'ᵃ': '^a', 'ᵇ': '^b', 'ᶜ': '^c', 'ᵈ': '^d', 'ᵉ': '^e', 'ᶠ': '^f', 'ᵍ': '^g', 'ʰ': '^h', 'ⁱ': '^i', 'ʲ': '^j', 'ᵏ': '^k', 'ˡ': '^l', 'ᵐ': '^m', 'ᵒ': '^o', 'ᵖ': '^p', 'ʳ': '^r', 'ˢ': '^s', 'ᵗ': '^t', 'ᵘ': '^u', 'ᵛ': '^v', 'ʷ': '^w', 'ˣ': '^x', 'ʸ': '^y', 'ᶻ': '^z' };
-const SUB_TEX = { '₀': '_0', '₁': '_1', '₂': '_2', '₃': '_3', '₄': '_4', '₅': '_5', '₆': '_6', '₇': '_7', '₈': '_8', '₉': '_9', 'ₐ': '_a', 'ₑ': '_e', 'ₕ': '_h', 'ᵢ': '_i', 'ⱼ': '_j', 'ₖ': '_k', 'ₗ': '_l', 'ₘ': '_m', 'ₙ': '_n', 'ₒ': '_o', 'ₚ': '_p', 'ᵣ': '_r', 'ₛ': '_s', 'ₜ': '_t', 'ᵤ': '_u', 'ᵥ': '_v', 'ₓ': '_x' };
-function texText(s) {
-  let t = String(s || '');
-  for (const k in SUP_TEX) t = t.split(k).join(SUP_TEX[k]);
-  for (const k in SUB_TEX) t = t.split(k).join(SUB_TEX[k]);
-  return t;
-}
-function ommlIs(el, local) { return !!(el && el.nodeType === 1 && el.localName === local && el.namespaceURI === OMML_NS); }
-function ommlChild(el, local) {
-  for (const c of Array.from(el.children)) if (ommlIs(c, local)) return c;
-  return null;
-}
-// 渲染 OMML 元素序列为 LaTeX 片段；df={degraded:boolean} 透传「遇到复杂结构退化」标记
-function ommlParts(el, parts, df) {
-  if (ommlIs(el, 't')) { parts.push(texText(el.textContent)); return; }
-  if (ommlIs(el, 'r')) { for (const c of Array.from(el.children)) ommlParts(c, parts, df); return; }
-  if (ommlIs(el, 'oMath') || ommlIs(el, 'oMathPara')) { for (const c of Array.from(el.children)) ommlParts(c, parts, df); return; }
-  if (ommlIs(el, 'f')) {
-    const num = ommlChild(el, 'num'), den = ommlChild(el, 'den');
-    parts.push('\\frac{' + (num ? ommlConcat(num) : '') + '}{' + (den ? ommlConcat(den) : '') + '}');
-    return;
-  }
-  if (ommlIs(el, 'sSup')) {
-    const base = ommlChild(el, 'e') || el, sup = ommlChild(el, 'sup');
-    parts.push(ommlConcat(base) + '^{' + (sup ? ommlConcat(sup) : '') + '}');
-    return;
-  }
-  if (ommlIs(el, 'sSub')) {
-    const base = ommlChild(el, 'e') || el, sub = ommlChild(el, 'sub');
-    parts.push(ommlConcat(base) + '_{' + (sub ? ommlConcat(sub) : '') + '}');
-    return;
-  }
-  if (ommlIs(el, 'sSubSup')) {
-    const base = ommlChild(el, 'e') || el, sub = ommlChild(el, 'sub'), sup = ommlChild(el, 'sup');
-    parts.push(ommlConcat(base) + '_{' + (sub ? ommlConcat(sub) : '') + '}^{' + (sup ? ommlConcat(sup) : '') + '}');
-    return;
-  }
-  if (ommlIs(el, 'rad')) {
-    const deg = ommlChild(el, 'deg'), e = ommlChild(el, 'e');
-    const d = deg ? ommlConcat(deg) : '';
-    parts.push(d !== '' ? '\\sqrt[' + d + ']{' + ommlConcat(e || el) + '}' : '\\sqrt{' + ommlConcat(e || el) + '}');
-    return;
-  }
-  if (ommlIs(el, 'd')) {
-    const lc = el.getAttribute('m:begChr') || el.getAttribute('begChr') || '(';
-    const rc = el.getAttribute('m:endChr') || el.getAttribute('endChr') || ')';
-    parts.push(lc + ommlConcat(el) + rc);
-    return;
-  }
-  // 复杂结构（nary 积分/求和、m 矩阵、limLow/limUpp、func、eqArr、groupChr、box…）→ v1 退化：保留全部文本
-  const raw = texText(el.textContent || '').replace(/\s+/g, ' ').trim();
-  if (raw !== '') { parts.push(raw); if (df) df.degraded = true; return; }
-  for (const c of Array.from(el.children)) ommlParts(c, parts, df);
-}
-function ommlConcat(node) {
-  const parts = [];
-  for (const c of Array.from(node.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, null);
-  return parts.join('');
-}
-// 解析 document.xml：图片 docPr（文档序）+ OMML 公式（占位符替换）。返回 {imgNames, maths, xml}
-function docxParseForMd(docXml, warnings) {
-  const doc = new DOMParser().parseFromString(docXml, 'application/xml');
-  if (!doc.documentElement || doc.getElementsByTagName('parsererror').length) {
-    throw new Error('word/document.xml 解析失败');
-  }
-  const imgNames = [];
-  for (const c of Array.from(doc.getElementsByTagNameNS(PIC_NS, 'cNvPr'))) {
-    imgNames.push({ name: c.getAttribute('name') || '', descr: c.getAttribute('descr') || '' });
-  }
-  const maths = [];
-  let degradedCount = 0;
-  for (const om of Array.from(doc.getElementsByTagNameNS(OMML_NS, 'oMath'))) {
-    if (!om.isConnected) continue; // 已被外层 oMathPara 整块替换处理
-    let target = om, block = false;
-    for (let p = om.parentNode; p && p.nodeType === 1; p = p.parentNode) {
-      if (ommlIs(p, 'oMathPara')) { target = p; block = true; break; }
-      if (p.localName === 'p' && (p.namespaceURI === W_NS || p.namespaceURI === null)) break;
-    }
-    const df = { degraded: false };
+  async function xlsxConvert(file, buf) {
+    const RX = window.readXlsxFile;
+    if (!RX) throw new Error("read-excel-file \u5E93\u672A\u52A0\u8F7D");
+    const readXlsx = typeof RX === "function" ? RX : RX.default || RX;
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    const sheetNames = await xlsxSheetNames(buf);
+    const names = sheetNames && sheetNames.length > 0 ? sheetNames : [null];
+    const readNames = names.slice(0, XLSX_SHEET_LIMIT);
     const parts = [];
-    for (const c of Array.from(om.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
-    const latex = parts.join('').trim();
-    const rawText = texText(om.textContent || '').replace(/\s+/g, ' ').trim();
-    if (df.degraded || (latex === '' && rawText !== '')) degradedCount++;
-    maths.push({ latex: latex !== '' ? latex : null, block, rawText });
-    const r = doc.createElementNS(W_NS, 'w:r');
-    const t = doc.createElementNS(W_NS, 'w:t');
-    t.textContent = '⟦MATH' + maths.length + '⟧';
-    r.appendChild(t);
-    target.parentNode.replaceChild(r, target);
-  }
-  if (degradedCount > 0) {
-    warnings.push(degradedCount + ' 个复杂公式（积分/矩阵/求和等）已按纯文本保留（LaTeX 支持范围见 README）');
-  }
-  return { imgNames, maths, xml: new XMLSerializer().serializeToString(doc) };
-}
-// Markdown 生成后：占位符 ⟦MATHn⟧ → $..$ 内联 / $$..$$ 块级；退化公式 → 纯文本
-function docxInjectLatex(md, maths) {
-  let out = md;
-  maths.forEach((m, i) => {
-    const tok = '⟦MATH' + (i + 1) + '⟧';
-    const rep = m.latex !== null ? (m.block ? '$$' + m.latex + '$$' : '$' + m.latex + '$') : (m.rawText || '');
-    if (out.indexOf(tok) >= 0) out = out.split(tok).join(rep);
-  });
-  return out;
-}
+    const warnings = [];
+    let truncated = false;
+    let totalRows = 0;
+    for (const name of readNames) {
+      const rows = await readXlsx(ab, name ? { sheet: name } : void 0);
+      totalRows += rows.length;
+      const kept = rows.slice(0, XLSX_ROW_LIMIT);
+      if (kept.length < rows.length) truncated = true;
+      parts.push(`### Sheet: ${name === null ? "Sheet1" : name}
 
-/* ---------- 转换器注册表（契约见 docs/architecture.md） ---------- */
-const registry = {
-  pdf: async (file, buf) => {
-    if (!window.pdfjsLib) throw new Error('pdf.js 库未加载');
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = BLINE.pdfWorkerUrl();
+${xlsxRowsToMd(kept)}`);
+    }
+    const skipped = names.length - readNames.length;
+    if (skipped > 0) {
+      parts.push(`> \u53E6\u6709 ${skipped} \u4E2A sheet \u672A\u8BFB\u53D6\uFF08v1 \u4E0A\u9650 ${XLSX_SHEET_LIMIT} \u4E2A\uFF09`);
+      truncated = true;
+    }
+    if (truncated) warnings.push(`\u5DF2\u622A\u65AD\uFF1A\u5DF2\u8BFB\u53D6\u524D ${readNames.length} \u4E2A sheet \u5171 ${totalRows} \u884C\uFF08\u6BCF sheet \u4FDD\u7559\u524D ${XLSX_ROW_LIMIT} \u884C\uFF1B\u53E6\u6709 ${skipped} \u4E2A sheet \u672A\u8BFB\u53D6\uFF09`);
+    return { markdown: parts.join("\n\n").trim(), warnings, truncated, backend: "read-excel-file" };
+  }
+
+  // src/bline.js
+  var BLINE = /* @__PURE__ */ (() => {
+    const fetchTxt = (p) => fetch(p).then((r) => {
+      if (!r.ok) throw new Error("\u8D44\u6E90\u52A0\u8F7D\u5931\u8D25 " + p + " (HTTP " + r.status + ")");
+      return r.text();
+    });
+    let pdfWorkerUrl = null;
+    let tessWorkerUrl = null;
+    return {
+      /* pdf.js worker：同源文件路径（http(s) 下真 worker；file:// 下 pdf.js 自动回退主线程 fake worker） */
+      pdfWorkerUrl() {
+        if (!pdfWorkerUrl) pdfWorkerUrl = "./vendor/pdfjs.pdf.worker.min.js";
+        return pdfWorkerUrl;
+      },
+      /* tesseract worker 入口：fetch vendor 源 → patch blob（P1 二批，审查报告 §2.1：corePath 已同源化，
+       * patch 降级为「仅当 URL 指向外域时抛错」双保险——同源/相对路径直接 importScripts）+ worker 本体 */
+      async tessWorkerUrl() {
+        if (tessWorkerUrl) return tessWorkerUrl;
+        const patch = [
+          "var __B_I = self.importScripts.bind(self);",
+          "self.importScripts = function (u) {",
+          '  var url = String(u || "");',
+          "  if (/^(https?:)?\\/\\//.test(url)) {",
+          "    var o = new URL(url, self.location.href);",
+          '    if (o.origin !== self.location.origin) throw new Error("\u96F6\u5916\u53D1\u7EA2\u7EBF\uFF1A\u62D2\u7EDD\u52A0\u8F7D\u5916\u57DF\u8D44\u6E90 " + url);',
+          "  }",
+          "  return __B_I(url);",
+          "};"
+        ].join("\n");
+        tessWorkerUrl = URL.createObjectURL(new Blob([patch + "\n" + await fetchTxt("./vendor/tesseract.worker.min.js")], { type: "text/javascript" }));
+        return tessWorkerUrl;
+      }
+    };
+  })();
+  var bline_default = BLINE;
+
+  // src/ui.js
+  var $ = (sel) => document.querySelector(sel);
+  var dropzone = $("#dropzone");
+  var fileInput = $("#fileInput");
+  var statusEl = $("#status");
+  var resultsEl = $("#results");
+  var hintEl = $("#hint");
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg || "";
+    statusEl.className = isError ? "error" : "";
+  }
+  function fmtSize(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1024 / 1024).toFixed(2) + " MB";
+  }
+  async function copyText(text, btn) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    const old = btn.textContent;
+    btn.textContent = "\u2705 \u5DF2\u590D\u5236";
+    setTimeout(() => {
+      btn.textContent = old;
+    }, 1500);
+  }
+  function downloadMd(text, fileName) {
+    const base = (fileName || "doc2md").replace(/\.[^.]+$/, "");
+    const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = base + ".md";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3e3);
+  }
+  async function downloadZip(text, fileName, assets, btn) {
+    try {
+      const F = window.fflate;
+      if (!F) throw new Error("fflate \u672A\u52A0\u8F7D");
+      const base = (fileName || "doc2md").replace(/\.[^.]+$/, "");
+      const files = {};
+      files[base + ".md"] = F.strToU8(text);
+      for (const a2 of assets || []) {
+        try {
+          files[a2.name] = new Uint8Array(await a2.blob.arrayBuffer());
+        } catch (e) {
+        }
+      }
+      const z = F.zipSync(files);
+      const url = URL.createObjectURL(new Blob([z], { type: "application/zip" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = base + ".zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 3e3);
+    } catch (e) {
+      const old = btn.textContent;
+      btn.textContent = "\u274C \u6253\u5305\u5931\u8D25";
+      setTimeout(() => {
+        btn.textContent = old;
+      }, 1500);
+    }
+  }
+  function renderResult(file, result, idx, total) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const head = document.createElement("div");
+    head.className = "card-head";
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = file.name;
+    head.appendChild(name);
+    const chip = document.createElement("span");
+    chip.className = "chip" + (result.error ? " err" : "");
+    chip.textContent = result.error ? "\u8F6C\u6362\u5931\u8D25" : (result.meta.type || "?").toUpperCase();
+    head.appendChild(chip);
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = fmtSize(file.size) + (result.meta.elapsedMs ? " \xB7 " + result.meta.elapsedMs + " ms" : "");
+    head.appendChild(meta);
+    card.appendChild(head);
+    const body = document.createElement("div");
+    body.className = "card-body";
+    if (result.error) {
+      const errEl = document.createElement("div");
+      errEl.className = "warnings";
+      errEl.style.color = "var(--err)";
+      errEl.textContent = "\u274C " + result.error;
+      body.appendChild(errEl);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.className = "md";
+      ta.readOnly = true;
+      ta.value = result.markdown;
+      body.appendChild(ta);
+      if (result.meta.warnings && result.meta.warnings.length) {
+        const w = document.createElement("div");
+        w.className = "warnings";
+        w.textContent = "\u26A0 " + result.meta.warnings.join("\uFF1B");
+        body.appendChild(w);
+      }
+      const actions = document.createElement("div");
+      actions.className = "card-actions";
+      const hasAssets = result.meta.assets && result.meta.assets.length > 0;
+      if (hasAssets) {
+        const btnZip = document.createElement("button");
+        btnZip.className = "btn primary";
+        btnZip.textContent = "\u{1F4E6} \u4E0B\u8F7D .md + \u56FE\u7247\uFF08zip\uFF09";
+        btnZip.addEventListener("click", () => downloadZip(ta.value, file.name, result.meta.assets, btnZip));
+        actions.appendChild(btnZip);
+      }
+      const btnCopy = document.createElement("button");
+      btnCopy.className = "btn";
+      btnCopy.textContent = "\u{1F4CB} \u590D\u5236 Markdown";
+      btnCopy.addEventListener("click", (e) => copyText(ta.value, btnCopy));
+      const btnDl = document.createElement("button");
+      btnDl.className = "btn" + (hasAssets ? "" : " primary");
+      btnDl.textContent = "\u2B07 \u4E0B\u8F7D .md";
+      btnDl.addEventListener("click", () => downloadMd(ta.value, file.name));
+      actions.appendChild(btnCopy);
+      actions.appendChild(btnDl);
+      body.appendChild(actions);
+    }
+    card.appendChild(body);
+    resultsEl.appendChild(card);
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // src/ocr.js
+  var ocrAssetsChecked = false;
+  async function ocrAssetsWarm() {
+    if (!("serviceWorker" in navigator) || !navigator.serviceWorker.controller) return true;
+    try {
+      for (const key of await caches.keys()) {
+        const c = await caches.open(key);
+        const core = await c.match("./vendor/tesseract-core-simd-lstm.wasm.js") || await c.match("./vendor/tesseract-core-lstm.wasm.js");
+        const eng = await c.match("./langs/eng.traineddata");
+        const chi = await c.match("./langs/chi_sim.traineddata");
+        if (core && eng && chi) return true;
+      }
+    } catch (e) {
+    }
+    return false;
+  }
+  var ocrWorkerPromise = null;
+  function getOcrWorker() {
+    if (!ocrWorkerPromise) {
+      ocrWorkerPromise = (async () => {
+        const T = window.Tesseract;
+        if (!T) throw new Error("tesseract.js \u672A\u52A0\u8F7D");
+        if (!ocrAssetsChecked) {
+          ocrAssetsChecked = true;
+          if (!await ocrAssetsWarm()) setStatus("\u9996\u6B21 OCR \u9700\u4E0B\u8F7D\u7EA6 12 MB\uFF08\u6B64\u540E\u79BB\u7EBF\u53EF\u7528\uFF09\u2014\u2014\u6B63\u5728\u51C6\u5907\u2026");
+        }
+        const corePath = new URL("./vendor/", location.href).href;
+        const worker = await T.createWorker(["eng", "chi_sim"], 1, {
+          workerPath: await bline_default.tessWorkerUrl(),
+          corePath,
+          langPath: "./langs/",
+          gzip: false,
+          workerBlobURL: false
+        });
+        return worker;
+      })().catch((e) => {
+        ocrWorkerPromise = null;
+        throw e;
+      });
+    }
+    return ocrWorkerPromise;
+  }
+
+  // src/pdf.js
+  async function ocrPageToText(page, idx, pageCount) {
+    setStatus(`OCR \u7B2C ${idx}/${pageCount} \u9875\u2026`);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.floor(viewport.width));
+    canvas.height = Math.max(1, Math.floor(viewport.height));
+    const ctx = canvas.getContext("2d");
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+    const worker = await getOcrWorker();
+    const r = await worker.recognize(blob);
+    const text = ((r && r.data || {}).text || "").trim();
+    setStatus(`\u7B2C ${idx}/${pageCount} \u9875 OCR \u5B8C\u6210`);
+    return text;
+  }
+  async function pdfConvert(file, buf) {
+    if (!window.pdfjsLib) throw new Error("pdf.js \u5E93\u672A\u52A0\u8F7D");
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = bline_default.pdfWorkerUrl();
     const doc = await window.pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise;
     const pageCount = doc.numPages;
     const pages = [];
@@ -813,22 +1015,27 @@ const registry = {
         try {
           const content = await page.getTextContent();
           const lines = [];
-          let line = '';
+          let line = "";
           for (const item of content.items) {
-            if ('str' in item) {
+            if ("str" in item) {
               line += item.str;
-              if (item.hasEOL) { lines.push(line); line = ''; }
+              if (item.hasEOL) {
+                lines.push(line);
+                line = "";
+              }
             }
           }
-          if (line !== '') lines.push(line);
-          const text = lines.join('\n').trim();
-          // 逐页判断（审查报告 §2.3）：单页文本量 <10 字符 → 该页 OCR 降级；其余页直接取文本层
+          if (line !== "") lines.push(line);
+          const text = lines.join("\n").trim();
           if (text.length < 10) {
             const ocrText = await ocrPageToText(page, i, pageCount);
-            if (ocrText) { ocrCount++; pages.push({ idx: i, text: ocrText }); }
+            if (ocrText) {
+              ocrCount++;
+              pages.push({ idx: i, text: ocrText });
+            }
           } else {
             pages.push({ idx: i, text });
-            setStatus(`转换中：第 ${i}/${pageCount} 页`);
+            setStatus(`\u8F6C\u6362\u4E2D\uFF1A\u7B2C ${i}/${pageCount} \u9875`);
           }
         } finally {
           page.cleanup();
@@ -837,339 +1044,119 @@ const registry = {
     } finally {
       await doc.destroy();
     }
-    if (ocrCount > 0) warnings.push(`书中有 ${ocrCount} 页无文本层，已用 OCR 识别（结果可能有误差）`);
-    let out = '';
-    for (const p of pages) out += `<!-- page ${p.idx}/${pageCount} -->\n\n${p.text}\n\n`;
-    return { markdown: out.replace(/\n{3,}/g, '\n\n').trim(), warnings, backend: ocrCount > 0 ? 'tesseract' : 'pdfjs' };
-  },
-  docx: async (file, buf) => {
-    // 拍板（2026-09-04 用户）：docx 保留 GFM 表格 —— mammoth→HTML（含 table 元素）→ 复用 htmlToMarkdown（A线实现，支持 GFM 表格）
-    // P1（任务书 t6）：图片阈值抽取（≤100KB 内嵌 / >100KB → meta.assets）+ alt 口径（Word 图片名去扩展名，禁 AI 描述）
-    //   + OMML 公式 → LaTeX（占位令牌法保证顺序；fflate 内联解包+重打包，全本地零外发）。
-    const warnings = [];
-    const assets = [];
-    const F = window.fflate;
-    if (!F) throw new Error('fflate 未加载');
-    let entries;
-    try { entries = F.unzipSync(buf); }
-    catch (e) { throw new Error('文件已损坏或不是有效的 Office 文档（zip 解压失败）'); }
-    const docEntry = entries['word/document.xml'];
-    if (!docEntry) throw new Error('文件已损坏或不是有效的 Office 文档（缺 word/document.xml）');
-    let docXml = new TextDecoder('utf-8').decode(docEntry);
-    if (docXml.charCodeAt(0) === 0xFEFF) docXml = docXml.slice(1);
-    const parsed = docxParseForMd(docXml, warnings); // OMML 占位 + 图片 docPr 收集；失败会 throw（损坏文档）
-    // 占位后的 document.xml 重新打包喂 mammoth（占位符在文本流原位，公式不位移）
-    entries['word/document.xml'] = new TextEncoder().encode(parsed.xml);
-    const repacked = F.zipSync(entries);
-    const arrayBuffer = repacked.buffer.slice(repacked.byteOffset, repacked.byteOffset + repacked.byteLength);
-    let imgIdx = 0, imgSeq = 0;
-    const docBase = docxSafeBase(file.name);
-    const result = await window.mammoth.convertToHtml({ arrayBuffer }, {
-      convertImage: window.mammoth.images.imgElement(async (image) => {
-        const ct = image.contentType || 'image/png';
-        const metaEntry = parsed.imgNames[imgIdx] || {};
-        imgIdx++;
-        const alt = docxAltFromName(metaEntry.name);
-        let bytes = null;
-        try {
-          const ab = await image.readAsArrayBuffer();
-          bytes = new Uint8Array(ab);
-        } catch (e) { bytes = null; }
-        if (!bytes || bytes.length === 0) return { src: '', alt: '' };
-        if (bytes.length <= DOCX_IMG_EMBED_MAX) {
-          return { src: 'data:' + ct + ';base64,' + bytesToB64(bytes), alt };
-        }
-        imgSeq++;
-        const name = 'assets/' + docBase + '-' + imgSeq + '.' + extForContentType(ct);
-        assets.push({ name, blob: new Blob([bytes], { type: ct }), size: bytes.length, type: ct });
-        return { src: name, alt };
-      }),
-    });
-    if (result.messages && result.messages.length > 0) {
-      // 图片相关消息：成功路径已由「内嵌/抽取」处理，不再提示「已忽略」；仅透出非图片提示
-      const nonImg = result.messages.filter((m) => !String(m.type || '').includes('image') && !String(m.message || '').includes('image'));
-      if (nonImg.length > 0) warnings.push('转换器提示 ' + nonImg.length + ' 条消息（样式近似渲染）');
-    }
-    if (assets.length > 0) warnings.push(assets.length + ' 张图片（大于 100KB）已抽取为附件，下载时随 zip 一并取出');
-    // DOMParser 还原 HTML 实体；共享 htmlToMarkdown（TXT/HTML 路径同款，回归由契约组 text-html 用例保障）
-    // ctx.warnings：透出表格合并单元格等结构性提示（P0 修复 §1.2）
-    const md0 = htmlToMarkdown(result.value || '', { warnings });
-    const md = docxInjectLatex(md0, parsed.maths);
-    return { markdown: md, warnings, assets, backend: 'mammoth' };
-  },
-  xlsx: async (file, buf) => {
-    const RX = window.readXlsxFile;
-    if (!RX) throw new Error('read-excel-file 库未加载');
-    const readXlsx = typeof RX === 'function' ? RX : (RX.default || RX);
-    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    // sheet 名称列表：自读 xl/workbook.xml（bundle 未导出 readSheetNames——t4 G 组实测）；解析失败回退单 sheet
-    const sheetNames = await xlsxSheetNames(buf);
-    const names = sheetNames && sheetNames.length > 0 ? sheetNames : [null];
-    const readNames = names.slice(0, XLSX_SHEET_LIMIT);
-    const parts = [];
-    const warnings = [];
-    let truncated = false;
-    let totalRows = 0;
-    for (const name of readNames) {
-      const rows = await readXlsx(ab, name ? { sheet: name } : undefined);
-      totalRows += rows.length;
-      const kept = rows.slice(0, XLSX_ROW_LIMIT);
-      if (kept.length < rows.length) truncated = true;
-      parts.push(`### Sheet: ${name === null ? 'Sheet1' : name}\n\n${xlsxRowsToMd(kept)}`);
-    }
-    const skipped = names.length - readNames.length;
-    if (skipped > 0) {
-      parts.push(`> 另有 ${skipped} 个 sheet 未读取（v1 上限 ${XLSX_SHEET_LIMIT} 个）`);
-      truncated = true;
-    }
-    // 文案（审查报告 §1.5）：只计已读 sheet 的行数，语义正确
-    if (truncated) warnings.push(`已截断：已读取前 ${readNames.length} 个 sheet 共 ${totalRows} 行（每 sheet 保留前 ${XLSX_ROW_LIMIT} 行；另有 ${skipped} 个 sheet 未读取）`);
-    return { markdown: parts.join('\n\n').trim(), warnings, truncated, backend: 'read-excel-file' };
-  },
-  image: async (file, buf) => {
+    if (ocrCount > 0) warnings.push(`\u4E66\u4E2D\u6709 ${ocrCount} \u9875\u65E0\u6587\u672C\u5C42\uFF0C\u5DF2\u7528 OCR \u8BC6\u522B\uFF08\u7ED3\u679C\u53EF\u80FD\u6709\u8BEF\u5DEE\uFF09`);
+    let out = "";
+    for (const p of pages) out += `<!-- page ${p.idx}/${pageCount} -->
+
+${p.text}
+
+`;
+    return { markdown: out.replace(/\n{3,}/g, "\n\n").trim(), warnings, backend: ocrCount > 0 ? "tesseract" : "pdfjs" };
+  }
+
+  // src/convert.js
+  var MAX_BYTES = 50 * 1024 * 1024;
+  async function imageConvert(file, buf) {
     const worker = await getOcrWorker();
-    const blob = new Blob([buf], { type: file.type || 'image/png' });
+    const blob = new Blob([buf], { type: file.type || "image/png" });
     const r = await worker.recognize(blob);
-    const text = (((r && r.data) || {}).text || '').trim();
-    const conf = r && r.data && typeof r.data.confidence === 'number' ? Math.round(r.data.confidence) : null;
+    const text = ((r && r.data || {}).text || "").trim();
+    const conf = r && r.data && typeof r.data.confidence === "number" ? Math.round(r.data.confidence) : null;
     const warnings = [];
-    if (!text) warnings.push('OCR 未识别到文字（图片可能过小或模糊）');
-    else if (conf !== null && conf < 60) warnings.push(`OCR 置信度较低（${conf}%），结果可能不准确`);
-    return { markdown: text, warnings, backend: 'tesseract' };
-  },
-  text: async (file, buf) => {
+    if (!text) warnings.push("OCR \u672A\u8BC6\u522B\u5230\u6587\u5B57\uFF08\u56FE\u7247\u53EF\u80FD\u8FC7\u5C0F\u6216\u6A21\u7CCA\uFF09");
+    else if (conf !== null && conf < 60) warnings.push(`OCR \u7F6E\u4FE1\u5EA6\u8F83\u4F4E\uFF08${conf}%\uFF09\uFF0C\u7ED3\u679C\u53EF\u80FD\u4E0D\u51C6\u786E`);
+    return { markdown: text, warnings, backend: "tesseract" };
+  }
+  async function textConvert(file, buf) {
     const text = decodeText(buf);
-    const name = (file.name || '').toLowerCase();
-    const probe = text.slice(0, 2000);
-    const looksHtml = name.endsWith('.html') || name.endsWith('.htm') ||
-      /<(!doctype|html|body|div|p|h[1-6]|table|ul|ol|section|article)\b/i.test(probe);
+    const name = (file.name || "").toLowerCase();
+    const probe = text.slice(0, 2e3);
+    const looksHtml = name.endsWith(".html") || name.endsWith(".htm") || /<(!doctype|html|body|div|p|h[1-6]|table|ul|ol|section|article)\b/i.test(probe);
     if (looksHtml) {
       const warnings = [];
       const md = htmlToMarkdown(text, { warnings });
-      return { markdown: md, warnings, backend: 'builtin-html' };
+      return { markdown: md, warnings, backend: "builtin-html" };
     }
-    return { markdown: text.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim(), backend: 'builtin' };
-  },
-};
-
-/* ---------- 统一入口 ---------- */
-async function convert(file) {
-  const t0 = performance.now();
-  const meta = {
-    name: file.name || '未命名文件', size: file.size,
-    type: null, backend: null, elapsedMs: 0, truncated: false, warnings: [],
+    return { markdown: text.replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim(), backend: "builtin" };
+  }
+  var registry = {
+    pdf: pdfConvert,
+    docx: docxConvert,
+    xlsx: xlsxConvert,
+    image: imageConvert,
+    text: textConvert
   };
-  const done = (extra) => ({ markdown: extra && extra.markdown || '', meta: { ...meta, elapsedMs: Math.round(performance.now() - t0) }, error: extra && extra.error });
-  if (file.size === 0) return done({ error: '文件为空，无法转换' });
-  if (file.size > MAX_BYTES) return done({ error: '文件过大（超过 50MB），请先裁剪' });
-  const buf = new Uint8Array(await file.arrayBuffer());
-  const s = await sniff(buf);
-  meta.type = s.type;
-  if (s.type === 'unknown') return done({ error: '无法识别的文件类型' });
-  if (s.type === 'pptx') return done({ error: 'PPTX 不在 v1 支持范围（见 README），v2 再议' });
-  if (s.type === 'zip') return done({ error: '暂不支持普通 ZIP 文件，请解压后再转换' });
-  if (!registry[s.type]) return done({ error: '无法识别的文件类型' });
-  try {
-    const res = await registry[s.type](file, buf);
-    meta.backend = res.backend || null;
-    meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
-    meta.truncated = !!res.truncated; // 契约字段同步（审查报告 §1.5：转换器截断结果落地）
-    if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
-    return { markdown: res.markdown || '', meta, error: undefined };
-  } catch (e) {
-    return done({ error: '转换失败：' + (e && e.message ? e.message : '未知错误') });
-  }
-}
-
-/* ---------- UI ---------- */
-const $ = (sel) => document.querySelector(sel);
-const dropzone = $('#dropzone');
-const fileInput = $('#fileInput');
-const statusEl = $('#status');
-const resultsEl = $('#results');
-const hintEl = $('#hint');
-
-function setStatus(msg, isError) {
-  statusEl.textContent = msg || '';
-  statusEl.className = isError ? 'error' : '';
-}
-function fmtSize(n) {
-  if (n < 1024) return n + ' B';
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-  return (n / 1024 / 1024).toFixed(2) + ' MB';
-}
-async function handleFiles(files) {
-  // 修复（2026-09-04，A线遗留 bug）：live FileList 快照化——
-  // change handler 同步执行 fileInput.value='' 会清空 live FileList，
-  // async 首个 await 挂起后引用已丢（多选只转首个、状态误报 0 个）。
-  const list = Array.from(files || []);
-  if (list.length === 0) return;
-  hintEl.style.display = 'none';
-  setStatus('正在处理 ' + list.length + ' 个文件…');
-  for (let i = 0; i < list.length; i++) {
-    const file = list[i];
-    const result = await convert(file);
-    renderResult(file, result, i + 1, list.length);
-  }
-  setStatus('完成：共 ' + list.length + ' 个文件。');
-}
-function renderResult(file, result, idx, total) {
-  const card = document.createElement('div');
-  card.className = 'card';
-  const head = document.createElement('div');
-  head.className = 'card-head';
-  const name = document.createElement('span');
-  name.className = 'name';
-  name.textContent = file.name;
-  head.appendChild(name);
-  const chip = document.createElement('span');
-  chip.className = 'chip' + (result.error ? ' err' : '');
-  chip.textContent = result.error ? '转换失败' : (result.meta.type || '?').toUpperCase();
-  head.appendChild(chip);
-  const meta = document.createElement('span');
-  meta.className = 'meta';
-  meta.textContent = fmtSize(file.size) + (result.meta.elapsedMs ? ' · ' + result.meta.elapsedMs + ' ms' : '');
-  head.appendChild(meta);
-  card.appendChild(head);
-
-  const body = document.createElement('div');
-  body.className = 'card-body';
-  if (result.error) {
-    const errEl = document.createElement('div');
-    errEl.className = 'warnings';
-    errEl.style.color = 'var(--err)';
-    errEl.textContent = '❌ ' + result.error;
-    body.appendChild(errEl);
-  } else {
-    const ta = document.createElement('textarea');
-    ta.className = 'md';
-    ta.readOnly = true;
-    ta.value = result.markdown;
-    body.appendChild(ta);
-    if (result.meta.warnings && result.meta.warnings.length) {
-      const w = document.createElement('div');
-      w.className = 'warnings';
-      w.textContent = '⚠ ' + result.meta.warnings.join('；');
-      body.appendChild(w);
+  async function convert(file) {
+    const t0 = performance.now();
+    const meta = {
+      name: file.name || "\u672A\u547D\u540D\u6587\u4EF6",
+      size: file.size,
+      type: null,
+      backend: null,
+      elapsedMs: 0,
+      truncated: false,
+      warnings: []
+    };
+    const done = (extra) => ({ markdown: extra && extra.markdown || "", meta: { ...meta, elapsedMs: Math.round(performance.now() - t0) }, error: extra && extra.error });
+    if (file.size === 0) return done({ error: "\u6587\u4EF6\u4E3A\u7A7A\uFF0C\u65E0\u6CD5\u8F6C\u6362" });
+    if (file.size > MAX_BYTES) return done({ error: "\u6587\u4EF6\u8FC7\u5927\uFF08\u8D85\u8FC7 50MB\uFF09\uFF0C\u8BF7\u5148\u88C1\u526A" });
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const s = await sniff(buf);
+    meta.type = s.type;
+    if (s.type === "unknown") return done({ error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B" });
+    if (s.type === "pptx") return done({ error: "PPTX \u4E0D\u5728 v1 \u652F\u6301\u8303\u56F4\uFF08\u89C1 README\uFF09\uFF0Cv2 \u518D\u8BAE" });
+    if (s.type === "zip") return done({ error: "\u6682\u4E0D\u652F\u6301\u666E\u901A ZIP \u6587\u4EF6\uFF0C\u8BF7\u89E3\u538B\u540E\u518D\u8F6C\u6362" });
+    if (!registry[s.type]) return done({ error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B" });
+    try {
+      const res = await registry[s.type](file, buf);
+      meta.backend = res.backend || null;
+      meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
+      meta.truncated = !!res.truncated;
+      if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
+      return { markdown: res.markdown || "", meta, error: void 0 };
+    } catch (e) {
+      return done({ error: "\u8F6C\u6362\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF") });
     }
-    const actions = document.createElement('div');
-    actions.className = 'card-actions';
-    const hasAssets = result.meta.assets && result.meta.assets.length > 0;
-    if (hasAssets) {
-      const btnZip = document.createElement('button');
-      btnZip.className = 'btn primary';
-      btnZip.textContent = '📦 下载 .md + 图片（zip）';
-      btnZip.addEventListener('click', () => downloadZip(ta.value, file.name, result.meta.assets, btnZip));
-      actions.appendChild(btnZip);
+  }
+
+  // src/app.js
+  async function handleFiles(files) {
+    const list = Array.from(files || []);
+    if (list.length === 0) return;
+    hintEl.style.display = "none";
+    setStatus("\u6B63\u5728\u5904\u7406 " + list.length + " \u4E2A\u6587\u4EF6\u2026");
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i];
+      const result = await convert(file);
+      renderResult(file, result, i + 1, list.length);
     }
-    const btnCopy = document.createElement('button');
-    btnCopy.className = 'btn';
-    btnCopy.textContent = '📋 复制 Markdown';
-    btnCopy.addEventListener('click', (e) => copyText(ta.value, btnCopy));
-    const btnDl = document.createElement('button');
-    btnDl.className = 'btn' + (hasAssets ? '' : ' primary');
-    btnDl.textContent = '⬇ 下载 .md';
-    btnDl.addEventListener('click', () => downloadMd(ta.value, file.name));
-    actions.appendChild(btnCopy);
-    actions.appendChild(btnDl);
-    body.appendChild(actions);
+    setStatus("\u5B8C\u6210\uFF1A\u5171 " + list.length + " \u4E2A\u6587\u4EF6\u3002");
   }
-  card.appendChild(body);
-  resultsEl.appendChild(card);
-  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-async function copyText(text, btn) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (e) {
-    // file:// 下 clipboard API 可能受限：fallback execCommand
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    ta.remove();
-  }
-  const old = btn.textContent;
-  btn.textContent = '✅ 已复制';
-  setTimeout(() => { btn.textContent = old; }, 1500);
-}
-function downloadMd(text, fileName) {
-  const base = (fileName || 'doc2md').replace(/\.[^.]+$/, '');
-  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = base + '.md';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 3000);
-}
-// 下载 .md + 抽取图片（zip）：fflate 内联打包，本地生成，零外发（t6 ⑨a）
-async function downloadZip(text, fileName, assets, btn) {
-  try {
-    const F = window.fflate;
-    if (!F) throw new Error('fflate 未加载');
-    const base = (fileName || 'doc2md').replace(/\.[^.]+$/, '');
-    const files = {};
-    files[base + '.md'] = F.strToU8(text);
-    for (const a of assets || []) {
-      try {
-        files[a.name] = new Uint8Array(await a.blob.arrayBuffer());
-      } catch (e) { /* 单图读取失败跳过（其他图照常打包） */ }
-    }
-    const z = F.zipSync(files);
-    const url = URL.createObjectURL(new Blob([z], { type: 'application/zip' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = base + '.zip';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
-  } catch (e) {
-    const old = btn.textContent;
-    btn.textContent = '❌ 打包失败';
-    setTimeout(() => { btn.textContent = old; }, 1500);
-  }
-}
-
-/* 拖放 + 选择 */
-dropzone.addEventListener('click', () => fileInput.click());
-/* 拖放：document 级拦截——防止浏览器默认「下载/打开」被拖入的文件；
- * 页面任意位置均可拖放（不止 dropzone 内）；dragover 默认行为必须连续拦住，否则浏览器会接管 */
-window.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  if (dropzone.contains(e.target)) dropzone.classList.add('over');
-});
-window.addEventListener('dragleave', () => dropzone.classList.remove('over'));
-window.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropzone.classList.remove('over');
-  const dropped = e.dataTransfer && e.dataTransfer.files;
-  if (dropped && dropped.length) handleFiles(dropped);
-});
-fileInput.addEventListener('change', () => {
-  handleFiles(fileInput.files);
-  fileInput.value = '';
-});
-
-/* OCR 语言包懒初始化（DD-14）：不再页面加载时预热（避免首载全量拉取）；首次 OCR 时 getOcrWorker 才创建 */
-
-/* 测试挂钩（C线契约测试用；不改变行为） */
-window.__doc2md = { convert, sniff, registry, htmlToMarkdown, decodeText, MAX_BYTES };
-
-/* PWA：service worker 注册（离线缓存；仅 http(s)/localhost 生效，
- * file:// 双击打开时静默跳过——单文件本身离线可用，SW 是增强）。
- * 注册失败静默（不 console.error，见契约 C2「无 console error」）。 */
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  dropzone.addEventListener("click", () => fileInput.click());
+  window.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    if (dropzone.contains(e.target)) dropzone.classList.add("over");
   });
-}
+  window.addEventListener("dragleave", () => dropzone.classList.remove("over"));
+  window.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropzone.classList.remove("over");
+    const dropped = e.dataTransfer && e.dataTransfer.files;
+    if (dropped && dropped.length) handleFiles(dropped);
+  });
+  fileInput.addEventListener("change", () => {
+    handleFiles(fileInput.files);
+    fileInput.value = "";
+  });
+  window.__doc2md = { convert, sniff, registry, htmlToMarkdown, decodeText, MAX_BYTES };
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {
+      });
+    });
+  }
+})();
+
 </script>
 </body>
 </html>
