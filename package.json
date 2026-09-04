@@ -5,6 +5,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
+    "build": "node tools/build.mjs",
     "gen:samples": "node tests/gen-samples.mjs",
     "test": "node --test",
     "test:direct": "node tests/contract_v1.test.mjs",
