@@ -97,13 +97,13 @@ async function convert(file /* File */) -> Promise<{
 
 ### 4.5 image —— B线已实现 ✅（tesseract.js 6.0.1 内联 OCR）
 - `tesseract.js@6.0.1`（Apache-2.0）UMD 内联（全局 `Tesseract`）→ LSTM OCR（`oem=1`）。
-- 引擎资源全 blob 化：worker 入口 = patch blob（覆写 fetch/importScripts，把 traineddata/core 请求重定向到本地 blob）+ worker 本体；
+- 引擎资源：worker 入口 = patch blob（覆写 importScripts，把 core 请求重定向到本地 blob）+ worker 本体；
   `tesseract.js-core@6.0.0`（Apache-2.0，wasm 单文件自包含）simd/non-simd 双版本内嵌；
-  语言数据 `@tesseract.js-data/{eng,chi_sim}@1.0.0`（MIT）`4.0.0_best_int`（LSTM 量化版）base64 内嵌。
+  语言数据 `@tesseract.js-data/{eng,chi_sim}@1.0.0`（MIT）`4.0.0_best_int`（LSTM 量化版）**同源懒加载 `langs/`（DD-14，2026-09-04 首载优化拍板）**：裸 `.traineddata`（gunzip 后写入），`langPath: './langs/'`、`gzip: false`；由 SW cache-first 与 tesseract IDB 缓存双兜底（断网/二次 OCR 可复用）。
 - 默认 `eng+chi_sim`；输出纯文本 + warnings（空结果 / 置信度 <60% 提示）；`backend='tesseract'`。
-- ⚠️ **已知限制（2026-09-04 实测）**：契约样例 `sample.png` 为合成 5×7 点阵字体（0 为斜杠零、2 为折线形），与 tesseract 训练分布差异过大——
-  LSTM/legacy 引擎、放大/逐字符识别均无法正确识别 `DOC2MD`/`2026`（`HELLO` 可识别，置信度 28-48%）。
-  属**样例字形质量问题**，按 T-3 红线不改 `sample.*`；建议 QA 拍板：① 换标准字形重生成（0 不带斜杠、2 用标准点阵）；或 ② 契约 image 断言放宽。
+- ⚠️ **已知限制（2026-09-04 实测）**：契约样例 `sample.png` 曾为合成 5×7 点阵字体（0 为斜杠零、2 为折线形），与 tesseract 训练分布差异过大——
+  LSTM/legacy 引擎、放大/逐字符识别均无法正确识别 `DOC2MD`/`2026`。QA 已于 DD-8 将 '0' 改标准字形重生成样例（保留断言），**2026-09-04 B 线重测：`HELLO DOC2MD 2026` 三令牌全中（懒加载首次 427ms）**。
+- 首载体积：index.html 由 16.4MB → **10.2MB**（语言包 6.2MB 外置；core js 7.9MB 仍内联——后续如需进一步瘦身可再拍板 core 懒加载）。
 
 ## 5. 错误处理策略（全部本地化，中文友好）
 
