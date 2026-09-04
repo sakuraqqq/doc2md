@@ -8,7 +8,8 @@
     "gen:samples": "node tests/gen-samples.mjs",
     "test": "node --test tests/",
     "test:direct": "node tests/contract_v1.test.mjs",
-    "test:contract": "node --test tests/contract_v1.test.mjs"
+    "test:contract": "node --test tests/contract_v1.test.mjs",
+    "verify:ocr": "node tools/verify-ocr.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

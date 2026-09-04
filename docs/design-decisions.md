@@ -24,6 +24,7 @@
 - **根因复盘**（穷举验证）：① LSTM 引擎：原图 PSM3/PSM7、最近邻 2x/3x 放大、逐字符裁剪 PSM7 —— 均失败（确认为字形分布偏差，LSTM 把斜杠零归入 Z/B 类）；② legacy 引擎（OEM0 + 完整 eng 10.9MB + 完整 core）：`HELLEI EIIZIEEHEI EEIEE-`（更差）；③ 逐字符 PSM10 模式 LSTM 不支持。**结论：tesseract 训练分布中无此类 5×7 点阵字形，任何引擎配置均无法稳定识别。**
 - **拍板**：B 线按 T-3 红线**不改** `tests/data/sample.*`（字节锁 + 覆盖=改口径）；本问题作为**跨线遗留上报队长/QA**：① 改 gen-samples.mjs FONT 表（0 去斜杠、2/6 用标准字形；**顺带修空格宽度 bug**：当前生成器公式 1225px < 实际锁定样例 1300px，重跑会与现样例不一致）；或 ② 契约 image 断言放宽（如只断 HELLO）。
 - **修复**：无（引擎侧无解；待样例侧拍板）。**验收**：转换器本身对真实图片（常规字体）工作正常；样例识别限制已如实登记于 architecture.md §4.5 与 CONTRACT.md 关联信息。
+- **→ 2026-09-04 闭环**：用户拍板换**真实字体渲染**（推荐项），由 QA 落地并离线 OCR 实证 PASS（见 DD-10）——本条遗留状态关闭。
 
 ## DD-7 · 单文件组装（embed-bline）的脚本陷阱 — 2026-09-04 B线
 
@@ -39,6 +40,15 @@
 - **拍板**（QA 于 t12 执行，断言即规格前提下唯一可走路径）：方案① 改 `gen-samples.mjs` 字形——`FONT['0']` 改为标准无斜线/无内点零（与纯数字词「2026」上下文配合，最利于与 O 区分）；**断言（HELLO/DOC2MD/2026）不变**；方案②（放宽 image 断言）不采纳——改断言=改口径=需用户拍板。
 - **修复**：字形替换后重新生成 `sample.png`（2457 B）与 `manifest.json`（其余 5 个样例字节不变，确定性已验证）。**顺带实测**：生成器宽度公式（1300px）与锁定样例一致，重跑字节级零漂移——DD-6 记载的「宽度公式 1225，重跑不一致」**未复现**，以实测为准（不盲改公式）。
 - **验收**：B1.image / B2 / B3 全绿（manifest 字节锁 + 格式特征）；**OCR 识别效果待浏览器环境复验**（本验收环境无浏览器 spawn 能力；若复验仍失败，唯一回退=方案②，需用户拍板）。
+- **→ 2026-09-04 更新**：用户拍板否决「点阵字体置换」路线（DD-6 穷举已示点阵字形不在训练分布，改字形仍概率性失败），采纳升级方案——**真实字体渲染**（见 DD-10）。本条目保留为历史记录。
+
+## DD-10 · sample.png 真实字体渲染（用户拍板落地，DD-6 闭环）— 2026-09-04 QA
+
+- **现象**：DD-6/DD-8 点阵（5×7 位图）字形方案不可靠——tesseract 训练分布无此类字形，任何引擎配置无法稳定识别；用户拍板（推荐项）：「换字形重生成 sample.png + 重锁 manifest；参考真实字体如 Arial/Consolas/DejaVu，勿用点阵位图字体」。
+- **根因**：点阵字体与真实字体字形分布差异大，LSTM/legacy 均无解（DD-6 穷举证据）；真实字体才是 OCR 训练分布内的输入。
+- **拍板**（2026-09-04 用户）：真实字体（Arial 72px，黑字白底 880×180）渲染 `HELLO DOC2MD 2026`；断言（HELLO/DOC2MD/2026）不变；样例由 `tools/gen-sample-image.ps1`（Windows GDI+，零依赖）生成一次，产出为固定资产 `tests/lib/assets/sample-image.png`，`gen-samples.mjs` 只做确定性字节复制（**无公式漂移空间**——DD-8 期间「1225px 漂移」争议经实测未复现，新方案从机制上根除）。
+- **修复**：① 新建 `tools/gen-sample-image.ps1`（UTF-8 BOM，GDI+ AntiAliasGridFit，Arial 72px）；② `gen-samples.mjs` 删除点阵 FONT/buildPng，改为资产复制；③ 重生成 `sample.png`（7982 B / SHA FAA64C29…）与 `manifest.json` 字节锁同步（其余 5 个样例字节不变）。
+- **验收**：**离线 OCR PASS**——`npm run verify:ocr`（node 版 tesseract.js v6 + 本地 vendor/tessdata eng+chi_sim best_int，worker 270ms）输出 `"HELLO DOC2MD 2026"`，置信度 **93%**，三令牌全命中。B1/B2/B3 全绿。浏览器端 C 组复验待有浏览器环境（本沙箱无 spawn 能力，如实）。
 
 ## DD-9 · docx 转换路径未按 T-5 拍板落实（QA 验收发现，B 线已修复）— 2026-09-04 QA/B线
 
