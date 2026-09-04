@@ -250,3 +250,24 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 契约组 H 的「零外域 URL 字面量」同样约束 `src/`：XML 命名空间等继续用拆串拼接（docx.js 已示范）。
 - 沙箱 spawn 受限（esbuild/浏览器/npm 包装器）是登记过的环境事实：构建与浏览器组断言留待用户机/CI 终验；命令记录于 CONTRACT.md §5（构造器/浏览器回退链同款模式）。
 
+## 2026-09-05 · 防屎山独立验收 t10（core-dev，修验分离）
+
+### 验证了什么
+- **基线 eee7ca1**（t8 产物提交：src/ 10 模块 + esbuild IIFE bundle；src/ 自 a7b61b2 未变，构建源确定）。
+- **构建护层**：build.mjs 审查（banner 自检/标记唯一/确定性）；round-trip = bundle 块替换回 `<!-- __APP_BUNDLE__ -->` 后与 `src/template.html` **逐字节相等**（壳零漂移 ✓）；bundle 10/10 模块标记；`__doc2md` 6 符号挂钩；bundle 内 SW 注册、无死代码残留（`INLINE_TRANSPARENT` 被 tree-shake）。
+- **全量回归（宿主浏览器真实 index.html + test:direct）**：A0 ✓；B 11/11 ✓；D 10/10；E 4/4；F 3/3；C 6/6（1/1/32/3/148/442ms，零外域，console0）；G 3/3；I 5/5；J 1/1；M1 近似 309ms ✓（390×844 留用户机）；H1/H3-H6 ✓。
+- **真实文档**：6月2日实验.docx 219ms 无 error（图抽 151,218B / alt=图片 1 / GFM 表格 / 4×H2）。
+- **PWA audit 46/48**（2 失败=脚本过时，见下）、**OCR 复验 PASS**（93%，440ms）、**metrics 复现 21 名单一致**。
+
+### 发现（报告队长，未修改——只验收不修改红线）
+1. **H2 契约回归（阻塞）**：esbuild 常量折叠 `'http'+'://…'` → 产物 `http://schemas.openxmlformats.org/` 字面量 → H2 断言红。t7「H 组 6/6」基于重构前单体版；**产物级 H2 需修/拍板**（候选：白名单登记命名空间标识符 / src 运行时拼装）。
+2. **lint 守门未达成**：72 errors（≈60 个 = eslint.config.js 漏 `globals.browser` 的配置假阳性；真实 ≈12 个：死代码 INLINE_TRANSPARENT、catch(e) 空块/忽略异常×10、no-nested-conditional×3、no-unenclosed-multiline-block×5（疑似 prettier 冲突）、super-linear-regex（sniff.js:37）、ui.js renderResult 未用参数），无「已知例外」登记。
+3. **模块行数**：html2md.js 245 / docx.js 203（>200 行标准，无例外声明）。
+4. **CODE-METRICS 认知声明不符**：44 vs sonarjs 33（偏差 11 分≠声明 1-2 分）；**圈复杂度双侧一致=真实**。
+5. **pwa-audit.mjs 过时**（addAll / SW 注册文本模式检查——契约 H3-H6 已定版新行为）。
+
+### 环境事实（登记）
+- esbuild spawn EPERM（npm run build / node 直跑均失败；一次性升权重试**被用户拒绝**，不重试）→ 幂等验证本环境不可行；用户机 `npm run build && git diff --exit-code index.html` 为终验。
+- **用户机终验预期修正**：`npm install && npm run build && npm test` 当前**预期 ≠65/65**（H2 必红），其余 64 项绿；H2 处置后报全绿。
+- 实测核验：index.html 80,840 B / SHA256 `5D6C148A21064B4E7C0B231EA333310386F3E0408E8EF82A34B4E4E6200BCC63`；test:direct 44 tests = 19 pass（A/B/H 非 H2 之 6 + …）/ 25 fail（24 = 浏览器 spawn 基建红 + H2 契约回归）。
+
