@@ -286,6 +286,12 @@ async function runConvertCase(chromium, base, c, viewport) {
     elapsedMs = Date.now() - t0;
     assert.equal(res.error, undefined, `convert 返回错误: ${res.error}`);
     assert.equal(typeof res.markdown, 'string', 'markdown 非字符串');
+    // ZCode ①（1.1 先红）：成功路径 meta.elapsedMs 必须 > 0——convert.js 成功 return 的 meta
+    // 目前未写 elapsedMs（恒 0；仅失败路径 done() 更新）——契约等待实现方补成功路径计时
+    assert.ok(
+      typeof res.meta.elapsedMs === 'number' && res.meta.elapsedMs > 0,
+      `meta.elapsedMs=${res.meta && res.meta.elapsedMs}（成功转换后必须 > 0——当前成功路径未回填耗时，恒 0）`
+    );
     for (const tok of c.keyTokens) {
       assert.ok(
         res.markdown.includes(tok),
@@ -1087,6 +1093,34 @@ test('契约组 L：OMML 缺 m:e 的 sSup —— 公式内容不重复（契约�
         assert.ok(math.length > 0, `输出无 $…$ 公式围栏：${JSON.stringify(md.slice(0, 200))}`);
         const nCount = (math.match(/n/g) || []).length;
         assert.ok(nCount <= 1, `公式重复——'n' 出现 ${nCount} 次（期望 ≤1：缺 m:e 时 sup 内容不得被 base 重复输出）：${JSON.stringify(math)}`);
+      });
+
+      // L2：括号内分数（样例 sample-omml-parenfrac.docx；ZCode A 批 ②）
+      // 断言语义：L2a 输出须含结构化 `(\frac{a}{b})`（m:d>m:e>m:f 链——当前缺 m:e case → 整块退化拍平 `(ab)` → 红）；
+      //           L2b「降级必冒泡」——若输出未含 \frac（取退化路径）则 warnings 必须含「复杂公式」
+      //           （当前 ommlConcat 的 df=null 透传链丢失 degrade 标记 → 无 warning → 红）。
+      const b64f = fs.readFileSync(nodePath.join(DATA, 'sample-omml-parenfrac.docx')).toString('base64');
+      const rf = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-omml-parenfrac.docx'));
+        },
+        { b64: b64f }
+      );
+      assert.equal(rf.error, undefined, `convert 返回错误: ${rf.error}`);
+      await t.test('L2a 括号内分数 → 结构化 (\frac{a}{b})', () => {
+        const md = rf.markdown || '';
+        assert.ok(
+          md.includes('(\\frac{a}{b})') || /\(\s*\\frac\{a\}\{b\}\s*\)/.test(md),
+          `输出未含结构化分数：${JSON.stringify(md.slice(0, 200))}（m:d(m:begChr="(") > m:e > m:f(a,b) 应输出 (\frac{a}{b})——当前退化拍平）`
+        );
+      });
+      await t.test('L2b 降级必冒泡：未含 \frac 时 warnings 须含「复杂公式」', () => {
+        const md = rf.markdown || '';
+        const w = (rf.meta.warnings || []).join(' ');
+        if (!md.includes('\\frac')) {
+          assert.ok(w.includes('复杂公式'), `退化路径未冒泡 warning：md=${JSON.stringify(md.slice(0, 120))} warnings=${JSON.stringify(rf.meta.warnings)}（ommlConcat df 透传链丢失 degrade 标记）`);
+        }
       });
     } finally {
       await browser.close();
