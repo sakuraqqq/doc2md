@@ -910,6 +910,26 @@ test('契约组 G2：xlsx 大行数（L4 性能/L4b 护栏/L5 文案）—— L5
           `输出含「另有 0 个」：${JSON.stringify((res.meta.warnings || []).join(' '))}（单 sheet 无未读——「另有 0 个 sheet 未读取」语义错误，应仅在 skipped>0 时出现）`
         );
       });
+
+      // L6：inlineStr 单元格（样例 sample-inlinestr.xlsx；t35 契约先红——t34 发现项）
+      // 断言语义：t="inlineStr" 单元格（文本在 <is><t>，不在 <v>）文本不得丢失——输出含
+      //   「INLINE-STR-OK-2026」与「内联中文」（当前流式 xlsxParseSheet inlineStr 分支读 c.v → 空 → 红）
+      assert.ok(fs.existsSync(nodePath.join(DATA, 'sample-inlinestr.xlsx')), 'sample-inlinestr.xlsx 缺失——请运行 npm run gen:samples');
+      const b64i = fs.readFileSync(nodePath.join(DATA, 'sample-inlinestr.xlsx')).toString('base64');
+      const ri = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-inlinestr.xlsx'));
+        },
+        { b64: b64i }
+      );
+      assert.equal(ri.error, undefined, `convert 返回错误: ${ri.error}`);
+      await t.test('L6 inlineStr 单元格文本保留（INLINE-STR-OK-2026 / 内联中文——当前读 <v> → 空）', () => {
+        const mdi = ri.markdown || '';
+        for (const tok of ['INLINE-STR-OK-2026', '内联中文', '共享文本']) {
+          assert.ok(mdi.includes(tok), `输出缺 inlineStr/对照文本「${tok}」：${JSON.stringify(mdi.slice(0, 200))}（t=inlineStr 文本在 <is><t>——流式解析读 c.v 丢失）`);
+        }
+      });
     } finally {
       await browser.close();
     }
