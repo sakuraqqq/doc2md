@@ -384,3 +384,21 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 用户机终验：conv 补产物+corpus+licenses 注记后 `npm install && npm run build && npm test` → 预期 93/93。
 - 实测核验：index.html 86,742 B / SHA256 `924ED747723C2D4BA2EF358C6BBA6F47AD45618532BE137FF679FCDBEB2DD329`（= HEAD 产物——缺 t27 特征）；sw.js 4,068 B / SHA256 `66F1B1AE70D3CB9340ED83236B4A9F4F2C5DC07AE3F2ED5109B8E3C47BBC3DDF`；real-cid-paper.pdf 511,508 B / SHA256 `703636DDF1756F8848761E3339C31686D175C769F559504EDB27491E86290FF8`。
 
+## 2026-09-05 · CJK 空格独立验收 t31（core-dev，修验分离）
+
+### 验证了什么（基线 ab703f7 = t29 C2-3 先红 + t30 CJK 边界抑制 + 1cd8bc2 产物同步——t28 缺口关闭）
+- **C2-3 绿**（产物级）：高置信子串「世界标准化/质量管理/质量链管理」全部无空格命中——t30 规则C（相邻 run 边界均 CJK → 跳过规则 A/B）生效；C2-1/C2-2 不回归（4109 CJK/61.9%）。
+- **质量链全文人工抽查**：cjkSpaceCjk=0（无逐字空格——t28 的「世 界 标 准 化」消失）；**局部错列（多海个质组量织管）/garbage 行（! ! !）仍存**——如实登记：该文档 layout 遗留（t29 声明 P2——栏检测/垃圾过滤），本批只修逐字空格（符合任务范围）。
+- **不误伤**：k6/k7 ✓、6月2日实验.pdf（pdfjs/无 OCR warning/中文无逐字空格——cjkSpaceCjk=1 单处边缘登记）、sample.pdf ✓、真 docx（图片/表格）✓。
+- **90 断言零回归**：test:direct 56 tests=29/27（27=浏览器基建红，零断言红）；N3 新产物冒烟（builtin/26368 全 tokens）；pwa-audit 48/48。
+- **build 一致性**：产物含 isCjkChar/cjkBoundary/cMapUrl/textQualityRatio（grep 全 true）——产物=src（1cd8bc2 收尾提交）✓；t28 的三个缺口（产物/corpus/licenses cmaps 注记）全部在 1cd8bc2 关闭 ✓。
+
+### 发现（仅登记，无阻塞）
+1. [P2] 质量链局部错列/garbage 行（t29 已声明 P2 细化——本批符合范围）。
+2. [低] 6月2日实验.pdf cjkSpaceCjk=1（个别异常间隙——正常文档不批量触发）。
+3. [登记·并发] 验收期间工作树 index.html +6-1（88,220 B / SHA 3026F935…——另一会话/conv 推进；验收基线=HEAD 9E023F31；未触碰）。
+
+### 环境事实
+- 用户机终验：`npm install && npm run build && npm test` → 预期 93/93（C/M 双端真机；C2-3 产物级闭环）。
+- 实测核验：index.html 87,954 B / SHA256 `9E023F31BA96807470C85848C17962D90549E992C8363D07F93F37AC04D77A51`（HEAD 版）；real-cid-paper.pdf 511,508 B（同 t28）。
+
