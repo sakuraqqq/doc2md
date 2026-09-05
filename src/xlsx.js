@@ -51,12 +51,16 @@ export async function xlsxSheetNames(buf) {
   // zipEntry 自身对损坏/异常结构返回 null（不再 try/catch 吞异常——t12；解析失败即回退单 sheet）
   const xml = await zipEntry(buf, 'xl/workbook.xml');
   if (!xml) return null;
-  const text = new TextDecoder().decode(xml)
-    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'");
+  const text = new TextDecoder().decode(xml);
   const names = [];
+  // ZCode A 批 ④（2.2）：先在**原始 XML**上按 name="…" 捕获值，再对捕获值逐个解码实体——
+  // 此前先全局解码再正则：name 含 &quot; 的 sheet（如 报表"1"）会先变成引号截断正则 → 名被切断
   const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
   let m;
-  while ((m = re.exec(text))) names.push(m[1]);
+  while ((m = re.exec(text))) {
+    const raw = m[1];
+    names.push(raw.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10))));
+  }
   return names.length > 0 ? names : null;
 }
 

@@ -71,6 +71,8 @@ export async function convert(file) {
     meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
     meta.truncated = !!res.truncated; // 契约字段同步（审查报告 §1.5：转换器截断结果落地）
     if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
+    // 成功路径也要回填耗时（失败路径 done() 已有）——ZCode A 批 ①（C7 断言：成功 meta.elapsedMs > 0）
+    meta.elapsedMs = Math.round(performance.now() - t0);
     return { markdown: res.markdown || '', meta, error: undefined };
   } catch (e) {
     return done({ error: '转换失败：' + (e && e.message ? e.message : '未知错误') });
