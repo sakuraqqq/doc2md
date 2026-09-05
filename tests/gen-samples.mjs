@@ -461,13 +461,25 @@ put('sample-math.docx', buildMathDocx());
 put('sample-omml-noe.docx', buildOmmlNoeDocx());
 put('sample-omml-parenfrac.docx', buildParenFracDocx());
 put('sample-omml-multi.docx', buildMultiOmmlDocx());
-put('sample-omml-noe.docx', buildOmmlNoeDocx());
 put('sample-spacing.pdf', buildSpacingPdf());
+
+/* ---------------- real-cid-paper.pdf（用户提供真实中文，t26 样例登记——只锁不生成） ----------------
+ * 来源：用户提供的《质量链管理理论研究综述_金国强.pdf》（4 页学术综述，公开性质；无个人敏感信息——
+ * 2026-09-05 人工检查标题/作者/正文均为学术内容）。
+ * 生成器只做字节登记（manifest 字节锁：CID 中文 PDF 内容随来源不可重生成——若字节变化 = 样例被改动，
+ * 由 B5 + C 组 cid-paper 断言生命周期暴露）；文件本身由人工从 Downloads 复制进 tests/data/。
+ */
+const cidPdf = path.join(OUT, 'real-cid-paper.pdf');
+if (fs.existsSync(cidPdf)) {
+  put('real-cid-paper.pdf', fs.readFileSync(cidPdf));
+} else {
+  console.log('  （real-cid-paper.pdf 缺失——跳过登记；用户重新提供后重跑 gen:samples）');
+}
 
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');

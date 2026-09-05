@@ -176,6 +176,21 @@ test('契约组 B：固定样例数据有效（6 样例 × 5 类，脱敏/中文
   }
 });
 
+// B5（t26 新增）：real-cid-paper.pdf（用户提供真实中文 PDF——CID 无 ToUnicode 的契约先红样例）
+// 字节锁语义：manifest 登记与磁盘一致（内容不可重生成——若字节变化=样例被改动，断言立即暴露）；
+// 不做内容随上游演进（与 real-tables.docx 等的 non-lock 不同：本样例是「锁定复现 CID 现象」的固定资产）。
+test('契约组 B5：real-cid-paper.pdf 字节锁与格式特征（t26 人工入库样例）', () => {
+  const p = nodePath.join(DATA, 'real-cid-paper.pdf');
+  assert.ok(fs.existsSync(p), 'real-cid-paper.pdf 缺失——从 Downloads 复制《质量链管理理论研究综述_金国强.pdf》为重命名此名');
+  const m = readManifest();
+  const rec = m.files['real-cid-paper.pdf'];
+  assert.ok(rec, 'real-cid-paper.pdf 未登记于 manifest（生成器只登记不生成——请运行 npm run gen:samples）');
+  const buf = fs.readFileSync(p);
+  assert.equal(buf.length, rec.bytes, 'real-cid-paper.pdf 大小与 manifest 不一致（样例被改动）');
+  assert.equal(crypto.createHash('sha256').update(buf).digest('hex'), rec.sha256, 'real-cid-paper.pdf SHA 与 manifest 不一致（样例被改动）');
+  assert.equal(buf.toString('ascii').slice(0, 5), '%PDF-', 'real-cid-paper.pdf 非 PDF 头');
+});
+
 // ---------------------------------------------------------------------------
 // 契约组 C：浏览器端转换断言（桌面 + 手机双端）
 // 路径：本地静态服务加载 index.html → window.__doc2md.convert(File)
@@ -341,6 +356,74 @@ test('契约组 C：浏览器端转换断言（双端：桌面 1280×800 + 手�
           });
         }
       });
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 C2：CID 中文 PDF（real-cid-paper.pdf；t26 契约先红）
+// 样例：用户提供的《质量链管理理论研究综述_金国强.pdf》（4 页学术综述，公开性质、无个人敏感信息）——
+//      CID 内嵌字体无 ToUnicode 映射 → pdf.js 文本层输出「符号流 garbage」（实测 CJK=0）。
+// 断言语义（宽松处注明）：
+//   c1 输出含中文关键 token（质量链|摘要|综述 至少一）——当前 0 → 红；
+//   c2 可读性（防「提取了但仍是映射垃圾」的弱断言）：CJK 字符数 ≥100 且 CJK/非空白 ≥30%——
+//      当前 CJK=0 → 红。（注意：naive「可打印字符占比 >50%」会被 garbage 中的 ASCII 字母
+//      判成假绿——本断言以 CJK 为锚，t27 修复（cmaps 或 OCR 路径）后应满足。
+// backend 不锁：文本层 cmaps 修复（pdfjs）或 OCR 降级（tesseract）任一路径均可——结果登记信息。
+// ---------------------------------------------------------------------------
+test('契约组 C2：CID 中文 PDF 可读性（real-cid-paper.pdf）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  assert.ok(fs.existsSync(nodePath.join(DATA, 'real-cid-paper.pdf')), 'real-cid-paper.pdf 缺失——从 Downloads 复制（见 B5）');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'real-cid-paper.pdf')).toString('base64');
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'real-cid-paper.pdf'));
+        },
+        { b64 }
+      );
+      assert.equal(res.error, undefined, `convert 返回错误: ${res.error}`);
+      // backend 登记信息（不锁断言：文本层修复/OCR 降级任一均可）
+      console.log(`    [cid-paper] backend=${res.meta.backend} elapsedMs=${res.meta.elapsedMs}（登记信息，非断言）`);
+      const md = res.markdown || '';
+      const nonWs = md.replace(/\s/g, '');
+      const cjkCount = (nonWs.match(/[\u4e00-\u9fff]/g) || []).length;
+      const cjkRatio = nonWs.length > 0 ? cjkCount / nonWs.length : 0;
+      await t.test('c1 输出含中文关键 token（质量链|摘要|综述）', () => {
+        assert.ok(
+          md.includes('质量链') || md.includes('摘要') || md.includes('综述'),
+          `输出未含中文关键 token：${JSON.stringify(md.slice(0, 200))}（CID 无 ToUnicode → 符号流 garbage——可读中文缺失）`
+        );
+      });
+      await t.test('c2 可读性：CJK ≥100 且 CJK/非空白 ≥30%（防映射垃圾假绿）', () => {
+        assert.ok(
+          cjkCount >= 100 && cjkRatio >= 0.3,
+          `CJK=${cjkCount}（占比 ${Math.round(cjkRatio * 1000) / 10}%）——期望 ≥100 且 ≥30%（当前符号流中的 ASCII 字母会抬高「可打印占比」——故以 CJK 为锚）`
+        );
+      });
+    } finally {
+      await browser.close();
     }
   } finally {
     await server.close();
@@ -1213,6 +1296,100 @@ test('契约组 L：OMML 缺 m:e 的 sSup —— 公式内容不重复（契约�
         const math = (md.match(/\$[^$\n]*\$/g) || []).join('');
         assert.ok(math.includes('a') && math.includes('b'), `公式区未同时含 a 与 b：${JSON.stringify(md.slice(0, 200))}（oMathPara 整块被首个 oMath 替换 → 第二个公式丢失）`);
       });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+
+// ---------------------------------------------------------------------------
+// 契约组 N：外部语料 BLNS（Big List of Naughty Strings，MIT；2026-09-05 引入）
+// 来源：github.com/minimaxir/big-list-of-naughty-strings @ db33ec7（见 tests/data/corpus/README.md）
+// 用途：「QA 工程师走进酒吧」的正式版语料——SQL 注入 / XSS / 零宽 Unicode / Zalgo / 模板注入
+//       等用户输入破坏性字符串。外部语料与合成样例分离：不进 gen-samples / manifest 字节锁；
+//       SHA 锁在 N1。升级语料 = 改口径（同步 corpus/README.md 与 docs/licenses.md）。
+// ---------------------------------------------------------------------------
+const CORPUS_BLNS = nodePath.join(DATA, 'corpus', 'blns.txt');
+const CORPUS_BLNS_SHA256 = 'e87d3889599277616e183d4cf806bdf5b8cc408636c9bbba2b0701a211d98f7e';
+
+test('契约组 N：外部语料 BLNS（静态完整性 + TXT 全量转换冒烟）', async (t) => {
+  await t.test('N0 blns.txt 与许可证副本存在', () => {
+    assert.ok(fs.existsSync(CORPUS_BLNS), 'tests/data/corpus/blns.txt 缺失——见 tests/data/corpus/README.md 重新抓取');
+    assert.ok(fs.existsSync(nodePath.join(DATA, 'corpus', 'blns.LICENSE')), 'blns.LICENSE 缺失（MIT 分发义务：保留版权声明）');
+  });
+
+  await t.test('N1 大小 + SHA256 字节锁（30,079 B @ db33ec7）', () => {
+    const buf = fs.readFileSync(CORPUS_BLNS);
+    assert.equal(buf.length, 30079, `blns.txt 大小=${buf.length}（期望 30079 @ db33ec7；升级语料=改口径）`);
+    assert.equal(sha256(CORPUS_BLNS), CORPUS_BLNS_SHA256, 'blns.txt SHA256 与固定提交不一致（升级语料=改口径）');
+  });
+
+  await t.test('N2 关键脏字符串与零宽字符存在（静态）', () => {
+    const text = fs.readFileSync(CORPUS_BLNS, 'utf8');
+    for (const tok of ['1;DROP TABLE users', '<script>alert(0)</script>', '\u200B', 'Zalgo', 'undefined', 'NULL']) {
+      assert.ok(text.includes(tok), `语料缺少关键字符串 ${JSON.stringify(tok)}——上游结构变化，需更新断言或提交号`);
+    }
+    assert.ok(!text.includes('\uFFFD'), '语料 UTF-8 解码出现替换字符（下载损坏）');
+  });
+
+  // N3：浏览器全量转换冒烟（30KB 语料走 builtin 文本直通路径，实测约 24ms）
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      const consoleErrors = [];
+      const externalRequests = [];
+      page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+      page.on('pageerror', (e) => consoleErrors.push('pageerror: ' + e.message));
+      page.on('request', (r) => {
+        const u = r.url();
+        if (/^https?:/i.test(u) && !u.startsWith('http://127.0.0.1:')) externalRequests.push(u);
+      });
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(CORPUS_BLNS).toString('base64');
+      const t0 = Date.now();
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'blns.txt'));
+        },
+        { b64 }
+      );
+      const elapsedMs = Date.now() - t0;
+      assert.equal(res.error, undefined, `convert 返回错误: ${res.error}`);
+      await t.test('N3a 全量转换成功 + backend=builtin + 耗时 <5000ms', () => {
+        assert.equal(res.meta.type, 'text', `语料应识别为 text：${res.meta.type}`);
+        assert.equal(res.meta.backend, 'builtin', `语料应走文本直通路径：${res.meta.backend}`);
+        assert.ok(res.meta.elapsedMs > 0, '成功路径 meta.elapsedMs 应 >0');
+        assert.ok(elapsedMs < 5000, `30KB 语料转换耗时 ${elapsedMs}ms ≥ 5000ms（内置文本路径应毫秒级）`);
+      });
+      await t.test('N3b 关键脏字符串在转换输出中原样保留', () => {
+        const md = res.markdown || '';
+        assert.ok(md.length > 25000, `输出长度异常：${md.length}（语料约 26k 字符）`);
+        for (const tok of ['1;DROP TABLE users', 'alert(0)', '\u200B', 'Zalgo', 'NULL']) {
+          assert.ok(md.includes(tok), `输出缺少 ${JSON.stringify(tok)}——builtin 直通不得丢内容`);
+        }
+      });
+      assert.deepEqual(consoleErrors, [], `console error 非零：${consoleErrors.join(' | ')}`);
+      assert.deepEqual(externalRequests, [], `非本地网络请求（零外发红线）：${externalRequests.join(', ')}`);
     } finally {
       await browser.close();
     }
