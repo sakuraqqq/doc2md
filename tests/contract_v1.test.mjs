@@ -846,7 +846,77 @@ test('契约组 G：xlsx 截断（real-multisheet.xlsx，6 sheets > 上限 5）�
 });
 
 // ---------------------------------------------------------------------------
-// 契约组 H：corePath 同源 / 零外域 fetchable URL（P1 · RELEASE.md 二批；审查报告 §2.1，红线相关）
+// 契约组 G2：xlsx 大行数（L4 性能 / L5 文案微瑕；t32 契约先红）
+// 样例 real-big.xlsx（单 sheet 50,000 行 × 3 列，确定性/幂等/manifest 字节锁——773,494 B <1MB）。
+// 断言语义（如实注明）：
+//   L4a 性能 <3000ms：**任务预期「当前全量解析 50K 行预计超 → 红」未成立**——t32 实测 877ms（当前绿）。
+//      本断言保留为**性能防回归**（流式改造 t33 后不得变慢；阈值 3000ms 是已拍板口径，未擅改）。
+//   L4b 护栏：输出表行 ≤1001（head+sep+1000 body）+ truncated===true + warnings 含「每 sheet 保留前 1000 行」
+//      ——现有实现已满足（绿，登记）。
+//   L5 文案微瑕：单 sheet 无未读时输出/warnings 不得含「另有 0 个」（当前 truncated 文案含
+//     「另有 0 个 sheet 未读取」→ 红——语义：仅当 skipped>0 才出现在文案）。
+// ---------------------------------------------------------------------------
+test('契约组 G2：xlsx 大行数（L4 性能/L4b 护栏/L5 文案）—— L5 先红，L4a 如实登记', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  assert.ok(fs.existsSync(nodePath.join(DATA, 'real-big.xlsx')), 'real-big.xlsx 缺失——请运行 npm run gen:samples');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'real-big.xlsx')).toString('base64');
+      const t0 = Date.now();
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'real-big.xlsx'));
+        },
+        { b64 }
+      );
+      const externalMs = Date.now() - t0;
+      assert.equal(res.error, undefined, `convert 返回错误: ${res.error}`);
+      const md = res.markdown || '';
+      const tableLines = md.split('\n').filter((l) => /^\|.*\|$/.test(l)).length;
+      await t.test('L4a 性能：convert(real-big.xlsx) < 3000ms（当前绿 877ms——防回归；t33 流式后不得变慢）', () => {
+        assert.ok(
+          externalMs < 3000,
+          `50K 行 xlsx 转换耗时 ${externalMs}ms ≥ 3000ms（性能防回归：流式优化 t33 前置基线 877ms（sample 实测），优化后不得退化；阈值 3000ms = 任务拍板口径）`
+        );
+      });
+      await t.test('L4b 护栏：输出表行 ≤1001 + meta.truncated===true + 「每 sheet 保留前 1000 行」提示', () => {
+        assert.ok(tableLines <= 1001, `表行 ${tableLines}（期望 ≤1001 = 表头+分隔+1000 数据行）`);
+        assert.equal(res.meta.truncated, true, 'meta.truncated 应为 true（50K 行 > 上限 1000）');
+        const w = (res.meta.warnings || []).join(' ');
+        assert.ok(w.includes('每 sheet 保留前 1000 行'), `warnings 缺截断提示：${JSON.stringify(res.meta.warnings)}`);
+      });
+      await t.test('L5 文案微瑕：单 sheet 无未读时输出/warnings 不含「另有 0 个」（当前 truncated 文案含 → 红）', () => {
+        const all = md + (res.meta.warnings || []).join(' ');
+        assert.ok(
+          !all.includes('另有 0 个'),
+          `输出含「另有 0 个」：${JSON.stringify((res.meta.warnings || []).join(' '))}（单 sheet 无未读——「另有 0 个 sheet 未读取」语义错误，应仅在 skipped>0 时出现）`
+        );
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
 // 离线静态断言（无浏览器依赖）：读 index.html 源码文本。
 // 断言（断言语义）：
 //   H1 源码不含 'doc2md.local'（伪域名 corePath——红线：任何外域请求都是违约）。
