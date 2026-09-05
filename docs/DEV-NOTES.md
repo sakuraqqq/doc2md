@@ -346,3 +346,22 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 用户机终验：`npm install && npm run build && npm test` → 预期 81/81（C/M 双端真机）。
 - 实测核验：index.html 85,877 B / SHA256 `68D89296A70C64F07418658ACD61B31FAB167061BE119155D0E69A7A007E31DD`（= HEAD 产物；工作树干净）。
 
+## 2026-09-05 · 第四轮独立验收 t25（core-dev，修验分离）
+
+### 验证了什么（基线 c80ced9 = t23 契约先红 + t24 六项实现 + c80ced9 产物同步）
+- **新断言全绿**：F4 Big5（label 分离）/F5 viewport 前置（meta 全扫描）/F6 短 GBK（FFFD 启发式）——产物级+src 级+**file:// 双路径**全过；L3 `$a$$b$`（oMathPara 整块收集）；H7/H8/H9（test:direct 源码断言 H 组 9/9）。
+- **file:// 真弹命中**：OCR 错误文案「file:// 直接打开时 OCR 不可用…请改用本地 http 服务…其余格式不受影响」——H8 运行时验证。
+- **既有 83 断言零回归**：test:direct 50 tests=25/25（25=浏览器基建红，零断言红）；产物级 k7/C7/F1-F3 ✓；pwa-audit 48/48（sw.js 改动后）。
+- **build 一致性**：c80ced9=最新 src（conv 验收期间补交——t24 提交时产物缺口曾出现，被 c80ced9 关闭；流程提示：src 修复后先 build 后提交，CI 步骤兜底）。
+- **抽查 diff**：decodeText（全 meta 扫描/big5 label/FFFD 启发式——F1-F3 零破坏 ✓）、oMathPara 收集逻辑（整块收集+单公式块级/多公式内联 ✓）、SW 前缀+链式 catch（H7/H9 ✓）。
+
+### 发现（仅登记/提示，无阻塞）
+1. [低] CODE-METRICS.md 未随 t24 提交（工作树 M——建议补跑 npm run metrics 提交）。
+2. [低] `$a$$b$` 相邻内联公式（渲染歧义边缘——内容/顺序正确）。
+3. [低] FFFD 启发式边缘（UTF-8 含少量坏字节→整体 gb18030 回退——极边缘，登记）。
+4. [提示] 产物延迟补（conv 验收期间补 c80ced9——标准流程先 build 后提交）。
+
+### 环境事实
+- 用户机终验：`npm install && npm run build && npm test` → 预期 83/83（file:// 路径已产物级闭环）。
+- 实测核验：index.html 86,722 B / SHA256 `3918F86EFEB50771462B93200045D5AD34B67E8A37856E6FD28EA023694DBD28`（= c80ced9 产物）；sw.js 3,821 B / SHA256 `9482707B3F058C96F2F10F5C1B2F75037CD3330D7207559DCBB4AA1B7FBBF77C`（t24 版）。
+
