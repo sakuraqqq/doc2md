@@ -1129,10 +1129,37 @@ ${xlsxRowsToMd(kept)}`);
     }
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
+  function textQualityRatio(text) {
+    const GOOD_PUNCT = `.,;:!?"'%()[]-\u3001\u3002\uFF0C\uFF1B\uFF1A\uFF1F\uFF01\uFF08\uFF09\u300A\u300B\u3010\u3011\u2026\u2014\xB7`;
+    let good = 0, garbage = 0;
+    for (const ch of String(text || "")) {
+      if (/\s/.test(ch)) continue;
+      const code = ch.codePointAt(0);
+      if (code >= 19968 && code <= 40959 || code >= 12352 && code <= 12543 || code >= 44032 && code <= 55215) {
+        good++;
+        continue;
+      }
+      if (code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122) {
+        good++;
+        continue;
+      }
+      if (GOOD_PUNCT.includes(ch)) {
+        good++;
+        continue;
+      }
+      garbage++;
+    }
+    return good + garbage > 0 ? good / (good + garbage) : 0;
+  }
   async function pdfConvert(file, buf) {
     if (!window.pdfjsLib) throw new Error("pdf.js \u5E93\u672A\u52A0\u8F7D");
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = bline_default.pdfWorkerUrl();
-    const doc = await window.pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise;
+    const doc = await window.pdfjsLib.getDocument({
+      data: buf,
+      isEvalSupported: false,
+      cMapUrl: "./vendor/cmaps/",
+      cMapPacked: true
+    }).promise;
     const pageCount = doc.numPages;
     const pages = [];
     const warnings = [];
@@ -1160,11 +1187,14 @@ ${xlsxRowsToMd(kept)}`);
             if (line !== "") lines.push(line);
             text = lines.join("\n").trim();
           }
-          if (text.length < 10) {
+          if (text.length < 10 || textQualityRatio(text) < 0.4) {
             const ocrText = await ocrPageToText(page, i, pageCount);
             if (ocrText) {
               ocrCount++;
               pages.push({ idx: i, text: ocrText });
+            } else if (text.trim() !== "") {
+              pages.push({ idx: i, text });
+              warnings.push(`\u7B2C ${i} \u9875\u7591\u4F3C\u65E0\u6709\u6548\u6587\u672C\u5C42\uFF08OCR \u672A\u4EA7\u51FA\uFF09\u2014\u2014\u4FDD\u7559\u539F\u6587\u672C\u5C42\uFF0C\u7ED3\u679C\u53EF\u80FD\u4E0D\u53EF\u8BFB`);
             }
           } else {
             pages.push({ idx: i, text });
@@ -1177,7 +1207,7 @@ ${xlsxRowsToMd(kept)}`);
     } finally {
       await doc.destroy();
     }
-    if (ocrCount > 0) warnings.push(`\u4E66\u4E2D\u6709 ${ocrCount} \u9875\u65E0\u6587\u672C\u5C42\uFF0C\u5DF2\u7528 OCR \u8BC6\u522B\uFF08\u7ED3\u679C\u53EF\u80FD\u6709\u8BEF\u5DEE\uFF09`);
+    if (ocrCount > 0) warnings.push(`\u4E66\u4E2D\u6709 ${ocrCount} \u9875\u65E0\u6709\u6548\u6587\u672C\u5C42\uFF0C\u5DF2\u7528 OCR \u8BC6\u522B\uFF08\u7ED3\u679C\u53EF\u80FD\u6709\u8BEF\u5DEE\uFF09`);
     let out = "";
     for (const p of pages) out += `<!-- page ${p.idx}/${pageCount} -->
 
