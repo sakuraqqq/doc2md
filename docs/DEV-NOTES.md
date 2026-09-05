@@ -421,3 +421,19 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 用户机终验：`npm install && npm run build && npm test` → 预期 96/96（WizTree 性能见发现②拍板）。
 - 实测核验：index.html 88,220 B / SHA256 `3026F935BEB0F3DC32CC4F5B2CEA159277615D30ED49AE57A8504EBDD357452C`（= HEAD b984e6e 产物）；real-big.xlsx 773,494 B（manifest 锁）。
 
+---
+
+## 2026-09-05 · xlsx inlineStr 修复（t36，conv-dev）+ 限制记录（用户拍板：接受 WizTree 18s）
+
+### 做了什么
+- **L6 转绿**：src/xlsx.js `xlsxParseSheet` 的 inlineStr 分支——`t="inlineStr"` 单元格文本从 `<is><t>…</t></is>` 提取（线性 `indexOf` 循环拼接多个 `<r><t>` run，含 `xml:space`；t12 纪律无正则回溯）；此前误读 `<v>`（inlineStr 的 `<v>` 为空）→ 文本丢失。对照 sharedStrings 索引路径不变。
+- **限制记录（用户拍板接受，t34 发现）**：WizTree 类超大共享字符串表（sharedStrings compSize >4MB）文档走库回退（全量解析慢——实测 1,048,576 行 18,049ms），常用规模走流式自解析（real-big 19ms）。README XLSX 行 + DEV-NOTES 本条记录（护栏触发 = 安全行为：OOM 保护 vs 性能取舍，已拍板接受并按记录执行）。
+
+### 实测（宿主浏览器 ESM 直载 src/）
+- L6 ✓（sample-inlinestr.xlsx：INLINE-STR-OK-2026 / 内联中文 / 共享文本 三 token 全中）；sample.xlsx / real-schema.xlsx / real-date.xlsx / G1-G3 零回归；lint 0 error / 32 warning（复杂度类）；console error 0；外域请求 0。
+
+### 防再犯
+- inlineStr 文本在 `<is>` 不在 `<v>`——流式解析单元格类型全覆盖（s/str/inlineStr/b/n）已由 L6 样例锁定（manifest 字节锁）。
+- 4MB sharedStrings 护栏是安全行为（防 OOM），触发即回退库——性能取舍经用户拍板（18s 接受），文档同步 README/本笔记；后续可选流式 strings 优化（t34 发现②候选）走拍板。
+
+
