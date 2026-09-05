@@ -250,7 +250,21 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 第四轮 t23（最新，契约先红/测试/口径）**：① **F 组扩展 ×3 先红**（f4 Big5 meta——实测字节 A741A66E 被 gb18030 误读为乱码；f5 viewport 前置——decodeText 只查首个 `<meta>` 漏检 charset=gb2312；f6 短 GBK 'hello world 你好'——替换字符 12.5%<30% 未兜底，实测含 U+FFFD）+ **L3 先红**（oMathPara 双公式——实测只出 `$a$`，b 随 oMathPara 整块替换消失）+ **H 组 ×3 先红**（h7 activate 无 `doc2md-` 前缀过滤、h8 ocr.js 无 location.protocol 检测/可行动文案、h9 浮动 `caches.open(...).then(...)` ×2 无链式 .catch——断言用精确链式匹配、不误吞外层 fetch 的 .catch）。修复方向见 §2 各表（t24）。② **C 组阈值口径**：image 用例 per-case `thresholdMs: 5000`（T-1 冷启动豁免窗口，注释引用 CONTRACT §6 T-1；主口径 <500ms 保留——预热后计时）。③ **README 口径**：file:// 直开 OCR 限制一句（功能表 PDF 行注）+「test:direct 静态组」→「仅 A/B/H 静态组可不依赖浏览器」。样例 sample-omml-multi.docx 1,022 B / `DCD30FE1…`（manifest 字节锁）。不做：src 修复（t24）。
+- **2026-09-05 第四轮独立验收 t25（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `c80ced9`（t23 F×3/L3/H×3 先红 + t24 六项实现 + c80ced9 产物同步——**产物=最新 src 达成**）。**结论：新断言全绿（F4/F5/F6、L3、H7/H8/H9）、既有 83 断言零回归、pwa-audit 48/48、http+file:// 双路径实测全过（Big5/GBK/OCR 可行动文案）——无阻塞发现**（3 个低级别登记/提示项）。
+  **实测结果**（宿主浏览器真实 index.html + test:direct；产物 86,722 B / SHA `3918F86EFEB50771462B93200045D5AD34B67E8A37856E6FD28EA023694DBD28`）：
+  - ✅ **F4/F5/F6**（产物级 + src 直载 + **file:// 双路径**）：Big5 HTML → `你好`（label 分离——Big5 字节不再被 gb18030 误读）；viewport 前置 GB2312 → `hello 你好`（meta 全扫描——取第一个带 charset 的）；无 meta 短 GBK 16 字节 → `hello world 你好` 无 U+FFFD（FFFD 启发式替代 30% 阈值）。
+  - ✅ **L3**：`sample-omml-multi.docx` → `$a$$b$`（oMathPara 收集整块全部 oMath 逐个占位——第二个公式不再丢失；多公式内联、单公式保持块级 $$..$$）。
+  - ✅ **H7/H8/H9**（test:direct 源码断言真跑——H 组 9/9 全绿）：activate 只清 `doc2md-` 前缀、ocr.js file: 分支 + 可行动错误文案（**实测命中**：`转换失败：file:// 直接打开时 OCR 不可用…请改用本地 http 服务（如 http://localhost 或 127.0.0.1）…其余格式不受影响`）、sw.js `caches.open().then().catch()` 链式。
+  - ✅ **C 组 image 阈值口径**：测试侧 `thresholdMs=5000`（image 冷启动豁免窗口 5000ms；主口径 <500ms 保留——纯测试端口径，产品无变化）。
+  - ✅ **既有 83 断言零回归**：test:direct 50 tests = 25 pass / 25 fail（25 = 浏览器 spawn 基建红，**零断言红**）；产物级 k7 ✓、C7 ✓、F1-F3 ✓（t24 decodeText 改动零破坏老 GBK 断言）。
+  - ✅ **pwa-audit 48/48**（sw.js t24 改动后仍全绿）。
+  - ✅ **build 一致性**：c80ced9 产物=最新 src（conv 延迟补产物——**验收报告时点先出现产物缺口（t24 提交无产物）→ 验收期间 conv 补交 c80ced9 关闭**——流程提示：src 修复后应先 build 后提交，CI `npm run build && git diff --exit-code` 步骤兜底）。
+  - ✅ **真文档/实测**：Big5/GBK 中文样例 http **与 file:// 双路径**全过；oMathPara 多公式样例复转两公式都在；file:// 下 OCR 可行动错误文案实弹命中（file:// 下无法 src 直载（CORS）——新产物产品级验证完整覆盖）。
+  - 🟡 **[登记·低] CODE-METRICS.md 未随 t24 提交**（工作树 M——t24 变更（decodeText/ocr 复杂度）影响数字/行号；与 t12/491c04d 同型小尾巴——建议补跑 `npm run metrics` 提交）。
+  - 🟡 **[登记·低] `$a$$b$` 相邻内联公式**（多公式 oMathPara 输出两内联公式紧邻——内容/顺序正确，渲染器歧义边缘；断言口径满足）。
+  - 🟡 **[登记·低] FFFD 启发式边缘行为**：UTF-8 文档含少量坏字节且 gb18030 解码无 U+FFFD → 整体回退 gb18030（旧 30% 阈值不回退）——极边缘（正常 UTF-8 文档无 FFFD 不触发；方向性差异登记）。
+  - 用户机终验：`npm install && npm run build && npm test` → **预期 83/83**（C/M 双端真机；file:// 路径已在宿主浏览器产物级闭环）。
+- **2026-09-05 第四轮 t23（契约先红/测试/口径）**：① **F 组扩展 ×3 先红**（f4 Big5 meta——实测字节 A741A66E 被 gb18030 误读为乱码；f5 viewport 前置——decodeText 只查首个 `<meta>` 漏检 charset=gb2312；f6 短 GBK 'hello world 你好'——替换字符 12.5%<30% 未兜底，实测含 U+FFFD）+ **L3 先红**（oMathPara 双公式——实测只出 `$a$`，b 随 oMathPara 整块替换消失）+ **H 组 ×3 先红**（h7 activate 无 `doc2md-` 前缀过滤、h8 ocr.js 无 location.protocol 检测/可行动文案、h9 浮动 `caches.open(...).then(...)` ×2 无链式 .catch——断言用精确链式匹配、不误吞外层 fetch 的 .catch）。修复方向见 §2 各表（t24）。② **C 组阈值口径**：image 用例 per-case `thresholdMs: 5000`（T-1 冷启动豁免窗口，注释引用 CONTRACT §6 T-1；主口径 <500ms 保留——预热后计时）。③ **README 口径**：file:// 直开 OCR 限制一句（功能表 PDF 行注）+「test:direct 静态组」→「仅 A/B/H 静态组可不依赖浏览器」。样例 sample-omml-multi.docx 1,022 B / `DCD30FE1…`（manifest 字节锁）。不做：src 修复（t24）。
 - **2026-09-05 ZCode A 批独立验收 t22（core-dev 独立复验；修验分离——只验收不修改）**：基线 `10b3506`（t20 契约/测试/CI/README 五件 + t21 四项实现 + b06c55b 产物同步——**产物=最新 src 一致性达成**）。**结论：新断言全绿（C7 六用例 elapsedMs>0、L2a 结构化 $(\frac{a}{b})$）、既有 81 断言零回归、pwa-audit 48/48、build 一致性（round-trip + 产物特征）、真文档与 2.2 引号 sheet 自测通过**——**无阻塞发现**（仅 2 个低级别登记项）。
   **实测结果**（宿主浏览器真实 index.html + test:direct；产物 85,877 B / SHA `68D89296A70C64F07418658ACD61B31FAB167061BE119155D0E69A7A007E31DD`）：
   - ✅ **C7**：全部 6 样例 success `meta.elapsedMs > 0`（1/2/33/4/152/391——t21①成功路径回填生效；失败路径 done() 时序不变）。
