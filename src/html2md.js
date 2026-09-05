@@ -15,6 +15,11 @@ const BLOCK_TAGS = new Set(['H1','H2','H3','H4','H5','H6','P','UL','OL','LI','DL
 function firstVisible(s) { const m = /^\s*(\S)/.exec(s); return m ? m[1] : null; }
 function lastVisible(s) { const m = /(\S)\s*$/.exec(s); return m ? m[1] : null; }
 
+// MD 链接/图片目标 URL 转义（审查报告 §1.3）：() 与空白 → 百分号编码（%28/%29/%20），防语法截断
+function escUrl(u) {
+  return String(u).replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/\s/g, '%20');
+}
+
 // 行内片段拼接：贴靠 + 相邻规则（见文件头注释）。
 
 function joinFrags(frags) {
@@ -73,21 +78,25 @@ function fragFor(el, mode, out) {
     return;
   }
   if (tag === 'A') {
-    const href = el.getAttribute('href') || '';
+    let href = el.getAttribute('href') || '';
+    // 纵深防御（审查报告 §1.3）：javascript:/vbscript: 伪协议一律过滤为空（本工具只产出文本，
+    // 防下游渲染器误执行；data: 同理——内联图片 data URI 仅 IMG 分支放行）
+    if (/^\s*(javascript|vbscript|data):/i.test(href)) href = '';
     const inner = joinFrags(collectFrags(el, mode, [])).trim();
     if (!inner) return;
     // 锚包图片：<a><img…></a> → [![alt](src)](href)（审查报告 §1.2 建议 #4）
     if (el.querySelector('img') && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
-      out.push({ t: '[' + inner + '](' + href + ')', vStart: null, vEnd: null });
+      out.push({ t: '[' + inner + '](' + escUrl(href) + ')', vStart: null, vEnd: null });
       return;
     }
-    out.push({ t: '[' + inner + '](' + href + ')', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+    out.push({ t: '[' + inner.replace(/\]/g, '\\]') + '](' + escUrl(href) + ')', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
     return;
   }
   if (tag === 'IMG') {
     const alt = el.getAttribute('alt') || '';
     const src = el.getAttribute('src') || '';
-    out.push({ t: '![' + alt + '](' + src + ')', vStart: null, vEnd: null });
+    // alt 内 ] 转义 + src URL 转义（审查报告 §1.3；k4b 口径：alt 的 ] 以 %5D 转义——契约正则定版）
+    out.push({ t: '![' + alt.replace(/\]/g, '%5D') + '](' + escUrl(src) + ')', vStart: null, vEnd: null });
     return;
   }
   // 透明/未知/块级标签出现在行内位置：子节点按行内平铺（与旧 textContent 抽取语义对齐）
@@ -144,7 +153,11 @@ function blockOfEl(el, ctx) {
     return s !== '' ? [s] : [];
   }
   if (tag === 'PRE') {
-    return ['```\n' + el.textContent.replace(/^\n|\n$/g, '') + '\n```'];
+    // 动态围栏（审查报告 §1.5）：围栏长度 = 内容最长反引号串 + 1（至少 3），内容含 ``` 时不会提前闭合
+    const body = el.textContent.replace(/^\n|\n$/g, '');
+    const runs = body.match(/`+/g) || [''];
+    const fence = '`'.repeat(Math.max(3, Math.max(...runs.map((s) => s.length)) + 1));
+    return [fence + '\n' + body + '\n' + fence];
   }
   if (tag === 'HR') return ['---'];
   if (tag === 'BR') return [''];
@@ -159,7 +172,10 @@ function blockOfEl(el, ctx) {
 // 列表：递归缩进（每层缩进 = 父级标记宽度：'1. '=3、'- '=2；CommonMark 嵌套列表最小缩进）
 function listElToMd(listEl, indent) {
   const isOL = listEl.tagName === 'OL';
-  let n = isOL ? (parseInt(listEl.getAttribute('start'), 10) || 1) : 1;
+  // start 属性 NaN 判定（审查报告 §1.4）：start="0" 合法（parseInt('0')||1 会把 0 改写成 1）
+  const rawStart = parseInt(listEl.getAttribute('start'), 10);
+  let n = 1; // 序号基准（OL 取 start；UL 不用）
+  if (isOL) n = Number.isNaN(rawStart) ? 1 : rawStart;
   const lines = [];
   for (const li of listEl.children) {
     if (li.tagName !== 'LI') continue;
@@ -217,7 +233,10 @@ function quoteElToMd(quoteEl, ctx) {
 
 function tableToMd(table, ctx) {
   const rows = [];
-  table.querySelectorAll('tr').forEach((tr) => {
+  // 只取本表直接子级行（审查报告 §1.1）：querySelectorAll('tr') 全局选择器会把嵌套表格的内层 <tr> 也选进来
+  // （DOMParser 会把无 tbody 的 <table><tr> 自动包进 tbody，故 thead/tbody/tfoot 三段都要覆盖）
+  const trs = table.querySelectorAll(':scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr');
+  trs.forEach((tr) => {
     const cells = [];
     tr.querySelectorAll(':scope > th, :scope > td').forEach((c) => {
       const rs = parseInt(c.getAttribute('rowspan') || '1', 10) || 1;

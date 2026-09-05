@@ -38,7 +38,8 @@ export async function copyText(text, btn) {
   setTimeout(() => { btn.textContent = old; }, 1500);
 }
 export function downloadMd(text, fileName) {
-  const base = (fileName || 'doc2md').replace(/\.[^.]+$/, '');
+  // 复审 §1.7：.env/.gitignore 等「扩展名即整个名」的文件名 replace 后会变空 → 兜底 'doc2md'
+  const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md');
   const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -54,7 +55,7 @@ export async function downloadZip(text, fileName, assets, btn) {
   try {
     const F = window.fflate;
     if (!F) throw new Error('fflate 未加载');
-    const base = (fileName || 'doc2md').replace(/\.[^.]+$/, '');
+    const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md'); // 复审 §1.7：空兜底
     const files = {};
     files[base + '.md'] = F.strToU8(text);
     for (const a of assets || []) {
