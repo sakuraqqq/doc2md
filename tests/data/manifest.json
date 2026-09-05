@@ -62,6 +62,10 @@
     "real-big.xlsx": {
       "bytes": 773494,
       "sha256": "1c1919585d3b72ce2e043f1b753800a8a12f21cef0954ef8499ff1687e69b724"
+    },
+    "sample-inlinestr.xlsx": {
+      "bytes": 1973,
+      "sha256": "90de72560a711ac7e5c8f4726b7e1c55b84da6838f0c59a3862dc51db9ba7229"
     }
   }
 }

@@ -110,6 +110,7 @@
 | L4a | 性能：convert(real-big.xlsx) 完成 <3000ms（已拍板阈值；防回归——t33 流式优化后不得变慢） | <3000ms | 🟢 绿（**如实现场**：t32 实测 **877ms**——任务书「当前全量解析 50K 行预计超 → 红」**未成立**（read-excel-file 解析 50K×3 ≈0.9s）；断言保留为防回归基线（注释：877ms 为 t32 实测基线值） |
 | L4b | 护栏：输出表行 ≤1001（head+sep+1000 body）+ `meta.truncated===true` + warnings 含「每 sheet 保留前 1000 行」 | 计数+字段 | 🟢 绿（现有实现已满足——登记；与 C3 类似属「现行即绿」项） |
 | L5 | 文案微瑕：单 sheet 无未读时输出/warnings **不含「另有 0 个」** | !includes | 🔴 红（t32 实测：warnings =「已截断：已读取前 1 个 sheet 共 50000 行（每 sheet 保留前 1000 行；**另有 0 个 sheet 未读取**）」——单 sheet 无未读却出「另有 0 个」；修复方向=t33 该子句仅在 `skipped>0` 时拼接） |
+| L6 | inlineStr 单元格文本保留（t35 新增·先红）：`t="inlineStr"`（文本在 `<is><t>`、不在 `<v>`）输出须含「INLINE-STR-OK-2026」「内联中文」（t=`s` 共享串/数值作对照） | includes | 🔴 红（**t35 实测**：输出 `\| 共享文本 \|  \|` / `\|  \| 42 \|`——inlineStr 单元格全空（流式 xlsxParseSheet inlineStr 分支读 `c.v` 而文本在 `<is><t>`），共享串/数值保留；t34 发现项转契约；样例 sample-inlinestr.xlsx（1,973 B / SHA `90DE7256…`）；修复方向=t36 inlineStr 分支改读 `<is><t>`） |
 
 ### 契约组 H — corePath 同源 / 零外域字面量 / SW v4 分段缓存（2026-09-05 新增：契约先红 t4；审查报告 §2.1/§2.2，红线相关）
 
@@ -234,6 +235,7 @@
 | `real-date.xlsx` | XLSX | read-excel-file 官方测试集——日期类型真实样本 | 4,659 B / SHA 72A2B9A9…；zip 合法，含 workbook/sheet/styles/sharedStrings（`xl/` 目录条目正常） | 同上 |
 | `real-cid-paper.pdf` | PDF（真实中文，4 页） | 用户提供《质量链管理理论研究综述_金国强》（学术综述，公开性质、无个人敏感信息）——**CID 内嵌字体无 ToUnicode 映射**：契约组 C2 的契约先红样例（锁定复现 CID 乱码现象） | 511,508 B / SHA `703636DD…`（与用户 Downloads 源文件一致 2026-09-05 核验）；%PDF- 头；4 页中文正文 | **LOCK（字节锁）**：与 real-* non-lock 不同——本样例是复现 CID 现象的固定资产（discardable 只随 bug 修复生命周期），内容不可随上游演进；manifest 登记由 gen-samples「只登记不生成」；B5 断言锁一致性 |
 | `real-big.xlsx` | XLSX（合成，50,000 行 × 3 列） | 契约组 G2——大行数流式（L4a 性能基线/L4b 护栏/L5 文案微瑕） | 773,494 B / SHA `1C191958…`；zip 合法，`xl/worksheets/sheet1.xml` 含 50,001×`<row>`（表头+50K 数据；共享串/数值混合结构确定性生成） | 字节锁（manifest）；gen-samples 确定性生成（生成而非人工） |
+| `sample-inlinestr.xlsx` | XLSX（合成，inlineStr 单元格） | 契约组 G2 L6——inlineStr 文本保留（t34 发现项；t=`s` 共享串 + 数值对照列） | 1,973 B / SHA `90DE7256…`；zip 合法，sheet1.xml 含 2×`t="inlineStr"`（`<is><t>`）单元格 + 1×共享串 + 1×数值 | 字节锁（manifest）；确定性生成（幂等已验证） |
 
 > **为何不绑定转换输出断言**：C6 已用 `sample.docx` 锁定 GFM 表格契约（简单、确定性）；`real-*` 的用途是
 > 「真实样本补强」（供 B 线/T4 交叉验证），其内容**允许随上游演进**——一旦绑定转换输出断言，
@@ -292,7 +294,8 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 xlsx 流式独立验收 t34（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `b984e6e`（t32 L4/L5 先红 + t33 流式自解析 + e2b5315 产物——**产物含 t33 流式**（grep scanSheetRows/xlsxSelfParse true；conv 提前构建，产物=src 达成）。**结论：L4a 绿（real-big 50K 行 25ms——流式 877ms→25ms ≈35× 提升）、L4b/L5 绿、G1-G3/xlsx 样例零回归（sample/real-date/real-schema 全部正确）、类型抽查数字/布尔/共享/str 全对、90+ 断言零回归、pwa-audit 48/48——发现 2 个中等级项（inlineStr 丢失 BUG + WizTree 1M 行 18s 未达 <3s）+ 2 个低登记**（均只报告未修改）。
+- **2026-09-05 inlineStr 契约先红 t35（最新）**：t34 发现项转契约——**L6 = 🔴 先红**（样例 sample-inlinestr.xlsx 1,973 B / SHA `90DE7256…`，确定性/幂等/manifest 字节锁；t35 实测输出 `| 共享文本 |  |` / `|  | 42 |`——`t="inlineStr"` 单元格（文本在 `<is><t>`）全空，共享串/数值对照保留；流式 xlsxParseSheet inlineStr 分支读 `c.v` 而文本不在 `<v>` → 丢失；修复方向=t36 改读 `<is><t>`）。L4a（25ms 绿基准）/L4b（护栏绿）/L5（t33 已修——流式验收 t34 确认转绿）。不做：src 修复（t36）。
+- **2026-09-05 xlsx 流式独立验收 t34（core-dev 独立复验；修验分离——只验收不修改）**：基线 `b984e6e`（t32 L4/L5 先红 + t33 流式自解析 + e2b5315 产物——**产物含 t33 流式**（grep scanSheetRows/xlsxSelfParse true；conv 提前构建，产物=src 达成）。**结论：L4a 绿（real-big 50K 行 25ms——流式 877ms→25ms ≈35× 提升）、L4b/L5 绿、G1-G3/xlsx 样例零回归（sample/real-date/real-schema 全部正确）、类型抽查数字/布尔/共享/str 全对、90+ 断言零回归、pwa-audit 48/48——发现 2 个中等级项（inlineStr 丢失 BUG + WizTree 1M 行 18s 未达 <3s）+ 2 个低登记**（均只报告未修改）。
   **实测结果**（宿主浏览器真实 index.html + test:direct；产物 88,220 B / SHA `3026F935BEB0F3DC32CC4F5B2CEA159277615D30ED49AE57A8504EBDD357452C` = HEAD b984e6e 产物；**验收期间工作树出现 conv 进行中的产物构建（94,254 B / +169-10，未提交——不碰，登记并发）**）：
   - ✅ **L4a**：convert(real-big.xlsx 50,000 行) **25ms**（t32 基线 877ms——**流式 ≈35× 提升**；<3000ms 阈值远余量）；**L4b**：表行 1001（≤1001）✓、truncated=true ✓、「每 sheet 保留前 1000 行」✓；**L5**：单 sheet 无「另有 0 个」✓（t33 truncationMessage skipped>0 条件成立）。
   - ✅ **WizTree 真实文件**（用户桌面 WizTree_20260906011846.xlsx 29,874,139 B——**临时复制 .tmp 测试后删除，未入库**）：**1,048,576 行、18,049ms**——**<3s 未达标（如实记录）**——证据链：warnings「已读取前 1 个 sheet 共 1048576 行」= 库路径特征——**sharedStrings compSize > 4MB 护栏触发 → 回退 read-excel-file 全量 1M 行**（**OOM 保护生效**：浏览器未崩、输出 1001 行截断正常、无内存迹象——**护栏 vs 性能取舍**，见发现②）。
