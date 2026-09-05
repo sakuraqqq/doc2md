@@ -294,7 +294,15 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 inlineStr 契约先红 t35（最新）**：t34 发现项转契约——**L6 = 🔴 先红**（样例 sample-inlinestr.xlsx 1,973 B / SHA `90DE7256…`，确定性/幂等/manifest 字节锁；t35 实测输出 `| 共享文本 |  |` / `|  | 42 |`——`t="inlineStr"` 单元格（文本在 `<is><t>`）全空，共享串/数值对照保留；流式 xlsxParseSheet inlineStr 分支读 `c.v` 而文本不在 `<v>` → 丢失；修复方向=t36 改读 `<is><t>`）。L4a（25ms 绿基准）/L4b（护栏绿）/L5（t33 已修——流式验收 t34 确认转绿）。不做：src 修复（t36）。
+- **2026-09-05 inlineStr 简验 t37（最新，core-dev 简验；修验分离——只验收不修改）**：基线 `7f2b5b7`（t35 L6 先红 + t36 inlineStr 修复 + conv rebuild 产物在**工作树**（94,254 B / SHA `77EA993C83C82692FBDAE477A612D91E2FE592F5C15E0DC81E7B0E0D1D3F600F`——含 extractInlineText/isText/scanSheetRows 特征=最新 src，M 未提交——conv 待提交，登记）。**结论：L6 绿（inlineStr 修复确认）、xlsx 全回归（G1-G3/sample/real-date/real-schema）零回归、97 断言零断言红（57 tests=29/28——28=浏览器基建红）、build 一致性（工作树产物=最新 src）、WizTree 限制记录在案（README「已知限制（用户拍板接受）：>4MB 走库回退（18s 级案例）」——t34 发现②拍板接收 ✓ 关闭）——无阻塞发现**（1 个交付登记）。
+  **实测**（工作树产物——宿主浏览器 + test:direct；**首次页面输出 inlineStr 空 = 页面缓存旧版（navigate 未 cache-bust），`?v=1` 刷新后正确**——教训：浏览器验证导航后缓存新旧版本辨识）：
+  - ✅ **L6**：sample-inlinestr.xlsx → `| 共享文本 | INLINE-STR-OK-2026 | / | --- | --- | / | 内联中文 | 42 |`——三 token（INLINE-STR-OK-2026/内联中文/共享文本）全命中——t36 extractInlineText（`<is><t>` 多 run 拼接）修复生效。
+  - ✅ **xlsx 全回归**：G1-G3（5 分区/truncated/「前 5 个 sheet」）、sample.xlsx（华东区/令牌）、real-date.xlsx（`2021-06-10…` 日期）、real-schema.xlsx（John Smith/36530）、real-big（L4 保底 23ms/≤1001 行）——全绿（t36 diff 仅 inlineStr 分支+新函数，共享串/数字/日期/sheet 路径不变）。
+  - ✅ **90+ 零回归**：test:direct 57 tests = 29 pass / 28 fail（28 = 浏览器 spawn 基建红，零断言红）。
+  - ✅ **WizTree 限制记录核对**：README「XLSX…已知限制（用户拍板接受）：超大共享字符串表（>4MB）文档走库回退（大表全量解析较慢，如 18s 级案例）…」在案 ✓（t34 发现②语义如实——护栏回退）；DEV-NOTES t34/t36 记录在案。
+  - 🟡 **[登记·交付] conv 的 rebuild 产物在工作树 M 未提交**（94,254 B——验收基于其验证；conv 补提交后即 HEAD=最新（CI build 一致性守护）。
+  - 用户机终验：**conv 提交产物后** `npm install && npm run build && npm test` → **预期 98/98**（C/M 双端真机；L6 产物级闭环）。
+- **2026-09-05 inlineStr 契约先红 t35**：t34 发现项转契约——**L6 = 🔴 先红**（样例 sample-inlinestr.xlsx 1,973 B / SHA `90DE7256…`，确定性/幂等/manifest 字节锁；t35 实测输出 `| 共享文本 |  |` / `|  | 42 |`——`t="inlineStr"` 单元格（文本在 `<is><t>`）全空，共享串/数值对照保留；流式 xlsxParseSheet inlineStr 分支读 `c.v` 而文本不在 `<v>` → 丢失；修复方向=t36 改读 `<is><t>`）。L4a（25ms 绿基准）/L4b（护栏绿）/L5（t33 已修——流式验收 t34 确认转绿）。不做：src 修复（t36）。
 - **2026-09-05 xlsx 流式独立验收 t34（core-dev 独立复验；修验分离——只验收不修改）**：基线 `b984e6e`（t32 L4/L5 先红 + t33 流式自解析 + e2b5315 产物——**产物含 t33 流式**（grep scanSheetRows/xlsxSelfParse true；conv 提前构建，产物=src 达成）。**结论：L4a 绿（real-big 50K 行 25ms——流式 877ms→25ms ≈35× 提升）、L4b/L5 绿、G1-G3/xlsx 样例零回归（sample/real-date/real-schema 全部正确）、类型抽查数字/布尔/共享/str 全对、90+ 断言零回归、pwa-audit 48/48——发现 2 个中等级项（inlineStr 丢失 BUG + WizTree 1M 行 18s 未达 <3s）+ 2 个低登记**（均只报告未修改）。
   **实测结果**（宿主浏览器真实 index.html + test:direct；产物 88,220 B / SHA `3026F935BEB0F3DC32CC4F5B2CEA159277615D30ED49AE57A8504EBDD357452C` = HEAD b984e6e 产物；**验收期间工作树出现 conv 进行中的产物构建（94,254 B / +169-10，未提交——不碰，登记并发）**）：
   - ✅ **L4a**：convert(real-big.xlsx 50,000 行) **25ms**（t32 基线 877ms——**流式 ≈35× 提升**；<3000ms 阈值远余量）；**L4b**：表行 1001（≤1001）✓、truncated=true ✓、「每 sheet 保留前 1000 行」✓；**L5**：单 sheet 无「另有 0 个」✓（t33 truncationMessage skipped>0 条件成立）。

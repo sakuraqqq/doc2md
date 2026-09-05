@@ -436,4 +436,21 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - inlineStr 文本在 `<is>` 不在 `<v>`——流式解析单元格类型全覆盖（s/str/inlineStr/b/n）已由 L6 样例锁定（manifest 字节锁）。
 - 4MB sharedStrings 护栏是安全行为（防 OOM），触发即回退库——性能取舍经用户拍板（18s 接受），文档同步 README/本笔记；后续可选流式 strings 优化（t34 发现②候选）走拍板。
 
+## 2026-09-05 · inlineStr 简验 t37（core-dev，修验分离）
+
+### 验证了什么（基线 7f2b5b7 = t35 L6 先红 + t36 inlineStr 修复 + conv rebuild 产物（工作树 94,254 B / SHA 77EA993C…，M 未提交））
+- **L6 绿（产物级）**：sample-inlinestr.xlsx → `| 共享文本 | INLINE-STR-OK-2026 | / | --- | --- | / | 内联中文 | 42 |`——三 token 全中——t36 extractInlineText（`<is><t>` 多 run）修复生效（t34 发现①关闭）。
+- **xlsx 全回归**：G1-G3/sample/real-date（日期）/real-schema（序列号/L6 对照）/real-big（L4 保底 23ms）零回归（t36 diff 仅 inlineStr 分支——其余路径不变）。
+- **90+ 零回归**：test:direct 57 tests=29/28（28=浏览器基建红，零断言红）。
+- **WizTree 限制记录核对**：README「已知限制（用户拍板接受）：>4MB 走库回退（18s 级案例）」在案 + DEV-NOTES t35/t36 段（护栏触发=安全行为，性能取舍拍板接受）——t34 发现②关闭。
+- **build 一致性**：工作树产物含 extractInlineText/isText/scanSheetRows（=最新 src）；conv 提交归一（CI 守护）。
+
+### 发现（仅登记，无阻塞）
+1. [登记·交付] conv rebuild 产物在工作树 M 未提交（94,254 B——验收基于其验证；conv 补提交后 HEAD=最新）。
+2. [教训] 浏览器验证首次页面输出 inlineStr 空 = 页面缓存旧版（navigate 未 cache-bust）——`?v=1` 刷新后正确；后续浏览器验收以 cache-bust 导航 + 页面 bundle 探针（如 extractInlineText 存在性）双保险。
+
+### 环境事实
+- 用户机终验：conv 提交产物后 `npm install && npm run build && npm test` → 预期 98/98。
+- 实测核验：index.html 94,254 B / SHA256 `77EA993C83C82692FBDAE477A612D91E2FE592F5C15E0DC81E7B0E0D1D3F600F`（工作树产物=最新 src）；sample-inlinestr.xlsx 1,973 B（manifest 锁）。
+
 
