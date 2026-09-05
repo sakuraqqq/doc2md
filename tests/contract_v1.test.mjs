@@ -897,8 +897,12 @@ test('契约组 J：docx OMML 公式 → $…$ LaTeX 标记（sample-math.docx�
 //   k4 URL 未转义（§1.3）——href/src 含 ()/空格、alt 含 ] 语法破损
 //   k5 .env 类文件名（§1.7）——downloadMd/downloadZip 的 base 被 replace 整个吃掉 → 空
 //   k6 PDF 单词粘连（§1.2）——字间距位移无空格字符 → 直接拼接出错（样例 sample-spacing.pdf）
-// 断言语义/宽松处均注明；k1-k4/k6 浏览器 DOM 环境；k5 纯逻辑（ui.js 顶层 DOM 依赖不可 node import，
-// 先以行为语义断言——修复方加 `|| 'doc2md'` 兜底后即绿，测试端后续可改用 import 真函数）。
+//   k7 PDF 行序（t16 发现回归：pdfPageRuns 无 BT 分支，跨 BT 块 cy 累加未重置 → sample.pdf 标题倒序）——
+//      断言「按页面/文本流的自然顺序：标题行出现在输出前部（前 3 行内）」
+// 断言语义/宽松处均注明；k1-k4/k6/k7 浏览器 DOM 环境；k5 纯逻辑（断言口径 = base 非空/默认 doc2md；
+//  ui.js 顶层 DOM 依赖不可 node import，且产品已在 41/58 行实现 `|| 'doc2md'` 兜底（t15 修复）——
+//  k5 以**语义断言**表述规格（规格即兜底行为），不复制产品实现；后续若 ui.js 提取可测纯函数
+//  （如 baseName(fileName) 导出）则改 import 真函数，断言口径不变——见 CONTRACT.md §7 t17 记录）。
 // ---------------------------------------------------------------------------
 const K_BOUNDARY_CASES = [
   {
@@ -923,13 +927,18 @@ const K_BOUNDARY_CASES = [
   },
 ];
 
-test('契约组 K：富文本边界快照 + PDF 粘连 —— 契约先红（复审报告 §1.1-1.5/1.7）', async (t) => {
-  // k5 纯逻辑（无浏览器依赖）——先断言（复制当前实现语义，期望 base 非空）
-  await t.test('k5 .env 类文件名 → 下载 base 名非空（ui.js downloadMd/downloadZip 纯逻辑；复审 §1.7）', () => {
+test('契约组 K：富文本边界快照 + PDF 粘连/行序 —— 契约先红（复审报告 §1.1-1.5/1.7；t16 发现 k7）', async (t) => {
+  // k5 纯逻辑（无浏览器依赖）——语义断言（t17 测试体同步：产品 ui.js 41/58 行已实现 `|| 'doc2md'` 兜底（t15），
+  // 断言口径不变 = base 非空且默认 'doc2md'；规格即兜底行为，不复制产品实现）
+  await t.test('k5 .env 类文件名 → 下载 base 名非空且默认 doc2md（ui.js downloadMd/downloadZip 语义；复审 §1.7）', () => {
+    const specBase = (name) => ((name || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md'); // 规格（= 产品 t15 兜底行为）
     for (const name of ['.env', '.gitignore', '.env.local']) {
-      const impl = (name || 'doc2md').replace(/\.[^.]+$/, ''); // 当前实现语义 = src/ui.js:41/57 同式
-      assert.notEqual(impl, '', `文件「${name}」的下载 base 名为空——'.xxx' 扩展名被 replace 整个吃掉（须兜底为非空，如 'doc2md'）`);
+      assert.equal(specBase(name), 'doc2md', `文件「${name}」的下载 base 名应兜底为 'doc2md'（'.xxx' 扩展名被 replace 吃掉后必须非空）`);
+      assert.notEqual(specBase(name), '', `文件「${name}」的下载 base 名为空`);
     }
+    // 常规文件名不受影响
+    assert.equal(specBase('report.docx'), 'report');
+    assert.equal(specBase('六章 概述.md'), '六章 概述');
   });
 
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
@@ -999,6 +1008,27 @@ test('契约组 K：富文本边界快照 + PDF 粘连 —— 契约先红（复
       await t.test('k6 PDF 字间距位移 → 输出含 "Hello world"（不得粘连成 Helloworld；复审 §1.2）', () => {
         const md = r.markdown || '';
         assert.ok(md.includes('Hello world'), `输出不存在连续串 "Hello world"：${JSON.stringify(md.slice(0, 200))}（两 Tj 字间距 > 字高/3 应为空格；当前直接拼接 → 粘连）`);
+      });
+
+      // k7：PDF 文本行序（t16 发现回归：pdfPageRuns 无 BT 分支 → 跨 BT 块 cy 累加未重置 → 行序错乱）
+      // 样例 sample.pdf（第 1 页：标题 'Doc2md Sample PDF' 为 22pt 大字，后随两行正文）——
+      // 断言语义（宽松处注明）：按文本流的自然顺序（页面从上到下），标题行应出现在输出**前部**
+      // （前 3 行内）；修复方向 = BT 时重置行坐标（cx/cy），断言不绑定具体修复方式。
+      const b64p = fs.readFileSync(nodePath.join(DATA, 'sample.pdf')).toString('base64');
+      const rp = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample.pdf'));
+        },
+        { b64: b64p }
+      );
+      assert.equal(rp.error, undefined, `convert 返回错误: ${rp.error}`);
+      await t.test('k7 PDF 行序：标题行出现在输出前 3 行内（守护 t16 行序回归——BT 分支缺失）', () => {
+        const md = rp.markdown || '';
+        const lines = md.split('\n').map((l) => l.trim()).filter((l) => l !== '');
+        const idx = lines.findIndex((l) => l.includes('Doc2md Sample PDF'));
+        assert.ok(idx >= 0, `输出未找到标题 'Doc2md Sample PDF'：${JSON.stringify(md.slice(0, 200))}`);
+        assert.ok(idx <= 2, `标题行位置=${idx + 1}（期望前 3 行内）——跨 BT 块行坐标未重置 → 行序错乱（t16 发现，修复方向=BT 重置 cx/cy）：${JSON.stringify(lines.slice(0, 8))}`);
       });
     } finally {
       await browser.close();
