@@ -126,23 +126,35 @@ function docxParseForMd(docXml, warnings) {
   let degradedCount = 0;
   for (const om of Array.from(doc.getElementsByTagNameNS(OMML_NS, 'oMath'))) {
     if (!om.isConnected) continue; // 已被外层 oMathPara 整块替换处理
-    let target = om, block = false;
+    // 找包裹的 oMathPara（第四轮 2 / L3）：有 → 收集整块**全部** oMath 逐个生成占位符，
+    // 再整块一次替换（首个标记 block）——此前 target=oMathPara 单个 replaceChild 会把块内
+    // 其余 oMath 一并摘下（detached → 后续 isConnected false 跳过 → 公式丢失）
+    let para = null;
     for (let p = om.parentNode; p && p.nodeType === 1; p = p.parentNode) {
-      if (ommlIs(p, 'oMathPara')) { target = p; block = true; break; }
+      if (ommlIs(p, 'oMathPara')) { para = p; break; }
       if (p.localName === 'p' && (p.namespaceURI === W_NS || p.namespaceURI === null)) break;
     }
-    const df = { degraded: false };
-    const parts = [];
-    for (const c of Array.from(om.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
-    const latex = parts.join('').trim();
-    const rawText = texText(om.textContent || '').replace(/\s+/g, ' ').trim();
-    if (df.degraded || (latex === '' && rawText !== '')) degradedCount++;
-    maths.push({ latex: latex !== '' ? latex : null, block, rawText });
-    const r = doc.createElementNS(W_NS, 'w:r');
-    const t = doc.createElementNS(W_NS, 'w:t');
-    t.textContent = '⟦MATH' + maths.length + '⟧';
-    r.appendChild(t);
-    target.parentNode.replaceChild(r, target);
+    const list = para ? Array.from(para.getElementsByTagNameNS(OMML_NS, 'oMath')) : [om];
+    const frag = doc.createDocumentFragment();
+    for (let li = 0; li < list.length; li++) {
+      const o = list[li];
+      const df = { degraded: false };
+      const parts = [];
+      for (const c of Array.from(o.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
+      const latex = parts.join('').trim();
+      const rawText = texText(o.textContent || '').replace(/\s+/g, ' ').trim();
+      if (df.degraded || (latex === '' && rawText !== '')) degradedCount++;
+      // block 语义：仅「单公式 oMathPara」按块级 $$..$$（正常 display 公式形态）；
+      // 多公式（异常结构）一律内联 $..$——t23 L3 契约以 $[^$\n]*$ 提取断言，块级双围栏会漏检
+      maths.push({ latex: latex !== '' ? latex : null, block: !!para && list.length === 1, rawText });
+      const r = doc.createElementNS(W_NS, 'w:r');
+      const t = doc.createElementNS(W_NS, 'w:t');
+      t.textContent = '⟦MATH' + maths.length + '⟧';
+      r.appendChild(t);
+      frag.appendChild(r);
+    }
+    if (para) para.parentNode.replaceChild(frag, para);
+    else om.parentNode.replaceChild(frag, om); // 单公式（无 oMathPara）——原路径
   }
   if (degradedCount > 0) {
     warnings.push(degradedCount + ' 个复杂公式（积分/矩阵/求和等）已按纯文本保留（LaTeX 支持范围见 README）');
