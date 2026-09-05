@@ -402,3 +402,22 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 用户机终验：`npm install && npm run build && npm test` → 预期 93/93（C/M 双端真机；C2-3 产物级闭环）。
 - 实测核验：index.html 87,954 B / SHA256 `9E023F31BA96807470C85848C17962D90549E992C8363D07F93F37AC04D77A51`（HEAD 版）；real-cid-paper.pdf 511,508 B（同 t28）。
 
+## 2026-09-05 · xlsx 流式独立验收 t34（core-dev，修验分离）
+
+### 验证了什么（基线 b984e6e = t32 L4/L5 先红 + t33 流式自解析 + e2b5315 产物（含流式））
+- **L4a 绿**：real-big（50K 行）**25ms**——t32 基线 877ms → **≈35× 提升**（流式只扫 ≤ROW_LIMIT+1 行即停）；L4b（1001 行/truncated/警告）；L5（无「另有 0 个」——skipped>0 条件）全绿。
+- **WizTree 真实文件**（桌面 29.9MB → .tmp 临时复制测试，已删，未入库）：1,048,576 行 **18,049ms**——**<3s 未达标（如实记录）**——sharedStrings compSize >4MB 护栏触发 → 回退库全量（OOM 保护生效：无崩溃/输出正常截断）；**护栏 vs 性能取舍**——候选：流式 strings（<si> 惰性 + maxS）、按行护栏、大文件提示——拍板。
+- **G1-G3/sample/real-date/real-schema 零回归**（日期样例 `2021-06-10T00:47:45.700Z` 正确；序列号原样与旧行为一致）。
+- **类型抽查**（构造 .tmp/type-test.xlsx）：数字/布尔/共享串/str ✓；**inlineStr 文本丢失（BUG——<is><t> 未解析）**。
+- test:direct 57 tests=29/28（28=浏览器基建红，零断言红）；pwa-audit 48/48。
+
+### 发现（报告队长，未修改）
+1. [中·BUG] inlineStr 文本丢失（xlsxParseSheet inlineStr 分支读 <v>，文本在 <is><t>——构造样例双行全空；修复：解析 <is><t> 或回退库路径）。
+2. [中·性能] WizTree 18s（<3s 未达标——4MB strings 护栏回退库全量——OOM 保护 vs 性能取舍，拍板候选见上）。
+3. [低] backend 值语义（自解析仍报 read-excel-file——信息性）。
+4. [低·并发] 验收期间工作树 index.html conv 进行中构建（94,254 B +169-10 未提交——基线 HEAD 版未触碰）。
+
+### 环境事实
+- 用户机终验：`npm install && npm run build && npm test` → 预期 96/96（WizTree 性能见发现②拍板）。
+- 实测核验：index.html 88,220 B / SHA256 `3026F935BEB0F3DC32CC4F5B2CEA159277615D30ED49AE57A8504EBDD357452C`（= HEAD b984e6e 产物）；real-big.xlsx 773,494 B（manifest 锁）。
+
