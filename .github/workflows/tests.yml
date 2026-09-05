@@ -29,7 +29,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Build consistency (src → index.html must be committed)
         run: npm run build && git diff --exit-code index.html
-      - name: Lint (ESLint: src/ + tools/)
+      - name: "Lint (ESLint: src/ + tools/)"
         run: npm run lint
       - name: Contract tests (node --test)
         run: npm test
