@@ -70,6 +70,9 @@ const CASES = [
     file: 'sample.png',
     keyTokens: ['HELLO', 'DOC2MD', '2026'],
     format: 'image',
+    // T-1 冷启动豁免（拍板点 T-1 + DD-14 调整）：lazy-init 冷启动（本地 WASM/模型加载）不计入 500ms 主口径
+    // ——外部计时无法分离冷启动段，本用例以 5000ms 为豁免窗口；主口径 <500ms 保留（预热后/二次 OCR 计时）
+    thresholdMs: 5000,
   },
 ];
 
@@ -308,7 +311,7 @@ async function runConvertCase(chromium, base, c, viewport) {
     }
     assert.deepEqual(consoleErrors, [], `console error 非零：${consoleErrors.join(' | ')}`);
     assert.deepEqual(externalRequests, [], `非本地网络请求（零外发红线）：${externalRequests.join(', ')}`);
-    assert.ok(elapsedMs < 500, `转换耗时 ${elapsedMs}ms ≥ 500ms 契约阈值（口径见 CONTRACT.md 拍板点 T-1）`);
+    assert.ok(elapsedMs < (c.thresholdMs || 500), `转换耗时 ${elapsedMs}ms ≥ ${c.thresholdMs || 500}ms 契约阈值（口径见 CONTRACT.md 拍板点 T-1${c.thresholdMs ? '——image 冷启动豁免窗口 5000ms' : ''}）`);
     if (res.meta && typeof res.meta.elapsedMs === 'number') {
       console.log(`    [${c.id}@${viewport.name}] 转换 ${res.meta.elapsedMs}ms（外部计时 ${elapsedMs}ms），关键内容命中`);
     } else {
@@ -593,6 +596,17 @@ const GBK_HTML = [
   0x2f, 0x70, 0x3e, 0x3c, 0x2f, 0x62, 0x6f, 0x64, 0x79, 0x3e, 0x3c, 0x2f, 0x68, 0x74, 0x6d, 0x6c,
   0x3e,
 ]; // '中文测试GBK段落' = D6D0CEC4B2E2CAD4 'GBK' B6CEC2E4
+// t23（第四轮）扩展 ×3 的字节（Node 无 Big5/GB2312 编码器故硬编码）：
+// '<html><head><meta charset="big5"></head><body><p>你好</p></body></html>' 的 Big5 编码（CP950；你好 = A7 41 A6 6E）
+const BIG5_HTML = [
+  0x3c, 0x68, 0x74, 0x6d, 0x6c, 0x3e, 0x3c, 0x68, 0x65, 0x61, 0x64, 0x3e, 0x3c, 0x6d, 0x65, 0x74, 0x61, 0x20, 0x63, 0x68, 0x61, 0x72, 0x73, 0x65, 0x74, 0x3d, 0x22, 0x62, 0x69, 0x67, 0x35, 0x22, 0x3e, 0x3c, 0x2f, 0x68, 0x65, 0x61, 0x64, 0x3e, 0x3c, 0x62, 0x6f, 0x64, 0x79, 0x3e, 0x3c, 0x70, 0x3e, 0xa7, 0x41, 0xa6, 0x6e, 0x3c, 0x2f, 0x70, 0x3e, 0x3c, 0x2f, 0x62, 0x6f, 0x64, 0x79, 0x3e, 0x3c, 0x2f, 0x68, 0x74, 0x6d, 0x6c, 0x3e,
+];
+// '<html><head><meta name="viewport" content="width=device-width"><meta charset="gb2312"></head><body><p>hello 你好</p></body></html>' 的 GB2312 编码（CP936 兼容；你好 = C4 E3 BA C3）
+const GB2312_HTML = [
+  0x3c, 0x68, 0x74, 0x6d, 0x6c, 0x3e, 0x3c, 0x68, 0x65, 0x61, 0x64, 0x3e, 0x3c, 0x6d, 0x65, 0x74, 0x61, 0x20, 0x6e, 0x61, 0x6d, 0x65, 0x3d, 0x22, 0x76, 0x69, 0x65, 0x77, 0x70, 0x6f, 0x72, 0x74, 0x22, 0x20, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x3d, 0x22, 0x77, 0x69, 0x64, 0x74, 0x68, 0x3d, 0x64, 0x65, 0x76, 0x69, 0x63, 0x65, 0x2d, 0x77, 0x69, 0x64, 0x74, 0x68, 0x22, 0x3e, 0x3c, 0x6d, 0x65, 0x74, 0x61, 0x20, 0x63, 0x68, 0x61, 0x72, 0x73, 0x65, 0x74, 0x3d, 0x22, 0x67, 0x62, 0x32, 0x33, 0x31, 0x32, 0x22, 0x3e, 0x3c, 0x2f, 0x68, 0x65, 0x61, 0x64, 0x3e, 0x3c, 0x62, 0x6f, 0x64, 0x79, 0x3e, 0x3c, 0x70, 0x3e, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0xc4, 0xe3, 0xba, 0xc3, 0x3c, 0x2f, 0x70, 0x3e, 0x3c, 0x2f, 0x62, 0x6f, 0x64, 0x79, 0x3e, 0x3c, 0x2f, 0x68, 0x74, 0x6d, 0x6c, 0x3e,
+];
+// 'hello world 你好' 的 GBK 编码（16 字节：12 ASCII + 4 GBK——替换字符占比 <30% 漏判场景）
+const GBK_SHORT = [0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x20, 0xc4, 0xe3, 0xba, 0xc3];
 
 test('契约组 F：GBK 中文解码 —— 契约先红（当前无 BOM 一律 UTF-8 容错 → 乱码）', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
@@ -634,6 +648,34 @@ test('契约组 F：GBK 中文解码 —— 契约先红（当前无 BOM 一律 
         );
         assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
         assert.ok(res.markdown.includes('中文测试GBK段落'), `GBK HTML 转换输出未含「中文测试GBK段落」：${JSON.stringify(res.markdown)}`);
+      });
+      await t.test('F4 Big5 HTML（<meta charset="big5">）：convert → markdown 含「你好」', async () => {
+        // 字节 = '<html><head><meta charset="big5"></head><body><p>你好</p></body></html>' 的 Big5 编码（CP950）
+        const res = await page.evaluate(
+          (bytes) => window.__doc2md.convert(new File([new Uint8Array(bytes)], 'big5.html')),
+          BIG5_HTML
+        );
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
+        assert.ok(res.markdown.includes('你好'), `Big5 转换输出未含「你好」：${JSON.stringify(res.markdown)}（当前 meta 命中后统一按 gb18030 解码——Big5 字节被 gb18030 误读）`);
+      });
+      await t.test('F5 viewport 前置 + GB2312 HTML：convert → markdown 含「hello 你好」', async () => {
+        // 字节 = '<html><head><meta name="viewport" content="width=device-width"><meta charset="gb2312"></head><body><p>hello 你好</p></body></html>' 的 GB2312 编码
+        const res = await page.evaluate(
+          (bytes) => window.__doc2md.convert(new File([new Uint8Array(bytes)], 'gb2312-viewport.html')),
+          GB2312_HTML
+        );
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
+        assert.ok(res.markdown.includes('hello 你好'), `GB2312（viewport 前置）转换输出未含「hello 你好」：${JSON.stringify(res.markdown)}（当前只查第一个 <meta>——viewport 无 charset → 属性漏检 → 不重解）`);
+      });
+      await t.test('F6 无 meta 短中文 GBK：输出无 U+FFFD 且含「hello world 你好」', async () => {
+        // 字节 = 'hello world 你好' 的 GBK 编码（16 字节：12 ASCII + 4 GBK）
+        const res = await page.evaluate(
+          (bytes) => window.__doc2md.convert(new File([new Uint8Array(bytes)], 'gbk-short.txt')),
+          GBK_SHORT
+        );
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
+        assert.ok(!res.markdown.includes('\uFFFD'), `输出含替换字符 U+FFFD：${JSON.stringify(res.markdown)}（短 GBK 中文替换占比 <30% 未触发兜底）`);
+        assert.ok(res.markdown.includes('hello world 你好'), `输出未含「hello world 你好」：${JSON.stringify(res.markdown)}`);
       });
     } finally {
       await browser.close();
@@ -762,6 +804,37 @@ test('契约组 H：corePath 同源 / 零外域 fetchable URL / SW v4 分段缓�
   });
   await t.test('H6 SW install 使用 Promise.allSettled（单资源失败不阻塞安装）', () => {
     assert.match(sw, /Promise\.allSettled\s*\(/, 'install 未使用 Promise.allSettled——任一 PRECACHE 资源失败会整体失败（审查报告 §2.2 建议『Promise.allSettled』）');
+  });
+  // t23（第四轮 ZCode 3.5/2.4）H 组追加 ×3（先红，源码级断言）
+  await t.test('H7 activate 只清理 doc2md- 前缀缓存（不误删第三方/同源其他缓存）', () => {
+    assert.match(
+      sw,
+      /keys\.filter\([^)]*\)\s*=>\s*[^;]*doc2md-/,
+      'activate 的 filter 未按 doc2md- 前缀过滤（当前 `k !== CACHE_NAME`——会误删同源其他 SW 缓存；应改为 startsWith("doc2md-") 过滤）'
+    );
+  });
+  const ocrSrc = fs.readFileSync(nodePath.join(ROOT, 'src', 'ocr.js'), 'utf8');
+  await t.test('H8 ocr.js 含 file: 检测分支 + 可行动错误文案（file:// 下 OCR 受限的明确提示）', () => {
+    assert.match(
+      ocrSrc,
+      /location\.protocol/,
+      'ocr.js 未检测 location.protocol（file:// 下 OCR 受限——应给出可行动文案，如「OCR 需在 http 服务下使用或改用在线转换」）'
+    );
+    assert.match(
+      ocrSrc,
+      /无法|不能|请使用|改用|换用|localhost|http/,
+      'ocr.js 缺 file: 场景的可行动错误文案（当前仅注释提及 file://，无运行时分支/提示）'
+    );
+  });
+  await t.test('H9 sw.js fetch 内浮动 caches.open(...).then(...) 均链式带 .catch（未处理拒绝）', () => {
+    // 精确链式匹配：caches.open(X).then(Y).catch(Z)——Y 无嵌套括号（c.put(req, copy) 形态）；
+    // 注意：外层 fetch().then().catch() 的 .catch 不是 open 链的 catch（不得误吞）
+    const unhandled = (sw.match(/caches\.open\([^)]*\)\.then\([^)]*\)(?!\.\s*catch)/g) || []);
+    assert.deepEqual(
+      unhandled,
+      [],
+      `浮动 caches.open(...).then(...) 未链式接 .catch：${JSON.stringify(unhandled)}（未处理拒绝 → 未捕获 promise rejection——v3 原实现有 catch，v4 重写时丢失）`
+    );
   });
 });
 
@@ -1121,6 +1194,24 @@ test('契约组 L：OMML 缺 m:e 的 sSup —— 公式内容不重复（契约�
         if (!md.includes('\\frac')) {
           assert.ok(w.includes('复杂公式'), `退化路径未冒泡 warning：md=${JSON.stringify(md.slice(0, 120))} warnings=${JSON.stringify(rf.meta.warnings)}（ommlConcat df 透传链丢失 degrade 标记）`);
         }
+      });
+
+      // L3：oMathPara 多公式（样例 sample-omml-multi.docx；第四轮 2）
+      // 断言语义：两个 oMath（a / b）都必须保留（$…$ 围栏内含 a 且含 b）——当前 oMathPara 整块
+      // 被首个 oMath 处理替换为占位 → b 随之消失 → 红。
+      const b64m = fs.readFileSync(nodePath.join(DATA, 'sample-omml-multi.docx')).toString('base64');
+      const rm = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-omml-multi.docx'));
+        },
+        { b64: b64m }
+      );
+      assert.equal(rm.error, undefined, `convert 返回错误: ${rm.error}`);
+      await t.test('L3 oMathPara 双公式 → a 与 b 都保留', () => {
+        const md = rm.markdown || '';
+        const math = (md.match(/\$[^$\n]*\$/g) || []).join('');
+        assert.ok(math.includes('a') && math.includes('b'), `公式区未同时含 a 与 b：${JSON.stringify(md.slice(0, 200))}（oMathPara 整块被首个 oMath 替换 → 第二个公式丢失）`);
       });
     } finally {
       await browser.close();

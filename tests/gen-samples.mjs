@@ -408,6 +408,34 @@ function buildParenFracDocx() {
   ]);
 }
 
+/* ---------------- sample-omml-multi.docx（oMathPara 双公式；契约组 L L3） ----------------
+ * 合成 docx：<m:oMathPara> 内两个 <m:oMath>（a / b）——块级公式容器多项场景。
+ * 契约断言（第四轮 2）：输出须含两个公式 token（a 与 b——当前 oMathPara 整块被首个 oMath
+ * 替换为占位 → 第二个 oMath B 随 oMathPara 一起消失 → 丢失 → 红）。
+ */
+function buildMultiOmmlDocx() {
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body>
+<m:oMathPara><m:oMath><m:r><m:t>a</m:t></m:r></m:oMath><m:oMath><m:r><m:t>b</m:t></m:r></m:oMath></m:oMathPara>
+<w:p><w:r><w:t>关键令牌：DOC2MD-OMML-MULTI-2026</w:t></w:r></w:p>
+</w:body></w:document>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'word/document.xml', data: Buffer.from(doc, 'utf8') },
+  ]);
+}
+
 /* ---------------- 组装 ---------------- */
 console.log('doc2md 契约测试样例生成 → tests/data/');
 put('sample.txt', Buffer.from(TXT, 'utf8'));
@@ -432,6 +460,7 @@ put('sample-images.docx', buildImagesDocx(sampleImage(), noisePng(512, 512, 42))
 put('sample-math.docx', buildMathDocx());
 put('sample-omml-noe.docx', buildOmmlNoeDocx());
 put('sample-omml-parenfrac.docx', buildParenFracDocx());
+put('sample-omml-multi.docx', buildMultiOmmlDocx());
 put('sample-omml-noe.docx', buildOmmlNoeDocx());
 put('sample-spacing.pdf', buildSpacingPdf());
 
