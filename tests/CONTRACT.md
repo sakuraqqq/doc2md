@@ -292,7 +292,19 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 CJK 空格独立验收 t31（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `ab703f7`（t29 C2-3 先红 + t30 CJK 边界抑制 + 1cd8bc2 产物——**产物=最新 src 达成**（isCjkChar/cjkBoundary/cMapUrl/textQualityRatio 特征全在））。**结论：C2-3 绿（高置信中文子串无空格命中）+ C2-1/C2-2 不回归、质量链全文人工抽查无逐字空格（cjkSpaceCjk=0）、不误伤全过（k6/k7、6月2日实验.pdf 中文正常、sample.pdf、真 docx）、90 断言零回归、pwa-audit 48/48——无阻塞发现**（3 个登记项：P2 遗留、1 处边缘间隙、并发工作树变更）。
+- **2026-09-05 xlsx 流式独立验收 t34（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `b984e6e`（t32 L4/L5 先红 + t33 流式自解析 + e2b5315 产物——**产物含 t33 流式**（grep scanSheetRows/xlsxSelfParse true；conv 提前构建，产物=src 达成）。**结论：L4a 绿（real-big 50K 行 25ms——流式 877ms→25ms ≈35× 提升）、L4b/L5 绿、G1-G3/xlsx 样例零回归（sample/real-date/real-schema 全部正确）、类型抽查数字/布尔/共享/str 全对、90+ 断言零回归、pwa-audit 48/48——发现 2 个中等级项（inlineStr 丢失 BUG + WizTree 1M 行 18s 未达 <3s）+ 2 个低登记**（均只报告未修改）。
+  **实测结果**（宿主浏览器真实 index.html + test:direct；产物 88,220 B / SHA `3026F935BEB0F3DC32CC4F5B2CEA159277615D30ED49AE57A8504EBDD357452C` = HEAD b984e6e 产物；**验收期间工作树出现 conv 进行中的产物构建（94,254 B / +169-10，未提交——不碰，登记并发）**）：
+  - ✅ **L4a**：convert(real-big.xlsx 50,000 行) **25ms**（t32 基线 877ms——**流式 ≈35× 提升**；<3000ms 阈值远余量）；**L4b**：表行 1001（≤1001）✓、truncated=true ✓、「每 sheet 保留前 1000 行」✓；**L5**：单 sheet 无「另有 0 个」✓（t33 truncationMessage skipped>0 条件成立）。
+  - ✅ **WizTree 真实文件**（用户桌面 WizTree_20260906011846.xlsx 29,874,139 B——**临时复制 .tmp 测试后删除，未入库**）：**1,048,576 行、18,049ms**——**<3s 未达标（如实记录）**——证据链：warnings「已读取前 1 个 sheet 共 1048576 行」= 库路径特征——**sharedStrings compSize > 4MB 护栏触发 → 回退 read-excel-file 全量 1M 行**（**OOM 保护生效**：浏览器未崩、输出 1001 行截断正常、无内存迹象——**护栏 vs 性能取舍**，见发现②）。
+  - ✅ **G1-G3**（multisheet 自解析：5 分区/truncated/「前 5 个 sheet」）；**sample.xlsx**（地区/华东区/令牌 ✓）；**real-date.xlsx**（`2021-06-10T00:47:45.700Z` 日期正确——零回归；呈现库路径特征——行为正确，路径二分登记）；**real-schema.xlsx**（John Smith/36530 序列号原样（无样式数值——与旧行为一致）✓）。
+  - ✅ **类型抽查**（构造 .tmp/type-test.xlsx）：数字 ✓（123.45/42）、布尔 ✓（true/false）、共享串 ✓（共享文本）、t="str" ✓（公式结果串）；**inlineStr ✗**（「内联文本」单元格文本丢失——见发现①）。
+  - ✅ **90+ 断言零回归**：test:direct 57 tests = 29 pass / 28 fail（28 = 浏览器 spawn 基建红，**零断言红**）；pwa-audit 48/48。
+  - 🟠 **[中·BUG] ①inlineStr 文本丢失**：自解析 `xlsxParseSheet` 的 inlineStr 分支读 `<v>`，但内联字符串文本在 `<c t="inlineStr"><is><t>…</t></is></c>`（无 `<v>`）→ 输出空单元格（构造样例实测双行 inlineStr 全空）。**修复方向**：inlineStr 分支解析 `<is><t>`（或该类型回退库路径）；Excel 主产 sharedStrings 故影响面有限，但类型覆盖契约「内联」不满足——**待队长拍板**。
+  - 🟠 **[中·性能] ②WizTree 1M 行 18s（<3s 未达标）**：4MB sharedStrings 护栏触发 → 回退库全量——**护栏（OOM 保护）与性能的取舍**——任务书「若性能达标记录」——**未达标如实记录**；候选：流式 strings（<si> 惰性读取配 maxS）、护栏按行数而非 compSize、或「大文件 warning + 建议」——**拍板**。
+  - 🟡 **[低] backend 值语义**：自解析路径仍返回 backend='read-excel-file'（契约枚举保持——信息性登记）。
+  - 🟡 **[低·并发] 验收期间工作树 index.html 出现 conv 进行中构建**（94,254 B / +169-10——t33 产物补提流程中；验收基线=HEAD 版——未触碰）。
+  - 用户机终验：`npm install && npm run build && npm test` → **预期 96/96**（C/M 双端真机；L4/G2 已产物级闭环；WizTree 性能见发现②）。
+- **2026-09-05 CJK 空格独立验收 t31（core-dev 独立复验；修验分离——只验收不修改）**：基线 `ab703f7`（t29 C2-3 先红 + t30 CJK 边界抑制 + 1cd8bc2 产物——**产物=最新 src 达成**（isCjkChar/cjkBoundary/cMapUrl/textQualityRatio 特征全在））。**结论：C2-3 绿（高置信中文子串无空格命中）+ C2-1/C2-2 不回归、质量链全文人工抽查无逐字空格（cjkSpaceCjk=0）、不误伤全过（k6/k7、6月2日实验.pdf 中文正常、sample.pdf、真 docx）、90 断言零回归、pwa-audit 48/48——无阻塞发现**（3 个登记项：P2 遗留、1 处边缘间隙、并发工作树变更）。
   **实测结果**（宿主浏览器真实 index.html + test:direct；产物 87,954 B / SHA `9E023F31BA96807470C85848C17962D90549E992C8363D07F93F37AC04D77A51` = HEAD ab703f7）：
   - ✅ **C2-3**：高置信子串「世界标准化/质量管理/质量链管理」**全部无空格命中**（`世界标准化与质量管理 · 质量管理 ·\n质量链管理是…`——t30 规则C CJK 边界抑制生效——**中文连续串**）；**C2-1/C2-2 不回归**（质量链 ✓、CJK=4109/61.9%）；backend=pdfjs、330ms、无 error。
   - ✅ **质量链全文人工抽查**（v1 要求）：**无逐字空格**（cjkSpaceCjk = 0——t28 的「世 界 标 准 化」形态已消失）；**局部错列/garbage 行仍存**（`多海个质组量织管`乱序、`! ! !` 串、`> > >` 符号——**如实登记**：属该文档 layout 遗留，t29 声明 P2（栏检测/垃圾 token 过滤），非本批）。
