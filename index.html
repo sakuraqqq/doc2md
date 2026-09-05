@@ -260,6 +260,9 @@
     const m = /(\S)\s*$/.exec(s);
     return m ? m[1] : null;
   }
+  function escUrl(u) {
+    return String(u).replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\s/g, "%20");
+  }
   function joinFrags(frags) {
     let t = "";
     let curV = null;
@@ -315,20 +318,21 @@
       return;
     }
     if (tag === "A") {
-      const href = el.getAttribute("href") || "";
+      let href = el.getAttribute("href") || "";
+      if (/^\s*(javascript|vbscript|data):/i.test(href)) href = "";
       const inner = joinFrags(collectFrags(el, mode, [])).trim();
       if (!inner) return;
       if (el.querySelector("img") && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
-        out.push({ t: "[" + inner + "](" + href + ")", vStart: null, vEnd: null });
+        out.push({ t: "[" + inner + "](" + escUrl(href) + ")", vStart: null, vEnd: null });
         return;
       }
-      out.push({ t: "[" + inner + "](" + href + ")", vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+      out.push({ t: "[" + inner.replace(/\]/g, "\\]") + "](" + escUrl(href) + ")", vStart: firstVisible(inner), vEnd: lastVisible(inner) });
       return;
     }
     if (tag === "IMG") {
       const alt = el.getAttribute("alt") || "";
       const src = el.getAttribute("src") || "";
-      out.push({ t: "![" + alt + "](" + src + ")", vStart: null, vEnd: null });
+      out.push({ t: "![" + alt.replace(/\]/g, "%5D") + "](" + escUrl(src) + ")", vStart: null, vEnd: null });
       return;
     }
     collectFrags(el, mode, out);
@@ -384,7 +388,10 @@
       return s !== "" ? [s] : [];
     }
     if (tag === "PRE") {
-      return ["```\n" + el.textContent.replace(/^\n|\n$/g, "") + "\n```"];
+      const body = el.textContent.replace(/^\n|\n$/g, "");
+      const runs = body.match(/`+/g) || [""];
+      const fence = "`".repeat(Math.max(3, Math.max(...runs.map((s) => s.length)) + 1));
+      return [fence + "\n" + body + "\n" + fence];
     }
     if (tag === "HR") return ["---"];
     if (tag === "BR") return [""];
@@ -396,7 +403,9 @@
   }
   function listElToMd(listEl, indent) {
     const isOL = listEl.tagName === "OL";
-    let n = isOL ? parseInt(listEl.getAttribute("start"), 10) || 1 : 1;
+    const rawStart = parseInt(listEl.getAttribute("start"), 10);
+    let n = 1;
+    if (isOL) n = Number.isNaN(rawStart) ? 1 : rawStart;
     const lines = [];
     for (const li of listEl.children) {
       if (li.tagName !== "LI") continue;
@@ -450,7 +459,8 @@
   }
   function tableToMd(table, ctx) {
     const rows = [];
-    table.querySelectorAll("tr").forEach((tr) => {
+    const trs = table.querySelectorAll(":scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr");
+    trs.forEach((tr) => {
       const cells = [];
       tr.querySelectorAll(":scope > th, :scope > td").forEach((c) => {
         const rs = parseInt(c.getAttribute("rowspan") || "1", 10) || 1;
@@ -552,24 +562,29 @@
       return;
     }
     if (ommlIs(el, "sSup")) {
-      const base = ommlChild(el, "e") || el, sup = ommlChild(el, "sup");
-      parts.push(ommlConcat(base) + "^{" + (sup ? ommlConcat(sup) : "") + "}");
+      const base = ommlChild(el, "e");
+      const sup = ommlChild(el, "sup");
+      parts.push((base ? ommlConcat(base) : "") + "^{" + (sup ? ommlConcat(sup) : "") + "}");
       return;
     }
     if (ommlIs(el, "sSub")) {
-      const base = ommlChild(el, "e") || el, sub = ommlChild(el, "sub");
-      parts.push(ommlConcat(base) + "_{" + (sub ? ommlConcat(sub) : "") + "}");
+      const base = ommlChild(el, "e");
+      const sub = ommlChild(el, "sub");
+      parts.push((base ? ommlConcat(base) : "") + "_{" + (sub ? ommlConcat(sub) : "") + "}");
       return;
     }
     if (ommlIs(el, "sSubSup")) {
-      const base = ommlChild(el, "e") || el, sub = ommlChild(el, "sub"), sup = ommlChild(el, "sup");
-      parts.push(ommlConcat(base) + "_{" + (sub ? ommlConcat(sub) : "") + "}^{" + (sup ? ommlConcat(sup) : "") + "}");
+      const base = ommlChild(el, "e");
+      const sub = ommlChild(el, "sub");
+      const sup = ommlChild(el, "sup");
+      parts.push((base ? ommlConcat(base) : "") + "_{" + (sub ? ommlConcat(sub) : "") + "}^{" + (sup ? ommlConcat(sup) : "") + "}");
       return;
     }
     if (ommlIs(el, "rad")) {
       const deg = ommlChild(el, "deg"), e = ommlChild(el, "e");
       const d = deg ? ommlConcat(deg) : "";
-      parts.push(d !== "" ? "\\sqrt[" + d + "]{" + ommlConcat(e || el) + "}" : "\\sqrt{" + ommlConcat(e || el) + "}");
+      const baseT = e ? ommlConcat(e) : "";
+      parts.push(d !== "" ? "\\sqrt[" + d + "]{" + baseT + "}" : "\\sqrt{" + baseT + "}");
       return;
     }
     if (ommlIs(el, "d")) {
@@ -864,7 +879,7 @@ ${xlsxRowsToMd(kept)}`);
     }, 1500);
   }
   function downloadMd(text, fileName) {
-    const base = (fileName || "doc2md").replace(/\.[^.]+$/, "");
+    const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
     const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -879,7 +894,7 @@ ${xlsxRowsToMd(kept)}`);
     try {
       const F = window.fflate;
       if (!F) throw new Error("fflate \u672A\u52A0\u8F7D");
-      const base = (fileName || "doc2md").replace(/\.[^.]+$/, "");
+      const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
       const files = {};
       files[base + ".md"] = F.strToU8(text);
       for (const a2 of assets || []) {
@@ -1028,6 +1043,88 @@ ${xlsxRowsToMd(kept)}`);
     setStatus(`\u7B2C ${idx}/${pageCount} \u9875 OCR \u5B8C\u6210`);
     return text;
   }
+  var PN = { BT: 31, ET: 32, TF: 37, TM: 42, TD_MOVE: 40, TD_LEAD: 41, NL: 43, SHOW: 44, SHOW_SPACED: 45 };
+  async function pdfPageRuns(page) {
+    const opList = await page.getOperatorList();
+    const runs = [];
+    let fontSize = 0, cx = 0, cy = 0, leading = 0;
+    for (let i = 0; i < opList.fnArray.length; i++) {
+      const fn = opList.fnArray[i];
+      const args = opList.argsArray[i] || [];
+      if (fn === PN.BT) {
+        cx = 0;
+        cy = 0;
+      } else if (fn === PN.TF) {
+        fontSize = args[1] || 0;
+      } else if (fn === PN.TM) {
+        cx = args[4] || 0;
+        cy = args[5] || 0;
+      } else if (fn === PN.TD_MOVE) {
+        cx += args[0] || 0;
+        cy += args[1] || 0;
+      } else if (fn === PN.TD_LEAD) {
+        leading = -(args[1] || 0);
+        cx += args[0] || 0;
+        cy += args[1] || 0;
+      } else if (fn === PN.NL) {
+        cy -= leading;
+      } else if (fn === PN.SHOW || fn === PN.SHOW_SPACED) {
+        const glyphs = args[0] || [];
+        let str = "", w = 0;
+        for (const g of glyphs) {
+          if (typeof g === "number") {
+            w += g * fontSize / 1e3;
+            continue;
+          }
+          if (g && typeof g === "object") {
+            if (typeof g.unicode === "string") {
+              if (g.unicode !== "") str += g.unicode;
+              w += (g.width || 0) * fontSize / 1e3;
+            } else if (typeof g.h === "number") {
+              w += g.h;
+            }
+          }
+        }
+        if (str !== "") runs.push({ str, x: cx, y: cy, w, fontSize });
+        cx += w;
+      }
+    }
+    return runs;
+  }
+  function runsToPageText(runs) {
+    if (runs.length === 0) return "";
+    const lines = [];
+    const sorted = [...runs].sort((a, b) => b.y - a.y);
+    let cur = [];
+    for (const r of sorted) {
+      const topY = cur.length > 0 ? cur[cur.length - 1].y : r.y;
+      if (cur.length > 0 && Math.abs(r.y - topY) > Math.max(r.fontSize, 1) / 2) {
+        lines.push(cur);
+        cur = [];
+      }
+      cur.push(r);
+    }
+    if (cur.length > 0) lines.push(cur);
+    const out = [];
+    for (const line of lines) {
+      line.sort((a, b) => a.x - b.x);
+      let text = "";
+      let prev = null;
+      for (const r of line) {
+        if (prev) {
+          const gap = r.x - (prev.x + prev.w);
+          const th = Math.max(prev.fontSize, r.fontSize) / 3;
+          const ruleA = gap > th;
+          const ruleB = gap > 0 && /[A-Za-z0-9]$/.test(text) && /^[A-Za-z0-9]/.test(r.str) && !/ $/.test(text) && !/^ /.test(r.str);
+          if ((ruleA || ruleB) && !/ /.test(text.slice(-1)) && !/^ /.test(r.str)) text += " ";
+        }
+        text += r.str;
+        prev = r;
+      }
+      out.push(text.replace(/ {2,}/g, " ").trimEnd());
+    }
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
   async function pdfConvert(file, buf) {
     if (!window.pdfjsLib) throw new Error("pdf.js \u5E93\u672A\u52A0\u8F7D");
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = bline_default.pdfWorkerUrl();
@@ -1040,20 +1137,25 @@ ${xlsxRowsToMd(kept)}`);
       for (let i = 1; i <= pageCount; i++) {
         const page = await doc.getPage(i);
         try {
-          const content = await page.getTextContent();
-          const lines = [];
-          let line = "";
-          for (const item of content.items) {
-            if ("str" in item) {
-              line += item.str;
-              if (item.hasEOL) {
-                lines.push(line);
-                line = "";
+          let text = "";
+          try {
+            text = runsToPageText(await pdfPageRuns(page));
+          } catch {
+            const content = await page.getTextContent();
+            const lines = [];
+            let line = "";
+            for (const item of content.items) {
+              if ("str" in item) {
+                line += item.str;
+                if (item.hasEOL) {
+                  lines.push(line);
+                  line = "";
+                }
               }
             }
+            if (line !== "") lines.push(line);
+            text = lines.join("\n").trim();
           }
-          if (line !== "") lines.push(line);
-          const text = lines.join("\n").trim();
           if (text.length < 10) {
             const ocrText = await ocrPageToText(page, i, pageCount);
             if (ocrText) {
