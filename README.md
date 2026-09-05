@@ -33,7 +33,7 @@
 | TXT / HTML | 内置文本 / HTML→MD | ✅ | 自动识别 BOM / UTF-8 / UTF-16 |
 | DOCX | mammoth → HTML → Markdown | ✅ | 标题/列表/**GFM 表格**/加粗等（T-5 拍板：保留表格） |
 | PDF | pdf.js + tesseract.js OCR | ✅ | 文本层直取；扫描页/无文本层自动 OCR 降级（eng+chi_sim）｜**注意：OCR 需 http 服务（线上/本地）或在线打开；file:// 直开双击下 OCR 受限**——其余格式（PDF 文本层/DOCX/XLSX/TXT·HTML）file:// 双击可用｜已知限制：PDF 表格/竖排布局拍平为文本行（文本层无结构信息），数字字符偶有间隙误判（如 `0103401 2`）不影响可读性 |
-| XLSX | read-excel-file | ✅ | 多 sheet → GFM 表格，日期/数字格式化 |
+| XLSX | 内置流式解析（read-excel-file 兜底） | ✅ | 多 sheet → GFM 表格，日期/数字格式化；前 1000 行/前 5 个 sheet 截断提示｜**已知限制（用户拍板接受）**：超大共享字符串表（>4MB）文档走库回退（大表全量解析较慢，如 18s 级案例），常用规模走流式自解析 |
 | 图片（PNG/JPG/…） | tesseract.js OCR | ✅ | eng+chi_sim（LSTM 量化，语言包 `langs/` 同源懒加载） |
 | PWA | manifest + service worker | ✅ | 添加到主屏（standalone）+ 离线缓存（SW precache + 离线回退） |
 

@@ -126,7 +126,9 @@ function scanSheetRows(xml, rowLimit) {
         const si = parseInt(v, 10);
         if (!Number.isNaN(si) && si > maxS) maxS = si;
       }
-      cells.push({ t, s, v });
+      // t36（L6）：t="inlineStr" 的文本在 <is><t>…</t></is>（可多个 run <r><t> 拼接，含 xml:space）——不在 <v>
+      const isText = t === 'inlineStr' ? extractInlineText(inner) : '';
+      cells.push({ t, s, v, isText });
       p = ce + 4;
     }
     rawRows.push(cells);
@@ -134,6 +136,29 @@ function scanSheetRows(xml, rowLimit) {
   }
   if (rawRows.length > rowLimit) more = true;
   return { rawRows: rawRows.slice(0, rowLimit), maxS, more };
+}
+
+/* is 内容线性提取（t36/t12 纪律：indexOf 循环拼接 <t> 文本，无正则回溯） */
+function extractInlineText(inner) {
+  const isOpen = inner.indexOf('<is');
+  if (isOpen < 0) return '';
+  if (inner[isOpen + 3] !== ' ' && inner[isOpen + 3] !== '>') return '';
+  const gt = inner.indexOf('>', isOpen);
+  const isEnd = inner.indexOf('</is>', gt);
+  if (gt < 0 || isEnd < 0) return '';
+  let s = '';
+  let p = gt + 1;
+  while (p < isEnd) {
+    const ts = inner.indexOf('<t', p);
+    if (ts < 0 || ts > isEnd) break;
+    if (inner[ts + 2] !== ' ' && inner[ts + 2] !== '>') { p = ts + 3; continue; }
+    const tp = inner.indexOf('>', ts);
+    const te = inner.indexOf('</t>', tp);
+    if (tp < 0 || te < 0 || te > isEnd) break;
+    s += inner.slice(tp + 1, te);
+    p = te + 4;
+  }
+  return s;
 }
 
 /* sharedStrings 惰性解析（t33）：仅解到被引用的最大索引（maxS）即停——巨量字符串表不打爆内存 */
@@ -195,7 +220,8 @@ function xlsxParseSheet(xml, rowLimit, strings) {
       if (Number.isNaN(si)) return '';
       return ss[si] !== undefined ? ss[si] : '';
     }
-    if (c.t === 'inlineStr' || c.t === 'str') return decodeXml(c.v);
+    if (c.t === 'inlineStr') return decodeXml(c.isText);
+    if (c.t === 'str') return decodeXml(c.v);
     if (c.t === 'b') {
       if (c.v === '1') return 'true';
       if (c.v === '0') return 'false';
