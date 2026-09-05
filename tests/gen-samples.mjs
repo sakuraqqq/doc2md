@@ -380,6 +380,34 @@ function buildSpacingPdf() {
   return Buffer.from(body, 'ascii');
 }
 
+/* ---------------- sample-omml-parenfrac.docx（括号内分数：m:d > m:e > m:f；契约组 L L2） ----------------
+ * 合成 docx：<m:d m:begChr="(" m:endChr=")"> 包裹 <m:e> 内含 <m:f><m:num>a</m:num><m:den>b</m:den></m:f>。
+ * 契约断言（ZCode A 批 ②）：输出含结构化 `(\frac{a}{b})`（当前 d>e 链缺 e case → 整块退化拍平 `(ab)` → 红）；
+ * 「降级必冒泡」——若输出未含 \frac（取退化路径）则 warnings 必须含「复杂公式」（当前 df 透传链丢失 → 无 warning → 红）。
+ */
+function buildParenFracDocx() {
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body>
+<w:p><w:r><w:t>括号内分数：</w:t></w:r><m:oMath><m:d m:begChr="(" m:endChr=")"><m:e><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:e></m:d></m:oMath></w:p>
+<w:p><w:r><w:t>关键令牌：DOC2MD-OMML-FRAC-2026</w:t></w:r></w:p>
+</w:body></w:document>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'word/document.xml', data: Buffer.from(doc, 'utf8') },
+  ]);
+}
+
 /* ---------------- 组装 ---------------- */
 console.log('doc2md 契约测试样例生成 → tests/data/');
 put('sample.txt', Buffer.from(TXT, 'utf8'));
@@ -403,12 +431,14 @@ put('real-multisheet.xlsx', buildMultiSheetXlsx());
 put('sample-images.docx', buildImagesDocx(sampleImage(), noisePng(512, 512, 42)));
 put('sample-math.docx', buildMathDocx());
 put('sample-omml-noe.docx', buildOmmlNoeDocx());
+put('sample-omml-parenfrac.docx', buildParenFracDocx());
+put('sample-omml-noe.docx', buildOmmlNoeDocx());
 put('sample-spacing.pdf', buildSpacingPdf());
 
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');

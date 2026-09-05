@@ -74,7 +74,7 @@ for (const extra of ['icons/icon-180.png']) {
 console.log('\n[3] sw.js');
 const sw = read('sw.js');
 ok(/const CACHE_NAME = 'doc2md-sw-v\d+'/.test(sw), 'CACHE_NAME 带版本号');
-ok(sw.includes("cache.addAll(PRECACHE)"), 'install 预缓存 addAll');
+ok(/cache\.addAll\(PRECACHE\)|Promise\.allSettled\(PRECACHE\.map/.test(sw), 'install 预缓存（v3 addAll 或 v4 分段缓存 allSettled，双策略兼容）');
 ok(sw.includes('caches.delete(k)'), 'activate 清理旧缓存');
 ok(sw.includes('self.clients.claim()'), 'clients.claim 立即接管');
 ok(sw.includes("url.origin !== self.location.origin"), '外域请求不拦截（零外发兜底）');
@@ -88,7 +88,7 @@ const html = read('index.html');
 ok(html.includes('rel="manifest" href="manifest.json"'), 'link manifest');
 ok(html.includes('name="theme-color" content="#0f1115"'), 'meta theme-color');
 ok(html.includes('rel="apple-touch-icon" href="icons/icon-180.png"'), 'apple-touch-icon');
-ok(html.includes('navigator.serviceWorker.register(\'./sw.js\')'), 'SW 注册代码');
+ok(/navigator\.serviceWorker\.register\(["']\.\/sw\.js["']\)/.test(html), 'SW 注册代码（单双引号兼容——t8 后构建产物为双引号）');
 ok(/\.chip \{[^}]*font-size: 12px/.test(html), '.chip 字号 12px（原先 11px 不达标）');
 const mediaM = /@media \(max-width: 600px\) \{([\s\S]*?)\n  \}/.exec(html);
 ok(!!mediaM, '@media (max-width:600px) 块存在');

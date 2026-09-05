@@ -1,7 +1,7 @@
 {
   "label": "doc2md 契约测试固定样例 v1",
   "generator": "tests/gen-samples.mjs（确定性输出，可复现）",
-  "note": "脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）",
+  "note": "脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）",
   "files": {
     "sample.txt": {
       "bytes": 260,
@@ -42,6 +42,10 @@
     "sample-omml-noe.docx": {
       "bytes": 1033,
       "sha256": "2cf855a52c7512a6930982914accfc7e987544540d7fd262282b9e66e63547e0"
+    },
+    "sample-omml-parenfrac.docx": {
+      "bytes": 1079,
+      "sha256": "c9e9fd0f659b38dbd1dbebc238ed9e766936753d6e111ab7afa5f29a37118023"
     },
     "sample-spacing.pdf": {
       "bytes": 677,
