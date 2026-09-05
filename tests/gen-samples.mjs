@@ -312,6 +312,74 @@ function buildMathDocx() {
   ]);
 }
 
+/* ---------------- sample-omml-noe.docx（OMML sSup 缺 m:e；契约组 L） ----------------
+ * 合成 docx：<m:sSup> 内只含 <m:sup>（缺 <m:e>——结构异常/第三方工具生成的防御场景）。
+ * 契约断言（复审报告 §1.6）：公式输出 base 不退化到整个元素 → 内容不重复（'n' 只出现 1 次）。
+ */
+function buildOmmlNoeDocx() {
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body>
+<w:p><w:r><w:t>缺 m:e 的 sSup：</w:t></w:r><m:oMath><m:sSup><m:sup><m:r><m:t>n</m:t></m:r></m:sup></m:sSup></m:oMath></w:p>
+<w:p><w:r><w:t>关键令牌：DOC2MD-OMML-NOE-2026</w:t></w:r></w:p>
+</w:body></w:document>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'word/document.xml', data: Buffer.from(doc, 'utf8') },
+  ]);
+}
+
+/* ---------------- sample-spacing.pdf（字间距位移 → 单词粘连；契约组 K k6） ----------------
+ * 合成 PDF：同一行内两个 Tj（Hello / world），第二个 Tj 用 Td 前移 26pt（> 字高/3）——
+ * 复现 Word/PPT 导出 PDF 的「字间距（字形位移）而非空格字符」形态；
+ * 契约断言（复审报告 §1.2）：输出须含连续串 "Hello world"（当前直接拼接 → "Helloworld" → 红）。
+ * 纯拉丁文本层（T-2 口径）；动态 xref offset；确定性。
+ */
+function buildSpacingPdf() {
+  const stream = [
+    'BT',
+    '/F1 20 Tf',
+    '1 0 0 1 50 780 Tm',
+    '(Hello) Tj',
+    '1 0 0 1 96 780 Tm',
+    '(world) Tj',
+    'ET',
+    'BT',
+    '/F1 10 Tf',
+    '1 0 0 1 50 750 Tm',
+    '(SPACING-PDF-OK-2026) Tj',
+    'ET',
+  ].join('\n') + '\n';
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(stream, 'ascii')} >>\nstream\n${stream}endstream`,
+  ];
+  let body = '%PDF-1.4\n';
+  const offs = [0];
+  objs.forEach((o, i) => {
+    offs.push(Buffer.byteLength(body, 'ascii'));
+    body += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(body, 'ascii');
+  body += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 0; i < objs.length; i++) body += `${String(offs[i + 1]).padStart(10, '0')} 00000 n \n`;
+  body += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(body, 'ascii');
+}
+
 /* ---------------- 组装 ---------------- */
 console.log('doc2md 契约测试样例生成 → tests/data/');
 put('sample.txt', Buffer.from(TXT, 'utf8'));
@@ -334,11 +402,13 @@ put('sample.png', sampleImage());
 put('real-multisheet.xlsx', buildMultiSheetXlsx());
 put('sample-images.docx', buildImagesDocx(sampleImage(), noisePng(512, 512, 42)));
 put('sample-math.docx', buildMathDocx());
+put('sample-omml-noe.docx', buildOmmlNoeDocx());
+put('sample-spacing.pdf', buildSpacingPdf());
 
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
