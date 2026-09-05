@@ -58,6 +58,10 @@
     "real-cid-paper.pdf": {
       "bytes": 511508,
       "sha256": "703636ddf1756f8848761e3339c31686d175c769f559504edb27491e86290ff8"
+    },
+    "real-big.xlsx": {
+      "bytes": 773494,
+      "sha256": "1c1919585d3b72ce2e043f1b753800a8a12f21cef0954ef8499ff1687e69b724"
     }
   }
 }
