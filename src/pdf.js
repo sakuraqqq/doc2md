@@ -122,11 +122,36 @@ function runsToPageText(runs) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/** 有效文本比例（CID 质量门槛，t27）：
+ * good = CJK/假名/谚文 + ASCII 字母数字 + 常见标点（全角/半角）；其余可打印符号与所有控制字符 = garbage。
+ * CID 无 ToUnicode 的「符号流垃圾」good 占比低（真实样例标定 <40%）；正常中文/英文文档 >80%（不误触发）。
+ */
+export function textQualityRatio(text) {
+  const GOOD_PUNCT = '.,;:!?"\'%()[]-、。，；：？！（）《》【】…—·';
+  let good = 0, garbage = 0;
+  for (const ch of String(text || '')) {
+    if (/\s/.test(ch)) continue;
+    const code = ch.codePointAt(0);
+    if ((code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3040 && code <= 0x30ff) || (code >= 0xac00 && code <= 0xd7af)) { good++; continue; }
+    if ((code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)) { good++; continue; }
+    if (GOOD_PUNCT.includes(ch)) { good++; continue; }
+    garbage++;
+  }
+  return good + garbage > 0 ? good / (good + garbage) : 0;
+}
+
 /** PDF 转换器（注册表 contract：见 docs/architecture.md §4.3） */
 export async function pdfConvert(file, buf) {
   if (!window.pdfjsLib) throw new Error('pdf.js 库未加载');
   window.pdfjsLib.GlobalWorkerOptions.workerSrc = BLINE.pdfWorkerUrl();
-  const doc = await window.pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise;
+  // t27：CID 内嵌字体编码解析——同源 cmaps（vendor/cmaps/，pdf.js 官方资产，Apache-2.0）；
+  // 运行时缓存（cache-first）随首次 CID 转换入 SW 缓存（H3 契约锁 CACHE_NAME v4——不做 PRECACHE 变更）
+  const doc = await window.pdfjsLib.getDocument({
+    data: buf,
+    isEvalSupported: false,
+    cMapUrl: './vendor/cmaps/',
+    cMapPacked: true,
+  }).promise;
   const pageCount = doc.numPages;
   const pages = [];
   const warnings = [];
@@ -153,10 +178,18 @@ export async function pdfConvert(file, buf) {
           if (line !== '') lines.push(line);
           text = lines.join('\n').trim();
         }
-        // 逐页判断（审查报告 §2.3）：单页文本量 <10 字符 → 该页 OCR 降级；其余页直接取文本层
-        if (text.length < 10) {
+        // 逐页判断（审查报告 §2.3 + t27 质量门槛）：
+        // ① 文本量 <10 字符 或 ② 有效占比 <40%（CID 假文本层——质量链综述实测 garbage）→ 该页 OCR 降级
+        if (text.length < 10 || textQualityRatio(text) < 0.40) {
           const ocrText = await ocrPageToText(page, i, pageCount);
-          if (ocrText) { ocrCount++; pages.push({ idx: i, text: ocrText }); }
+          if (ocrText) {
+            ocrCount++;
+            pages.push({ idx: i, text: ocrText });
+          } else if (text.trim() !== '') {
+            // OCR 也失败/低置信 → 保留文本层原样 + warning（不猜测；t27 口径）
+            pages.push({ idx: i, text });
+            warnings.push(`第 ${i} 页疑似无有效文本层（OCR 未产出）——保留原文本层，结果可能不可读`);
+          }
         } else {
           pages.push({ idx: i, text });
           setStatus(`转换中：第 ${i}/${pageCount} 页`);
@@ -168,7 +201,7 @@ export async function pdfConvert(file, buf) {
   } finally {
     await doc.destroy();
   }
-  if (ocrCount > 0) warnings.push(`书中有 ${ocrCount} 页无文本层，已用 OCR 识别（结果可能有误差）`);
+  if (ocrCount > 0) warnings.push(`书中有 ${ocrCount} 页无有效文本层，已用 OCR 识别（结果可能有误差）`);
   let out = '';
   for (const p of pages) out += `<!-- page ${p.idx}/${pageCount} -->\n\n${p.text}\n\n`;
   return { markdown: out.replace(/\n{3,}/g, '\n\n').trim(), warnings, backend: ocrCount > 0 ? 'tesseract' : 'pdfjs' };
