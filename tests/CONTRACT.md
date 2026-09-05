@@ -29,6 +29,7 @@
 | B1.*（6） | 每个样例与 manifest 字节级一致（大小 + SHA256；改动 = 改口径） | 静态 | 🟢 绿（生成后） |
 | B2 | 格式特征：txt 头 / html 含 `<table`+`<img` / docx 含 `word/document.xml` / xlsx 含 `xl/worksheets` / pdf 头 `%PDF-` / png 签名 + 尺寸 | 静态 | 🟢 绿（生成后） |
 | B3.*（3） | `real-*` 真实样例可读性：zip 解压成功 + 必需部件（docx 含 `word/document.xml` 且含 `<w:tbl>`；xlsx 含 `xl/workbook.xml` + `xl/worksheets/sheet*.xml`）；**非字节锁、非行为契约**（内容随上游演进） | 静态 | 🟢 绿（2026-09-04 已登记，离线验证通过） |
+| B5 | real-cid-paper.pdf 字节锁与格式特征（t26 新增——**LOCK**，与 real-* non-lock 不同：本样例是「锁定复现 CID 现象」的固定资产，不可随上游演进） | manifest 一致 + `%PDF-` 头 | 🟢 绿（t26 离线实测：manifest 记录 511,508 B / SHA `703636DD…` 与磁盘一致；4 页中文综述、公开性质无个人敏感信息） |
 
 ### 契约组 C — 浏览器端转换（双端 × 6 样例 = 12 用例；每用例 5+1 断言）
 
@@ -41,6 +42,15 @@
 | C5 | `convert` 不返回 `error`（转换器可 throw 但 UI 入口不得崩） | `error === undefined` | 🔴 红 |
 | C6 | docx 保留 GFM 表格（仅 docx 用例附加）：表格行 ≥2 行 + 表头分隔行（`| --- |`）+ 表头单元格文本「项目」「状态」 | `gfmTableIssues()` 为空（纯函数，见 contract_v1.test.mjs） | 🟢 绿（宿主浏览器实测 docx 输出 `| 项目 | 状态 |` + `| --- | --- |`，DD-11 附录） |
 | C7 | **成功转换用例附加**（ZCode A 批 ①，先红）：`meta.elapsedMs > 0`——成功路径必须回填耗时（失败/护栏路径不计） | `> 0` | 🔴 红（t20 实测：成功路径 meta.elapsedMs=0——convert.js 成功 return 的 meta 未写 elapsedMs（仅 done() 失败路径更新，恒 0）；修复方向=t21 成功路径 `meta.elapsedMs = Math.round(performance.now() - t0)`） |
+
+### 契约组 C2 — CID 中文 PDF 可读性（2026-09-05 新增：契约先红 t26；样例 real-cid-paper.pdf）
+
+样例：用户提供《质量链管理理论研究综述_金国强.pdf》（4 页学术综述，公开性质、无个人敏感信息；CID 内嵌字体无 ToUnicode → pdf.js 文本层输出符号流 garbage——**LOCK** 字节锁，B5 断言）。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| C2-1 | 输出含中文关键 token（质量链\|摘要\|综述 至少一） | includes | 🔴 红（t26 实测：CJK=0、输出 `= > > > P >\n! ! !…` 符号流——CID 无 ToUnicode 映射，乱码符号流；修复方向=t27 文本层 cmaps 或 OCR 降级任一均可，**backend 不锁**（登记信息：当前 pdfjs、298ms）） |
+| C2-2 | 可读性（防「提取了但仍是映射垃圾」弱断言）：CJK ≥100 且 CJK/非空白 ≥30% | 计数+占比 | 🔴 红（t26 实测 CJK=0（占比 0%）——注意 naive「可打印字符占比 >50%」会被 garbage 中 ASCII 字母判假绿（实测 56.7% 假绿陷阱），故以 **CJK 为锚**） |
 
 ### 契约组 M — 手机视口 UI 端到端（390×844）
 
@@ -157,6 +167,19 @@
 | L3 | oMathPara 多公式：`$…$` 围栏内 a 与 b 都保留 | includes a && b | 🔴 红（**t23 新增·先红**：实测只输出 `$a$`（b 丢失）——`docxParseForMd` 把首个 oMath A 的 target 上溯到 oMathPara 整块替换为单个占位 → oMathPara 内第二个 oMath B 随之消失；修复方向=t24 oMathPara 内逐 oMath 独立处理（不是整块替换）） |
 
 
+
+### 契约组 N — 外部语料 BLNS（2026-09-05 新增：github.com/minimaxir/big-list-of-naughty-strings @ db33ec7，MIT）
+
+语料 `tests/data/corpus/blns.txt`（30,079 B，SHA `E87D3889…`）——「QA 工程师走进酒吧」的正式版语料。
+外部语料不进 gen-samples/manifest 字节锁：SHA 锁在 N1；升级语料 = 改口径（同步 corpus/README.md 与 docs/licenses.md）。
+
+| 编号 | 断言 | 方式 | 当前 |
+|---|---|---|---|
+| N0 | blns.txt 与 blns.LICENSE 存在 | 静态 | 🟢 绿（2026-09-05 引入） |
+| N1 | 大小 30,079 B + SHA256 `E87D3889…`（固定提交 db33ec7） | 静态 | 🟢 绿（2026-09-05 引入） |
+| N2 | 关键脏字符串存在（`1;DROP TABLE users` / `<script>alert(0)</script>` / U+200B / Zalgo / undefined / NULL）且无 U+FFFD | 静态 | 🟢 绿（2026-09-05 引入） |
+| N3a | 浏览器全量转换：type=text / backend=builtin / elapsedMs>0 / 外部计时 <5000ms | 浏览器 | 待终验（实测约 24ms） |
+| N3b | 转换输出原样保留关键脏字符串（长度 >25000） | 浏览器 | 待终验（实测通过） |
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |
@@ -198,6 +221,7 @@
 | `real-tables.docx` | DOCX | mammoth.js 官方测试集——真实表格样本（C6 GFM 表格场景的真实补强） | 13,087 B / SHA 9F75A82D…；zip 合法，`word/document.xml` 含 1×`w:tbl`（2×2，表头 Top left/Top right） | **non-lock**：不做字节锁，允许随上游演进 |
 | `real-schema.xlsx` | XLSX | read-excel-file 官方测试集——结构/表头真实样本 | 3,117 B / SHA 4E70C608…；zip 合法，含 `xl/workbook.xml`+`sheet1.xml`+`sharedStrings.xml`+`styles.xml` | 同上 |
 | `real-date.xlsx` | XLSX | read-excel-file 官方测试集——日期类型真实样本 | 4,659 B / SHA 72A2B9A9…；zip 合法，含 workbook/sheet/styles/sharedStrings（`xl/` 目录条目正常） | 同上 |
+| `real-cid-paper.pdf` | PDF（真实中文，4 页） | 用户提供《质量链管理理论研究综述_金国强》（学术综述，公开性质、无个人敏感信息）——**CID 内嵌字体无 ToUnicode 映射**：契约组 C2 的契约先红样例（锁定复现 CID 乱码现象） | 511,508 B / SHA `703636DD…`（与用户 Downloads 源文件一致 2026-09-05 核验）；%PDF- 头；4 页中文正文 | **LOCK（字节锁）**：与 real-* non-lock 不同——本样例是复现 CID 现象的固定资产（discardable 只随 bug 修复生命周期），内容不可随上游演进；manifest 登记由 gen-samples「只登记不生成」；B5 断言锁一致性 |
 
 > **为何不绑定转换输出断言**：C6 已用 `sample.docx` 锁定 GFM 表格契约（简单、确定性）；`real-*` 的用途是
 > 「真实样本补强」（供 B 线/T4 交叉验证），其内容**允许随上游演进**——一旦绑定转换输出断言，
@@ -205,6 +229,12 @@
 > + 人工验证登记（大小/SHA），不进 C/M 组断言。若后续需要转换级抽查，走独立的手工核验脚本而非契约断言。
 > **红线重申**：`sample.*` 字节锁不动；`real-*` 内容变更后需同步更新本节登记（大小/SHA/结构特征）。
 
+
+### 外部语料清单（2026-09-05 引入，固定提交，不进 manifest 字节锁）
+
+| 文件 | 类别 | 来源 / 用途 | 验证规模（引入时实测） | 登记规则 |
+|---|---|---|---|---|
+| `corpus/blns.txt` | TXT 语料 | BLNS（github.com/minimaxir/big-list-of-naughty-strings @ `db33ec7`，MIT）——「QA 工程师走进酒吧」的正式版：SQL 注入 / XSS / 零宽 Unicode / Zalgo / 模板注入 | 30,079 B / SHA `E87D3889…`；742 行；契约组 N 静态完整性 + 浏览器全量转换冒烟（实测约 24ms） | 固定提交 + SHA 锁（N1）；许可证副本同目录 `blns.LICENSE`；升级=改口径 |
 ## 4. 页面接口契约（测试依赖的最小面，A/B 线须满足）
 
 1. `index.html` 经本地静态服务加载：`http://127.0.0.1:<port>/index.html`（测试自带 `tests/lib/server.mjs`，仅 127.0.0.1 随机端口；file:// 下 wasm/blob worker 受限）。
@@ -250,7 +280,8 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 第四轮独立验收 t25（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `c80ced9`（t23 F×3/L3/H×3 先红 + t24 六项实现 + c80ced9 产物同步——**产物=最新 src 达成**）。**结论：新断言全绿（F4/F5/F6、L3、H7/H8/H9）、既有 83 断言零回归、pwa-audit 48/48、http+file:// 双路径实测全过（Big5/GBK/OCR 可行动文案）——无阻塞发现**（3 个低级别登记/提示项）。
+- **2026-09-05 CID 契约先红 t26（最新）**：用户提供真实中文 PDF《质量链管理理论研究综述_金国强》（4 页、511,508 B / SHA `703636DD…`——从 Downloads 复制进 `tests/data/real-cid-paper.pdf`，与源文件一致核验；公开学术综述、无个人敏感信息）作为 CID 契约先红样例：**C2 组 ×2 = 🔴**（C2-1 中文 token、C2-2 CJK 可读性——t26 实测 backend=pdfjs 298ms、**CJK=0**、输出 `= > > > P >` 符号流；**假绿陷阱记录**：naive「可打印占比 >50%」被 garbage 中 ASCII 字母抬到 56.7% ——断言以 **CJK 为锚**）；**B5 = 🟢**（manifest 字节锁 511,508 B / `703636DD…` + `%PDF-` 头，离线实测；与 real-* non-lock 不同——本样例 **LOCK**：锁定复现 CID 现象的固定资产）。**backend 不锁**：文本层 cmaps 修复（pdfjs）或 OCR 降级（tesseract）任一路径均可（登记信息：当前 pdfjs）。转绿条件：t27 修复后 C2 自动绿。不做：src 修复（t27）。
+- **2026-09-05 第四轮独立验收 t25（core-dev 独立复验；修验分离——只验收不修改）**：基线 `c80ced9`（t23 F×3/L3/H×3 先红 + t24 六项实现 + c80ced9 产物同步——**产物=最新 src 达成**）。**结论：新断言全绿（F4/F5/F6、L3、H7/H8/H9）、既有 83 断言零回归、pwa-audit 48/48、http+file:// 双路径实测全过（Big5/GBK/OCR 可行动文案）——无阻塞发现**（3 个低级别登记/提示项）。
   **实测结果**（宿主浏览器真实 index.html + test:direct；产物 86,722 B / SHA `3918F86EFEB50771462B93200045D5AD34B67E8A37856E6FD28EA023694DBD28`）：
   - ✅ **F4/F5/F6**（产物级 + src 直载 + **file:// 双路径**）：Big5 HTML → `你好`（label 分离——Big5 字节不再被 gb18030 误读）；viewport 前置 GB2312 → `hello 你好`（meta 全扫描——取第一个带 charset 的）；无 meta 短 GBK 16 字节 → `hello world 你好` 无 U+FFFD（FFFD 启发式替代 30% 阈值）。
   - ✅ **L3**：`sample-omml-multi.docx` → `$a$$b$`（oMathPara 收集整块全部 oMath 逐个占位——第二个公式不再丢失；多公式内联、单公式保持块级 $$..$$）。
