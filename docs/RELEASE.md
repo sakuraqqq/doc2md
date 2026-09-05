@@ -60,3 +60,4 @@
   - **P0 首批（内容正确性）**：①htmlToMarkdown 行内空格注入（`out.join(' ')` 全局加空格 → "重 点"/"world ."）；②列表/表格/引用/锚点 textContent 丢结构化（嵌套列表展平、单元格内格式丢失、锚包图片空链）；③sniff PDF 兜底缺失（架构 §3 声称搜 %PDF≤1024 未实现）+ 未知二进制回 text（exe 转成乱码"成功"）——修完同步补精确快照测试；
   - **P1 二批**：④corePath 伪域名同源化（红线相关）；⑤SW 预缓存 ≈18MB 分段缓存；⑥PDF 逐页 OCR+进度；⑦GBK/GB18030 文本回退；⑧xlsx meta.truncated 字段落地（含 totalRows 只计已读 sheet 的语义修正）；⑨docx 图片抽取（用户排期项：base64 占 98%/alt 修正/LaTeX 公式——并入此批）；
   - **P2 三批**：UI 键盘可达/忙碌锁定/清空按钮、徽标文案「单文件→单目录」、架构 §8.2 cache-first 文档同步、vendor 版本化文件名、测试快照补全。
+  - **ZCode 第三轮审查（2026-09-05，`docs/doc2md-第三轮审查报告-2026-09-05.md`）**：A 批已修（1.1 elapsedMs/1.2 m:d/1.4 审计/2.1/2.2/3.1/3.6）；**B 批待下版**：1.3 oMathPara 多公式、1.5 预览 1MB 截断、2.3 zip 越界、2.4 sw catch、2.6 pdf cmaps（中文 PDF +1MB 取舍，单独拍板）；3.2-3.8 观察项（deploy 白名单/copyText/拖放闪烁/TXT 归一化/docx 主线程/表驱动重构）。
