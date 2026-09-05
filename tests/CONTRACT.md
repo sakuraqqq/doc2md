@@ -242,7 +242,19 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 ZCode A 批 t20（最新，契约/测试侧五件）**：① **C7 先红**（成功路径 `meta.elapsedMs > 0`——t20 实测恒 0）；② **L2 先红×2**（括号内分数结构化 `(\frac{a}{b})` + 降级必冒泡——t20 实测 `$(ab)$` 拍平且 warnings=[]）；③ **pwa-audit 兼容修复**（77 行 v4 `Promise.allSettled(PRECACHE.map(…` 双策略兼容、91 行 SW 注册双引号正则兼容——修复后 **48/48 通过**，README 48/48 口径一致）；④ **CI build 一致性步骤**（`npm run build && git diff --exit-code index.html`——守护 src→产物漂移/漏提交）；⑤ **README 失实同步**（32KB→约 85KB（bundle 约 47KB）三处 + 英文摘要「single offline HTML file」→「single-directory offline package（index + vendor/ + langs/）」+ 目录树 sw v3→v4 注）。**红绿：①②=红（先红，t21 修复转绿）；③④⑤=绿（改动后实测/审定）**。样例 sample-omml-parenfrac.docx 1,079 B / `C9E9FD0F…`（manifest 字节锁）。不做：src 生产代码修复（t21）。
+- **2026-09-05 ZCode A 批独立验收 t22（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `10b3506`（t20 契约/测试/CI/README 五件 + t21 四项实现 + b06c55b 产物同步——**产物=最新 src 一致性达成**）。**结论：新断言全绿（C7 六用例 elapsedMs>0、L2a 结构化 $(\frac{a}{b})$）、既有 81 断言零回归、pwa-audit 48/48、build 一致性（round-trip + 产物特征）、真文档与 2.2 引号 sheet 自测通过**——**无阻塞发现**（仅 2 个低级别登记项）。
+  **实测结果**（宿主浏览器真实 index.html + test:direct；产物 85,877 B / SHA `68D89296A70C64F07418658ACD61B31FAB167061BE119155D0E69A7A007E31DD`）：
+  - ✅ **C7**：全部 6 样例 success `meta.elapsedMs > 0`（1/2/33/4/152/391——t21①成功路径回填生效；失败路径 done() 时序不变）。
+  - ✅ **L2a**：`括号内分数：$(\frac{a}{b})$`（m:d>m:e>m:f 结构化；L2b 为条件断言——结构化路径未退化 → 分支 n/a，断言语义满足）。
+  - ✅ **既有 81 断言零回归**：D 10/10、E 4/4、F 2/2、G 3/3、I 5/5、J 1/1、K1-K4b/K5/k6/k7、L1 —— 产物级全绿；test:direct 真跑 A0 + B 11/11 + H 6/6 + k5（语义定版）；47 tests = 22 pass / 25 fail（25 = 浏览器 spawn 基建红，零断言红）。
+  - ✅ **pwa-audit 48/48**（t20 兼容修复生效——v3 addAll/v4 allSettled 双策略 + SW 注册引号兼容；t10/t13 登记的 2 个过时检查项关闭）。
+  - ✅ **build 一致性**（CI 步骤等价验证）：round-trip = true（产物壳与 src/template.html 逐字节一致）；产物含 t21 特征（footer「同源分文件 vendor/」+ 孤悬 `</script>` 已删）；产物=最新 src（b06c55b——t19 的「产物未同步」缺口已关闭）。
+  - ✅ **真文档复转**：6月2日实验.docx 221ms（elapsedMs=221 回填）、图片抽 `assets/6月2日实验-1.jpg`（151,218 B）、alt=`图片 1`、GFM 表格、4×H2（本文档无公式——公式由 L2/J 样例覆盖，与 t19 记录一致）；**2.2 引号 sheet 自测**（.tmp/quote-sheet-test.xlsx 构造：`<sheet name="报表&quot;1">`）→ `### Sheet: 报表"1`（&quot; 正确解码、名不截断——t21④实体顺序修复生效）+ 表格完整。
+  - ✅ **四项 diff 抽查**：①elapsedMs 仅成功路径回填（失败路径 done() 不变）✓；②m:d 括号结构（内层只渲染 m:e + df 退化冒泡 ommlConcat 透传）✓；③template 无脏 markup（孤悬 `</script>` 删除 + footer「内联 mammoth」→「同源分文件 vendor/」失实文案同步）✓；④xlsx 实体顺序（原始 XML 捕获值后逐值解码 + 数字实体 &#x/&# 补充）✓。
+  - 🟡 **[登记·低] m:d 自定义括号**：begChr/endChr 元素内 m:val 未读（默认 '(' ')'）——自定义括号 [ ] { } v1 不生效；默认括号场景无影响（登记为已知限制）。
+  - 🟡 **[登记·低] L2b 条件断言**：仅「退化路径」时检查 warning 冒泡（结构化路径 n/a）——断言语义如实，非缺陷。
+  - 用户机终验：`npm install && npm run build && npm test` → **预期 81/81**（C/M 双端真机 + CI build 一致性步骤同款）。
+- **2026-09-05 ZCode A 批 t20（契约/测试侧五件）**：① **C7 先红**（成功路径 `meta.elapsedMs > 0`——t20 实测恒 0）；② **L2 先红×2**（括号内分数结构化 `(\frac{a}{b})` + 降级必冒泡——t20 实测 `$(ab)$` 拍平且 warnings=[]）；③ **pwa-audit 兼容修复**（77 行 v4 `Promise.allSettled(PRECACHE.map(…` 双策略兼容、91 行 SW 注册双引号正则兼容——修复后 **48/48 通过**，README 48/48 口径一致）；④ **CI build 一致性步骤**（`npm run build && git diff --exit-code index.html`——守护 src→产物漂移/漏提交）；⑤ **README 失实同步**（32KB→约 85KB（bundle 约 47KB）三处 + 英文摘要「single offline HTML file」→「single-directory offline package（index + vendor/ + langs/）」+ 目录树 sw v3→v4 注）。**红绿：①②=红（先红，t21 修复转绿）；③④⑤=绿（改动后实测/审定）**。样例 sample-omml-parenfrac.docx 1,079 B / `C9E9FD0F…`（manifest 字节锁）。不做：src 生产代码修复（t21）。
 （补注：t19 记录的「k5 断言规格待定版」已由测试侧修正定版——规格=产品行为「去最后扩展名 + 空兜底」（52e9b8e，断言体同步；产品行为正确，无生产修改）。）
 - **2026-09-05 回归修复独立验收 t19（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `6ff5fe3`（t17 k5 同步/k7 先红 + t18 BT 修复）。**结论：t18 src 级 BT 修复有效（k7 src 实测绿：sample.pdf 标题 idx=1 在前）；K1-K4b/K6/L1 产物级全绿；既有 77 断言零产品回归（D10/10 C6/6 G3/3 I5/5 J1/1 E1/F1 抽查 + test:direct A0/B11/11/H6/6 真跑）；真 PDF 复验通过（sample.pdf 标题在前 + 6月2日实验.pdf 4 页顺序/中文完整/零双空格 261ms）**；发现 2 项（产物未同步 t18 + k5 断言规格待定版——均只报告未修改）。
   **实测结果**：
