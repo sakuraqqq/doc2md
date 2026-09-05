@@ -32,7 +32,7 @@
 |---|---|---|---|
 | TXT / HTML | 内置文本 / HTML→MD | ✅ | 自动识别 BOM / UTF-8 / UTF-16 |
 | DOCX | mammoth → HTML → Markdown | ✅ | 标题/列表/**GFM 表格**/加粗等（T-5 拍板：保留表格） |
-| PDF | pdf.js + tesseract.js OCR | ✅ | 文本层直取；扫描页/无文本层自动 OCR 降级（eng+chi_sim） |
+| PDF | pdf.js + tesseract.js OCR | ✅ | 文本层直取；扫描页/无文本层自动 OCR 降级（eng+chi_sim）｜**注意：OCR 需 http 服务（线上/本地）或在线打开；file:// 直开双击下 OCR 受限**——其余格式（PDF 文本层/DOCX/XLSX/TXT·HTML）file:// 双击可用 |
 | XLSX | read-excel-file | ✅ | 多 sheet → GFM 表格，日期/数字格式化 |
 | 图片（PNG/JPG/…） | tesseract.js OCR | ✅ | eng+chi_sim（LSTM 量化，语言包 `langs/` 同源懒加载） |
 | PWA | manifest + service worker | ✅ | 添加到主屏（standalone）+ 离线缓存（SW precache + 离线回退） |
@@ -88,7 +88,7 @@ doc2md/
 
 ## 测试与质量
 
-- **契约测试**（`tests/CONTRACT.md`，断言即规格）：固定样例 `tests/data/`，断言「关键内容存在 + 无 console error + 转换 <500ms + 桌面/手机 390×844 双视口」。当前：B 组（样例字节锁/格式特征）全绿；C 组（6 用例×双端，含 docx GFM 表格 C6）与 M 组（手机视口 UI 链路）在**宿主浏览器独立验收全通**（QA t12：6 类样例令牌全命中、零外发请求、docx 输出标准 GFM 表格）。运行：`npm test`（需可启动浏览器的环境；无浏览器时以 `npm run test:direct` 跑静态组）。
+- **契约测试**（`tests/CONTRACT.md`，断言即规格）：固定样例 `tests/data/`，断言「关键内容存在 + 无 console error + 转换 <500ms + 桌面/手机 390×844 双视口」。当前：B 组（样例字节锁/格式特征）全绿；C 组（6 用例×双端，含 docx GFM 表格 C6）与 M 组（手机视口 UI 链路）在**宿主浏览器独立验收全通**（QA t12：6 类样例令牌全命中、零外发请求、docx 输出标准 GFM 表格）。运行：`npm test`（需可启动浏览器的环境）；无浏览器时可用 `npm run test:direct`——**注意：test:direct 仅不含浏览器依赖的静态组（A/B/H）可跑**，其余组（C/D/E/F/G/I/J/K/L/M）需浏览器环境。
 - **PWA 静态验收**：`node tests/pwa-audit.mjs` —— 48/48（manifest 字段、图标尺寸、SW 语法与策略、触控/字号规格、WCAG 对比度 11 组全部 ≥4.5:1）。
 - **离线 OCR 实证**：`npm run verify:ocr` —— 语言包离线识别契约样例，置信度 93%。
 - **决策史**（`docs/design-decisions.md`，真实案例）：OCR 引擎全 blob 化（DD-4）、tessdata 选型（DD-5）、契约样例被覆盖事故与字节锁（DD-3/T-3）、点阵字体 OCR 无解 → 真实字体拍板（DD-6/DD-8/DD-10）、单文件组装脚本陷阱（DD-7）……

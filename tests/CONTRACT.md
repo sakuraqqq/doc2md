@@ -36,7 +36,7 @@
 |---|---|---|---|
 | C1 | 转换结果包含关键内容（keyTokens，逐令牌） | `markdown.includes(tok)` | 🔴 红（见第 7 节：环境 + B 线未实现） |
 | C2 | 无 console error（`console.error` + `pageerror`） | 集合为空 | 🔴 红 |
-| C3 | 转换耗时（外部计时，convert 调用起止） | `< 500ms` | 🔴 红（口径见拍板点 T-1） |
+| C3 | 转换耗时（外部计时，convert 调用起止） | `< 500ms` | 🔴 红（口径见拍板点 T-1；**t23 补充**：image 用例按 T-1 冷启动豁免设 per-case `thresholdMs: 5000` 豁免窗口（lazy-init 本地模型加载无法用外部计时分离；主口径 <500ms 保留——预热后/二次 OCR 计时）） |
 | C4 | 零外发：请求全部同源 `http://127.0.0.1:*`（红线 #1） | 集合为空 | 🔴 红 |
 | C5 | `convert` 不返回 `error`（转换器可 throw 但 UI 入口不得崩） | `error === undefined` | 🔴 红 |
 | C6 | docx 保留 GFM 表格（仅 docx 用例附加）：表格行 ≥2 行 + 表头分隔行（`| --- |`）+ 表头单元格文本「项目」「状态」 | `gfmTableIssues()` 为空（纯函数，见 contract_v1.test.mjs） | 🟢 绿（宿主浏览器实测 docx 输出 `| 项目 | 状态 |` + `| --- | --- |`，DD-11 附录） |
@@ -76,6 +76,9 @@
 | F1 | `decodeText`(GBK '中文测试') → 输出含「中文测试」（字节 D6D0CEC4B2E2CAD4 = CP936/GB2312 兼容码） | 纯函数 includes | 🟢 绿（契约先红 t4 实测乱码；t5 5707557 GBK 回退后 2026-09-05 独立验收命中，见 §7） |
 | F2 | `convert`(GBK .txt) → markdown 含「中文测试」 | includes | 🟢 绿（同上，convert 全链路命中） |
 | F3 | `convert`(GBK HTML，含 `<meta charset="gbk">`) → markdown 含「中文测试GBK段落」 | includes | 🟢 绿（同上；meta charset 分支重解命中） |
+| F4 | `convert`(Big5 HTML `<meta charset="big5">` + Big5 字节「你好」) → 输出含「你好」 | includes | 🔴 红（**t23 新增·先红**：实测 Big5 字节 A741A66E 被 gb18030 解码误读为乱码——meta 命中后统一 gb18030 解码，**未按 meta charset 选 decoder**（big5 ≠ gb2312 族）；修复方向=t24 按 charset 值分派 TextDecoder('big5')） |
+| F5 | `convert`(viewport 前置 + `<meta charset="gb2312">` GB2312 HTML) → 输出含「hello 你好」 | includes | 🔴 红（**t23 新增·先红**：实测输出 `hello 乱码`——decodeText 只查**第一个** `<meta>`（viewport 无 charset）→ 后续 charset=gb2312 漏检 → 不重解；修复方向=t24 从所有 meta 标签中查找 charset（线性扫描全部）） |
+| F6 | `convert`(无 meta 短 GBK 'hello world 你好') → 输出无 U+FFFD 且含原串 | !includes \uFFFD | 🔴 红（**t23 新增·先红**：实测 `hello world ���`（含 U+FFFD）——替换字符占比 2/16=12.5% <30% 阈值未触发兜底；修复方向=t24 短文本判定（绝对替换数≥1 或调整阈值/按 CJK 字节特征兜底）） |
 
 ### 契约组 G — xlsx 多 sheet 截断（2026-09-05 新增：契约先红 t4；审查报告 §1.5）
 
@@ -99,6 +102,9 @@
 | H4 | PRECACHE 不含 OCR 大资源（core wasm ×2 + langs 语言包 ×2） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过——v4 起运行时缓存） |
 | H5 | PRECACHE 包含应用外壳（index/manifest/图标/4 主库 + pdf/tess worker 入口） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过） |
 | H6 | SW install 使用 `Promise.allSettled`（单资源失败不阻塞安装） | match | 🟢 绿（t7 新增断言，离线实测通过） |
+| H7 | sw.js activate 只清理 `doc2md-` 前缀缓存（不误删同源其他缓存） | 前缀过滤 | 🔴 红（**t23 新增·先红**：实测 `keys.filter((k) => k !== CACHE_NAME)` 无前缀过滤——会把同源其他 SW 缓存一并删掉；修复方向=t24 改 `k.startsWith('doc2md-')`） |
+| H8 | ocr.js 含 `file:` 检测分支 + 可行动错误文案 | location.protocol + 文案 | 🔴 红（**t23 新增·先红**：实测 ocr.js 无 `location.protocol` 检测、无可行动文案（仅注释提及 file://）；修复方向=t24 `location.protocol === 'file:'` → setStatus/throw 可行动提示（如「OCR 需在 http 服务下使用」）） |
+| H9 | sw.js 浮动 `caches.open(...).then(...)` 均链式带 `.catch` | 链式 .catch | 🔴 红（**t23 新增·先红**：实测 2 处（navigate/资源路径）`caches.open(CACHE_NAME).then((c) => c.put(...))` 未接 `.catch`——v3 有 catch、v4 重写丢失（备注：断言用精确链式匹配，不误吞外层 fetch 的 .catch）；修复方向=t24 补链式 `.catch`） |
 
 ### 契约组 I — docx 图片抽取（2026-09-05 新增：契约先红 t4；审查报告 §2.4）
 
@@ -148,6 +154,7 @@
 | L1 | 公式不重复（缺 m:e 时 base 不退化到整个元素） | n 计数 ≤1 | 🟢 绿（t14 红；t15 修复（base 缺省 → `''` 不退化）+ t16 独立验收（`$^{n}$` n 恰 1），复审 §1.6） |
 | L2a | 括号内分数（m:d(m:begChr="(") > m:e > m:f(a,b)）→ 结构化 `(\frac{a}{b})` | includes | 🔴 红（**t20 新增·先红**：t20 实测输出 `$(ab)$` 拍平——ommlParts 无 m:e case → d 内整块退化 raw 文本；样例 sample-omml-parenfrac.docx；ZCode A 批 ②；修复方向=t21 补 m:e case（递归子节点 → m:f → \frac）） |
 | L2b | 「降级必冒泡」——输出未含 `\frac`（退化路径）时 warnings 须含「复杂公式」 | 条件 includes | 🔴 红（**t20 新增·先红**：t20 实测退化输出 `(ab)` 且 warnings=[]——ommlConcat 调 ommlParts 时 df 传 null，degrade 标记丢失 → 不冒泡；修复方向=t21 透传 degrade 标记链；ZCode A 批 ②） |
+| L3 | oMathPara 多公式：`$…$` 围栏内 a 与 b 都保留 | includes a && b | 🔴 红（**t23 新增·先红**：实测只输出 `$a$`（b 丢失）——`docxParseForMd` 把首个 oMath A 的 target 上溯到 oMathPara 整块替换为单个占位 → oMathPara 内第二个 oMath B 随之消失；修复方向=t24 oMathPara 内逐 oMath 独立处理（不是整块替换）） |
 
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
@@ -179,6 +186,7 @@
 | `sample-omml-noe.docx` | DOCX（合成） | 契约组 L——OMML `<m:sSup>` 缺 `<m:e>`（只含 `<m:sup>n</m:sup>`）防御场景 | 1,033 B / SHA `2CF855A5…`；zip 合法，document.xml 含 1×`m:sSup`（无 m:e 子节点） | 字节锁（manifest）；新名不动既有 sample.* |
 | `sample-spacing.pdf` | PDF（合成） | 契约组 K k6——字间距位移（同一行两个 Tj，`1 0 0 1 96 780 Tm` 前移 46pt）模拟 Word/PPT 导出 | 677 B / SHA `7DA06D11…`；%PDF-1.4 合法，文本层含 `Hello`/`world` 两个 text item（无空格字符） | 字节锁（manifest）；纯拉丁文本层（T-2 口径）；新名不动既有 sample.* |
 | `sample-omml-parenfrac.docx` | DOCX（合成） | 契约组 L L2——括号内分数（`<m:d m:begChr="(" m:endChr=")">` > `<m:e>` > `<m:f>`(num a/den b)） | 1,079 B / SHA `C9E9FD0F…`；zip 合法，document.xml 含 1×`m:d`（begChr="("）+ 1×`m:f`（num/den 齐） | 字节锁（manifest）；新名不动既有 sample.* |
+| `sample-omml-multi.docx` | DOCX（合成） | 契约组 L L3——oMathPara 双公式（`<m:oMathPara>` > `<m:oMath>a</m:oMath>` + `<m:oMath>b</m:oMath>`） | 1,022 B / SHA `DCD30FE1…`；zip 合法，document.xml 含 1×`m:oMathPara` + 2×`m:oMath` | 字节锁（manifest）；新名不动既有 sample.* |
 
 > 生成器幂等已验：`npm run gen:samples` 连续两次运行，三个新样例 SHA 完全一致；
 > manifest 仅追加新条目，既有 6 条 `sample.*` 锁条目未变（diff 验证）。
@@ -242,7 +250,8 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 ZCode A 批独立验收 t22（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `10b3506`（t20 契约/测试/CI/README 五件 + t21 四项实现 + b06c55b 产物同步——**产物=最新 src 一致性达成**）。**结论：新断言全绿（C7 六用例 elapsedMs>0、L2a 结构化 $(\frac{a}{b})$）、既有 81 断言零回归、pwa-audit 48/48、build 一致性（round-trip + 产物特征）、真文档与 2.2 引号 sheet 自测通过**——**无阻塞发现**（仅 2 个低级别登记项）。
+- **2026-09-05 第四轮 t23（最新，契约先红/测试/口径）**：① **F 组扩展 ×3 先红**（f4 Big5 meta——实测字节 A741A66E 被 gb18030 误读为乱码；f5 viewport 前置——decodeText 只查首个 `<meta>` 漏检 charset=gb2312；f6 短 GBK 'hello world 你好'——替换字符 12.5%<30% 未兜底，实测含 U+FFFD）+ **L3 先红**（oMathPara 双公式——实测只出 `$a$`，b 随 oMathPara 整块替换消失）+ **H 组 ×3 先红**（h7 activate 无 `doc2md-` 前缀过滤、h8 ocr.js 无 location.protocol 检测/可行动文案、h9 浮动 `caches.open(...).then(...)` ×2 无链式 .catch——断言用精确链式匹配、不误吞外层 fetch 的 .catch）。修复方向见 §2 各表（t24）。② **C 组阈值口径**：image 用例 per-case `thresholdMs: 5000`（T-1 冷启动豁免窗口，注释引用 CONTRACT §6 T-1；主口径 <500ms 保留——预热后计时）。③ **README 口径**：file:// 直开 OCR 限制一句（功能表 PDF 行注）+「test:direct 静态组」→「仅 A/B/H 静态组可不依赖浏览器」。样例 sample-omml-multi.docx 1,022 B / `DCD30FE1…`（manifest 字节锁）。不做：src 修复（t24）。
+- **2026-09-05 ZCode A 批独立验收 t22（core-dev 独立复验；修验分离——只验收不修改）**：基线 `10b3506`（t20 契约/测试/CI/README 五件 + t21 四项实现 + b06c55b 产物同步——**产物=最新 src 一致性达成**）。**结论：新断言全绿（C7 六用例 elapsedMs>0、L2a 结构化 $(\frac{a}{b})$）、既有 81 断言零回归、pwa-audit 48/48、build 一致性（round-trip + 产物特征）、真文档与 2.2 引号 sheet 自测通过**——**无阻塞发现**（仅 2 个低级别登记项）。
   **实测结果**（宿主浏览器真实 index.html + test:direct；产物 85,877 B / SHA `68D89296A70C64F07418658ACD61B31FAB167061BE119155D0E69A7A007E31DD`）：
   - ✅ **C7**：全部 6 样例 success `meta.elapsedMs > 0`（1/2/33/4/152/391——t21①成功路径回填生效；失败路径 done() 时序不变）。
   - ✅ **L2a**：`括号内分数：$(\frac{a}{b})$`（m:d>m:e>m:f 结构化；L2b 为条件断言——结构化路径未退化 → 分支 n/a，断言语义满足）。
