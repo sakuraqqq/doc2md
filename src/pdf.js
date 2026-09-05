@@ -35,6 +35,10 @@ async function ocrPageToText(page, idx, pageCount) {
  *          per-word run，缺空格时的间隙 ≈ 空格宽 > 字高/3）。
  *   规则B：0 < gap 且 prev 末字符与 run 首字符均为 [A-Za-z0-9]（run 边界 = 词边；兜底捕获合成样例
  *          sample-spacing.pdf——其间隙仅 0.44pt 的几何异常形态；CJK/标点不触发）。
+ *   **规则C（t30，中文逐字空格抑制）**：相邻 run 边界均 CJK（prev 末字符与 run 首字符同为
+ *      汉字/假名/谚文）→ 规则 A/B 一并跳过。cmaps 路径 CID 逐字 run（每字一个 showText）的字间隙
+ *      会命中规则 A → 中文被打散成「世 界 标 准 化」；CJK-拉丁 边界不抑制（质量 chain/2023 年
+ *      的合理空格照常按 A/B 判定；实际空格字形 run 到达时由既有 guard 防双空格）。
  * 兜底：getOperatorList 异常时回退 getTextContent（旧行为）。
  */
 const PN = { BT: 31, ET: 32, TF: 37, TM: 42, TD_MOVE: 40, TD_LEAD: 41, NL: 43, SHOW: 44, SHOW_SPACED: 45 };
@@ -82,6 +86,12 @@ async function pdfPageRuns(page) {
   return runs;
 }
 
+/** CJK 判类（t30：中文逐字空格抑制)——汉字/假名/谚文同属 CJK 类 */
+function isCjkChar(ch) {
+  const c = ch.codePointAt(0);
+  return (c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3040 && c <= 0x30ff) || (c >= 0xac00 && c <= 0xd7af);
+}
+
 /** runs → 行文本（按 y 分组，组内按 x 排序；组间以换行分隔；空格修复见文件头注释） */
 function runsToPageText(runs) {
   if (runs.length === 0) return '';
@@ -107,11 +117,15 @@ function runsToPageText(runs) {
         const gap = r.x - (prev.x + prev.w);
         const th = Math.max(prev.fontSize, r.fontSize) / 3;
         // 规则A：显式字间隙 > 字高/3；规则B（见文件头注释）：run 边均 ASCII 词字符且 gap>0（补缺空格）。
-        // 前后已有空格（str 自带或上一 run 尾随）时不再补——防「列布局」误判造成双空格
+        // 前后已有空格（str 自带或上一 run 尾随）时不再补——防「列布局」误判造成双空格。
+        // t30 **CJK 边界抑制**：相邻 run 边界均 CJK（前一 run 末字符 + 后一 run 首字符）→ 规则 A/B 都跳过——
+        //   cmaps 路径 CID 逐字 run 会把中文打散（`世 界 标 准 化`）；CJK-拉丁边界不受抑制
+        //   （`质量 chain`/`2023 年` 的合理空格照常按规则判定）。
+        const cjkBoundary = isCjkChar(prev.str.slice(-1)) && isCjkChar(r.str.slice(0, 1));
         const ruleA = gap > th;
         const ruleB = gap > 0 && /[A-Za-z0-9]$/.test(text) && /^[A-Za-z0-9]/.test(r.str) &&
           !/ $/.test(text) && !/^ /.test(r.str);
-        if ((ruleA || ruleB) && !/ /.test(text.slice(-1)) && !/^ /.test(r.str)) text += ' ';
+        if (!cjkBoundary && (ruleA || ruleB) && !/ /.test(text.slice(-1)) && !/^ /.test(r.str)) text += ' ';
       }
       text += r.str;
       prev = r;
