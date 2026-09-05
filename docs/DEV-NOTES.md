@@ -365,3 +365,22 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 用户机终验：`npm install && npm run build && npm test` → 预期 83/83（file:// 路径已产物级闭环）。
 - 实测核验：index.html 86,722 B / SHA256 `3918F86EFEB50771462B93200045D5AD34B67E8A37856E6FD28EA023694DBD28`（= c80ced9 产物）；sw.js 3,821 B / SHA256 `9482707B3F058C96F2F10F5C1B2F75037CD3330D7207559DCBB4AA1B7FBBF77C`（t24 版）。
 
+## 2026-09-05 · CID 修复独立验收 t28（core-dev，修验分离）
+
+### 验证了什么（基线 4f54295 = t26 C2/B5 先红 + t27 CMaps+质量门槛）
+- **real-cid-paper 断言绿**：B5（manifest 字节锁 511,508 B / SHA 703636DD…）+ **C2 c1/c2 绿**（src 直载 pdfConvert——**backend=pdfjs/CMaps 路径**（cMapUrl './vendor/cmaps/' + cMapPacked——316ms、warnings=[]、CJK=4109、占比 61.9%）——**该文档走 CMaps 文本层修复而非 OCR 兜底**（如实记录）。
+- **质量链综述复转**：4 页序正常、开头段落语义完整（「世界标准化与质量管理·质量管理·质量链管理是…」）——人工抽查发现 3 个质量问题（见发现②）。
+- **正常 PDF 门槛不误触发**：6月2日实验.pdf（backend=pdfjs、无 OCR warning、无逐字空格——spacedCJK=10 正常）；sample.pdf（k7 ✓）；sample-spacing（k6 ✓）——textQualityRatio 0.40 零误伤。
+- **90 断言零回归**：test:direct 56 tests=29/27（27=浏览器基建红，零断言红）；N0-N2 绿；N3 冒烟（builtin/2ms/脏字符串全保留）；pwa-audit 48/48。
+- **cmaps 清单/许可**：168 .bcmap + LICENSE（Adobe 1990-2009 可再分发条款）≈1.1MB 随库分发 ✓；sw.js +2 注释（运行时缓存——PRECACHE 不变 H3 v4 ✓；sw.js 4,068 B / SHA 66F1B1AE…）。
+
+### 发现（报告队长，未修改）
+1. [高·缺口] t27 未提交 index.html 产物（无 cMapUrl/textQualityRatio 特征；C2 转绿仅 conv 环境成立——conv 补产物后产物级终验）。
+2. [中·质量] 质量链综述输出：①中文逐字空格（CID 逐字 Tj 位移→run 空格规则过度补空格——「世界标准化」）②局部字符错列（「多海个质 组量 织管」）③个别 garbage 行——C2 断言面绿；P2 细化建议。
+3. [低·缺口] tests/data/corpus/（blns）与 licenses.md cmaps 注记未提交（N0 依赖——clone 后红；licenses +9 行只登记 BLNS 无 cmaps 段落——conv 补交）。
+4. [低·登记] OCR 兜底分支（<40%）无合适样例实测（该文档走 CMaps；正常文档不触发——建议 P2 构造低质量文本层样例）。
+
+### 环境事实
+- 用户机终验：conv 补产物+corpus+licenses 注记后 `npm install && npm run build && npm test` → 预期 93/93。
+- 实测核验：index.html 86,742 B / SHA256 `924ED747723C2D4BA2EF358C6BBA6F47AD45618532BE137FF679FCDBEB2DD329`（= HEAD 产物——缺 t27 特征）；sw.js 4,068 B / SHA256 `66F1B1AE70D3CB9340ED83236B4A9F4F2C5DC07AE3F2ED5109B8E3C47BBC3DDF`；real-cid-paper.pdf 511,508 B / SHA256 `703636DDF1756F8848761E3339C31686D175C769F559504EDB27491E86290FF8`。
+
