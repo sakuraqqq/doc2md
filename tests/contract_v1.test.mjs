@@ -928,14 +928,19 @@ const K_BOUNDARY_CASES = [
 ];
 
 test('契约组 K：富文本边界快照 + PDF 粘连/行序 —— 契约先红（复审报告 §1.1-1.5/1.7；t16 发现 k7）', async (t) => {
-  // k5 纯逻辑（无浏览器依赖）——语义断言（t17 测试体同步：产品 ui.js 41/58 行已实现 `|| 'doc2md'` 兜底（t15），
-  // 断言口径不变 = base 非空且默认 'doc2md'；规格即兜底行为，不复制产品实现）
-  await t.test('k5 .env 类文件名 → 下载 base 名非空且默认 doc2md（ui.js downloadMd/downloadZip 语义；复审 §1.7）', () => {
-    const specBase = (name) => ((name || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md'); // 规格（= 产品 t15 兜底行为）
-    for (const name of ['.env', '.gitignore', '.env.local']) {
-      assert.equal(specBase(name), 'doc2md', `文件「${name}」的下载 base 名应兜底为 'doc2md'（'.xxx' 扩展名被 replace 吃掉后必须非空）`);
-      assert.notEqual(specBase(name), '', `文件「${name}」的下载 base 名为空`);
-    }
+  // k5 纯逻辑（无浏览器依赖）——语义断言（t19 修正断言体：产品规格 = 「去最后扩展名，结果为空才兜底 doc2md」；
+  // 测试缺陷：t17 版把 `.env.local` 也期望 'doc2md'——与产品行为（→ '.env'）矛盾 → k5 从未真正绿。
+  // 断言规格口径不变 = 产品行为（去最后扩展名 + 空兜底），不复制产品实现）
+  await t.test('k5 .env/.tar.gz 类文件名 → 下载 base：去最后扩展名 + 空兜底（ui.js downloadMd/downloadZip 语义；复审 §1.7）', () => {
+    const specBase = (name) => ((name || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md'); // 规格（= 产品行为：去最后扩展名，空则兜底）
+    // 全名即一个「扩展名」→ 去掉后为空 → 兜底 'doc2md'
+    assert.equal(specBase('.env'), 'doc2md', `'.env' → 去扩展名后为空 → 必须兜底 'doc2md'（非空默认名）`);
+    assert.equal(specBase('.gitignore'), 'doc2md', `'.gitignore' → 同上兜底`);
+    assert.notEqual(specBase('.env'), '', `'.env' 的 base 名不得为空`);
+    // 多段式「隐藏名 + 扩展名」→ 只去最后一段扩展名（.env.local 的 'local' 是扩展名，'.env' 是有效 base）
+    assert.equal(specBase('.env.local'), '.env', `'.env.local' → 只去最后扩展名 → base 应为 '.env'（非空不兜底）`);
+    // 复合扩展名 → 去最后扩展名
+    assert.equal(specBase('name.tar.gz'), 'name.tar', `'name.tar.gz' → 去最后扩展名 → 'name.tar'`);
     // 常规文件名不受影响
     assert.equal(specBase('report.docx'), 'report');
     assert.equal(specBase('六章 概述.md'), '六章 概述');
