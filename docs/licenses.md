@@ -28,3 +28,12 @@
 
 - 所有库均为**本地打包/内联**使用——不存在「运行时从 CDN 拉取」的许可问题（Apache-2.0 允许内联，只需附文本与声明）。
 - **禁止**把带 Copyleft（GPL/AGPL/LGPL）的库引入本项目（未来选库第一道门槛）。
+
+## 测试语料（非运行时依赖）
+
+| 语料 | 上游仓库 / 来源 | 固定版本 | 许可 | 查证证据 | 结论 |
+|---|---|---|---|---|---|
+| BLNS（`tests/data/corpus/blns.txt`） | github.com/minimaxir/big-list-of-naughty-strings | commit `db33ec7`（2026-09-05 获取） | **MIT** | 上游 `LICENSE` 原文（"MIT License / Copyright (c) 2015-2020 Max Woolf"）已随语料存放于 `tests/data/corpus/blns.LICENSE` | ✅ 可商用；MIT 分发义务已履行（附版权声明与许可文本副本） |
+
+- 语料只用于**本地测试输入**，不进入运行时产物（index.html/vendor/ 不含 BLNS 内容）。
+- 升级语料 = 改口径：同步 `tests/data/corpus/README.md`（提交号/大小/SHA）与契约组 N1。
