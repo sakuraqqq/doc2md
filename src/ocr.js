@@ -28,9 +28,10 @@ export async function ocrAssetsWarm() {
 /* ---------- OCR worker 单例（lazy-init；语言包同源懒加载 langs/（DD-14），首次 OCR 冷启动按 T-1 档位豁免） ---------- */
 let ocrWorkerPromise = null;
 export function getOcrWorker() {
-  // 第四轮 3（t23 H8）：file:// 直开时 blob worker/WASM 受限 → 可行动错误（其余格式不受影响）
+  // 第四轮 3（t23 H8）：file:// 直开时 blob worker/WASM 受限 → 可行动错误（其余格式不受影响）。
+  // 文案不含 http(s):// 字面量（H2 fetchable 白名单——用裸词 localhost/HTTP 表达；H8 仍命中 改用/localhost）
   if (location.protocol === 'file:') {
-    throw new Error('file:// 直接打开时 OCR 不可用（本地 worker/WASM 加载受限）——请改用本地 http 服务（如 http://localhost 或 127.0.0.1）打开后使用；TXT/HTML/DOCX/XLSX/PDF 文本层等其余格式不受影响');
+    throw new Error('file:// 直接打开时 OCR 不可用（本地 worker/WASM 加载受限）——请改用本地 HTTP 服务（localhost 端口，如 npx serve）打开本站后再用 OCR；TXT/HTML/DOCX/XLSX/PDF 文本层等其余格式不受影响');
   }
   if (!ocrWorkerPromise) {
     ocrWorkerPromise = (async () => {
