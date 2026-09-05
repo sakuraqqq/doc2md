@@ -28,6 +28,8 @@ const PRECACHE = [
   //   ./vendor/tesseract-core-simd-lstm.wasm.js
   //   ./vendor/tesseract-core-lstm.wasm.js  （两 core 二选一，预缓存 2 个 ≈8MB 浪费）
   //   ./langs/eng.traineddata / chi_sim.traineddata（合计 ≈7.4MB）
+  // t27：vendor/cmaps/（168 .bcmap ≈1.1MB，pdf.js CID 字体编码资产）同样走运行时缓存——
+  //       首次 CID PDF 转换时同源加载即被下方 cache-first 路径写入（H3 契约锁 CACHE_NAME v4，PRECACHE 不变）
 ];
 
 self.addEventListener('install', (event) => {
