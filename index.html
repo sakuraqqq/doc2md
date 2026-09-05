@@ -131,20 +131,10 @@
 </script>
 
 <footer>
-  doc2md v0.1 · 本地转换 · 零外发红线（见 README） · 内联 mammoth v1.12.2 (BSD-2-Clause, © Michael Williamson) ·
+  doc2md v0.1 · 本地转换 · 零外发红线（见 README） · 同源分文件 vendor/（mammoth v1.12.2, BSD-2-Clause, © Michael Williamson） ·
   许可证明细见 docs/licenses.md
 </footer>
 
-
-
-
-
-
-
-
-
-
-</script>
 <script>
 "use strict";
 (() => {
@@ -590,7 +580,8 @@
     if (ommlIs(el, "d")) {
       const lc = el.getAttribute("m:begChr") || el.getAttribute("begChr") || "(";
       const rc = el.getAttribute("m:endChr") || el.getAttribute("endChr") || ")";
-      parts.push(lc + ommlConcat(el) + rc);
+      const inner = ommlChild(el, "e");
+      parts.push(lc + (inner ? ommlConcat(inner, df) : "") + rc);
       return;
     }
     const raw = texText(el.textContent || "").replace(/\s+/g, " ").trim();
@@ -603,9 +594,9 @@
     }
     for (const c of Array.from(el.children)) ommlParts(c, parts, df);
   }
-  function ommlConcat(node) {
+  function ommlConcat(node, df) {
     const parts = [];
-    for (const c of Array.from(node.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, null);
+    for (const c of Array.from(node.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df || null);
     return parts.join("");
   }
   function docxParseForMd(docXml, warnings) {
@@ -749,11 +740,14 @@
   async function xlsxSheetNames(buf) {
     const xml = await zipEntry(buf, "xl/workbook.xml");
     if (!xml) return null;
-    const text = new TextDecoder().decode(xml).replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'");
+    const text = new TextDecoder().decode(xml);
     const names = [];
     const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
     let m;
-    while (m = re.exec(text)) names.push(m[1]);
+    while (m = re.exec(text)) {
+      const raw = m[1];
+      names.push(raw.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10))));
+    }
     return names.length > 0 ? names : null;
   }
   function xlsxCellText(v) {
@@ -1242,6 +1236,7 @@ ${p.text}
       meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
       meta.truncated = !!res.truncated;
       if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
+      meta.elapsedMs = Math.round(performance.now() - t0);
       return { markdown: res.markdown || "", meta, error: void 0 };
     } catch (e) {
       return done({ error: "\u8F6C\u6362\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF") });
