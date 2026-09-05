@@ -1095,6 +1095,10 @@ ${xlsxRowsToMd(kept)}`);
     }
     return runs;
   }
+  function isCjkChar(ch) {
+    const c = ch.codePointAt(0);
+    return c >= 19968 && c <= 40959 || c >= 12352 && c <= 12543 || c >= 44032 && c <= 55215;
+  }
   function runsToPageText(runs) {
     if (runs.length === 0) return "";
     const lines = [];
@@ -1118,9 +1122,10 @@ ${xlsxRowsToMd(kept)}`);
         if (prev) {
           const gap = r.x - (prev.x + prev.w);
           const th = Math.max(prev.fontSize, r.fontSize) / 3;
+          const cjkBoundary = isCjkChar(prev.str.slice(-1)) && isCjkChar(r.str.slice(0, 1));
           const ruleA = gap > th;
           const ruleB = gap > 0 && /[A-Za-z0-9]$/.test(text) && /^[A-Za-z0-9]/.test(r.str) && !/ $/.test(text) && !/^ /.test(r.str);
-          if ((ruleA || ruleB) && !/ /.test(text.slice(-1)) && !/^ /.test(r.str)) text += " ";
+          if (!cjkBoundary && (ruleA || ruleB) && !/ /.test(text.slice(-1)) && !/^ /.test(r.str)) text += " ";
         }
         text += r.str;
         prev = r;
