@@ -166,7 +166,7 @@
     if (startsWith(buf, [254, 255])) {
       try {
         return new TextDecoder("utf-16be").decode(buf.subarray(2));
-      } catch (e) {
+      } catch {
         const swap = new Uint8Array(buf.length - 2);
         for (let i = 2; i < buf.length; i += 2) {
           if (i + 1 < buf.length) {
@@ -180,10 +180,27 @@
     const probeN = Math.min(buf.byteLength, 4096);
     const tolerant = new TextDecoder("utf-8");
     const headTxt = tolerant.decode(buf.subarray(0, probeN));
-    if (/<meta[^>]+charset\s*=\s*["']?\s*(gb2312|gbk|gb18030|big5)\b/i.test(headTxt)) {
-      try {
-        return new TextDecoder("gb18030").decode(buf);
-      } catch (e) {
+    const metaIdx = headTxt.indexOf("<meta");
+    if (metaIdx >= 0) {
+      const metaEnd = headTxt.indexOf(">", metaIdx);
+      const metaAttr = metaEnd > metaIdx ? headTxt.slice(metaIdx, metaEnd + 1) : "";
+      const lower = metaAttr.toLowerCase();
+      const csIdx = lower.indexOf("charset");
+      if (csIdx >= 0) {
+        const afterCs = lower.slice(csIdx + "charset".length);
+        const eqIdx = afterCs.indexOf("=");
+        if (eqIdx >= 0) {
+          let val = afterCs.slice(eqIdx + 1);
+          const isTrimCh = (ch) => ch === " " || ch === '"' || ch === "'" || ch === ";" || ch === ">" || ch === "	" || ch === "\r" || ch === "\n";
+          while (val.length > 0 && isTrimCh(val[0])) val = val.slice(1);
+          while (val.length > 0 && isTrimCh(val[val.length - 1])) val = val.slice(0, -1);
+          if (val === "gb2312" || val === "gbk" || val === "gb18030" || val === "big5") {
+            try {
+              return new TextDecoder("gb18030").decode(buf);
+            } catch {
+            }
+          }
+        }
       }
     }
     let bad = 0, tot = 0;
@@ -194,7 +211,7 @@
     if (tot > 0 && bad / tot > 0.3) {
       try {
         return new TextDecoder("gb18030").decode(buf);
-      } catch (e) {
+      } catch {
       }
     }
     return new TextDecoder("utf-8", { fatal: false }).decode(buf);
@@ -275,7 +292,11 @@
   function fragFor(el, mode, out) {
     const tag = el.tagName;
     if (tag === "BR") {
-      out.push({ t: mode === "br" ? "<br>" : mode === "space" ? " " : "\n", vStart: null, vEnd: null });
+      let brT;
+      if (mode === "br") brT = "<br>";
+      else if (mode === "space") brT = " ";
+      else brT = "\n";
+      out.push({ t: brT, vStart: null, vEnd: null });
       return;
     }
     if (tag === "STRONG" || tag === "B") {
@@ -446,7 +467,9 @@
     if (rows.length === 0) return "";
     const width = Math.max(...rows.map((r) => r.length));
     const norm = rows.map((r) => {
-      while (r.length < width) r.push("");
+      while (r.length < width) {
+        r.push("");
+      }
       return r;
     });
     const header = "| " + norm[0].join(" | ") + " |";
@@ -478,7 +501,9 @@
   function extForContentType(ct) {
     const m = /^image\/([\w.+-]+)$/i.exec(String(ct || ""));
     const t = m ? m[1].toLowerCase() : "png";
-    return t === "jpeg" ? "jpg" : t === "tiff" ? "tif" : t;
+    if (t === "jpeg") return "jpg";
+    if (t === "tiff") return "tif";
+    return t;
   }
   function docxSafeBase(name) {
     const b = String(name || "doc").replace(/\.docx$/i, "");
@@ -510,11 +535,15 @@
       return;
     }
     if (ommlIs(el, "r")) {
-      for (const c of Array.from(el.children)) ommlParts(c, parts, df);
+      for (const c of Array.from(el.children)) {
+        ommlParts(c, parts, df);
+      }
       return;
     }
     if (ommlIs(el, "oMath") || ommlIs(el, "oMathPara")) {
-      for (const c of Array.from(el.children)) ommlParts(c, parts, df);
+      for (const c of Array.from(el.children)) {
+        ommlParts(c, parts, df);
+      }
       return;
     }
     if (ommlIs(el, "f")) {
@@ -552,7 +581,9 @@
     const raw = texText(el.textContent || "").replace(/\s+/g, " ").trim();
     if (raw !== "") {
       parts.push(raw);
-      if (df) df.degraded = true;
+      if (df) {
+        df.degraded = true;
+      }
       return;
     }
     for (const c of Array.from(el.children)) ommlParts(c, parts, df);
@@ -606,7 +637,9 @@
     let out = md;
     maths.forEach((m, i) => {
       const tok = "\u27E6MATH" + (i + 1) + "\u27E7";
-      const rep = m.latex !== null ? m.block ? "$" + m.latex + "$" : "$" + m.latex + "$" : m.rawText || "";
+      let rep;
+      if (m.latex !== null) rep = m.block ? "$" + m.latex + "$" : "$" + m.latex + "$";
+      else rep = m.rawText || "";
       if (out.indexOf(tok) >= 0) out = out.split(tok).join(rep);
     });
     return out;
@@ -619,7 +652,7 @@
     let entries;
     try {
       entries = F.unzipSync(buf);
-    } catch (e) {
+    } catch {
       throw new Error("\u6587\u4EF6\u5DF2\u635F\u574F\u6216\u4E0D\u662F\u6709\u6548\u7684 Office \u6587\u6863\uFF08zip \u89E3\u538B\u5931\u8D25\uFF09");
     }
     const docEntry = entries["word/document.xml"];
@@ -639,12 +672,8 @@
         imgIdx++;
         const alt = docxAltFromName(metaEntry.name);
         let bytes = null;
-        try {
-          const ab = await image.readAsArrayBuffer();
-          bytes = new Uint8Array(ab);
-        } catch (e) {
-          bytes = null;
-        }
+        const ab = await image.readAsArrayBuffer().catch(() => null);
+        bytes = ab ? new Uint8Array(ab) : null;
         if (!bytes || bytes.length === 0) return { src: "", alt: "" };
         if (bytes.length <= DOCX_IMG_EMBED_MAX) {
           return { src: "data:" + ct + ";base64," + bytesToB64(bytes), alt };
@@ -692,7 +721,8 @@
             if (method === 0) return data;
             if (typeof DecompressionStream === "undefined") return null;
             const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-            return new Uint8Array(await new Response(stream).arrayBuffer());
+            const out = await new Response(stream).arrayBuffer().catch(() => null);
+            return out ? new Uint8Array(out) : null;
           }
           off += 46 + nameLen + extraLen + commentLen;
         }
@@ -702,18 +732,14 @@
     return null;
   }
   async function xlsxSheetNames(buf) {
-    try {
-      const xml = await zipEntry(buf, "xl/workbook.xml");
-      if (!xml) return null;
-      const text = new TextDecoder().decode(xml).replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'");
-      const names = [];
-      const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
-      let m;
-      while (m = re.exec(text)) names.push(m[1]);
-      return names.length > 0 ? names : null;
-    } catch (e) {
-      return null;
-    }
+    const xml = await zipEntry(buf, "xl/workbook.xml");
+    if (!xml) return null;
+    const text = new TextDecoder().decode(xml).replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'");
+    const names = [];
+    const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
+    let m;
+    while (m = re.exec(text)) names.push(m[1]);
+    return names.length > 0 ? names : null;
   }
   function xlsxCellText(v) {
     if (v === null || v === void 0) return "";
@@ -725,7 +751,9 @@
     const width = Math.max(...rows.map((r) => r.length), 1);
     const norm = rows.map((r) => {
       const c = r.slice(0, width);
-      while (c.length < width) c.push("");
+      while (c.length < width) {
+        c.push("");
+      }
       return c;
     });
     const esc = (s) => xlsxCellText(s).replace(/\|/g, "\\|").replace(/\s+/g, " ");
@@ -819,7 +847,7 @@ ${xlsxRowsToMd(kept)}`);
   async function copyText(text, btn) {
     try {
       await navigator.clipboard.writeText(text);
-    } catch (e) {
+    } catch {
       const ta = document.createElement("textarea");
       ta.value = text;
       ta.style.position = "fixed";
@@ -857,7 +885,7 @@ ${xlsxRowsToMd(kept)}`);
       for (const a2 of assets || []) {
         try {
           files[a2.name] = new Uint8Array(await a2.blob.arrayBuffer());
-        } catch (e) {
+        } catch {
         }
       }
       const z = F.zipSync(files);
@@ -869,7 +897,7 @@ ${xlsxRowsToMd(kept)}`);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 3e3);
-    } catch (e) {
+    } catch {
       const old = btn.textContent;
       btn.textContent = "\u274C \u6253\u5305\u5931\u8D25";
       setTimeout(() => {
@@ -877,7 +905,7 @@ ${xlsxRowsToMd(kept)}`);
       }, 1500);
     }
   }
-  function renderResult(file, result, idx, total) {
+  function renderResult(file, result) {
     const card = document.createElement("div");
     card.className = "card";
     const head = document.createElement("div");
@@ -928,7 +956,7 @@ ${xlsxRowsToMd(kept)}`);
       const btnCopy = document.createElement("button");
       btnCopy.className = "btn";
       btnCopy.textContent = "\u{1F4CB} \u590D\u5236 Markdown";
-      btnCopy.addEventListener("click", (e) => copyText(ta.value, btnCopy));
+      btnCopy.addEventListener("click", () => copyText(ta.value, btnCopy));
       const btnDl = document.createElement("button");
       btnDl.className = "btn" + (hasAssets ? "" : " primary");
       btnDl.textContent = "\u2B07 \u4E0B\u8F7D .md";
@@ -946,15 +974,14 @@ ${xlsxRowsToMd(kept)}`);
   var ocrAssetsChecked = false;
   async function ocrAssetsWarm() {
     if (!("serviceWorker" in navigator) || !navigator.serviceWorker.controller) return true;
-    try {
-      for (const key of await caches.keys()) {
-        const c = await caches.open(key);
-        const core = await c.match("./vendor/tesseract-core-simd-lstm.wasm.js") || await c.match("./vendor/tesseract-core-lstm.wasm.js");
-        const eng = await c.match("./langs/eng.traineddata");
-        const chi = await c.match("./langs/chi_sim.traineddata");
-        if (core && eng && chi) return true;
-      }
-    } catch (e) {
+    const keys = await caches.keys().catch(() => []);
+    for (const key of keys) {
+      const c = await caches.open(key).catch(() => null);
+      if (!c) continue;
+      const core = await c.match("./vendor/tesseract-core-simd-lstm.wasm.js").catch(() => null) || await c.match("./vendor/tesseract-core-lstm.wasm.js").catch(() => null);
+      const eng = await c.match("./langs/eng.traineddata").catch(() => null);
+      const chi = await c.match("./langs/chi_sim.traineddata").catch(() => null);
+      if (core && eng && chi) return true;
     }
     return false;
   }
@@ -1128,7 +1155,7 @@ ${p.text}
     for (let i = 0; i < list.length; i++) {
       const file = list[i];
       const result = await convert(file);
-      renderResult(file, result, i + 1, list.length);
+      renderResult(file, result);
     }
     setStatus("\u5B8C\u6210\uFF1A\u5171 " + list.length + " \u4E2A\u6587\u4EF6\u3002");
   }
