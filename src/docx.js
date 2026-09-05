@@ -93,9 +93,12 @@ function ommlParts(el, parts, df) {
     return;
   }
   if (ommlIs(el, 'd')) {
+    // ZCode A 批 ②（L2）：定界符内只渲染 m:e 内容（缺 e 则空）——此前 ommlConcat(el) 平铺整个 d，
+    // 嵌套的 m:f 等结构被文本退化拍平（如 (\frac{a}{b}) 变成 (ab)）；df 透传冒泡退化 warning
     const lc = el.getAttribute('m:begChr') || el.getAttribute('begChr') || '(';
     const rc = el.getAttribute('m:endChr') || el.getAttribute('endChr') || ')';
-    parts.push(lc + ommlConcat(el) + rc);
+    const inner = ommlChild(el, 'e');
+    parts.push(lc + (inner ? ommlConcat(inner, df) : '') + rc);
     return;
   }
   // 复杂结构（nary 积分/求和、m 矩阵、limLow/limUpp、func、eqArr、groupChr、box…）→ v1 退化：保留全部文本
@@ -103,9 +106,10 @@ function ommlParts(el, parts, df) {
   if (raw !== '') { parts.push(raw); if (df) { df.degraded = true; } return; }
   for (const c of Array.from(el.children)) ommlParts(c, parts, df);
 }
-function ommlConcat(node) {
+function ommlConcat(node, df) {
   const parts = [];
-  for (const c of Array.from(node.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, null);
+  // df 透传（ZCode A 批 ②/L2b）：嵌套结构内的退化标记必须冒泡到顶层——此前恒传 null，degrade 链丢失 → 无 warning
+  for (const c of Array.from(node.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df || null);
   return parts.join('');
 }
 // 解析 document.xml：图片 docPr（文档序）+ OMML 公式（占位符替换）。返回 {imgNames, maths, xml}
