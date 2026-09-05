@@ -46,7 +46,12 @@ async function pdfPageRuns(page) {
   for (let i = 0; i < opList.fnArray.length; i++) {
     const fn = opList.fnArray[i];
     const args = opList.argsArray[i] || [];
-    if (fn === PN.TF) {
+    if (fn === PN.BT) {
+      // PDF 规范：BT 将文本矩阵/行矩阵重置为单位阵——跨 BT...ET 块，Td/TD/T* 从**各块自己的**文本空间
+      // 原点起步（上一块的尾部平移不复用）。若不重置，下一块的 Td 会累加到上一块的 cx/cy 上 → 行坐标
+      // 错乱、跨块行序倒挂（t16 回归；t18 修复）。注：leading 属文本状态（BT 不重置），保留。
+      cx = 0; cy = 0;
+    } else if (fn === PN.TF) {
       fontSize = args[1] || 0;
     } else if (fn === PN.TM) {
       cx = args[4] || 0; cy = args[5] || 0;
