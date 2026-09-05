@@ -475,6 +475,59 @@ if (fs.existsSync(cidPdf)) {
 } else {
   console.log('  （real-cid-paper.pdf 缺失——跳过登记；用户重新提供后重跑 gen:samples）');
 }
+put('real-big.xlsx', buildBigXlsx());
+
+/* ---------------- real-big.xlsx（大行数：50,000 行 × 3 列；契约组 L4/L5，t32） ----------------
+ * 单 sheet 大行数样例：触发 L4（流式/性能——当前实现全量解析后截断，50K 行预计超 3000ms）与
+ * L5（「另有 0 个 sheet」文案微瑕——单 sheet 且行数超上限时 truncated warnings 含「另有 0 个」）。
+ * 结构：A 列共享字符串（表头样值循环 20 值/确定性序号）、B/C 数值列；zip deflate 对高度重复结构
+ * 压缩率高——目标体积 <1MB（若超则按任务口径降 20,000 行）。
+ * 数字单元格用 inline `<v>`（最短）；确定性（无时间戳）+ buildZip 固定时间戳。
+ */
+function buildBigXlsx() {
+  const N = 50000;
+  const SHARED = ['品类', '数值A', '数值B'];
+  const ss = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${SHARED.length}" uniqueCount="${SHARED.length}">${SHARED.map((s) => `<si><t>${s}</t></si>`).join('')}</sst>`;
+  const rows = [];
+  for (let i = 1; i <= N; i++) {
+    // A 列共享串循环（表头样品类名×3 值循环——保证共享串压缩效率最优；序号用 B 列体现行号）
+    const si = i % 3;
+    rows.push(`<row r="${i}"><c r="A${i}" t="s"><v>${si}</v></c><c r="B${i}"><v>${i}</v></c><c r="C${i}"><v>${(i * 7919) % 1000}</v></c></row>`);
+  }
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c></row>
+${rows.join('\n')}
+</sheetData></worksheet>`;
+  const wb = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="BigSheet" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+  const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+</Relationships>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'xl/workbook.xml', data: Buffer.from(wb, 'utf8') },
+    { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from(wbRels, 'utf8') },
+    { name: 'xl/sharedStrings.xml', data: Buffer.from(ss, 'utf8') },
+    { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(sheet, 'utf8') },
+  ]);
+}
 
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
