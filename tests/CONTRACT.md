@@ -40,6 +40,7 @@
 | C4 | 零外发：请求全部同源 `http://127.0.0.1:*`（红线 #1） | 集合为空 | 🔴 红 |
 | C5 | `convert` 不返回 `error`（转换器可 throw 但 UI 入口不得崩） | `error === undefined` | 🔴 红 |
 | C6 | docx 保留 GFM 表格（仅 docx 用例附加）：表格行 ≥2 行 + 表头分隔行（`| --- |`）+ 表头单元格文本「项目」「状态」 | `gfmTableIssues()` 为空（纯函数，见 contract_v1.test.mjs） | 🟢 绿（宿主浏览器实测 docx 输出 `| 项目 | 状态 |` + `| --- | --- |`，DD-11 附录） |
+| C7 | **成功转换用例附加**（ZCode A 批 ①，先红）：`meta.elapsedMs > 0`——成功路径必须回填耗时（失败/护栏路径不计） | `> 0` | 🔴 红（t20 实测：成功路径 meta.elapsedMs=0——convert.js 成功 return 的 meta 未写 elapsedMs（仅 done() 失败路径更新，恒 0）；修复方向=t21 成功路径 `meta.elapsedMs = Math.round(performance.now() - t0)`） |
 
 ### 契约组 M — 手机视口 UI 端到端（390×844）
 
@@ -145,6 +146,8 @@
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
 | L1 | 公式不重复（缺 m:e 时 base 不退化到整个元素） | n 计数 ≤1 | 🟢 绿（t14 红；t15 修复（base 缺省 → `''` 不退化）+ t16 独立验收（`$^{n}$` n 恰 1），复审 §1.6） |
+| L2a | 括号内分数（m:d(m:begChr="(") > m:e > m:f(a,b)）→ 结构化 `(\frac{a}{b})` | includes | 🔴 红（**t20 新增·先红**：t20 实测输出 `$(ab)$` 拍平——ommlParts 无 m:e case → d 内整块退化 raw 文本；样例 sample-omml-parenfrac.docx；ZCode A 批 ②；修复方向=t21 补 m:e case（递归子节点 → m:f → \frac）） |
+| L2b | 「降级必冒泡」——输出未含 `\frac`（退化路径）时 warnings 须含「复杂公式」 | 条件 includes | 🔴 红（**t20 新增·先红**：t20 实测退化输出 `(ab)` 且 warnings=[]——ommlConcat 调 ommlParts 时 df 传 null，degrade 标记丢失 → 不冒泡；修复方向=t21 透传 degrade 标记链；ZCode A 批 ②） |
 
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
@@ -175,6 +178,7 @@
 |---|---|---|---|---|
 | `sample-omml-noe.docx` | DOCX（合成） | 契约组 L——OMML `<m:sSup>` 缺 `<m:e>`（只含 `<m:sup>n</m:sup>`）防御场景 | 1,033 B / SHA `2CF855A5…`；zip 合法，document.xml 含 1×`m:sSup`（无 m:e 子节点） | 字节锁（manifest）；新名不动既有 sample.* |
 | `sample-spacing.pdf` | PDF（合成） | 契约组 K k6——字间距位移（同一行两个 Tj，`1 0 0 1 96 780 Tm` 前移 46pt）模拟 Word/PPT 导出 | 677 B / SHA `7DA06D11…`；%PDF-1.4 合法，文本层含 `Hello`/`world` 两个 text item（无空格字符） | 字节锁（manifest）；纯拉丁文本层（T-2 口径）；新名不动既有 sample.* |
+| `sample-omml-parenfrac.docx` | DOCX（合成） | 契约组 L L2——括号内分数（`<m:d m:begChr="(" m:endChr=")">` > `<m:e>` > `<m:f>`(num a/den b)） | 1,079 B / SHA `C9E9FD0F…`；zip 合法，document.xml 含 1×`m:d`（begChr="("）+ 1×`m:f`（num/den 齐） | 字节锁（manifest）；新名不动既有 sample.* |
 
 > 生成器幂等已验：`npm run gen:samples` 连续两次运行，三个新样例 SHA 完全一致；
 > manifest 仅追加新条目，既有 6 条 `sample.*` 锁条目未变（diff 验证）。
@@ -238,6 +242,8 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-05 ZCode A 批 t20（最新，契约/测试侧五件）**：① **C7 先红**（成功路径 `meta.elapsedMs > 0`——t20 实测恒 0）；② **L2 先红×2**（括号内分数结构化 `(\frac{a}{b})` + 降级必冒泡——t20 实测 `$(ab)$` 拍平且 warnings=[]）；③ **pwa-audit 兼容修复**（77 行 v4 `Promise.allSettled(PRECACHE.map(…` 双策略兼容、91 行 SW 注册双引号正则兼容——修复后 **48/48 通过**，README 48/48 口径一致）；④ **CI build 一致性步骤**（`npm run build && git diff --exit-code index.html`——守护 src→产物漂移/漏提交）；⑤ **README 失实同步**（32KB→约 85KB（bundle 约 47KB）三处 + 英文摘要「single offline HTML file」→「single-directory offline package（index + vendor/ + langs/）」+ 目录树 sw v3→v4 注）。**红绿：①②=红（先红，t21 修复转绿）；③④⑤=绿（改动后实测/审定）**。样例 sample-omml-parenfrac.docx 1,079 B / `C9E9FD0F…`（manifest 字节锁）。不做：src 生产代码修复（t21）。
+（补注：t19 记录的「k5 断言规格待定版」已由测试侧修正定版——规格=产品行为「去最后扩展名 + 空兜底」（52e9b8e，断言体同步；产品行为正确，无生产修改）。）
 - **2026-09-05 回归修复独立验收 t19（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `6ff5fe3`（t17 k5 同步/k7 先红 + t18 BT 修复）。**结论：t18 src 级 BT 修复有效（k7 src 实测绿：sample.pdf 标题 idx=1 在前）；K1-K4b/K6/L1 产物级全绿；既有 77 断言零产品回归（D10/10 C6/6 G3/3 I5/5 J1/1 E1/F1 抽查 + test:direct A0/B11/11/H6/6 真跑）；真 PDF 复验通过（sample.pdf 标题在前 + 6月2日实验.pdf 4 页顺序/中文完整/零双空格 261ms）**；发现 2 项（产物未同步 t18 + k5 断言规格待定版——均只报告未修改）。
   **实测结果**：
   - ✅ **k7（src 级，t18 BT 修复）**：sample.pdf 直载 pdfConvert → idx=1（`<!-- page 1/1 -->` 后即标题）——**t18 修复行为正确**（BT 重置 cx/cy）。
