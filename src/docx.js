@@ -66,24 +66,30 @@ function ommlParts(el, parts, df) {
     return;
   }
   if (ommlIs(el, 'sSup')) {
-    const base = ommlChild(el, 'e') || el, sup = ommlChild(el, 'sup');
-    parts.push(ommlConcat(base) + '^{' + (sup ? ommlConcat(sup) : '') + '}');
+    // 缺 m:e（结构异常/第三方工具）时 base 置空串，**不**退化为整个元素（否则 sup 内容被重复输出——复审 §1.6）
+    const base = ommlChild(el, 'e');
+    const sup = ommlChild(el, 'sup');
+    parts.push((base ? ommlConcat(base) : '') + '^{' + (sup ? ommlConcat(sup) : '') + '}');
     return;
   }
   if (ommlIs(el, 'sSub')) {
-    const base = ommlChild(el, 'e') || el, sub = ommlChild(el, 'sub');
-    parts.push(ommlConcat(base) + '_{' + (sub ? ommlConcat(sub) : '') + '}');
+    const base = ommlChild(el, 'e');
+    const sub = ommlChild(el, 'sub');
+    parts.push((base ? ommlConcat(base) : '') + '_{' + (sub ? ommlConcat(sub) : '') + '}');
     return;
   }
   if (ommlIs(el, 'sSubSup')) {
-    const base = ommlChild(el, 'e') || el, sub = ommlChild(el, 'sub'), sup = ommlChild(el, 'sup');
-    parts.push(ommlConcat(base) + '_{' + (sub ? ommlConcat(sub) : '') + '}^{' + (sup ? ommlConcat(sup) : '') + '}');
+    const base = ommlChild(el, 'e');
+    const sub = ommlChild(el, 'sub');
+    const sup = ommlChild(el, 'sup');
+    parts.push((base ? ommlConcat(base) : '') + '_{' + (sub ? ommlConcat(sub) : '') + '}^{' + (sup ? ommlConcat(sup) : '') + '}');
     return;
   }
   if (ommlIs(el, 'rad')) {
     const deg = ommlChild(el, 'deg'), e = ommlChild(el, 'e');
     const d = deg ? ommlConcat(deg) : '';
-    parts.push(d !== '' ? '\\sqrt[' + d + ']{' + ommlConcat(e || el) + '}' : '\\sqrt{' + ommlConcat(e || el) + '}');
+    const baseT = e ? ommlConcat(e) : '';
+    parts.push(d !== '' ? '\\sqrt[' + d + ']{' + baseT + '}' : '\\sqrt{' + baseT + '}');
     return;
   }
   if (ommlIs(el, 'd')) {
