@@ -887,3 +887,176 @@ test('契约组 J：docx OMML 公式 → $…$ LaTeX 标记（sample-math.docx�
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 K：富文本边界快照（第三方复审报告 2026-09-05 §1.1-1.5/1.7；契约先红 t14）
+// 依据：docs/doc2md-第三方复审报告-2026-09-05.md（静态复审 src/）——已确认问题：
+//   k1 嵌套表格（§1.1）——外层 table 的 querySelectorAll('tr') 全局选择器把内层 <tr> 也选进
+//   k2 <ol start="0">（§1.4）——parseInt('0')||1 → 0 被改写为 1
+//   k3 <pre> 内三反引号（§1.5）——固定 ``` 围栏被内容提前闭合
+//   k4 URL 未转义（§1.3）——href/src 含 ()/空格、alt 含 ] 语法破损
+//   k5 .env 类文件名（§1.7）——downloadMd/downloadZip 的 base 被 replace 整个吃掉 → 空
+//   k6 PDF 单词粘连（§1.2）——字间距位移无空格字符 → 直接拼接出错（样例 sample-spacing.pdf）
+// 断言语义/宽松处均注明；k1-k4/k6 浏览器 DOM 环境；k5 纯逻辑（ui.js 顶层 DOM 依赖不可 node import，
+// 先以行为语义断言——修复方加 `|| 'doc2md'` 兜底后即绿，测试端后续可改用 import 真函数）。
+// ---------------------------------------------------------------------------
+const K_BOUNDARY_CASES = [
+  {
+    id: 'k1', name: '嵌套表格（外层 2×2 不受内层 tr 影响；复审 §1.1）',
+    html: '<table><tr><td>外A</td><td>外B</td></tr><tr><td><table><tr><td>内1</td></tr><tr><td>内2</td></tr></table></td><td>外C</td></tr></table>',
+  },
+  {
+    id: 'k2', name: '<ol start="0"> 从 0 开始（复审 §1.4）',
+    html: '<ol start="0"><li>零</li><li>一</li></ol>',
+  },
+  {
+    id: 'k3', name: '<pre> 内容含三反引号 → 动态围栏 ≥4（复审 §1.5）',
+    html: '<pre>```js\nconst a = 1;\n```\n</pre>',
+  },
+  {
+    id: 'k4a', name: '链接 URL 含 () → 转义（复审 §1.3）',
+    html: '<a href="https://a.com/p(x)">链接</a>',
+  },
+  {
+    id: 'k4b', name: '图片 src 含 () + alt 含 ] → 完整语法（复审 §1.3）',
+    html: '<img src="https://a.com/a(b).png" alt="图]片">',
+  },
+];
+
+test('契约组 K：富文本边界快照 + PDF 粘连 —— 契约先红（复审报告 §1.1-1.5/1.7）', async (t) => {
+  // k5 纯逻辑（无浏览器依赖）——先断言（复制当前实现语义，期望 base 非空）
+  await t.test('k5 .env 类文件名 → 下载 base 名非空（ui.js downloadMd/downloadZip 纯逻辑；复审 §1.7）', () => {
+    for (const name of ['.env', '.gitignore', '.env.local']) {
+      const impl = (name || 'doc2md').replace(/\.[^.]+$/, ''); // 当前实现语义 = src/ui.js:41/57 同式
+      assert.notEqual(impl, '', `文件「${name}」的下载 base 名为空——'.xxx' 扩展名被 replace 整个吃掉（须兜底为非空，如 'doc2md'）`);
+    }
+  });
+
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      for (const c of K_BOUNDARY_CASES) {
+        await t.test(`${c.id} ${c.name}`, async () => {
+          const md = await page.evaluate((html) => window.__doc2md.htmlToMarkdown(html), c.html);
+          if (c.id === 'k1') {
+            // 断言语义：外层表格恰 2 行数据体（内层 <tr> 不得混入外层行）；内层表内容保留在单元格内
+            const tblLines = md.split('\n').filter((l) => /^\|.*\|$/.test(l));
+            const bodyRows = tblLines.filter((l) => !l.includes('---'));
+            assert.equal(bodyRows.length, 2, `外层表格数据行数=${bodyRows.length}（期望 2——内层 <tr> 不得混入外层行）：${JSON.stringify(tblLines)}`);
+            for (const tok of ['外A', '外B', '外C', '内1', '内2']) {
+              assert.ok(md.includes(tok), `输出缺少「${tok}」（内层表格内容应保留在单元格内）`);
+            }
+          } else if (c.id === 'k2') {
+            // 断言语义：start="0" 从 0 编号（`parseInt('0')||1` 必须改为 NaN 判定）
+            assert.ok(md.includes('0. 零'), `输出未从 0 开始：${JSON.stringify(md)}`);
+            assert.ok(md.includes('1. 一'), `第二项编号错误：${JSON.stringify(md)}`);
+          } else if (c.id === 'k3') {
+            // 断言语义：代码围栏 ≥4 反引号（内容含 ``` 时固定 3 会提前闭合）
+            const fence = (md.match(/^`+/m) || [''])[0];
+            assert.ok(fence.length >= 4, `代码围栏长度=${fence.length}（期望 ≥4——内容含三反引号，固定 3 会提前闭合）：${JSON.stringify(md.slice(0, 120))}`);
+            assert.ok(md.includes('const a = 1;'), '代码正文丢失');
+          } else if (c.id === 'k4a') {
+            // 断言语义：链接 URL 目标无裸括号（%28/%29 或等价转义）
+            const m = md.match(/\]\((https:\/\/a\.com\/p[^()]*)\)/);
+            assert.ok(m, `链接 URL 未转义/无法完整匹配（href 含裸括号 → 语法截断）：${JSON.stringify(md)}`);
+          } else if (c.id === 'k4b') {
+            // 断言语义：图片语法完整（alt 含 ] 不得破坏结构、src 无裸括号）
+            const m = md.match(/!\[[^\]]+\]\(https:\/\/a\.com\/a[^()]*\.png\)/);
+            assert.ok(m, `图片语法破损（alt 含 ] 未转义或 src 含裸括号）：${JSON.stringify(md)}`);
+          }
+        });
+      }
+
+      // k6：PDF 单词粘连（样例 sample-spacing.pdf；复审 §1.2）——convert 全链路
+      assert.ok(fs.existsSync(nodePath.join(DATA, 'sample-spacing.pdf')), 'sample-spacing.pdf 缺失——请运行 npm run gen:samples');
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-spacing.pdf')).toString('base64');
+      const r = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-spacing.pdf'));
+        },
+        { b64 }
+      );
+      assert.equal(r.error, undefined, `convert 返回错误: ${r.error}`);
+      await t.test('k6 PDF 字间距位移 → 输出含 "Hello world"（不得粘连成 Helloworld；复审 §1.2）', () => {
+        const md = r.markdown || '';
+        assert.ok(md.includes('Hello world'), `输出不存在连续串 "Hello world"：${JSON.stringify(md.slice(0, 200))}（两 Tj 字间距 > 字高/3 应为空格；当前直接拼接 → 粘连）`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 L：OMML 缺 m:e 的 sSup → 公式内容不重复（第三方复审报告 2026-09-05 §1.6；契约先红 t14）
+// 样例：tests/data/sample-omml-noe.docx（<m:sSup> 只含 <m:sup>n</m:sup>，缺 <m:e>——
+//       结构异常/第三方工具生成的防御场景）。
+// 断言语义（宽松处注明）：$…$ 围栏存在；围栏内 'n' 出现次数 ≤1——
+//       （base 缺省不得退化为整个元素，否则 sup 内容被重复输出）。当前红（预计 n 重复 ≥2）。
+// ---------------------------------------------------------------------------
+test('契约组 L：OMML 缺 m:e 的 sSup —— 公式内容不重复（契约先红）', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  assert.ok(fs.existsSync(nodePath.join(DATA, 'sample-omml-noe.docx')), 'sample-omml-noe.docx 缺失——请运行 npm run gen:samples');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-omml-noe.docx')).toString('base64');
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-omml-noe.docx'));
+        },
+        { b64 }
+      );
+      assert.equal(res.error, undefined, `convert 返回错误: ${res.error}`);
+      await t.test('L1 围栏存在 + 内容不重复（缺 m:e 时 base 不退化到整个元素）', () => {
+        const md = res.markdown || '';
+        const math = (md.match(/\$[^$\n]*\$/g) || []).join('');
+        assert.ok(math.length > 0, `输出无 $…$ 公式围栏：${JSON.stringify(md.slice(0, 200))}`);
+        const nCount = (math.match(/n/g) || []).length;
+        assert.ok(nCount <= 1, `公式重复——'n' 出现 ${nCount} 次（期望 ≤1：缺 m:e 时 sup 内容不得被 base 重复输出）：${JSON.stringify(math)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
