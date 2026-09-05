@@ -170,10 +170,11 @@
     const probeN = Math.min(buf.byteLength, 4096);
     const tolerant = new TextDecoder("utf-8");
     const headTxt = tolerant.decode(buf.subarray(0, probeN));
-    const metaIdx = headTxt.indexOf("<meta");
-    if (metaIdx >= 0) {
+    let metaIdx = headTxt.indexOf("<meta");
+    while (metaIdx >= 0) {
       const metaEnd = headTxt.indexOf(">", metaIdx);
-      const metaAttr = metaEnd > metaIdx ? headTxt.slice(metaIdx, metaEnd + 1) : "";
+      if (metaEnd < 0) break;
+      const metaAttr = headTxt.slice(metaIdx, metaEnd + 1);
       const lower = metaAttr.toLowerCase();
       const csIdx = lower.indexOf("charset");
       if (csIdx >= 0) {
@@ -184,23 +185,23 @@
           const isTrimCh = (ch) => ch === " " || ch === '"' || ch === "'" || ch === ";" || ch === ">" || ch === "	" || ch === "\r" || ch === "\n";
           while (val.length > 0 && isTrimCh(val[0])) val = val.slice(1);
           while (val.length > 0 && isTrimCh(val[val.length - 1])) val = val.slice(0, -1);
-          if (val === "gb2312" || val === "gbk" || val === "gb18030" || val === "big5") {
+          let enc = null;
+          if (val === "gb2312" || val === "gbk" || val === "gb18030") enc = "gb18030";
+          else if (val === "big5") enc = "big5";
+          if (enc) {
             try {
-              return new TextDecoder("gb18030").decode(buf);
+              return new TextDecoder(enc).decode(buf);
             } catch {
             }
           }
         }
       }
+      metaIdx = headTxt.indexOf("<meta", metaIdx + 1);
     }
-    let bad = 0, tot = 0;
-    for (const ch of headTxt) {
-      tot++;
-      if (ch === "\uFFFD") bad++;
-    }
-    if (tot > 0 && bad / tot > 0.3) {
+    if (headTxt.includes("\uFFFD")) {
       try {
-        return new TextDecoder("gb18030").decode(buf);
+        const g = new TextDecoder("gb18030").decode(buf);
+        if (!g.includes("\uFFFD")) return g;
       } catch {
       }
     }
@@ -612,27 +613,33 @@
     let degradedCount = 0;
     for (const om of Array.from(doc.getElementsByTagNameNS(OMML_NS, "oMath"))) {
       if (!om.isConnected) continue;
-      let target = om, block = false;
+      let para = null;
       for (let p = om.parentNode; p && p.nodeType === 1; p = p.parentNode) {
         if (ommlIs(p, "oMathPara")) {
-          target = p;
-          block = true;
+          para = p;
           break;
         }
         if (p.localName === "p" && (p.namespaceURI === W_NS || p.namespaceURI === null)) break;
       }
-      const df = { degraded: false };
-      const parts = [];
-      for (const c of Array.from(om.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
-      const latex = parts.join("").trim();
-      const rawText = texText(om.textContent || "").replace(/\s+/g, " ").trim();
-      if (df.degraded || latex === "" && rawText !== "") degradedCount++;
-      maths.push({ latex: latex !== "" ? latex : null, block, rawText });
-      const r = doc.createElementNS(W_NS, "w:r");
-      const t = doc.createElementNS(W_NS, "w:t");
-      t.textContent = "\u27E6MATH" + maths.length + "\u27E7";
-      r.appendChild(t);
-      target.parentNode.replaceChild(r, target);
+      const list = para ? Array.from(para.getElementsByTagNameNS(OMML_NS, "oMath")) : [om];
+      const frag = doc.createDocumentFragment();
+      for (let li = 0; li < list.length; li++) {
+        const o = list[li];
+        const df = { degraded: false };
+        const parts = [];
+        for (const c of Array.from(o.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
+        const latex = parts.join("").trim();
+        const rawText = texText(o.textContent || "").replace(/\s+/g, " ").trim();
+        if (df.degraded || latex === "" && rawText !== "") degradedCount++;
+        maths.push({ latex: latex !== "" ? latex : null, block: !!para && list.length === 1, rawText });
+        const r = doc.createElementNS(W_NS, "w:r");
+        const t = doc.createElementNS(W_NS, "w:t");
+        t.textContent = "\u27E6MATH" + maths.length + "\u27E7";
+        r.appendChild(t);
+        frag.appendChild(r);
+      }
+      if (para) para.parentNode.replaceChild(frag, para);
+      else om.parentNode.replaceChild(frag, om);
     }
     if (degradedCount > 0) {
       warnings.push(degradedCount + " \u4E2A\u590D\u6742\u516C\u5F0F\uFF08\u79EF\u5206/\u77E9\u9635/\u6C42\u548C\u7B49\uFF09\u5DF2\u6309\u7EAF\u6587\u672C\u4FDD\u7559\uFF08LaTeX \u652F\u6301\u8303\u56F4\u89C1 README\uFF09");
@@ -996,6 +1003,9 @@ ${xlsxRowsToMd(kept)}`);
   }
   var ocrWorkerPromise = null;
   function getOcrWorker() {
+    if (location.protocol === "file:") {
+      throw new Error("file:// \u76F4\u63A5\u6253\u5F00\u65F6 OCR \u4E0D\u53EF\u7528\uFF08\u672C\u5730 worker/WASM \u52A0\u8F7D\u53D7\u9650\uFF09\u2014\u2014\u8BF7\u6539\u7528\u672C\u5730 http \u670D\u52A1\uFF08\u5982 http://localhost \u6216 127.0.0.1\uFF09\u6253\u5F00\u540E\u4F7F\u7528\uFF1BTXT/HTML/DOCX/XLSX/PDF \u6587\u672C\u5C42\u7B49\u5176\u4F59\u683C\u5F0F\u4E0D\u53D7\u5F71\u54CD");
+    }
     if (!ocrWorkerPromise) {
       ocrWorkerPromise = (async () => {
         const T = window.Tesseract;
