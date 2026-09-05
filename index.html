@@ -710,6 +710,7 @@
   // src/xlsx.js
   var XLSX_SHEET_LIMIT = 5;
   var XLSX_ROW_LIMIT = 1e3;
+  var XLSX_STRINGS_GUARD_BYTES = 4 * 1024 * 1024;
   async function zipEntry(buf, wantedName) {
     const n = buf.byteLength;
     if (n < 22) return null;
@@ -731,11 +732,11 @@
             const ln = dv.getUint16(localOff + 26, true);
             const le = dv.getUint16(localOff + 28, true);
             const data = buf.subarray(localOff + 30 + ln + le, localOff + 30 + ln + le + compSize);
-            if (method === 0) return data;
+            if (method === 0) return { data, compSize };
             if (typeof DecompressionStream === "undefined") return null;
             const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
             const out = await new Response(stream).arrayBuffer().catch(() => null);
-            return out ? new Uint8Array(out) : null;
+            return out ? { data: new Uint8Array(out), compSize } : null;
           }
           off += 46 + nameLen + extraLen + commentLen;
         }
@@ -745,9 +746,9 @@
     return null;
   }
   async function xlsxSheetNames(buf) {
-    const xml = await zipEntry(buf, "xl/workbook.xml");
-    if (!xml) return null;
-    const text = new TextDecoder().decode(xml);
+    const entry = await zipEntry(buf, "xl/workbook.xml");
+    if (!entry) return null;
+    const text = new TextDecoder().decode(entry.data);
     const names = [];
     const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
     let m;
@@ -756,6 +757,129 @@
       names.push(raw.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10))));
     }
     return names.length > 0 ? names : null;
+  }
+  function decodeXml(s) {
+    return String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10)));
+  }
+  function scanSheetRows(xml, rowLimit) {
+    const rawRows = [];
+    let maxS = -1;
+    let pos = 0;
+    let more = false;
+    while (rawRows.length <= rowLimit) {
+      const rs = xml.indexOf("<row", pos);
+      if (rs < 0) break;
+      if (xml[rs + 4] !== " " && xml[rs + 4] !== ">" && xml[rs + 4] !== "/") {
+        pos = rs + 5;
+        continue;
+      }
+      const tagEnd = xml.indexOf(">", rs);
+      if (tagEnd < 0) break;
+      const openTag = xml.slice(rs, tagEnd + 1);
+      if (openTag.endsWith("/>")) {
+        rawRows.push([]);
+        pos = tagEnd + 1;
+        continue;
+      }
+      const re = xml.indexOf("</row>", tagEnd);
+      if (re < 0) break;
+      const body = xml.slice(tagEnd + 1, re);
+      const cells = [];
+      let p = 0;
+      while (true) {
+        const cs = body.indexOf("<c", p);
+        if (cs < 0) break;
+        if (body[cs + 2] !== " " && body[cs + 2] !== ">" && body[cs + 2] !== "/") {
+          p = cs + 3;
+          continue;
+        }
+        const ct = body.indexOf(">", cs);
+        if (ct < 0) break;
+        const attrs = body.slice(cs + 2, ct);
+        const selfClose = attrs.trimEnd().endsWith("/");
+        const tMatch = / t="([^"]*)"/.exec(attrs);
+        const sMatch = / s="([^"]*)"/.exec(attrs);
+        const t = tMatch ? tMatch[1] : "";
+        const s = sMatch ? sMatch[1] : "";
+        if (selfClose) {
+          cells.push({ t, s, v: "" });
+          p = ct + 1;
+          continue;
+        }
+        const ce = body.indexOf("</c>", ct);
+        if (ce < 0) break;
+        const inner = body.slice(ct + 1, ce);
+        const vm = /<v[^>]*>([^<]*)<\/v>/.exec(inner);
+        const v = vm ? vm[1] : "";
+        if (t === "s" && v !== "") {
+          const si = parseInt(v, 10);
+          if (!Number.isNaN(si) && si > maxS) maxS = si;
+        }
+        const isText = t === "inlineStr" ? extractInlineText(inner) : "";
+        cells.push({ t, s, v, isText });
+        p = ce + 4;
+      }
+      rawRows.push(cells);
+      pos = re + 6;
+    }
+    if (rawRows.length > rowLimit) more = true;
+    return { rawRows: rawRows.slice(0, rowLimit), maxS, more };
+  }
+  function extractInlineText(inner) {
+    const isOpen = inner.indexOf("<is");
+    if (isOpen < 0) return "";
+    if (inner[isOpen + 3] !== " " && inner[isOpen + 3] !== ">") return "";
+    const gt = inner.indexOf(">", isOpen);
+    const isEnd = inner.indexOf("</is>", gt);
+    if (gt < 0 || isEnd < 0) return "";
+    let s = "";
+    let p = gt + 1;
+    while (p < isEnd) {
+      const ts = inner.indexOf("<t", p);
+      if (ts < 0 || ts > isEnd) break;
+      if (inner[ts + 2] !== " " && inner[ts + 2] !== ">") {
+        p = ts + 3;
+        continue;
+      }
+      const tp = inner.indexOf(">", ts);
+      const te = inner.indexOf("</t>", tp);
+      if (tp < 0 || te < 0 || te > isEnd) break;
+      s += inner.slice(tp + 1, te);
+      p = te + 4;
+    }
+    return s;
+  }
+  function parseSharedStrings(xml, maxS) {
+    const out = [];
+    let pos = 0;
+    while (out.length <= maxS) {
+      const si = xml.indexOf("<si", pos);
+      if (si < 0) break;
+      if (xml[si + 3] !== " " && xml[si + 3] !== ">") {
+        pos = si + 4;
+        continue;
+      }
+      const se = xml.indexOf("</si>", si);
+      if (se < 0) break;
+      let s = "";
+      let p = si + 3;
+      while (true) {
+        const ts = xml.indexOf("<t", p);
+        if (ts < 0 || ts > se) break;
+        if (xml[ts + 2] !== " " && xml[ts + 2] !== ">") {
+          p = ts + 3;
+          continue;
+        }
+        const tp = xml.indexOf(">", ts);
+        const te = xml.indexOf("</t>", tp);
+        if (tp < 0 || te < 0 || te > se) break;
+        s += xml.slice(tp + 1, te);
+        p = te + 4;
+      }
+      out.push(decodeXml(s));
+      pos = se + 5;
+    }
+    return out;
   }
   function xlsxCellText(v) {
     if (v === null || v === void 0) return "";
@@ -778,14 +902,69 @@
     const body = norm.slice(1).map((r) => "| " + r.map(esc).join(" | ") + " |");
     return [header, sep, ...body].join("\n");
   }
-  async function xlsxConvert(file, buf) {
+  function xlsxParseSheet(xml, rowLimit, strings) {
+    const { rawRows, maxS, more } = scanSheetRows(xml, rowLimit);
+    const ss = maxS >= 0 ? parseSharedStrings(strings || "", maxS) : [];
+    const rows = rawRows.map((cells) => cells.map((c) => {
+      if (c.t === "s") {
+        const si = parseInt(c.v, 10);
+        if (Number.isNaN(si)) return "";
+        return ss[si] !== void 0 ? ss[si] : "";
+      }
+      if (c.t === "inlineStr") return decodeXml(c.isText);
+      if (c.t === "str") return decodeXml(c.v);
+      if (c.t === "b") {
+        if (c.v === "1") return "true";
+        if (c.v === "0") return "false";
+        return c.v;
+      }
+      return decodeXml(c.v);
+    }));
+    return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more };
+  }
+  function truncationMessage(readCount, totalRows, skipped) {
+    let msg = `\u5DF2\u622A\u65AD\uFF1A\u5DF2\u8BFB\u53D6\u524D ${readCount} \u4E2A sheet \u5171 ${totalRows} \u884C\uFF08\u6BCF sheet \u4FDD\u7559\u524D ${XLSX_ROW_LIMIT} \u884C`;
+    if (skipped > 0) msg += `\uFF1B\u53E6\u6709 ${skipped} \u4E2A sheet \u672A\u8BFB\u53D6`;
+    return msg + "\uFF09";
+  }
+  async function xlsxSelfParse(buf, readNames, names) {
+    const stringsEntry = await zipEntry(buf, "xl/sharedStrings.xml");
+    let stringsXml = null;
+    if (stringsEntry) {
+      if (stringsEntry.compSize > XLSX_STRINGS_GUARD_BYTES) {
+        throw new Error("sharedStrings \u8FC7\u5927\uFF08" + stringsEntry.compSize + "B\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+      }
+      stringsXml = new TextDecoder().decode(stringsEntry.data);
+    }
+    const parts = [];
+    const warnings = [];
+    let truncated = false;
+    let totalRows = 0;
+    for (let i = 0; i < readNames.length; i++) {
+      const name = readNames[i];
+      const entry = await zipEntry(buf, "xl/worksheets/sheet" + (i + 1) + ".xml");
+      if (!entry) throw new Error("\u7F3A\u5DE5\u4F5C\u8868 XML\uFF08sheet" + (i + 1) + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+      const xml = new TextDecoder().decode(entry.data);
+      const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml);
+      totalRows += scanned;
+      if (sheetTrunc) truncated = true;
+      parts.push(`### Sheet: ${name === null ? "Sheet1" : name}
+
+${xlsxRowsToMd(rows)}`);
+    }
+    const skipped = names.length - readNames.length;
+    if (skipped > 0) {
+      parts.push(`> \u53E6\u6709 ${skipped} \u4E2A sheet \u672A\u8BFB\u53D6\uFF08v1 \u4E0A\u9650 ${XLSX_SHEET_LIMIT} \u4E2A\uFF09`);
+      truncated = true;
+    }
+    if (truncated) warnings.push(truncationMessage(readNames.length, totalRows, skipped));
+    return { markdown: parts.join("\n\n").trim(), warnings, truncated, backend: "read-excel-file" };
+  }
+  async function xlsxByLib(file, buf, readNames, names) {
     const RX = window.readXlsxFile;
     if (!RX) throw new Error("read-excel-file \u5E93\u672A\u52A0\u8F7D");
     const readXlsx = typeof RX === "function" ? RX : RX.default || RX;
     const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    const sheetNames = await xlsxSheetNames(buf);
-    const names = sheetNames && sheetNames.length > 0 ? sheetNames : [null];
-    const readNames = names.slice(0, XLSX_SHEET_LIMIT);
     const parts = [];
     const warnings = [];
     let truncated = false;
@@ -804,8 +983,14 @@ ${xlsxRowsToMd(kept)}`);
       parts.push(`> \u53E6\u6709 ${skipped} \u4E2A sheet \u672A\u8BFB\u53D6\uFF08v1 \u4E0A\u9650 ${XLSX_SHEET_LIMIT} \u4E2A\uFF09`);
       truncated = true;
     }
-    if (truncated) warnings.push(`\u5DF2\u622A\u65AD\uFF1A\u5DF2\u8BFB\u53D6\u524D ${readNames.length} \u4E2A sheet \u5171 ${totalRows} \u884C\uFF08\u6BCF sheet \u4FDD\u7559\u524D ${XLSX_ROW_LIMIT} \u884C\uFF1B\u53E6\u6709 ${skipped} \u4E2A sheet \u672A\u8BFB\u53D6\uFF09`);
+    if (truncated) warnings.push(truncationMessage(readNames.length, totalRows, skipped));
     return { markdown: parts.join("\n\n").trim(), warnings, truncated, backend: "read-excel-file" };
+  }
+  async function xlsxConvert(file, buf) {
+    const sheetNames = await xlsxSheetNames(buf);
+    const names = sheetNames && sheetNames.length > 0 ? sheetNames : [null];
+    const readNames = names.slice(0, XLSX_SHEET_LIMIT);
+    return await xlsxSelfParse(buf, readNames, names).catch(() => xlsxByLib(file, buf, readNames, names));
   }
 
   // src/bline.js
