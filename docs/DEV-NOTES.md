@@ -327,3 +327,22 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 用户机终验：conv 重 build 提交产物 + k5 规格拍板后 `npm install && npm run build && npm test` → 预期 77/77；真 PDF 人工核对已在 src 级闭环（k7 + 6月2日实验.pdf 4 页）。
 - 实测核验：index.html 85,488 B / SHA256 `27FAF0F5D65B6D50F75CA8A649318F43BBFFD66290D6D89DD95225FBF7E9F865`（工作树产物——t15 时点；工作区 G M 状态=仅此产物未提交，验收方未提交（不一致），等 conv 重 build）。
 
+## 2026-09-05 · ZCode A 批独立验收 t22（core-dev，修验分离）
+
+### 验证了什么（基线 10b3506 = t20 契约/测试侧五件 + t21 四项实现 + b06c55b 产物同步）
+- **新断言全绿**：C7 六用例 success meta.elapsedMs>0（1/2/33/4/152/391——t21①成功路径回填）；L2a `$(\frac{a}{b})$` 结构化（m:d>m:e>m:f——t21②；L2b 条件分支 n/a=断言语义）。
+- **既有 81 断言零回归**（产物级）：D10/10、E4/4、F2/2、G3/3、I5/5、J1/1、K1-K4b/k5/k6/k7、L1；test:direct A0+B11/11+H6/6+k5（语义定版）——47 tests=22/25（25=浏览器基建红，零断言红）。
+- **pwa-audit 48/48**（t20 双策略/引号兼容生效——t10/t13 登记的 2 个过时检查关闭）。
+- **build 一致性**：round-trip=true（壳逐字节）+产物含 t21 特征（footer/孤悬删）；产物=最新 src（b06c55b——t19 缺口关闭）。
+- **真文档**：6月2日实验.docx 221ms（elapsedMs=221）、图抽 151,218B/alt=图片1/表格/4×H2（无公式——L2/J 样例覆盖）；**2.2 引号 sheet 自测**（构造 `报表&quot;1` xlsx → `### Sheet: 报表"1` 不截断——t21④生效）。
+- **四项 diff 抽查**：①elapsedMs 仅成功路径 ②m:d 括号（m:e 渲染+df 冒泡）③template 无脏 markup（孤悬 `</script>` 删+footer 失实文案同步）④xlsx 实体顺序（原始 XML 捕获+逐值解码+数字实体）——全部正确。
+
+### 发现（仅登记，无阻塞）
+1. [低] m:d begChr/endChr 元素内 m:val 未读（默认括号；自定义 [ ] { } v1 不生效）。
+2. [低] L2b 条件断言仅在退化路径触发（结构化路径 n/a——断言语义如实）。
+3. [已知限制] 本环境 build 不可验（esbuild EPERM）——CI 步骤/用户机兜底。
+
+### 环境事实
+- 用户机终验：`npm install && npm run build && npm test` → 预期 81/81（C/M 双端真机）。
+- 实测核验：index.html 85,877 B / SHA256 `68D89296A70C64F07418658ACD61B31FAB167061BE119155D0E69A7A007E31DD`（= HEAD 产物；工作树干净）。
+
