@@ -121,6 +121,30 @@
 |---|---|---|---|
 | J1 | LaTeX 围栏公式存在 | match `/\$[^$\n]*x\^?2[^$\n]*\$/` | 🟢 绿（t6 413dcbc：占位令牌法 + texText 上标归一化；独立验收实测 `公式样例：$x^2$`） |
 
+### 契约组 K — 富文本边界快照 + PDF 粘连（2026-09-05 新增：契约先红 t14；第三方复审报告 §1.1-1.5/1.7）
+
+依据：`docs/doc2md-第三方复审报告-2026-09-05.md`（Chatbox 静态复审 src/——与 Codex 报告互补）。
+断言语义/宽松处见 `tests/contract_v1.test.mjs` K 组注释；k1-k4 为 htmlToMarkdown 纯函数快照（浏览器 DOM 环境）、k5 纯逻辑、k6 为 convert 全链路（样例 sample-spacing.pdf）。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| K1 | 嵌套表格：外层恰 2 行数据体（内层 `<tr>` 不得混入）+ 内容 外A/外B/外C/内1/内2 保留 | body 行数 === 2 + includes | 🔴 红（实测 4 行数据体：`\| 内1内2 \| 外C \|` 错位 + 内层行混入——`table.querySelectorAll('tr')` 全局选择器，复审 §1.1） |
+| K2 | `<ol start="0">` → `0. 零` / `1. 一` | includes | 🔴 红（实测 `1. 零\n2. 一`——`parseInt('0')\|\|1` 把 0 改写成 1，复审 §1.4） |
+| K3 | `<pre>` 含三反引号 → 围栏 ≥4（动态） | fence ≥4 | 🔴 红（实测围栏 3——固定 ```` ``` ```` 被内容提前闭合，复审 §1.5） |
+| K4a | 链接 URL 含 `()` → 转义（无裸括号） | match `\]\(…p[^()]*\)` | 🔴 红（实测 `[链接](https://a.com/p(x))` 裸括号，复审 §1.3） |
+| K4b | 图片 src 含 `()` + alt 含 `]` → 完整语法 | match `!\[…\]\(…a[^()]*\.png\)` | 🔴 红（实测 `![图]片](https://a.com/a(b).png)` 语法破损，复审 §1.3） |
+| K5 | `.env`/`.gitignore`/`.env.local` → 下载 base 名非空 | notEqual '' | 🔴 红（`'.env'.replace(/\.[^.]+$/, '')` → `''`——扩展名整体被吃，复审 §1.7。注：ui.js 顶层 DOM 依赖不可 node import，先行为语义断言；修复方加 `\|\| 'doc2md'` 兜底后即绿，测试端后续改 import 真函数） |
+| K6 | PDF 字间距位移 → 输出含 `Hello world`（不粘连） | includes | 🔴 红（实测 `Helloworld`——两 Tj 字间距 > 字高/3 被直接拼接，复审 §1.2；样例 sample-spacing.pdf 触发成功） |
+
+### 契约组 L — OMML 缺 m:e 的 sSup → 公式内容不重复（2026-09-05 新增：契约先红 t14；第三方复审报告 §1.6）
+
+样例 `sample-omml-noe.docx`（`<m:sSup>` 只含 `<m:sup>n</m:sup>` 缺 `<m:e>`——结构异常/第三方工具生成防御场景）。
+断言语义（宽松）：`$…$` 围栏存在 + 围栏内 'n' 出现 ≤1 次（base 缺省不得退化为整个元素）。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| L1 | 公式不重复（缺 m:e 时 base 不退化到整个元素） | n 计数 ≤1 | 🔴 红（实测 `$n^{n}$`——'n' 出现 2 次；`ommlChild(el,'e') \|\| el` 使 base 退化为整个 sSup，复审 §1.6） |
+
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
@@ -143,6 +167,13 @@
 | `real-multisheet.xlsx` | XLSX（合成） | 契约组 G——6 sheets（> 上限 5）触发截断语义 | 3,608 B / SHA `0333C473…`；zip 合法，`xl/workbook.xml` 含 6×`<sheet>`，sheet1-6.xml 齐 | 字节锁（manifest）；名字沿用任务指定 real- 前缀，内容为合成确定性 |
 | `sample-images.docx` | DOCX（合成） | 契约组 I——小图（sample-image.png ≈8KB <100KB）+ 大图（512×512 噪声 PNG ≈786KB >100KB），均无 alt（descr=""） | 795,623 B / SHA `290192AF…`；zip 合法，`word/media/image1.png`+`image2.png`，document.xml 含 2×`w:drawing`（rId7/rId8） | 字节锁（manifest）；新名不动既有 sample.* |
 | `sample-math.docx` | DOCX（合成） | 契约组 J——OMML 公式 `x²`（`<m:oMath>` 包裹 `<m:r><m:t>`） | 1,026 B / SHA `942A748E…`；zip 合法，document.xml 含 1×`m:oMath` | 字节锁（manifest）；新名不动既有 sample.* |
+
+### 复审契约组样例（2026-09-05 t14 新增，合成·确定性·进 manifest 字节锁）
+
+| 文件 | 类别 | 用途（契约组） | 验证规模（生成器实测） | 登记规则 |
+|---|---|---|---|---|
+| `sample-omml-noe.docx` | DOCX（合成） | 契约组 L——OMML `<m:sSup>` 缺 `<m:e>`（只含 `<m:sup>n</m:sup>`）防御场景 | 1,033 B / SHA `2CF855A5…`；zip 合法，document.xml 含 1×`m:sSup`（无 m:e 子节点） | 字节锁（manifest）；新名不动既有 sample.* |
+| `sample-spacing.pdf` | PDF（合成） | 契约组 K k6——字间距位移（同一行两个 Tj，`1 0 0 1 96 780 Tm` 前移 46pt）模拟 Word/PPT 导出 | 677 B / SHA `7DA06D11…`；%PDF-1.4 合法，文本层含 `Hello`/`world` 两个 text item（无空格字符） | 字节锁（manifest）；纯拉丁文本层（T-2 口径）；新名不动既有 sample.* |
 
 > 生成器幂等已验：`npm run gen:samples` 连续两次运行，三个新样例 SHA 完全一致；
 > manifest 仅追加新条目，既有 6 条 `sample.*` 锁条目未变（diff 验证）。
@@ -206,7 +237,14 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-05 防屎山收官回归验收 t13（最新，core-dev 独立复验；修验分离——只验收不修改）**：基线 `70b8818`（t11 H2 白名单/配置假阳修复 + t12 src lint 真实错误清零）。**结论：H2 白名单版修复生效、lint 0 error 达成、t12 diff 语义等价（行为无变化）——全量回归 64/65 绿（另 1 项 = 浏览器组本环境不可跑，等价复验通过，用户机终验）**；发现 1 个交付缺口 + 2 个小项（均只报告未修改）。
+- **2026-09-05 复审契约先红 t14（最新，新增契约组 K/L）**：按第三方复审报告
+  `docs/doc2md-第三方复审报告-2026-09-05.md` §1 加断言（拍板授权范围）。基线 `e1f7e70`/`6c20862`，
+  宿主浏览器实测：**K 组 7 例 + L 组 1 例全部 🔴 红**（实证值见 §2 各表：K1 表格 4 行数据体错位、K2
+  `1. 零` 改写、K3 围栏 3、K4a 裸括号、K4b 语法破损、K5 base 空、K6 `Helloworld` 粘连；L1 `$n^{n}$` 重复）。
+  **PDF 粘连样例触发成功**（sample-spacing.pdf 大字间距位移——`Hello world` → `Helloworld`，无需真实 Word 导出 PDF）。
+  转绿条件：实现按复审报告 §1.1-1.7 修复（嵌套表格 `:scope` 化、start NaN 判定、动态围栏、URL/alt 转义、
+  base 兜底、PDF 字间距判断、OMML base 缺省处理）后本组无需修改自动转绿。
+- **2026-09-05 防屎山收官回归验收 t13（core-dev 独立复验；修验分离——只验收不修改）**：基线 `70b8818`（t11 H2 白名单/配置假阳修复 + t12 src lint 真实错误清零）。**结论：H2 白名单版修复生效、lint 0 error 达成、t12 diff 语义等价（行为无变化）——全量回归 64/65 绿（另 1 项 = 浏览器组本环境不可跑，等价复验通过，用户机终验）**；发现 1 个交付缺口 + 2 个小项（均只报告未修改）。
   **实测结果**（宿主浏览器实测真实 index.html + test:direct）：
   - ✅ test:direct 真跑：A0 ✓ + B 11/11 ✓ + **H 组 6/6 全绿（t11 H2 白名单版生效**——`fetchable 外域 URL ⊆ 白名单`，`schemas.openxmlformats.org` 域名级放行；**t10 的 H2 阻塞已关闭**）。
   - ✅ 宿主浏览器等价复验：D 10/10 + E 4/4 + F 3/3 + C 6/6（1/1/38/6/182/450ms）+ G 3/3 + I 5/5 + J 1/1 + M1 近似（真实 UI 链路 303ms 命中）。
