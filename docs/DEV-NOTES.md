@@ -309,3 +309,21 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 用户机终验（补产物 + k5 测试体同步后）：`npm install && npm run build && npm test` → 预期 70/70（行序问题不在断言面，靠人工核对；拍板修复则随版本验证）。
 - 实测核验：index.html 81,912 B / SHA256 `84F26F77796E6F6FF91FD6A8840C08F4940BFE041F1DB916DAE51A59E6C9A0D9`（= 6c20862 产物/t12 版——t15 产物缺失的磁盘证据；工作树干净）。
 
+## 2026-09-05 · 回归修复独立验收 t19（core-dev，修验分离）
+
+### 验证了什么（基线 6ff5fe3 = t17 k5 同步/k7 先红 + t18 BT 修复）
+- **t18 src 级 BT 修复有效**：sample.pdf 直载 → 标题 idx=1（前部 ✓，BT 重置 cx/cy 行为正确）。
+- **k1-k4b/k6/L 产物级全绿**（85,488 B 产物含 t15 修复——产品行为一致性证据）；round-trip = true（壳逐字节一致）。
+- **真 PDF 复验**：sample.pdf 标题在前 ✓；**6月2日实验.pdf（4 页）**：page 1/4→4/4 顺序、中文 1,231 字符无乱码、**零双空格**（doubledLines=0）、261ms、标题/章节序正确——人工检查通过。
+- **77 断言零产品回归**：产物版 D10/10 + C6/6（1/1/20/4/148/438ms）+ G3/3 + I5/5 + J1/1 + E1/F1 抽查；test:direct A0+B11/11+H6/6；47 tests=21/26（25=浏览器基建红 + k5 断言缺陷红；**k7 产物级红=发现①**）。
+- test:direct 时点注：t17 断言同步版 k5 仍红——根因见发现②（t17 自身断言矛盾，非产品）。
+
+### 发现（报告队长，未修改）
+1. [高·缺口] **产物未同步 t18**：工作树 index.html（85,488 B / SHA `27FAF0F5…`）= conv 用户终端 **t15 时点** build（无 BT 修复特征；k7 产物级 idx=3 红 vs src 级 idx=1 绿）——产物与 src 不一致（用户机 build 幂等必非零）；处置=conv 在 t18 后重 build 提交（t19 未提交不一致产物）。
+2. [中·测试断言缺陷] **k5（t17 同步版）自身矛盾**：specBase('.env.local')='.env' ≠ 'doc2md'（期望值错误——t17 断言从未绿过）；**.env.local 行为规格待拍板**（A：全兜底 doc2md；B：去最后扩展名即可 .env→.env.md——B 需改断言=拍板）。
+3. [已知限制] 本环境 build 不可验（esbuild EPERM）——用户机兜底。
+
+### 环境事实
+- 用户机终验：conv 重 build 提交产物 + k5 规格拍板后 `npm install && npm run build && npm test` → 预期 77/77；真 PDF 人工核对已在 src 级闭环（k7 + 6月2日实验.pdf 4 页）。
+- 实测核验：index.html 85,488 B / SHA256 `27FAF0F5D65B6D50F75CA8A649318F43BBFFD66290D6D89DD95225FBF7E9F865`（工作树产物——t15 时点；工作区 G M 状态=仅此产物未提交，验收方未提交（不一致），等 conv 重 build）。
+
