@@ -28,6 +28,10 @@ export async function ocrAssetsWarm() {
 /* ---------- OCR worker 单例（lazy-init；语言包同源懒加载 langs/（DD-14），首次 OCR 冷启动按 T-1 档位豁免） ---------- */
 let ocrWorkerPromise = null;
 export function getOcrWorker() {
+  // 第四轮 3（t23 H8）：file:// 直开时 blob worker/WASM 受限 → 可行动错误（其余格式不受影响）
+  if (location.protocol === 'file:') {
+    throw new Error('file:// 直接打开时 OCR 不可用（本地 worker/WASM 加载受限）——请改用本地 http 服务（如 http://localhost 或 127.0.0.1）打开后使用；TXT/HTML/DOCX/XLSX/PDF 文本层等其余格式不受影响');
+  }
   if (!ocrWorkerPromise) {
     ocrWorkerPromise = (async () => {
       const T = window.Tesseract;
