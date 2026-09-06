@@ -651,7 +651,7 @@
     maths.forEach((m, i) => {
       const tok = "\u27E6MATH" + (i + 1) + "\u27E7";
       let rep;
-      if (m.latex !== null) rep = m.block ? "$" + m.latex + "$" : "$" + m.latex + "$";
+      if (m.latex !== null) rep = m.block ? "$$" + m.latex + "$$" : "$" + m.latex + "$";
       else rep = m.rawText || "";
       if (out.indexOf(tok) >= 0) out = out.split(tok).join(rep);
     });
