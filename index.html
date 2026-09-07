@@ -486,19 +486,10 @@
   }
 
   // src/docx.js
-  var DOCX_IMG_EMBED_MAX = 100 * 1024;
   var _OOXML_SCHEMA = "http://schemas.openxmlformats.org/";
   var OMML_NS = _OOXML_SCHEMA + "officeDocument/2006/math";
   var W_NS = _OOXML_SCHEMA + "wordprocessingml/2006/main";
   var PIC_NS = _OOXML_SCHEMA + "drawingml/2006/picture";
-  function bytesToB64(bytes) {
-    let s = "";
-    const CH = 32768;
-    for (let i = 0; i < bytes.length; i += CH) {
-      s += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CH, bytes.length)));
-    }
-    return btoa(s);
-  }
   function extForContentType(ct) {
     const m = /^image\/([\w.+-]+)$/i.exec(String(ct || ""));
     const t = m ? m[1].toLowerCase() : "png";
@@ -688,9 +679,6 @@
         const ab = await image.readAsArrayBuffer().catch(() => null);
         bytes = ab ? new Uint8Array(ab) : null;
         if (!bytes || bytes.length === 0) return { src: "", alt: "" };
-        if (bytes.length <= DOCX_IMG_EMBED_MAX) {
-          return { src: "data:" + ct + ";base64," + bytesToB64(bytes), alt };
-        }
         imgSeq++;
         const name = "assets/" + docBase + "-" + imgSeq + "." + extForContentType(ct);
         assets.push({ name, blob: new Blob([bytes], { type: ct }), size: bytes.length, type: ct });
@@ -701,7 +689,7 @@
       const nonImg = result.messages.filter((m) => !String(m.type || "").includes("image") && !String(m.message || "").includes("image"));
       if (nonImg.length > 0) warnings.push("\u8F6C\u6362\u5668\u63D0\u793A " + nonImg.length + " \u6761\u6D88\u606F\uFF08\u6837\u5F0F\u8FD1\u4F3C\u6E32\u67D3\uFF09");
     }
-    if (assets.length > 0) warnings.push(assets.length + " \u5F20\u56FE\u7247\uFF08\u5927\u4E8E 100KB\uFF09\u5DF2\u62BD\u53D6\u4E3A\u9644\u4EF6\uFF0C\u4E0B\u8F7D\u65F6\u968F zip \u4E00\u5E76\u53D6\u51FA");
+    if (assets.length > 0) warnings.push(assets.length + " \u5F20\u56FE\u7247\u5DF2\u62BD\u53D6\u4E3A\u9644\u4EF6\uFF0C\u4E0B\u8F7D\u65F6\u968F zip \u4E00\u5E76\u53D6\u51FA");
     const md0 = htmlToMarkdown(result.value || "", { warnings });
     const md = docxInjectLatex(md0, parsed.maths);
     return { markdown: md, warnings, assets, backend: "mammoth" };
@@ -1106,6 +1094,80 @@ ${xlsxRowsToMd(kept)}`);
       }, 1500);
     }
   }
+  function bytesToB64(bytes) {
+    let s = "";
+    const CH = 32768;
+    for (let i = 0; i < bytes.length; i += CH) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CH, bytes.length)));
+    }
+    return btoa(s);
+  }
+  function escAssetName(n) {
+    return String(n).replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\s/g, "%20");
+  }
+  async function embedImagesIntoMd(md, assets) {
+    let out = String(md || "");
+    for (const a of assets || []) {
+      if (!a || !a.blob) continue;
+      let bytes = null;
+      try {
+        bytes = new Uint8Array(await a.blob.arrayBuffer());
+      } catch {
+      }
+      if (!bytes || bytes.length === 0) continue;
+      const dataUrl = "data:" + (a.type || "image/png") + ";base64," + bytesToB64(bytes);
+      out = out.split("](" + a.name + ")").join("](" + dataUrl + ")");
+      out = out.split("](" + escAssetName(a.name) + ")").join("](" + dataUrl + ")");
+    }
+    return out;
+  }
+  async function downloadMdEmbedded(text, fileName, assets, btn) {
+    try {
+      const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
+      const md = await embedImagesIntoMd(text, assets);
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = base + ".md";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 3e3);
+    } catch {
+      const old = btn.textContent;
+      btn.textContent = "\u274C \u5185\u5D4C\u5931\u8D25";
+      setTimeout(() => {
+        btn.textContent = old;
+      }, 1500);
+    }
+  }
+  function buildActions(ta, file, result) {
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+    const hasAssets = result.meta.assets && result.meta.assets.length > 0;
+    if (hasAssets) {
+      const btnZip = document.createElement("button");
+      btnZip.className = "btn primary";
+      btnZip.textContent = "\u{1F4E6} \u4E0B\u8F7D .md + \u56FE\u7247\uFF08zip\uFF09";
+      btnZip.addEventListener("click", () => downloadZip(ta.value, file.name, result.meta.assets, btnZip));
+      actions.appendChild(btnZip);
+    }
+    const btnCopy = document.createElement("button");
+    btnCopy.className = "btn";
+    btnCopy.textContent = "\u{1F4CB} \u590D\u5236 Markdown";
+    btnCopy.addEventListener("click", () => copyText(ta.value, btnCopy));
+    const btnDl = document.createElement("button");
+    btnDl.className = "btn" + (hasAssets ? "" : " primary");
+    btnDl.textContent = hasAssets ? "\u{1F5BC} \u4E0B\u8F7D .md\uFF08\u56FE\u7247\u5185\u5D4C\uFF09" : "\u2B07 \u4E0B\u8F7D .md";
+    btnDl.addEventListener("click", () => {
+      if (hasAssets) downloadMdEmbedded(ta.value, file.name, result.meta.assets, btnDl);
+      else downloadMd(ta.value, file.name);
+    });
+    actions.appendChild(btnCopy);
+    actions.appendChild(btnDl);
+    return actions;
+  }
   function renderResult(file, result) {
     const card = document.createElement("div");
     card.className = "card";
@@ -1144,27 +1206,7 @@ ${xlsxRowsToMd(kept)}`);
         w.textContent = "\u26A0 " + result.meta.warnings.join("\uFF1B");
         body.appendChild(w);
       }
-      const actions = document.createElement("div");
-      actions.className = "card-actions";
-      const hasAssets = result.meta.assets && result.meta.assets.length > 0;
-      if (hasAssets) {
-        const btnZip = document.createElement("button");
-        btnZip.className = "btn primary";
-        btnZip.textContent = "\u{1F4E6} \u4E0B\u8F7D .md + \u56FE\u7247\uFF08zip\uFF09";
-        btnZip.addEventListener("click", () => downloadZip(ta.value, file.name, result.meta.assets, btnZip));
-        actions.appendChild(btnZip);
-      }
-      const btnCopy = document.createElement("button");
-      btnCopy.className = "btn";
-      btnCopy.textContent = "\u{1F4CB} \u590D\u5236 Markdown";
-      btnCopy.addEventListener("click", () => copyText(ta.value, btnCopy));
-      const btnDl = document.createElement("button");
-      btnDl.className = "btn" + (hasAssets ? "" : " primary");
-      btnDl.textContent = "\u2B07 \u4E0B\u8F7D .md";
-      btnDl.addEventListener("click", () => downloadMd(ta.value, file.name));
-      actions.appendChild(btnCopy);
-      actions.appendChild(btnDl);
-      body.appendChild(actions);
+      body.appendChild(buildActions(ta, file, result));
     }
     card.appendChild(body);
     resultsEl.appendChild(card);
