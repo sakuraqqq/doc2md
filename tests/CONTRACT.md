@@ -128,18 +128,23 @@
 | H8 | ocr.js 含 `file:` 检测分支 + 可行动错误文案 | location.protocol + 文案 | 🔴 红（**t23 新增·先红**：实测 ocr.js 无 `location.protocol` 检测、无可行动文案（仅注释提及 file://）；修复方向=t24 `location.protocol === 'file:'` → setStatus/throw 可行动提示（如「OCR 需在 http 服务下使用」）） |
 | H9 | sw.js 浮动 `caches.open(...).then(...)` 均链式带 `.catch` | 链式 .catch | 🔴 红（**t23 新增·先红**：实测 2 处（navigate/资源路径）`caches.open(CACHE_NAME).then((c) => c.put(...))` 未接 `.catch`——v3 有 catch、v4 重写丢失（备注：断言用精确链式匹配，不误吞外层 fetch 的 .catch）；修复方向=t24 补链式 `.catch`） |
 
-### 契约组 I — docx 图片抽取（2026-09-05 新增：契约先红 t4；审查报告 §2.4）
+### 契约组 I — docx 图片全抽取 + 导出二选一（2026-09-05 新增：契约先红 t4；审查报告 §2.4；**2026-09-07 口径更新：方案 A 用户拍板**，调研背书 `docs/图片导出方案-调研-20260907.md`）
 
-样例 `sample-images.docx`（小图 sample-image.png ≈8KB <100KB + 大图 512×512 噪声 PNG ≈786KB >100KB；均无 alt）。
-**阈值口径 = 100KB（`DOCX_IMG_EMBED_MAX`；t6 定版 100KB），本组只锁两个样例的归属行为。**
+样例 `sample-images.docx`（image1.png **7,982 B <100KB** + image2.png **786,738 B >100KB**；两图大小分居旧阈值两侧 = 「全抽取无残余内嵌」的锚；均无 descr（空 alt → 文件名口径）；文档序 = small 图先、large 图后；确定性生成 + manifest 字节锁 795,623 B / SHA `290192AF…`）。
+**口径更新（改断言 = 改口径例外——用户 2026-09-07 拍板方案 A，本组随方案落地，t1 登记）**：
+- **阈值 0 = 全抽取**：所有图片（不分大小）一律抽取为 assets/ 附件 + md 相对路径引用；废止旧 ≤100KB 内嵌分支——旧 I2「小图内嵌 ≥1」、I4「data:image 恰 1」与方案 A 冲突 → **废止**（替换为 I1 计数 0）。
+- **导出二选一**：默认 .md+图片 zip（md 与全部 assets 成对）/ 可选单文件 md（图片内嵌 base64 自包含）；预览与导出分离。
+- 命名规则沿用现有 docxSafeBase：`assets/<docBase>-<N>.<ext>`，N = 文档序（1 起），ext 按内容类型映射。
 
-| 编号 | 断言 | 标准 | 当前 |
+| 编号 | 断言 | 标准 | 当前（基线 8c17b1d 宿主浏览器实测，t1） |
 |---|---|---|---|
-| I1 | 大图 → `![alt](assets/…)` 相对引用 ≥1 处 | match ≥1 | 🟢 绿（t6 413dcbc 图片抽取；独立验收实测 `![large](assets/sample-images-1.png)`） |
-| I2 | 小图 → `data:image/` 内嵌 ≥1 处 | match ≥1 | 🟢 绿（独立验收实测 1 处 data URI） |
-| I3 | `meta.assets` 为数组且 ≥1 项（抽取清单） | Array.isArray | 🟢 绿（独立验收实测 meta.assets=[{name:'assets/sample-images-1.png',size:786738,blob}]） |
-| I4 | `data:image/` 恰 1 处（样例恰 2 图：小图内嵌、大图抽取） | 计数 === 1 | 🟢 绿（独立验收实测 1） |
-| I5 | 全部 alt 不含「图片包含」「AI 生成」（×Word AI 描述；口径 = 文件名/题注/空 alt） | !includes | 🟢 绿（t6 alt = docPr name 去扩展名；独立验收实测 alt=['small','large']） |
+| I1 | 全抽取：markdown 不含 `data:image` 字面量（阈值 0——<100KB 小图也不得内嵌） | 计数 === 0 | 🔴 红（**t1 更新·先红**：实测 1 处 data URI（small 图 7,982 B，`![small](data:image/png;base64,…)`）——旧 ≤100KB 内嵌分支；方案 A 全抽取后应 0） |
+| I2 | 引用格式与顺序：恰 2 个 `![alt](assets/sample-images-<N>.png)`，N = 文档序（small→1、large→2；docBase = docxSafeBase、ext = 内容类型映射） | deepEqual | 🔴 红（**t1 更新·先红**：实测 refs = [`![small](data:… 10,666 字符)`, `![large](assets/sample-images-1.png)`]——小图内嵌 + 大图序号 1；期望 small→1/large→2 全量 assets 引用。旧 I2「小图内嵌 ≥1」已废止） |
+| I3 | `meta.assets` 全量清单：恰 2 项（name/size 按文档序——2 图全部抽取） | deepEqual | 🔴 红（**t1 更新·先红**：实测 1 项 `assets/sample-images-1.png` / 786,738 B——只抽取 >100KB 的；期望 2 项 [7,982, 786,738]） |
+| I4 | 导出契约·两入口：下载区（.card-actions）恰 2 个下载事件，产物 .zip（默认=primary 主入口）与单文件 .md 各一 | 功能识别（download 事件） | 🟢 绿（**t1 登记·结构门**：现 UI 已有 zip（primary）+ 下载 .md 两个下载入口（DOM 实证：`[📦 下载 .md + 图片（zip）/ primary`、`📋 复制 Markdown`、`⬇ 下载 .md`]）——「单文件内嵌」语义由 I6 判定（旧“下载 .md”未内嵌 → I6 红）；实现方更换主入口呈现样式须先拍板（默认=primary 标称）） |
+| I5 | zip 默认内容：含 `sample-images.md` + `assets/sample-images-1.png` + `assets/sample-images-2.png` 成对；zip 内 md 无 data:image | readZip entries | 🔴 红（**t1 新增·先红**：zip = ta.value（含 1 处 data URI）+ meta.assets（1 项）→ 必缺 assets/sample-images-2.png 且 zip 内 md 含 data:image——旧实现小图未入 zip（被内嵌）；E2E 下载件断言在 Playwright 环境（CI/用户机）真实运行） |
+| I6 | 单文件内嵌行为：md 内 `](assets/` 全部替换为 `](data:`（data:image ≥2、无 assets 相对引用、令牌保留——自包含） | !includes + 计数 ≥2 | 🔴 红（**t1 新增·先红**：实测「⬇ 下载 .md」产物 = 原始 md（ta.value 直传）：含 `](assets/sample-images-1.png)` 且 data URI 仅 1 处——无内嵌替换；单文件导出（自包含）待方案 A 实现） |
+| I7 | 全部 alt 不含「图片包含」「AI 生成」（×Word AI 描述；口径 = 文件名/题注/空 alt） | !includes | 🟢 绿（**t1 保留登记**：实测 alt=['small','large']（docPr 名去扩展名）——原 I5 序号顺延） |
 
 ### 契约组 J — docx OMML 公式 → LaTeX 标记（2026-09-05 新增：契约先红 t4；backlog #LaTeX）
 
@@ -211,7 +216,7 @@
 | 文件 | 类别 | 用途（契约组） | 验证规模（生成器实测） | 登记规则 |
 |---|---|---|---|---|
 | `real-multisheet.xlsx` | XLSX（合成） | 契约组 G——6 sheets（> 上限 5）触发截断语义 | 3,608 B / SHA `0333C473…`；zip 合法，`xl/workbook.xml` 含 6×`<sheet>`，sheet1-6.xml 齐 | 字节锁（manifest）；名字沿用任务指定 real- 前缀，内容为合成确定性 |
-| `sample-images.docx` | DOCX（合成） | 契约组 I——小图（sample-image.png ≈8KB <100KB）+ 大图（512×512 噪声 PNG ≈786KB >100KB），均无 alt（descr=""） | 795,623 B / SHA `290192AF…`；zip 合法，`word/media/image1.png`+`image2.png`，document.xml 含 2×`w:drawing`（rId7/rId8） | 字节锁（manifest）；新名不动既有 sample.* |
+| `sample-images.docx` | DOCX（合成） | 契约组 I——**全抽取锚**：小图（image1.png 7,982 B <100KB）+ 大图（image2.png 786,738 B >100KB），两图大小分居旧阈值两侧（<100KB 必然内嵌的锚——方案 A 阈值 0 全抽取后两图均须入 assets/）;两图均无 descr（空 alt → 文件名口径） | 795,623 B / SHA `290192AF…`；zip 合法，`word/media/image1.png`+`image2.png`，document.xml 含 2×`w:drawing`（rId7/rId8） | 字节锁（manifest）；内容未随口径变更改动（2026-09-07 方案 A 仅更新断言口径，样例保持）；新名不动既有 sample.* |
 | `sample-math.docx` | DOCX（合成） | 契约组 J——OMML 公式 `x²`（`<m:oMath>` 包裹 `<m:r><m:t>`） | 1,026 B / SHA `942A748E…`；zip 合法，document.xml 含 1×`m:oMath` | 字节锁（manifest）；新名不动既有 sample.* |
 
 ### 复审契约组样例（2026-09-05 t14 新增，合成·确定性·进 manifest 字节锁）
@@ -294,6 +299,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-07 docx 图片导出契约先红 t1（方案 A · 契约组 I 更新；qa-dev；只改 tests/）**：基线 `8c17b1d`（v0.1.1 发布后，工作树含商业化线/新方案文档等未匹配文件——**只 add tests/ 指定路径**）。用户 2026-09-07 已拍板方案 A（调研背书 `docs/图片导出方案-调研-20260907.md`）：① 阈值 0 = 全抽取 assets/ + md 相对路径（废止 ≤100KB 内嵌分支）；② 导出二选一 = 默认 .md+图片 zip / 可选单文件 md（图片内嵌 base64）；③ 预览与导出分离。**样例**：sample-images.docx 保持不变（image1.png 7,982 B <100KB + image2.png 786,738 B >100KB；确定性生成；manifest 字节锁实测 795,623 B / SHA `290192AFC6DDC10E303251F2BB43C90FCC0A1F8414B5E9626352B8BBEE94EEA9` 磁盘一致——内容未随口径变更改动，零生成器改动）。**断言更新（改断言=改口径例外）**：I1 全抽取（data:image=0）/I2 引用格式+文档序（`![alt](assets/sample-images-<N>.png)` N=1/2）/I3 meta.assets 恰 2 项全量/I4 导出两入口（zip 默认 primary + 单文件 .md；download 事件恰 2）/I5 zip 内容（md+2 assets 成对、md 无 data:image）/I6 单文件内嵌（`](assets/`→`](data:`、data:image ≥2）/I7 alt 口径（原 I5 保留顺延）。**实测（宿主浏览器真实页面 8c17b1d 产物；沙箱无浏览器进程可 spawn 故 Playwright 断言以基建红登记，实证值取自宿主浏览器 convert 挂钩 + 真实 UI 流）**：I1（data:image=1）/I2（refs=[small→data URI 10,666 字符, large→assets/sample-images-1.png]）/I3（assets=1 项）/I5（zip=ta.value+1 asset 推导）/I6（`⬇ 下载 .md` 产物=原始 md：含 `](assets/sample-images-1.png)`、data URI 1 处）= 🔴 红；I4（DOM 实证两入口 zip(primary)+md）/I7（alt=['small','large']）= 🟢 绿（如实登记）。**转绿条件**：v0.1.2 实现按方案 A（阈值 0 全抽取 + 导出二选一：zip 默认（md+全部 assets）/单文件 md 内嵌 base64 + 预览导出分离）后本组无需修改自动转绿；I4「zip 默认=primary 主入口」为标称口径（实现方换呈现样式须先拍板）。用户机终验：`npm install && node node_modules/@playwright/test/cli.js install chromium && npm test` → I 组 7/7（I4-I6 为真实下载件 E2E——本环境无法 spawn 浏览器，用户机闭环）。不做：src 修复（v0.1.2 实现侧）。
 - **2026-09-05 inlineStr 简验 t37（最新，core-dev 简验；修验分离——只验收不修改）**：基线 `7f2b5b7`（t35 L6 先红 + t36 inlineStr 修复 + conv rebuild 产物在**工作树**（94,254 B / SHA `77EA993C83C82692FBDAE477A612D91E2FE592F5C15E0DC81E7B0E0D1D3F600F`——含 extractInlineText/isText/scanSheetRows 特征=最新 src，M 未提交——conv 待提交，登记）。**结论：L6 绿（inlineStr 修复确认）、xlsx 全回归（G1-G3/sample/real-date/real-schema）零回归、97 断言零断言红（57 tests=29/28——28=浏览器基建红）、build 一致性（工作树产物=最新 src）、WizTree 限制记录在案（README「已知限制（用户拍板接受）：>4MB 走库回退（18s 级案例）」——t34 发现②拍板接收 ✓ 关闭）——无阻塞发现**（1 个交付登记）。
   **实测**（工作树产物——宿主浏览器 + test:direct；**首次页面输出 inlineStr 空 = 页面缓存旧版（navigate 未 cache-bust），`?v=1` 刷新后正确**——教训：浏览器验证导航后缓存新旧版本辨识）：
   - ✅ **L6**：sample-inlinestr.xlsx → `| 共享文本 | INLINE-STR-OK-2026 | / | --- | --- | / | 内联中文 | 42 |`——三 token（INLINE-STR-OK-2026/内联中文/共享文本）全命中——t36 extractInlineText（`<is><t>` 多 run 拼接）修复生效。
