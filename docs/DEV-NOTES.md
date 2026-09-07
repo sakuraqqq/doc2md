@@ -453,4 +453,31 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 用户机终验：conv 提交产物后 `npm install && npm run build && npm test` → 预期 98/98。
 - 实测核验：index.html 94,254 B / SHA256 `77EA993C83C82692FBDAE477A612D91E2FE592F5C15E0DC81E7B0E0D1D3F600F`（工作树产物=最新 src）；sample-inlinestr.xlsx 1,973 B（manifest 锁）。
 
+## 2026-09-07 · docx 图片方案 A 全抽取+导出二选一 独立验收 t3（qa-dev，修验分离）
+
+### 验证了什么（基线 984e0c2 = t2 src ce57be3 + captain 协调构建产物同步（仅 index.html +76/-34）；I 组契约 = t1 更新（方案 A 用户拍板 2026-09-07））
+- **I1–I7 全绿**（宿主浏览器真实 index.html 产品级逐条：I1 无 data:image / I2 引用序 / I3 assets 全量 / I4 两入口 zip 默认 / I5 zip 内容 / I6 单文件内嵌 / I7 alt 口径）——细项见 CONTRACT.md §7 t3 条。
+- **括号名转义回归**（report (final).docx 构造）：escUrl 转义引用 + escAssetName 双形态替换——`](assets/` 零残留、归一化一致。
+- **零回归**：浏览器转换级 10 样例（G1-G3/L4b/L5/L6/k7/C6/J1 全带）+ 静态 B/H 同语义复刻 45/45 + D 4/4 + E 4/4；pwa-audit 48/48；零 console error；零外域资源。
+- **产物级**：阈值分支无残留（index.html 无 `102400`/`100KB`/「大于 100KB」/`DOCX_IMG_EMBED_MAX`；`;base64,` 全文件仅 1 处 = 单文件导出路径）。
+
+### 实测要点（层级注明）
+- 全流程 = 浏览器 convert 挂钩 + 真实 UI flow（DataTransfer 注入 file input → 结果卡片 → 按钮点击）→ createObjectURL/anchor 捕获**产物字节**（zip 用页内 fflate unzipSync 解包核验；单文件 md 全文核验）——比 Playwright download 事件更硬的产品证据。
+- 图内容完整性：asset1（7,982 B）SHA256 = tests/data/sample.png 的 manifest 锁值 `FAA64C29…`——抽取/zip/内嵌往返零损坏；asset2 = 786,738 B / `A59703BD…`。
+- 产物=HEAD：index.html 96,642 B / SHA `EFFF0E02…`；sw.js 4,068 B / SHA `66F1B1AE…`（t27 后未变——t2 未触碰 SW）。
+
+### 发现（仅登记，无阻塞）
+1. **[环境·告知] 本会话 `node --test` / test:direct 均被沙箱拒绝**（"Access is denied" under workspace-write；危险升权重试**被用户拒绝**，即止未绕行）——未产出 assertions 聚合数字；以浏览器逐条复现 + 同语义静态复刻替代（B/H 45/45）；**用户机终验**：`npm install && node node_modules/@playwright/test/cli.js install chromium && npm test` → 预期 108/108（106 − 旧 I 组 5 + 新 I 组 7，以实测回填为准）。
+2. **[低] sample.pdf 标题行 idx=2**（page 注释+空行后）——仍在 k7「前 3 行内」（≤2）语义内，非缺陷。
+3. **[面] tests/data 含图 docx 仅 sample-images.docx**（7 个 docx 全查 word/media：其余 6 个零 media）——真实含图 docx（6月2日实验.docx，图抽 151,218 B/alt=图片 1）已由既有验收登记覆盖，用户机可复验。
+4. **[交付] build 本会话不可跑**（esbuild service spawn 受限——t10/t19 同款）；产物特征 grep 全命中 = src 一致；CI `npm run build && git diff --exit-code index.html` 兜底用户机。
+
+### 防再犯
+- **沙箱可运行性先探底**：验收动手前先读 CONTRACT.md §5「已知环境限制」并按本会话实际试跑一次测试形态——早失败早转「浏览器逐条复现」路线（本批为标准探底流程：node --test 一次 ×2 + 升权一次被拒，无绕行）。
+- **宿主浏览器大产物核验**：单文件内嵌后 md ≈1MB——证据只取「归一化相等」与计数，不搬运全文（本批 spill 文件曾 1MB+，教训）。
+- **旧分支残留产物级哨兵**：grep `DOCX_IMG_EMBED_MAX|102400|100KB|;base64,`——`;base64,` 应恰 1 处（导出路径）且无阈值字面量；后续「图片策略」类回归可复用。
+- **captain 构建同步流程**：t2 src 提交（ce57be3）后 3 分钟内 captain 提交产物同步（984e0c2，仅 index.html +76/-34）——后续批次沿用「src 提交 → 构建 → 产物提交」两段式，验收方以 HEAD 为准。
+- **t3 补充（captain 构建信息核对 + 复验）**：用户终端 `npm run build` 产物 = 95,880 chars（bundle 58,484 chars）、commit 984e0c2；本验收方核对工作树 index.html 96,642 B / 95,880 chars / SHA `EFFF0E02…` = HEAD 字节一致；宿主浏览器复跑 I1–I7 全流程逐项与首轮相同（I4 按钮结构/I5 zip 成对/I6 内嵌 2 处零残留）。**用户机终验待闭环**：`npm test`（Playwright 真实下载事件 E2E，预期 I 组 7/7）结果待 captain 转交后回填——不阻塞其余验收结论；此前以 DOM+createObjectURL/anchor 产物字节捕获作为产品级证据（比事件监听更硬）。
+- **t3 终验闭环（用户机 108/108，captain 转交 2026-09-07）**：用户终端 `npm test` = **108 tests / 108 pass / 0 fail（31.4s）**——I 组 7/7（含 I4–I6 真实下载事件 E2E）+ 既有断言全量零回归；数字与 t3 预期（106−5+7=108）精确吻合。验收结论锁定：**通过（无阻塞发现）**，证据链全线闭合（产品级逐条 + 静态同语义复刻 + 用户机全量）。
+
 
