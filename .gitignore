@@ -24,6 +24,9 @@ pastes/
 # --- AgentTeams 团队运行时状态（含 inbox 会话数据，不入库）---
 .agent-teams/
 
+# --- 私人/策略文档（永不入库：毕设策略/导师沟通/商业化攻略）---
+.私档/
+
 # --- 系统 / 编辑器 ---
 Thumbs.db
 .DS_Store
