@@ -28,7 +28,7 @@
 
 ## v0.1.0 · 2026-09-04
 
-- **来源**：commit `69629e8`（发布基线：全功能线 A/B/C/D/E 完成）/ tag `v0.1.0`；发布后线上反馈修复链并入同一版本演进（见备注）
+- **来源**：commit `1636027`（发布基线：全功能线 A/B/C/D/E 完成；2026-09-08 历史清洗后 hash；原 69629e8）/ tag `v0.1.0`；发布后线上反馈修复链并入同一版本演进（见备注）
 - **测试结果**：
   - 契约：`npm test` → **31/31 pass**（用户机 Windows/Node 24 + 系统 Edge 回退实测；C/M 组真实浏览器断言全绿）
   - PWA：`node tests/pwa-audit.mjs` → 48/48（2026-09-04 复跑绿）
@@ -50,19 +50,20 @@
 
 ## v0.1.1 · 2026-09-07
 
-- **来源**：commit `8c17b1d` / tag `v0.1.1`
+- **来源**：commit `3265b0c` / tag `v0.1.1`
 - **测试结果**（用户机 Windows/Node 24.18.1 实测）：
   - 契约：`npm test` → **106/106 pass**（22.4s）
   - PWA：`node tests/pwa-audit.mjs` → 48/48
   - OCR：`npm run verify:ocr` → HELLO/DOC2MD/2026 全命中，置信度 93%（离线实证）
   - 构建：`npm run build` → index.html 94,386 chars（bundle 56,990 chars）；CI build-consistency 由 push 触发复核
-- **产物 SHA256**（回读实测，与磁盘一致；发布基线 commit `8c17b1d`）：
+- **产物 SHA256**（回读实测，与磁盘一致；发布基线 commit `3265b0c`）：
   | 文件 | 大小 | SHA256（完整） |
   |---|---|---|
   | index.html | 95,148 B | 9B4721FE0660CB609B7DC5CB398BC1F67E93A5218F325CE23144F6DCD46C0C73 |
   | manifest.json | 730 B | D5B46A975B60640318252A39D4C83D2766A62E9A3E907E182945C7C89B858E98 |
   | sw.js | 4,068 B | 66F1B1AE70D3CB9340ED83236B4A9F4F2C5DC07AE3F2ED5109B8E3C47BBC3DDF |
-- **发布动作**：`git push origin main`（3a1e918..8c17b1d）/ `git push origin v0.1.1`（先 commit 后 tag、禁 --tags、dry-run 双验通过）；GitHub Release：<https://github.com/sakuraqqq/doc2md/releases/tag/v0.1.1>（notes = docs/release-notes-v0.1.1.md）；Pages deploy 由 push main 自动触发
+- **发布动作**：`git push origin main`（原范围 3a1e918..8c17b1d；2026-09-08 历史清洗后 hash 失效）/ `git push origin v0.1.1`（先 commit 后 tag、禁 --tags、dry-run 双验通过）；GitHub Release：<https://github.com/sakuraqqq/doc2md/releases/tag/v0.1.1>（notes = docs/release-notes-v0.1.1.md）；Pages deploy 由 push main 自动触发
+- **历史清洗记录（2026-09-08）**：隐私脱敏——commit 作者邮箱（5 个提交的注册 QQ 邮箱）→ GitHub noreply；工作区本地路径（AGENTS/DEV-NOTES/HANDOFF）→ `<工作区>`；全库 commit hash 重写（原 69629e8/8c17b1d 等引用失效，产物 SHA256 记录不受影响）；tag v0.1.0/v0.1.1 已重打指向新链。
 - **观察期**：开始 2026-09-07 → 复盘 ≥2026-09-10（≥3 天）；反馈汇总：<待填>
 - **备注**：
   - v0.1.1 = v0.1.0 后全部质量线：P0 三件（Codex：行内空格注入/结构化丢失/sniff 兜底）+ P1 二批（corePath 同源化/SW 分段缓存/PDF 逐页 OCR/GBK/GB18030 回退/xlsx truncated/docx 图片抽取与 OMML→LaTeX）+ ZCode A/B 批（elapsedMs/m:d/审计/oMathPara 多公式/zip 越界/sw catch/cmaps 运行时缓存）+ 超项（CID 质量门槛 t27/CJK 空格抑制 t30/xlsx 流式 t33/inlineStr t36/DD-17 构建陷阱）——逐项证据见 commit 历史与 docs/design-decisions.md；
