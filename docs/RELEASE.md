@@ -41,22 +41,35 @@
   | manifest.json | 730 B | D5B46A975B60640318252A39D4C83D2766A62E9A3E907E182945C7C89B858E98 |
   | sw.js | 2,967 B | 94EDCA3CD0C602501F0D82C5F16EC414A2544D8A19E29F3DBBB4A270FFCAC14A |
 - **发布动作**：`git push origin main` / `git push origin v0.1.0`（用户终端；先 commit 后 tag、禁 `--tags`）；GitHub Pages deploy run1-5 全部成功；`sakuraqqq.github.io/doc2md` 在线
-- **观察期**：开始 2026-09-04 → 复盘 ≥2026-09-07；反馈汇总：①拖放被浏览器接管下载（77fdc25 document 级拦截）②SW cache-first 卡线上更新（3a8f193 v2 网络优先）③16.4MB 首载分钟级（fd0c721/b0ab602 语言包懒加载→10.2MB）④仍慢（ed0f057 全面拆分→首屏 32KB/270KB gzip）；全部修复并真机复测通过
+- **观察期**：开始 2026-09-04 → 复盘 ≥2026-09-07；反馈汇总：①拖放被浏览器接管下载（77fdc25 document 级拦截）②SW cache-first 卡线上更新（3a8f193 v2 网络优先）③16.4MB 首载分钟级（fd0c721/b0ab602 语言包懒加载→10.2MB）④仍慢（ed0f057 全面拆分→首屏 32KB/270KB gzip）；全部修复并真机复测通过。**复盘（2026-09-07）**：观察期满 3 天，4 项反馈全修复、无新反馈 → 观察期关闭
 - **备注**：
   - 红线 2 更新：单文件 → **单目录离线**（index + vendor/ + langs/；file:// 双击可用；SW v3 离线全功能）——DD-15
   - GIF demo.gif **已拍板不做**（2026-09-04：拖放/上传为浏览器直觉操作；README 已改说明）；Topics/awesome 投稿/博客按 `docs/OUTREACH.md` §4 执行
   - 图片以 base64 data-URI 内嵌（mammoth 默认，自包含策略；GitHub 渲染 data URI 不显示——README 已注明）
   - file:// 双击下 OCR/PDF worker 受限（HTTP/SW 环境正常）——README 已注明
 
-## v0.1.1 · <待发布后填写>
+## v0.1.1 · 2026-09-07
 
-- **来源**：commit `<待填>` / tag `v0.1.1`
-- **测试结果**：<发布时回读填写（RELEASE-CHECKLIST §4 记录区）>
-- **产物 SHA256**：<发布时回读填写>
-- **发布动作**：<用户终端按 docs/RELEASE-CHECKLIST.md §2 执行后回填>
-- **观察期**：<待填>
-  - 备注（2026-09-05 追加）：**v0.1.1-P0 已修复上线**——Codex 审查 P0 三件（行内空格注入/结构化丢失/sniff 兜底）由 doc2md-v011 团队闭环：契约 D/E 14 断言先红（348c676）→ 修复（c24f8ab）→ 独立验收（a61f9c3，仅动 index.html）→ 用户机 **47/47 全绿**；P1 二批 backlog 见下节 v0.1.1 区。
-- **备注**：v0.1.1 backlog（用户拍板 + 手机找茬清单 `docs/doc2md-手机端找茬验证清单.md` + **Codex 代码审查 `docs/doc2md-代码审查报告-2026-09-05.md`（队长已逐条核实属实）**）：
+- **来源**：commit `8c17b1d` / tag `v0.1.1`
+- **测试结果**（用户机 Windows/Node 24.18.1 实测）：
+  - 契约：`npm test` → **106/106 pass**（22.4s）
+  - PWA：`node tests/pwa-audit.mjs` → 48/48
+  - OCR：`npm run verify:ocr` → HELLO/DOC2MD/2026 全命中，置信度 93%（离线实证）
+  - 构建：`npm run build` → index.html 94,386 chars（bundle 56,990 chars）；CI build-consistency 由 push 触发复核
+- **产物 SHA256**（回读实测，与磁盘一致；发布基线 commit `8c17b1d`）：
+  | 文件 | 大小 | SHA256（完整） |
+  |---|---|---|
+  | index.html | 95,148 B | 9B4721FE0660CB609B7DC5CB398BC1F67E93A5218F325CE23144F6DCD46C0C73 |
+  | manifest.json | 730 B | D5B46A975B60640318252A39D4C83D2766A62E9A3E907E182945C7C89B858E98 |
+  | sw.js | 4,068 B | 66F1B1AE70D3CB9340ED83236B4A9F4F2C5DC07AE3F2ED5109B8E3C47BBC3DDF |
+- **发布动作**：`git push origin main`（3a1e918..8c17b1d）/ `git push origin v0.1.1`（先 commit 后 tag、禁 --tags、dry-run 双验通过）；GitHub Release：<https://github.com/sakuraqqq/doc2md/releases/tag/v0.1.1>（notes = docs/release-notes-v0.1.1.md）；Pages deploy 由 push main 自动触发
+- **观察期**：开始 2026-09-07 → 复盘 ≥2026-09-10（≥3 天）；反馈汇总：<待填>
+- **备注**：
+  - v0.1.1 = v0.1.0 后全部质量线：P0 三件（Codex：行内空格注入/结构化丢失/sniff 兜底）+ P1 二批（corePath 同源化/SW 分段缓存/PDF 逐页 OCR/GBK/GB18030 回退/xlsx truncated/docx 图片抽取与 OMML→LaTeX）+ ZCode A/B 批（elapsedMs/m:d/审计/oMathPara 多公式/zip 越界/sw catch/cmaps 运行时缓存）+ 超项（CID 质量门槛 t27/CJK 空格抑制 t30/xlsx 流式 t33/inlineStr t36/DD-17 构建陷阱）——逐项证据见 commit 历史与 docs/design-decisions.md；
+  - R3 拍板回退（2026-09-07）：`test` 脚本保持 `node --test`（`node --test tests/` 在 Node 24.18.1 实测 `Cannot find module ...\tests`；CONTRACT.md §5 差异保留为 T-4 已知不一致，勿再改 package.json 侧）；
+  - v0.1.2 移入项：预览 1MB 截断（B批 1.5）/ PDF 图纸页保图（真实 27 页指导书 25-27 页实测触发）/ P2 三批（vendor 版本化文件名/测试快照补全/UI 键盘可达等）。
+  - 历史备注（2026-09-05）：**v0.1.1-P0 已修复上线**——Codex 审查 P0 三件由 doc2md-v011 团队闭环：契约 D/E 14 断言先红（348c676）→ 修复（c24f8ab）→ 独立验收（a61f9c3）→ 用户机 47/47 全绿；P1 二批在本版收尾。
+- **v0.1.1 历史 backlog 备注**（2026-09-05 发布前起草，保留备查；内容全部在本版闭环，P2/PDF 增强移入 v0.1.2）：v0.1.1 backlog（用户拍板 + 手机找茬清单 `docs/doc2md-手机端找茬验证清单.md` + **Codex 代码审查 `docs/doc2md-代码审查报告-2026-09-05.md`（队长已逐条核实属实）**）：
   - **P0 首批（内容正确性）**：①htmlToMarkdown 行内空格注入（`out.join(' ')` 全局加空格 → "重 点"/"world ."）；②列表/表格/引用/锚点 textContent 丢结构化（嵌套列表展平、单元格内格式丢失、锚包图片空链）；③sniff PDF 兜底缺失（架构 §3 声称搜 %PDF≤1024 未实现）+ 未知二进制回 text（exe 转成乱码"成功"）——修完同步补精确快照测试；
   - **P1 二批**：④corePath 伪域名同源化（红线相关）；⑤SW 预缓存 ≈18MB 分段缓存；⑥PDF 逐页 OCR+进度；⑦GBK/GB18030 文本回退；⑧xlsx meta.truncated 字段落地（含 totalRows 只计已读 sheet 的语义修正）；⑨docx 图片抽取（用户排期项：base64 占 98%/alt 修正/LaTeX 公式——并入此批）；
   - **P2 三批**：UI 键盘可达/忙碌锁定/清空按钮、徽标文案「单文件→单目录」、架构 §8.2 cache-first 文档同步、vendor 版本化文件名、测试快照补全。
