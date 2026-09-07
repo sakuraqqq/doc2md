@@ -1027,19 +1027,32 @@ test('契约组 H：corePath 同源 / 零外域 fetchable URL / SW v4 分段缓�
 });
 
 // ---------------------------------------------------------------------------
-// 契约组 I：docx 图片抽取（P1 · RELEASE.md 二批；审查报告 §2.4 建议方案「阈值抽取 + alt 口径」）
-// 样例：tests/data/sample-images.docx（合成：小图 sample-image.png ≈8KB <100KB + 大图 512×512 噪声 PNG
-//       ≈786KB >100KB；均无 alt（descr=""）；gen-samples 确定性生成；T-3 新名）。
-// 断言（断言语义；阈值口径 = 100KB 由实现定版，本组只锁两个样例的归属行为）：
-//   I1 大图 → `![alt](assets/…)` 相对引用（匹配 /!\[[^\]]*\]\(assets\/[^)]+\)/ ≥1 处；当前 0 → 红）。
-//   I2 小图 → data URI 内嵌（data:image/ ≥1 处；当前 2 处 → 已绿，如实登记）。
-//   I3 meta.assets 为数组且 ≥1 项（抽取清单；当前 meta 无 assets 字段 → 红）。
-//   I4 data:image/ 恰 1 处（样例恰好 2 图：小图内嵌、大图抽取；当前 2 → 红）。
-//   I5 所有图片 alt 不得含「图片包含」「AI 生成」（≠ Word AI 描述 alt；口径 = 文件名/题注/空 alt；
-//       当前 alt 为空串 → 已绿，如实登记）。
+// 契约组 I：docx 图片全抽取 + 导出二选一（方案 A · 用户拍板 2026-09-07）
+// 口径（用户 2026-09-07 已拍板；调研背书 docs/图片导出方案-调研-20260907.md——
+//   Pandoc --extract-media / mammoth 社区抽取回调 / MarkItDown 反对 base64 三大共识）：
+//   ① 阈值 0 = 全抽取：docx 内所有图片一律抽取为 assets/ 附件，markdown 用相对路径引用
+//     （废止旧 ≤100KB 内嵌分支；旧 I2「小图内嵌 ≥1」/I4「data:image 恰 1」与方案 A 冲突 → 口径变更废止）；
+//   ② 导出二选一：默认 .md+图片 zip（md+assets 成对）/ 可选单文件 md（图片内嵌 base64，自包含）；
+//   ③ 预览与导出分离。
+// 样例：tests/data/sample-images.docx（合成；image1.png 7,982 B <100KB + image2.png 786,738 B >100KB；
+//   两图大小分居旧阈值两侧 = 「全抽取无残余内嵌」的锚；均无 descr（空 alt → 文件名口径）；
+//   文档序 = small 图先、large 图后；gen-samples 确定性生成 + manifest 字节锁 795,623 B / SHA 290192AF…）。
+// 断言（断言语义；编号继承旧 I 组，语义随拍板更新——口径变更例外，见 CONTRACT.md §2）：
+//   I1 全抽取：markdown 不含 `data:image` 字面量（计数 0——<100KB 小图也不得内嵌；旧实现必红）。
+//   I2 引用格式与顺序：恰 2 个 `![alt](assets/<docBase>-<N>.<ext>)`，N = 文档序（small→1、large→2）；
+//      命名规则与现有 docxSafeBase 一致（docBase='sample-images'；ext 按内容类型映射）。
+//   I3 meta.assets 全量清单：恰 2 项，name/size 与文档序一一对应（2 图全部抽取）。
+//   I4 导出契约·两入口：下载区（.card-actions）存在两个下载入口——zip 默认（主/primary 标称）
+//      + 单文件 .md（内嵌）；功能识别 = 触发 download 事件恰 2 个且产物分别 .zip / .md。
+//   I5 zip 默认内容：zip 档案含 `sample-images.md` + assets/sample-images-1.png +
+//      assets/sample-images-2.png（md 与全部图片成对；zip 内 md 无 data:image——与 I1 一致）。
+//   I6 单文件内嵌行为：单文件 .md 内 `](assets/` 引用全部替换为 `](data:`（data:image ≥2、
+//      无 assets/ 相对引用、关键令牌保留——自包含单文件）。
+//   I7 alt 口径（原 I5 保留）：alt 不得含「图片包含」「AI 生成」（≠ Word AI 描述；
+//      口径 = 文件名/题注/空 alt；样例 alt = docPr 名 small/large）。
 // ---------------------------------------------------------------------------
 const IMG_AI_ALT_BANNED = ['图片包含', 'AI 生成'];
-test('契约组 I：docx 图片抽取（sample-images.docx：小图内嵌 + 大图 assets 引用 + meta.assets）—— 契约先红', async (t) => {
+test('契约组 I：docx 图片全抽取 + 导出二选一（sample-images.docx；方案 A 拍板 2026-09-07）—— 契约先红（I1/I2/I3/I5/I6 旧实现红；I4/I7 如实登记）', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
   assert.ok(fs.existsSync(nodePath.join(DATA, 'sample-images.docx')), 'sample-images.docx 缺失——请运行 npm run gen:samples');
   let chromium;
@@ -1073,26 +1086,116 @@ test('契约组 I：docx 图片抽取（sample-images.docx：小图内嵌 + 大�
       const md = res.markdown || '';
       const dataUriCount = (md.match(/data:image\//g) || []).length;
       const alts = [...md.matchAll(/!\[([^\]]*)\]\(/g)].map((m) => m[1]);
-      await t.test('I1 大图 → ![...](assets/…) 相对引用（≥1）', () => {
-        const refs = md.match(/!\[[^\]]*\]\(assets\/[^)]+\)/g) || [];
-        assert.ok(refs.length >= 1, `未发现 assets/ 图片引用（当前实现把全部图片内嵌为 data URI——审查报告 §2.4）：${JSON.stringify(refs)}`);
+      await t.test('I1 全抽取：markdown 不含 data:image 字面量（阈值 0——<100KB 小图也不得内嵌；旧 ≤100KB 内嵌分支必红）', () => {
+        assert.equal(
+          dataUriCount,
+          0,
+          `data:image/ 出现 ${dataUriCount} 处（方案 A 拍板阈值 0 全抽取：任何图片不得残余内嵌——旧实现小图 7,982 B ≤100KB 走内嵌分支）`
+        );
       });
-      await t.test('I2 小图 → data URI 内嵌（≥1）', () => {
-        assert.ok(dataUriCount >= 1, '输出无 data:image/ 内嵌——小图（<100KB）应在阈值内内嵌');
+      await t.test('I2 引用格式与顺序：恰 2 个 ![alt](assets/<docBase>-<N>.<ext>)，N=文档序（small→1、large→2）', () => {
+        const refs = [...md.matchAll(/!\[([^\]]*)\]\(([^)]+)\)/g)].map((m) => ({ alt: m[1], src: m[2] }));
+        assert.deepEqual(
+          refs,
+          [
+            { alt: 'small', src: 'assets/sample-images-1.png' },
+            { alt: 'large', src: 'assets/sample-images-2.png' },
+          ],
+          `图片引用序列不符（期望 2 个 assets/ 相对引用、N=文档序 1→2、alt=docPr 名）：${JSON.stringify(refs)}（docBase 命名与现有 docxSafeBase 一致；ext 按内容类型映射；旧实现小图内嵌 + 大图序号 1）`
+        );
       });
-      await t.test('I3 meta.assets 为数组且 ≥1 项（抽取清单）', () => {
-        assert.ok(Array.isArray(res.meta.assets) && res.meta.assets.length >= 1, `meta.assets=${JSON.stringify(res.meta.assets)}——图片抽取清单未随 meta 返回`);
+      await t.test('I3 meta.assets 全量清单（恰 2 项：name/size 按文档序——2 图全部抽取）', () => {
+        const assetsInfo = ((res.meta && res.meta.assets) || []).map((a) => ({ name: a.name, size: a.size }));
+        assert.deepEqual(
+          assetsInfo,
+          [
+            { name: 'assets/sample-images-1.png', size: 7982 },
+            { name: 'assets/sample-images-2.png', size: 786738 },
+          ],
+          `meta.assets=${JSON.stringify(assetsInfo)}（期望 2 图全量：image1=7,982 B/image2=786,738 B——旧实现只抽取 >100KB 的 1 张）`
+        );
       });
-      await t.test('I4 data:image/ 恰 1 处（小图内嵌、大图抽取）', () => {
-        assert.equal(dataUriCount, 1, `data:image/ 出现 ${dataUriCount} 次（样例恰 2 图：大图 >100KB 应抽取为 assets 引用、仅小图内嵌）`);
-      });
-      await t.test('I5 alt 不得为 Word AI 描述（不含「图片包含」「AI 生成」）', () => {
+      await t.test('I7 alt 不得为 Word AI 描述（不含「图片包含」「AI 生成」；口径 = 文件名/题注/空 alt）', () => {
         for (const a of alts) {
           for (const banned of IMG_AI_ALT_BANNED) {
             assert.ok(!a.includes(banned), `alt 含 AI 描述片段「${banned}」：${JSON.stringify(a)}（alt 口径 = 文件名/题注/空 alt）`);
           }
         }
       });
+
+      // I4-I6：导出契约（页面级 E2E——M 组风格：真实 file input → 下载区两入口 → 下载产物核验）。
+      // 新 context（acceptDownloads 显式）：下载产物落 Playwright 临时目录后读回（不污染用户磁盘/工作树）。
+      // 注：本组断言在 Playwright 环境（CI/用户机）真实运行；沙箱无浏览器时按 §5 基建红如实登记。
+      const dlCtx = await browser.newContext({ acceptDownloads: true });
+      const dlPage = await dlCtx.newPage();
+      try {
+        await dlPage.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const input = dlPage.locator('input[type=file]');
+        await input.waitFor({ state: 'attached', timeout: 10000 });
+        await input.setInputFiles(nodePath.join(DATA, 'sample-images.docx'));
+        await dlPage.waitForFunction(
+          (tok) => {
+            for (const el of document.querySelectorAll('textarea, input, pre, code')) {
+              if ((el.value || el.textContent || '').includes(tok)) return true;
+            }
+            return false;
+          },
+          'DOC2MD-IMG-2026',
+          { timeout: 20000 }
+        );
+        // 逐个点击下载区按钮，仅下载型入口产生 download 事件（复制类按钮无事件 → 跳过但记录）
+        const buttons = dlPage.locator('.card-actions button');
+        const n = await buttons.count();
+        const downloads = [];
+        for (let i = 0; i < n; i++) {
+          const label = ((await buttons.nth(i).textContent()) || '').trim();
+          const isPrimary = await buttons.nth(i).evaluate((el) => el.classList.contains('primary'));
+          const dlPromise = dlPage.waitForEvent('download', { timeout: 5000 }).catch(() => null);
+          await buttons.nth(i).click();
+          const dl = await dlPromise;
+          if (dl) downloads.push({ label, isPrimary, dl });
+        }
+        await t.test('I4 导出契约·两入口（zip 默认 / 单文件 .md）：下载事件恰 2 个且产物 .zip/.md 各一，zip 为默认（primary 主入口）', () => {
+          assert.ok(n >= 2, `下载区按钮数=${n}（期望 ≥2 下载入口）`);
+          assert.equal(
+            downloads.length,
+            2,
+            `下载事件=${downloads.length}（期望 2：zip 默认 + 单文件 md 内嵌）——入口清单=${JSON.stringify(downloads.map((d) => d.label))}`
+          );
+          const zipD = downloads.find((d) => d.dl.suggestedFilename().endsWith('.zip'));
+          const mdD = downloads.find((d) => d.dl.suggestedFilename().endsWith('.md'));
+          assert.ok(zipD, '缺 zip 下载入口（默认导出 = .md+图片 zip）');
+          assert.ok(mdD, '缺单文件 md 下载入口（可选单文件 = 图片内嵌 base64）');
+          assert.ok(zipD.isPrimary, `zip 入口非默认主入口（primary）：${JSON.stringify(downloads.map((d) => ({ l: d.label, p: d.isPrimary })))}——「默认」口径 = 主入口标称（实现方换呈现须先拍板）`);
+        });
+        const zipD = downloads.find((d) => d.dl.suggestedFilename().endsWith('.zip'));
+        const mdD = downloads.find((d) => d.dl.suggestedFilename().endsWith('.md'));
+        await t.test('I5 zip 默认内容：md + 全部 assets 成对（sample-images.md + assets/sample-images-1.png + assets/sample-images-2.png；zip 内 md 无 data:image）', async () => {
+          if (!zipD) { assert.fail('缺 zip 下载入口——先修 I4（两入口契约）'); return; }
+          const zipBuf = fs.readFileSync(await zipD.dl.path());
+          const entries = readZip(zipBuf);
+          const names = entries.map((e) => e.name);
+          for (const need of ['sample-images.md', 'assets/sample-images-1.png', 'assets/sample-images-2.png']) {
+            assert.ok(names.includes(need), `zip 缺 ${need}（现有条目：${JSON.stringify(names)}）`);
+          }
+          const zipMd = entries.find((e) => e.name === 'sample-images.md').data.toString('utf8');
+          assert.ok(!zipMd.includes('data:image'), 'zip 内 md 含 data:image（全抽取口径：md 只应含 assets/ 相对引用）');
+          assert.ok(zipMd.includes('DOC2MD-IMG-2026'), 'zip 内 md 缺关键令牌 DOC2MD-IMG-2026');
+        });
+        await t.test('I6 单文件内嵌行为：md 内 ](assets/ 全部替换为 ](data:（data:image ≥2、无 assets 相对引用、令牌保留）', async () => {
+          if (!mdD) { assert.fail('缺单文件 md 下载入口——先修 I4（两入口契约）'); return; }
+          const mdText = fs.readFileSync(await mdD.dl.path(), 'utf8');
+          const inlineCount = (mdText.match(/data:image\//g) || []).length;
+          assert.ok(
+            !mdText.includes('](assets/'),
+            `单文件 md 仍含 assets/ 相对引用（未替换为 data: 内嵌）：${JSON.stringify(mdText.slice(0, 200))}`
+          );
+          assert.ok(inlineCount >= 2, `data:image/ 处数=${inlineCount}（期望 ≥2：2 图全内嵌为自包含单文件）`);
+          assert.ok(mdText.includes('DOC2MD-IMG-2026'), '单文件 md 缺关键令牌 DOC2MD-IMG-2026');
+        });
+      } finally {
+        await dlCtx.close();
+      }
     } finally {
       await browser.close();
     }
