@@ -78,6 +78,82 @@ export async function downloadZip(text, fileName, assets, btn) {
     setTimeout(() => { btn.textContent = old; }, 1500);
   }
 }
+// 方案 A（2026-09-07 拍板）：单文件 .md 导出——assets 图片转 data URL 内嵌（自包含单文件）；
+// 引用替换：](assets/<name>) → ](data:<mime>;base64,…)（本地生成，零外发；预览区不内嵌——预览与导出分离）
+function bytesToB64(bytes) {
+  let s = '';
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    s += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CH, bytes.length)));
+  }
+  return btoa(s);
+}
+// 与 html2md 的 escUrl 同口径（K4a/K4b 契约）：src 中的 () 与空白在 md 里被 %28/%29/%20 转义——
+// docxSafeBase 已把空白换 '-',但 () 保留（如「report (final).docx」→ assets/report-(final)-1.png），
+// 替换时同时覆盖原始与转义两种形态，保证 `](assets/` 引用全部被内嵌
+function escAssetName(n) {
+  return String(n).replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/\s/g, '%20');
+}
+async function embedImagesIntoMd(md, assets) {
+  let out = String(md || '');
+  for (const a of assets || []) {
+    if (!a || !a.blob) continue;
+    let bytes = null;
+    try { bytes = new Uint8Array(await a.blob.arrayBuffer()); } catch { /* 单图读取失败跳过（其他图照常内嵌） */ }
+    if (!bytes || bytes.length === 0) continue;
+    const dataUrl = 'data:' + (a.type || 'image/png') + ';base64,' + bytesToB64(bytes);
+    out = out.split('](' + a.name + ')').join('](' + dataUrl + ')');
+    out = out.split('](' + escAssetName(a.name) + ')').join('](' + dataUrl + ')');
+  }
+  return out;
+}
+export async function downloadMdEmbedded(text, fileName, assets, btn) {
+  try {
+    const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md'); // 复审 §1.7：空兜底
+    const md = await embedImagesIntoMd(text, assets);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = base + '.md';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  } catch {
+    const old = btn.textContent;
+    btn.textContent = '❌ 内嵌失败';
+    setTimeout(() => { btn.textContent = old; }, 1500);
+  }
+}
+function buildActions(ta, file, result) {
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+  const hasAssets = result.meta.assets && result.meta.assets.length > 0;
+  // 方案 A（2026-09-07 拍板）：导出二选一——有附件时「.md+图片 zip」为默认主入口（md 在 zip 根、assets/ 子目录），
+  // 「下载 .md」= 单文件内嵌（图片 base64 自包含，次按钮）；无附件时保持普通 .md 直下
+  if (hasAssets) {
+    const btnZip = document.createElement('button');
+    btnZip.className = 'btn primary';
+    btnZip.textContent = '📦 下载 .md + 图片（zip）';
+    btnZip.addEventListener('click', () => downloadZip(ta.value, file.name, result.meta.assets, btnZip));
+    actions.appendChild(btnZip);
+  }
+  const btnCopy = document.createElement('button');
+  btnCopy.className = 'btn';
+  btnCopy.textContent = '📋 复制 Markdown';
+  btnCopy.addEventListener('click', () => copyText(ta.value, btnCopy));
+  const btnDl = document.createElement('button');
+  btnDl.className = 'btn' + (hasAssets ? '' : ' primary');
+  btnDl.textContent = hasAssets ? '🖼 下载 .md（图片内嵌）' : '⬇ 下载 .md';
+  btnDl.addEventListener('click', () => {
+    if (hasAssets) downloadMdEmbedded(ta.value, file.name, result.meta.assets, btnDl);
+    else downloadMd(ta.value, file.name);
+  });
+  actions.appendChild(btnCopy);
+  actions.appendChild(btnDl);
+  return actions;
+}
 export function renderResult(file, result) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -117,27 +193,7 @@ export function renderResult(file, result) {
       w.textContent = '⚠ ' + result.meta.warnings.join('；');
       body.appendChild(w);
     }
-    const actions = document.createElement('div');
-    actions.className = 'card-actions';
-    const hasAssets = result.meta.assets && result.meta.assets.length > 0;
-    if (hasAssets) {
-      const btnZip = document.createElement('button');
-      btnZip.className = 'btn primary';
-      btnZip.textContent = '📦 下载 .md + 图片（zip）';
-      btnZip.addEventListener('click', () => downloadZip(ta.value, file.name, result.meta.assets, btnZip));
-      actions.appendChild(btnZip);
-    }
-    const btnCopy = document.createElement('button');
-    btnCopy.className = 'btn';
-    btnCopy.textContent = '📋 复制 Markdown';
-    btnCopy.addEventListener('click', () => copyText(ta.value, btnCopy));
-    const btnDl = document.createElement('button');
-    btnDl.className = 'btn' + (hasAssets ? '' : ' primary');
-    btnDl.textContent = '⬇ 下载 .md';
-    btnDl.addEventListener('click', () => downloadMd(ta.value, file.name));
-    actions.appendChild(btnCopy);
-    actions.appendChild(btnDl);
-    body.appendChild(actions);
+    body.appendChild(buildActions(ta, file, result));
   }
   card.appendChild(body);
   resultsEl.appendChild(card);

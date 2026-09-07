@@ -1,28 +1,20 @@
 /* docx.js —— docx 转换器域（t8 重构：由 index.html 迁移，行为不变）
  * 决策史（任务书 t6 定版，保留）：
  *  - 拍板（2026-09-04 用户）：docx 保留 GFM 表格 —— mammoth→HTML（含 table 元素）→ 复用 htmlToMarkdown。
- *  - P1（t6）：图片阈值抽取（≤100KB 内嵌 / >100KB → meta.assets）+ alt 口径（Word 图片名去扩展名，禁 AI 描述）
+ *  - P1（t6；t2 修订：2026-09-07 方案 A 用户拍板——阈值 0 全抽取、废止 ≤100KB 内嵌分支，见 tests/CONTRACT.md 契约组 I）：
+ *    图片全量抽取（→ meta.assets）+ alt 口径（Word 图片名去扩展名，禁 AI 描述）
  *    + OMML 公式 → LaTeX（占位令牌法保证顺序；fflate 内联解包+重打包，全本地零外发）。
  *  - 复杂结构（m:nary 积分/求和、m:m 矩阵、m:limLow/limUpp/func/eqArr/groupChr/box 等）v1 退化 =
  *    提取全部文本按纯文本保留 + warning（README 注明支持范围）。
  */
 import { htmlToMarkdown } from './html2md.js';
 
-const DOCX_IMG_EMBED_MAX = 100 * 1024; // 100KB 阈值（契约组 I 口径：<= 内嵌，> 抽取）
 // XML 命名空间标识符（仅用于 DOM 匹配/序列化，非网络请求——拆串拼接以保持契约 H2「零外域 URL 字面量」成立）
 const _OOXML_SCHEMA = 'http' + '://schemas.openxmlformats.org/';
 const OMML_NS = _OOXML_SCHEMA + 'officeDocument/2006/math';
 const W_NS = _OOXML_SCHEMA + 'wordprocessingml/2006/main';
 const PIC_NS = _OOXML_SCHEMA + 'drawingml/2006/picture';
 
-function bytesToB64(bytes) {
-  let s = '';
-  const CH = 0x8000;
-  for (let i = 0; i < bytes.length; i += CH) {
-    s += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CH, bytes.length)));
-  }
-  return btoa(s);
-}
 function extForContentType(ct) {
   const m = /^image\/([\w.+-]+)$/i.exec(String(ct || ''));
   const t = m ? m[1].toLowerCase() : 'png';
@@ -206,9 +198,8 @@ export async function docxConvert(file, buf) {
       const ab = await image.readAsArrayBuffer().catch(() => null);
       bytes = ab ? new Uint8Array(ab) : null;
       if (!bytes || bytes.length === 0) return { src: '', alt: '' };
-      if (bytes.length <= DOCX_IMG_EMBED_MAX) {
-        return { src: 'data:' + ct + ';base64,' + bytesToB64(bytes), alt };
-      }
+      // 方案 A（2026-09-07 拍板）：阈值 0 = 全抽取——所有图片一律入 assets/ 附件 + md 相对路径引用
+      // （废止旧 ≤100KB 内嵌 data URI 分支；单文件内嵌由导出侧 ui.js 按需生成，见契约组 I）
       imgSeq++;
       const name = 'assets/' + docBase + '-' + imgSeq + '.' + extForContentType(ct);
       assets.push({ name, blob: new Blob([bytes], { type: ct }), size: bytes.length, type: ct });
@@ -216,11 +207,11 @@ export async function docxConvert(file, buf) {
     }),
   });
   if (result.messages && result.messages.length > 0) {
-    // 图片相关消息：成功路径已由「内嵌/抽取」处理，不再提示「已忽略」；仅透出非图片提示
+    // 图片相关消息：成功路径已由「全量抽取」处理，不再提示「已忽略」；仅透出非图片提示
     const nonImg = result.messages.filter((m) => !String(m.type || '').includes('image') && !String(m.message || '').includes('image'));
     if (nonImg.length > 0) warnings.push('转换器提示 ' + nonImg.length + ' 条消息（样式近似渲染）');
   }
-  if (assets.length > 0) warnings.push(assets.length + ' 张图片（大于 100KB）已抽取为附件，下载时随 zip 一并取出');
+  if (assets.length > 0) warnings.push(assets.length + ' 张图片已抽取为附件，下载时随 zip 一并取出');
   // DOMParser 还原 HTML 实体；共享 htmlToMarkdown（TXT/HTML 路径同款，回归由契约组 text-html 用例保障）
   // ctx.warnings：透出表格合并单元格等结构性提示（P0 修复 §1.2）
   const md0 = htmlToMarkdown(result.value || '', { warnings });
