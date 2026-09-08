@@ -307,6 +307,16 @@ async function xlsxSelfParse(buf, readMap, names) {
   return { markdown: parts.join('\n\n').trim(), warnings, truncated, backend: 'xlsx-self' }; // t11 §1.7：自解析路径报实际引擎（G4-2 契约；库路径仍 'read-excel-file'）
 }
 
+/* readSheetSafely：库读取单 sheet（t11 缺陷修复——损坏 zip 在库内部抛裸实现异常（DataView/typed
+ * array length/RangeError 类）→ 转友好错误，不透实现内幕；G4-1 用户机红根因） */
+async function readSheetSafely(readXlsx, ab, name) {
+  try {
+    return await readXlsx(ab, name ? { sheet: name } : undefined);
+  } catch {
+    throw new Error('文件已损坏或不是有效的 Excel 文档（zip/解析失败），请用 Excel/WPS 另存后重试');
+  }
+}
+
 /* read-excel-file 库解析路径（回退；backend 不变） */
 async function xlsxByLib(file, buf, readNames, names) {
   const RX = window.readXlsxFile;
@@ -318,7 +328,7 @@ async function xlsxByLib(file, buf, readNames, names) {
   let truncated = false;
   let totalRows = 0;
   for (const name of readNames) {
-    const rows = await readXlsx(ab, name ? { sheet: name } : undefined);
+    const rows = await readSheetSafely(readXlsx, ab, name);
     totalRows += rows.length;
     const kept = rows.slice(0, XLSX_ROW_LIMIT);
     if (kept.length < rows.length) truncated = true;
