@@ -136,6 +136,17 @@
 | G4-1 | convert(损坏 xlsx) 不得透出裸实现异常（应回退库解析或友好错误） | !match 裸异常类别 | 🔴 红（**t10 新增·先红**：实测 error='转换失败：Invalid typed array length: -2147483309'——本环境 V8 文案与报告实录的 'Offset is outside the bounds of the DataView' 不同（引擎差异），同类裸异常透传；xlsxSheetNames 先于自解析调用未捕获） |
 | G4-2 | convert(sample.xlsx) `meta.backend === 'xlsx-self'`（自解析路径如实报引擎） | equal | 🔴 红（**t10 新增·先红**：实测 backend='read-excel-file'——自解析恒报引擎值失真；既有 C 组断言无 backend 引用（登记：无需改既有断言；docs/architecture.md §2 枚举行同步属实现侧/文档侧批次） |
 
+### 契约组 G5 — xlsx 日期格式化（第六轮审查报告 §2.3，P1；2026-09-08 契约先红 t13）
+
+样例 `sample-numfmt-date.xlsx`（2,260 B / SHA `05565B56…`——styles.xml cellXfs → `<xf numFmtId="14" applyNumberFormat="1"/>`（内置日期 id 14）+ 序列号 45123 / 45292.75；gen-samples 确定性 + manifest 字节锁）。
+断言语义（口径 = README「日期/数字格式化」宣称 + 报告「至少 YYYY-MM-DD」）：G5-1 序列号日期输出 `2023-07-16`（45123，报告/Excel 口径确认）与 `2024-01-01`（45292.75 → 2024-01-01T18:00 的日期部分——**任务书「2023-12-02」估值为误**，以 1899-12-30 基准 + 序列号精确计算为准）；G5-2 real-date.xlsx（t="d" ISO）输出含 `2021-06-10` 且不得带时间（当前 `2021-06-10T00:47:45.700Z` 原样 → 红）。实现路径不绑定（numFmt 解析 / 检测日期样式回退库路径 / warning 冒泡——只锁输出形态）。
+
+| 编号 | 断言 | 标准 | 当前（基线 3f93c7d 宿主浏览器实测，t13） |
+|---|---|---|---|
+| G5-0 | `sample-numfmt-date.xlsx` 存在且与 manifest 字节级一致（2,260 B / SHA `05565B56…`） | 静态（字节锁） | 🟢 绿（t13 生成登记；gen:samples 幂等） |
+| G5-1 | numFmt=14 序列号 → YYYY-MM-DD（45123 → `2023-07-16`；45292.75 → `2024-01-01`） | includes ×2 | 🔴 红（**t13 新增·先红**：实测输出 `45123` / `45292.75` 原样、warnings=[]——自解析不读 styles.xml numFmt（静默不满足宣称）；修复方向=numFmt 内置日期 id 14-22 等解析或日期样式回退库路径） |
+| G5-2 | t="d" ISO 日期：含 `2021-06-10` 且不得带时间（不得原样 `T00:47:45.700Z`） | includes + !includes | 🔴 红（**t13 新增·先红**：实测输出 `2021-06-10T00:47:45.700Z` 原样带时间——「日期」口径 = 只到天（与 README 表述不符） |
+
 ### 契约组 H — corePath 同源 / 零外域字面量 / SW v4 分段缓存（2026-09-05 新增：契约先红 t4；审查报告 §2.1/§2.2，红线相关）
 
 离线静态断言（读 index.html/sw.js 源码，无浏览器依赖）。H3-H6 为 t7 独立验收新增（任务授权：SW v4 分段缓存 PRECACHE 清单断言）。
@@ -290,6 +301,7 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | `sample-lowtext.pdf` | PDF（合成） | 契约组 P2——私用区 U+E050×8 文本层（Type1 `/Encoding /Differences[ 80 /uniE050 ]` → pdf.js 抽取 U+E050——任何质量门都判 garbage → 必走 OCR 分支；OCR 不可用兜底确定性复现——第五轮审查报告 §1.2） | 652 B / SHA `0F714EB0…`；%PDF-1.4 合法；文本层抽取已验证（pdf.js getTextContent → U+E050×8，宿主浏览器实证） | 字节锁（manifest）；确定性生成 |
 | `sample-truncated.txt` | TXT（合成） | 契约组 F7——UTF-8 末尾截断一字节（'你好世界，这是一个测试文档。' 42 B → 41 B；FFFD 过度触发——第五轮审查报告 §1.4） | 41 B / SHA `DBEFD79D…`；UTF-8 合法至结尾残序列（E3 80），正文 13 字完好 | 字节锁（manifest）；确定性生成 |
 | `sample-corrupt-xlsx.xlsx` | XLSX（损坏构造） | 契约组 G4-1——EOCD 中央目录 localOff=0x7FFFFF00 越界（zipEntry 无边界校验 → DataView/typed array 裸异常——第五轮审查报告 §1.5） | 113 B / SHA `54F22ECC…`；PK\x03 本地头（名 'xl/workbook.xml' 供 sniff 判 xlsx）+ CD 条目 + EOCD（count=1） | 字节锁（manifest）；确定性构造（非 zip 打包——纯结构字节） |
+| `sample-numfmt-date.xlsx` | XLSX（合成） | 契约组 G5——numFmt=14 序列号日期（45123=2023-07-16 / 45292.75=2024-01-01T18:00；styles.xml cellXfs 映射——第六轮审查报告 §2.3） | 2,260 B / SHA `05565B56…`；zip 合法，styles.xml 含 cellXfs `numFmtId="14"`，sheet1.xml 含 45123/45292.75 数值单元格（s="0"） | 字节锁（manifest）；确定性生成（生成而非人工） |
 
 ### 真实样例清单（T-3 通路落地：用户终端自 GitHub 上游下载，2026-09-04 登记）
 
@@ -360,6 +372,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-08 第六轮审查 P1 批契约先红 t13（qa-dev；只改 tests/指定文件）**：基线 HEAD `3f93c7d`（第五轮闭环 131/131；第六轮报告入库）。来源：`docs/doc2md-第六轮审查报告-2026-09-08.md` §1.2/§1.3/§1.4/§2.3（用户 2026-09-08 拍板 P1 四项本批做；§1.1 合规已由 captain 处理）。**样例 ×1（gen-samples 确定性生成 + manifest 字节锁，重跑既有 23 样例 SHA 零漂移 = 幂等）**：`sample-numfmt-date.xlsx`（2,260 B / SHA `05565B56DB7DDED7…`——styles.xml cellXfs numFmtId=14 + 序列号 45123/45292.75）。**断言新增/登记**：D1 组 d1-5（`foo<span>bar</span>baz` → `foobarbaz`）/d1-6（`IP<sub>v6</sub>地址` → `IPv6地址`）——§1.2 拉丁强插空格（d1-1/d1-2/d1-3 既有快照已锁「原空白照旧」三例，零重复——四用例「同时快照」= 既有三例 + 新两例互不回归）；D2 组 d2-7（ul/li 多 `<p>` → `- para one\n\n  para two`）/d2-8（多 `<div>` 同理）——§1.3；d2-9（PRE 内保留 3 空行）——§1.4；G5 ×3（G5-0 字节锁 / G5-1 numFmt=14 → `2023-07-16`+`2024-01-01` / G5-2 t="d" ISO → 含 `2021-06-10` 且不得带时间）——§2.3。**实测（宿主浏览器真实页面；沙箱 Playwright spawn EPERM 按 §5 基建红登记制）**：d1-5（`foo bar baz`）/d1-6（`IP v6地址`）= 🔴 红；d2-7（`- para one para two`）/d2-8（`- d1 d2`）= 🔴 红；d2-9（围栏内 3 空行被压 1）= 🔴 红；G5-1（`45123`/`45292.75` 原样、warnings=[]）/G5-2（`2021-06-10T00:47:45.700Z` 带时间）= 🔴 红；G5-0 = 🟢。**口径备注**：45292.75 的日期 = **2024-01-01**（任务书估值「2023-12-02」经 1899-12-30 + 序列号精确计算更正——Excel 序列号 45292 = 2024-01-01，.75 = 18:00）。**转绿条件**：实现侧按报告修复方向（joinFrags 以原文空白为准 / liToLines 块级 flush 按 CommonMark 续行 / 围栏内换行不归一化 / styles.xml numFmt 日期解析或回退 + t="d" 截到天）后逐条自动转绿。用户机终验：`npm install && node node_modules/@playwright/test/cli.js install chromium && npm test` → 当前预期 d1-5/d1-6/d2-7/d2-8/d2-9/G5-1/G5-2 真跑红、其余绿。不做：src 修复（实现侧批次——本批禁改 src/）。
 - **2026-09-08 第五轮审查 B+C 批独立验收 t12（qa-dev；修验分离——只验收不修改，产品/断言/样例零改动）**：基线 HEAD `14cfe7f` = t11 实现（b91a6f8）+ **两个用户机驱动补丁** d5cc799（t8 补遗 Cs：PDF_GARBAGE_RE 表驱动 [\p{Cs}/\p{Co}/\p{Cc}/\uFFFD] + `/\p{Assigned}/u` 兜底——q('\uD800')=0.0；关闭 t9 终点「Cs 低登记」）+ c3a8a10（G4-1 修复：readSheetSafely——库回退路径 readXlsx 异常转友好错误；用户机 129/131 暴露）+ **A+B+C 批产物补同步 commit 14cfe7f**（index.html +10/-6，含两修复）。**结论：通过（无阻塞发现）**——①t10 断言全绿（F7/G4-1/G4-2/O3/H10/H11/H12 ——G4-1 **src+产品级双绿**：用户机红已由 c3a8a10 关闭）；②零回归（F1-F6/G/G2/L6/O/H/D/I/J/PDF 族——P1/P2/C2 全绿）；③部署白名单实证（七件套磁盘齐/tests·docs 不在部署集）；④合规（licenses.md cmaps 条目 ↔ vendor/cmaps/LICENSE 实物一致 + 168 bcmap）；⑤重构（lint 32w/0e —— t9 35 → **32 零新增（-3）**；metrics 超限 **23** —— t9 25 → -2；t8/t11「15→13/13→10」为子集口径登记）；⑥产物级（14cfe7f：readSheetSafely/PDF_GARBAGE_RE/Assigned 兜底/xlsxWorkbookMap/xlsx-self 全命中——两修复均在产物；P1/P2(file:// 真场景)/C2/F7/G4-1/G4-2/O3 产品级全绿；pwa 48/48；静态 B/H 复刻 51/51）。**5 个登记项（3 低/信息 + 2 工具），均只报告未修改**。
   **实测**（宿主浏览器（chrome 会话）+ 临时 ESM 直载页（仓库根 h.html——验收后已删）；产品级 = 真实 index.html（`14cfe7f`）与 file:// 真实页面（P2））：
   - ✅ **F7**（src+产品）：sample-truncated.txt → 含「你好世界，这是一个测试文档」+ 无「浣犲ソ」（尾部单 U+FFFD=截断 1 字符语义，非整篇 mojibake——t11 ≥2 FFFD 阈值生效）。
@@ -628,6 +641,8 @@ npm run gen:samples           # 重新生成样例（确定性）
 | d1-2 | `<p>这是<b>重点</b>内容。</p>` | `这是**重点**内容。` | CJK 相邻标记不补空格（不得出「重 点」） |
 | d1-3 | `<p>The <em>quick</em> brown fox <code>jumps</code>.</p>` | ``The *quick* brown fox `jumps`.`` | 反引号原样；句点前不加空格 |
 | d1-4 | `<p>第<b>一</b>章 概述</p>` | `第**一**章 概述` | 原文空格（章 概述）保留 |
+| d1-5 | `<p>foo<span>bar</span>baz</p>` | `foobarbaz` | **第六轮 §1.2（t13 新增·先红）**：行内 span 拆分拉丁词——「前后可见字符均 [A-Za-z0-9] 就补空格」凭空造空格；原文无空格保持贴靠 |
+| d1-6 | `<p>IP<sub>v6</sub>地址</p>` | `IPv6地址` | **第六轮 §1.2（t13 新增·先红）**：行内 sub 拆词同根因（`IP v6地址` → 应为 `IPv6地址`） |
 
 ### D2 — 结构（审查报告 §1.2；6 例）
 
@@ -639,6 +654,9 @@ npm run gen:samples           # 重新生成样例（确定性）
 | d2-4 | `<blockquote><p>第一段</p><p>第二段</p></blockquote>` | 见下方代码块 | 多段逐行 `> `；段间空行以 `>` 标记 |
 | d2-5 | `<a href="https://x/y.png"><img src="z.png" alt="图"></a>` | `[![图](z.png)](https://x/y.png)` | 锚包图片（报告 §1.2 建议 #4） |
 | d2-6 | `<h1>A<br>B</h1>` | `# A<br>B` | 标题内 `<br>` 保留为字面 `<br>`（GFM 渲染为标题内换行；报告 §1.2 建议 #5） |
+| d2-7 | `<ul><li><p>para one</p><p>para two</p></li></ul>` | 见下方代码块 | **第六轮 §1.3（t13 新增·先红）**：列表项内多块级段落（P）——首行 marker + 段间空行 + 续行缩进（CommonMark 列表续行；当前合并为 `- para one para two`） |
+| d2-8 | `<ul><li><div>d1</div><div>d2</div></li></ul>` | 见下方代码块 | **第六轮 §1.3（t13 新增·先红）**：块级 DIV 同理 |
+| d2-9 | `<pre>line1\n\n\n\nline2</pre>` | 见下方代码块 | **第六轮 §1.4（t13 新增·先红）**：PRE 内连续空行保留（3 空行）——末尾全局 `\n{3,}` 归一化未保护围栏内（当前压缩为 1 空行） |
 
 d2-1 期望输出（逐字符）：
 
@@ -663,6 +681,34 @@ d2-4 期望输出（逐字符）：
 > 第一段
 >
 > 第二段
+```
+
+d2-7 期望输出（逐字符）：
+
+```
+- para one
+
+  para two
+```
+
+d2-8 期望输出（逐字符）：
+
+```
+- d1
+
+  d2
+```
+
+d2-9 期望输出（逐字符）：
+
+```
+```
+line1
+
+
+
+line2
+```
 ```
 
 ### E — sniff（审查报告 §1.3；4 例）
