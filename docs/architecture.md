@@ -72,7 +72,7 @@ async function convert(file /* File */) -> Promise<{
 1. 转换器**允许 throw**；`convert()` 顶层 try/catch 捕获并转成 `{ markdown:'', error:'中文友好信息' }`——UI 绝不崩。
 2. 转换器**必须异步**（大文件处理期间 UI 必须保持响应；可 `await new Promise(r=>setTimeout(r))` 让出主线程，复杂解析交给 Web Worker——注意 Worker 也须内联 blob，禁止外链）。
 3. `warnings` 语义：非致命提示（如「已截断」「OCR 置信度低」），文案中文，长度 ≤200 字符/条。
-4. `backend` 取值：`'builtin' | 'mammoth' | 'pdfjs' | 'tesseract' | 'read-excel-file'`（B线按实际实现填）。
+4. `backend` 取值：`'builtin' | 'mammoth' | 'pdfjs' | 'tesseract' | 'read-excel-file' | 'xlsx-self'`（t11 §1.7 枚举扩展——xlsx 自解析/库路径按实际引擎区分；B线按实际实现填）。
 5. `truncated`：结果超出护栏被截断时 true（元数据保留原文件大小）。
 
 ## 3. 嗅探规则（magic bytes，不信任扩展名）
@@ -117,7 +117,7 @@ async function convert(file /* File */) -> Promise<{
 - 每 sheet 一张 GFM 表；`### Sheet: <名>` 分隔；第一行作表头；单元格 `|` 转义 `\|`。
 - 单元格格式化（与参考 `dsh-file-upload-convert.js` 口径一致）：`null/undefined → ''`、`Date → toISOString().slice(0,10)`（UTC YYYY-MM-DD）、其余 `String(v)`。
 - 护栏：每 sheet 前 1000 行、最多前 5 个 sheet；超出 → warnings + 说明行（`truncated` 语义由 convert 层 meta 携带）。
-- `backend='read-excel-file'`（契约枚举保持；自解析/库路径同值，信息性）；空 sheet → `（空 sheet）`。
+- `backend='xlsx-self'`（自解析路径，t11 §1.7 实际引擎口径）/ `'read-excel-file'`（库回退路径）；空 sheet → `（空 sheet）`。
 
 ### 4.5 image —— B线已实现 ✅（tesseract.js 6.0.1 vendor 分文件 OCR）
 - `tesseract.js@6.0.1`（Apache-2.0）同源分文件 `vendor/tesseract.tesseract.min.js`（UMD，全局 `Tesseract`）→ LSTM OCR（`oem=1`）。

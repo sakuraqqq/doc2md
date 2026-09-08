@@ -32,8 +32,12 @@ export async function zipEntry(buf, wantedName) {
         const localOff = dv.getUint32(off + 42, true);
         const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
         if (name === wantedName) {
+          // t11 §1.5 边界防护：localOff 越界（损坏 zip 中央目录被篡改指向界外）→ 按「无此条目」返回 null
+          // （调用方回退库/单 sheet），不透 DataView/typed array 裸异常给用户（G4-1 契约）
+          if (localOff + 30 > n) return null;
           const ln = dv.getUint16(localOff + 26, true);
           const le = dv.getUint16(localOff + 28, true);
+          if (localOff + 30 + ln + le + compSize > n) return null;
           const data = buf.subarray(localOff + 30 + ln + le, localOff + 30 + ln + le + compSize);
           if (method === 0) return { data, compSize };
           if (typeof DecompressionStream === 'undefined') return null; // 极端环境：无法解压
@@ -175,6 +179,24 @@ function scanSheetRows(xml, rowLimit) {
   return { rawRows: rawRows.slice(0, rowLimit), maxS, more };
 }
 
+/* <t> 文本线性提取（t11 小重构：extractInlineText / parseSharedStrings 同构段共用——t12 indexOf 纪律，
+ * 无正则回溯；[from, to) 边界内收集全部 <t>…</t> 文本并拼接） */
+function collectTTexts(s, from, to) {
+  let out = '';
+  let p = from;
+  while (p < to) {
+    const ts = s.indexOf('<t', p);
+    if (ts < 0 || ts > to) break;
+    if (s[ts + 2] !== ' ' && s[ts + 2] !== '>') { p = ts + 3; continue; }
+    const tp = s.indexOf('>', ts);
+    const te = s.indexOf('</t>', tp);
+    if (tp < 0 || te < 0 || te > to) break;
+    out += s.slice(tp + 1, te);
+    p = te + 4;
+  }
+  return out;
+}
+
 /* is 内容线性提取（t36/t12 纪律：indexOf 循环拼接 <t> 文本，无正则回溯） */
 function extractInlineText(inner) {
   const isOpen = inner.indexOf('<is');
@@ -183,19 +205,7 @@ function extractInlineText(inner) {
   const gt = inner.indexOf('>', isOpen);
   const isEnd = inner.indexOf('</is>', gt);
   if (gt < 0 || isEnd < 0) return '';
-  let s = '';
-  let p = gt + 1;
-  while (p < isEnd) {
-    const ts = inner.indexOf('<t', p);
-    if (ts < 0 || ts > isEnd) break;
-    if (inner[ts + 2] !== ' ' && inner[ts + 2] !== '>') { p = ts + 3; continue; }
-    const tp = inner.indexOf('>', ts);
-    const te = inner.indexOf('</t>', tp);
-    if (tp < 0 || te < 0 || te > isEnd) break;
-    s += inner.slice(tp + 1, te);
-    p = te + 4;
-  }
-  return s;
+  return collectTTexts(inner, gt + 1, isEnd);
 }
 
 /* sharedStrings 惰性解析（t33）：仅解到被引用的最大索引（maxS）即停——巨量字符串表不打爆内存 */
@@ -209,19 +219,7 @@ function parseSharedStrings(xml, maxS) {
     if (xml[si + 3] !== ' ' && xml[si + 3] !== '>') { pos = si + 4; continue; }
     const se = xml.indexOf('</si>', si);
     if (se < 0) break;
-    let s = '';
-    let p = si + 3;
-    while (true) {
-      const ts = xml.indexOf('<t', p);
-      if (ts < 0 || ts > se) break;
-      if (xml[ts + 2] !== ' ' && xml[ts + 2] !== '>') { p = ts + 3; continue; }
-      const tp = xml.indexOf('>', ts);
-      const te = xml.indexOf('</t>', tp);
-      if (tp < 0 || te < 0 || te > se) break;
-      s += xml.slice(tp + 1, te);
-      p = te + 4;
-    }
-    out.push(decodeXml(s));
+    out.push(decodeXml(collectTTexts(xml, si + 3, se)));
     pos = se + 5;
   }
   return out;
@@ -306,7 +304,7 @@ async function xlsxSelfParse(buf, readMap, names) {
     truncated = true;
   }
   if (truncated) warnings.push(truncationMessage(readMap.length, totalRows, skipped));
-  return { markdown: parts.join('\n\n').trim(), warnings, truncated, backend: 'read-excel-file' }; // backend 值保持契约枚举（信息性）
+  return { markdown: parts.join('\n\n').trim(), warnings, truncated, backend: 'xlsx-self' }; // t11 §1.7：自解析路径报实际引擎（G4-2 契约；库路径仍 'read-excel-file'）
 }
 
 /* read-excel-file 库解析路径（回退；backend 不变） */
