@@ -97,6 +97,10 @@ export async function xlsxWorkbookMap(buf) {
     let target = ridToTarget.get(s.rid);
     if (!target) throw new Error('workbook.xml.rels 缺 r:id 映射（' + s.rid + '），回退库解析');
     target = target.replace(/^\/+/, ''); // 允许绝对路径形态（/xl/worksheets/…）
+    // 第七轮审查 §2.2：Target 允许相对形态（`../worksheets/sheet1.xml`——OOXML rels Target 以 xl/ 为
+    // 基准，部分第三方工具会多带一层 `../`）。先剥 ./ 与 ../ 段，再按 xl/ 前缀补全；仍命不中 zip
+    // 条目时由 xlsxConvert 的 .catch 回退库路径（不静默错位、不张冠李戴）。
+    target = target.replace(/^(?:\.{1,2}\/)+/, '');
     if (!target.startsWith('xl/')) target = 'xl/' + target;
     map.push({ name: s.name, target });
   }
