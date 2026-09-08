@@ -632,11 +632,12 @@ const SNIFF_CASES = [
   },
   // e5（t4 新增）：OLE2 魔数（Word 97-2003 二进制 .doc）——不得判回 text（判 text = 乱码「成功」；
   // 当前实测 type='unknown'/detail='binary'（0x11/0x1A 等控制字节）→ 本断言现绿，如实登记；
-  // 允许未来实现新增 type='doc'（友好提示分支）——机制不绑定，只锁「不得判回 text」
+  // 允许未来实现新增 type='doc'/'ole2'（友好提示分支）——机制不绑定，只锁「不得判回 text」）
+  // t10 口径补充：允许集合加入 'ole2'（第五轮审查报告 §1.6 建议改通用类型名——实现路径不绑定，用户已拍板 B+C 批）
   {
-    id: 'e5', name: 'OLE2 魔数（D0CF11E0A1B11AE1 + NUL 密集）——.doc 老格式，不得判回 text',
+    id: 'e5', name: 'OLE2 魔数（D0CF11E0A1B11AE1 + NUL 密集）—— .doc/.xls/.ppt 老格式，不得判回 text',
     bytes: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-    allowedTypes: ['unknown', 'doc'],
+    allowedTypes: ['unknown', 'doc', 'ole2'],
     notType: 'text',
   },
 ];
@@ -716,6 +717,16 @@ const GB2312_HTML = [
 const GBK_SHORT = [0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x20, 0xc4, 0xe3, 0xba, 0xc3];
 
 test('契约组 F：GBK 中文解码 —— 契约先红（当前无 BOM 一律 UTF-8 容错 → 乱码）', async (t) => {
+  // F-0（t10 新增）：sample-truncated.txt（§1.4 FFFD 用例）样例锁（静态——B 组风格）
+  await t.test('F-0 sample-truncated.txt 存在且与 manifest 字节级一致', () => {
+    const p = nodePath.join(DATA, 'sample-truncated.txt');
+    assert.ok(fs.existsSync(p), 'sample-truncated.txt 缺失——请运行 npm run gen:samples');
+    const rec = readManifest().files['sample-truncated.txt'];
+    assert.ok(rec, 'sample-truncated.txt 未登记于 manifest');
+    const buf = fs.readFileSync(p);
+    assert.equal(buf.length, rec.bytes, '大小与 manifest 不一致（样例被改动）');
+    assert.equal(crypto.createHash('sha256').update(buf).digest('hex'), rec.sha256, 'SHA 与 manifest 不一致（样例被改动）');
+  });
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
   let chromium;
   try {
@@ -783,6 +794,27 @@ test('契约组 F：GBK 中文解码 —— 契约先红（当前无 BOM 一律 
         assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
         assert.ok(!res.markdown.includes('\uFFFD'), `输出含替换字符 U+FFFD：${JSON.stringify(res.markdown)}（短 GBK 中文替换占比 <30% 未触发兜底）`);
         assert.ok(res.markdown.includes('hello world 你好'), `输出未含「hello world 你好」：${JSON.stringify(res.markdown)}`);
+      });
+      // F7（t10 新增）：FFFD 过度触发（第五轮审查报告 §1.4，P2）——UTF-8 文本截掉**最后一个字节**
+      // （'你好世界，这是一个测试文档。' 的 42 B → 41 B，结尾 E3 80 残序列 → 1 个 U+FFFD）。
+      // 断言语义：1 个坏字节只损坏尾部，不得整篇改判 GB18030（当前「任意 FFFD → gb18030 重解」→ 整篇 mojibake）；
+      // 断言锚 = 正常中文子串「你好世界，这是一个测试文档」存在 + mojibake 签名「浣犲ソ」不得出现（防假绿）。
+      await t.test('F7 UTF-8 末尾截断一字节：不整篇 mojibake（含正常中文子串 + 无 GB18030 签名；§1.4 FFFD 过度触发）', async () => {
+        const b64t = fs.readFileSync(nodePath.join(DATA, 'sample-truncated.txt')).toString('base64');
+        const rt = await page.evaluate(
+          async (arg) => {
+            const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+            return window.__doc2md.convert(new File([bytes], 'sample-truncated.txt'));
+          },
+          { b64: b64t }
+        );
+        assert.equal(rt.error, undefined, `convert 返回错误：${rt.error}`);
+        const mdt = rt.markdown || '';
+        assert.ok(
+          mdt.includes('你好世界，这是一个测试文档'),
+          `整篇 mojibake（1 个坏字节即触发整篇 GB18030 重解）：${JSON.stringify(mdt)}（FFFD 过度触发——应只损坏尾部 1 字符；修复方向=FFFD 占比阈值/双解码评分）`
+        );
+        assert.ok(!mdt.includes('浣犲ソ'), `输出含 GB18030 mojibake 签名「浣犲ソ」：${JSON.stringify(mdt.slice(0, 80))}`);
       });
     } finally {
       await browser.close();
@@ -1022,6 +1054,95 @@ test('契约组 G3：xlsx sheet 映射错位（sample-shuffle-sheets.xlsx；第�
     await server.close();
   }
 });
+// ---------------------------------------------------------------------------
+// 契约组 G4：损坏 xlsx 越界防护 + xlsx backend 枚举（第五轮审查报告 §1.5/§1.7；契约先红 t10）
+// 样例：
+//   sample-corrupt-xlsx.xlsx（合成 113 B：PK\x03 本地头名 'xl/workbook.xml'（sniff 判 xlsx）
+//     + 中央目录条目 localOff=0x7FFFFF00 **越界** + EOCD count=1）——zipEntry 匹配后读
+//     localOff+26 → DataView 越界裸 RangeError 透传（当前 xlsxSheetNames 先于自解析调用，未捕获）。
+// 断言（断言语义；机制不绑定）：
+//   G4-1 convert(corrupt.xlsx) 不得透出裸实现异常（DataView 越界/typed array 长度/RangeError 类
+//     ——V8 经典文案 'Offset is outside the bounds of the DataView'，本环境实测 'Invalid typed array
+//     length: -2147483309'，引擎差异同类）——应回退库解析或友好错误（当前裸异常经顶层 catch
+//     包装成「转换失败：<裸异常>」→ 红）。
+//   G4-2 convert(sample.xlsx) meta.backend === 'xlsx-self'（§1.7 用户已拍板枚举扩展：
+//     'builtin'|'mammoth'|'pdfjs'|'tesseract'|'read-excel-file'|'xlsx-self'；自解析路径当前
+//     恒返回 'read-excel-file'（信息失真）→ 红）。既有 C 组断言无 backend 引用（登记：无需改既有断言；
+//     architecture.md §2 枚举行同步属实现侧/文档侧批次，见 §7）。
+// ---------------------------------------------------------------------------
+test('契约组 G4：损坏 xlsx 越界防护 + xlsx-self backend（sample-corrupt-xlsx.xlsx；第五轮审查报告 §1.5/§1.7）—— 契约先红', async (t) => {
+  await t.test('G4-0 sample-corrupt-xlsx.xlsx 存在且与 manifest 字节级一致', () => {
+    const p = nodePath.join(DATA, 'sample-corrupt-xlsx.xlsx');
+    assert.ok(fs.existsSync(p), 'sample-corrupt-xlsx.xlsx 缺失——请运行 npm run gen:samples');
+    const rec = readManifest().files['sample-corrupt-xlsx.xlsx'];
+    assert.ok(rec, 'sample-corrupt-xlsx.xlsx 未登记于 manifest');
+    const buf = fs.readFileSync(p);
+    assert.equal(buf.length, rec.bytes, '大小与 manifest 不一致（样例被改动）');
+    assert.equal(crypto.createHash('sha256').update(buf).digest('hex'), rec.sha256, 'SHA 与 manifest 不一致（样例被改动）');
+  });
+
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64c = fs.readFileSync(nodePath.join(DATA, 'sample-corrupt-xlsx.xlsx')).toString('base64');
+      const rc = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-corrupt-xlsx.xlsx'));
+        },
+        { b64: b64c }
+      );
+      await t.test('G4-1 越界防护：convert 不得透出裸实现异常（DataView/typed array/RangeError 类——应回退或友好错误）', () => {
+        // 语义：zipEntry 无边界校验 → 内部异常（V8 经典文案 'Offset is outside the bounds of the DataView'；
+        // 本环境实测 'Invalid typed array length: -2147483309'——引擎差异，同为裸异常透传）经顶层
+        // catch 包装成「转换失败：<裸异常>」——用户可见实现内幕 = 泄漏。断言按异常**类别**匹配，
+        // 不绑定单个文案（裸异常清单：DataView 越界/typed array 长度/RangeError）。
+        const err = rc.error || '';
+        assert.ok(
+          !/Offset is outside the bounds of the DataView|Invalid typed array length|RangeError/.test(err),
+          `裸实现异常透传：${JSON.stringify(err)}（zipEntry localOff 无边界校验——应回退库解析或友好错误；修复方向=localOff + 30 > n 返回 null）`
+        );
+      });
+      const b64s = fs.readFileSync(nodePath.join(DATA, 'sample.xlsx')).toString('base64');
+      const rs = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample.xlsx'));
+        },
+        { b64: b64s }
+      );
+      await t.test('G4-2 自解析路径 backend=\'xlsx-self\'（§1.7 枚举扩展；当前恒 read-excel-file → 信息失真）', () => {
+        assert.equal(rs.error, undefined, `convert 返回错误：${rs.error}`);
+        assert.equal(
+          rs.meta.backend,
+          'xlsx-self',
+          `backend=${rs.meta.backend}（自解析路径应按实际引擎报 xlsx-self——用户已拍板枚举扩展；当前恒 read-excel-file 无法区分引擎）`
+        );
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
 // 离线静态断言（无浏览器依赖）：读 index.html 源码文本。
 // 断言（断言语义）：
 //   H1 源码不含 'doc2md.local'（伪域名 corePath——红线：任何外域请求都是违约）。
@@ -1107,6 +1228,49 @@ test('契约组 H：corePath 同源 / 零外域 fetchable URL / SW v4 分段缓�
       unhandled,
       [],
       `浮动 caches.open(...).then(...) 未链式接 .catch：${JSON.stringify(unhandled)}（未处理拒绝 → 未捕获 promise rejection——v3 原实现有 catch，v4 重写时丢失）`
+    );
+  });
+  // H10（t10 新增）：导航分支 res.ok 判断（第五轮审查报告 §2.5，P3）——导航请求导航分支
+  // fetch 后**无条件**写缓存：404/500 响应也会被缓存并在离线时回放。资源分支已有 `if (res.ok)`，
+  // 导航分支缺失（sw.js:64-71——修复=同一行 if (res.ok) 包裹 put）。断言语义精确：导航分支内
+  // res.ok 判断必须出现在 c.put 之前（误吞外层/资源分支的 res.ok 不得算通过）。
+  await t.test('H10 sw.js 导航分支：cache.put 前须有 res.ok 判断（非 2xx 不得缓存——404/500 离线回放）', () => {
+    // 导航块范围 = navigate 条件到 return；}（不得越界吞资源分支已有 res.ok——块外命中不算）
+    const m = sw.match(/req\.mode\s*===\s*'navigate'[\s\S]*?return;\s*\}/);
+    assert.ok(m, 'sw.js 未见导航分支（req.mode === "navigate"）');
+    const nav = m[0];
+    const okIdx = nav.indexOf('res.ok');
+    const putIdx = nav.indexOf('c.put');
+    assert.ok(
+      okIdx >= 0 && (putIdx < 0 || okIdx < putIdx),
+      `导航分支写缓存路径无 res.ok 判断或位置错误（ok@${okIdx} put@${putIdx}——404/500 响应会被缓存并在离线时回放；资源分支已有 res.ok，导航分支缺失；修复=if (res.ok) 包裹 put）`
+    );
+  });
+  // H11（t10 新增）：docs/licenses.md 登记 vendor/cmaps 许可（第五轮审查报告 §2.1 合规）——
+  // vendor/cmaps/ 168 个 .bcmap + LICENSE（Adobe 1990-2009 可再分发条款）已随库分发，
+  // licenses.md 无任何 cmaps 条目（「逐库一手证据」纪律缺口）。
+  await t.test('H11 docs/licenses.md 登记 vendor/cmaps 许可（Adobe cmaps 资产——第五轮审查报告 §2.1）', () => {
+    const p = nodePath.join(ROOT, 'docs', 'licenses.md');
+    assert.ok(fs.existsSync(p), 'docs/licenses.md 缺失');
+    const text = fs.readFileSync(p, 'utf8');
+    for (const need of ['cmaps', 'Adobe']) {
+      assert.ok(
+        text.includes(need),
+        `licenses.md 缺「${need}」——vendor/cmaps/（168 .bcmap + LICENSE，pdf.js 官方资产，Adobe 1990-2009 可再分发）未登记（随库分发义务；修复=补 1 行条目）`
+      );
+    }
+  });
+  // H12（t10 新增）：部署白名单（第五轮审查报告 §2.2/§2.10）——deploy-pages.yml 当前 `path: .`
+  // 整仓上传（tests/data 的 511KB 真实论文 + 773KB real-big + 795KB sample-images 与 docs/
+  // 全被公开到 Pages）。用户 2026-09-08 拍板 §2.2「部署白名单」方案：只发站点必要文件。
+  // 断言语义：workflow 不得含 `path: .`（须显式白名单：index.html/vendor/langs/icons/manifest/sw/.nojekyll 等）。
+  await t.test('H12 deploy-pages.yml 不得以 path: . 整仓部署（显式站点白名单——第五轮审查报告 §2.2/§2.10）', () => {
+    const p = nodePath.join(ROOT, '.github', 'workflows', 'deploy-pages.yml');
+    assert.ok(fs.existsSync(p), '.github/workflows/deploy-pages.yml 缺失');
+    const text = fs.readFileSync(p, 'utf8');
+    assert.ok(
+      !text.includes('path: .'),
+      'workflow 仍为 `path: .` 整仓部署（未白名单化——tests/data（511KB 真实论文/大样例）与 docs/ 会被公开到 Pages；修复=显式站点白名单：index.html/vendor/langs/icons/manifest/sw/.nojekyll 等必要项）'
     );
   });
 });
@@ -1754,6 +1918,27 @@ test('契约组 O：.doc 老格式友好提示（sample-legacy-doc.doc；真实�
         assert.ok(res.error, `convert 未返回 error：${JSON.stringify({ error: res.error, markdown: (res.markdown || '').slice(0, 120) })}（.doc 为二进制老格式——必须显式失败，不得按文本乱码「成功」）`);
         assert.ok(res.error.includes('另存为'), `错误信息不含「另存为」：${JSON.stringify(res.error)}（当前无 .doc 指引——用户只有「无法识别的文件类型」）`);
         assert.ok(res.error.includes('docx'), `错误信息不含「docx」：${JSON.stringify(res.error)}`);
+      });
+      // O3（t10 新增·口径更新）：OLE2 通用文案（第五轮审查报告 §1.6，P3）——OLE2 是
+      // .doc/.xls/.ppt/.msg/加密 OOXML 的公共容器；book.xls 命名场景不得提示「另存为 .docx」
+      // （误导）。用户 2026-09-08 拍板 B+C 批：改断言语义（从「.doc 专属」→「通用 Office 二进制」）。
+      // 断言语义：OLE2 + 命名 book.xls → 错误须仍含「另存为」（可操作指引）且含「.xls」
+      // （通用口径覆盖当前命名格式）；实现机制不绑定（type='doc'/'ole2' 均可——E5 允许集已含两者）。
+      const b64o = fs.readFileSync(nodePath.join(DATA, 'sample-legacy-doc.doc')).toString('base64');
+      const ro = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'book.xls'));
+        },
+        { b64: b64o }
+      );
+      await t.test('O3 OLE2 通用口径：book.xls 命名时文案含「另存为」与「.xls」（不得误导为 .doc/另存 .docx）', () => {
+        assert.ok(ro.error, `convert 未返回 error：${JSON.stringify(ro.error)}（OLE2 二进制必须显式失败）`);
+        assert.ok(ro.error.includes('另存为'), `错误信息不含「另存为」：${JSON.stringify(ro.error)}`);
+        assert.ok(
+          ro.error.includes('.xls'),
+          `错误信息不含 .xls（OLE2 是 .doc/.xls/.ppt/加密 Office 公共容器——book.xls 提示「老版 .doc…另存为 .docx」为误导）：${JSON.stringify(ro.error)}`
+        );
       });
     } finally {
       await browser.close();
