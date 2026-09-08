@@ -64,6 +64,8 @@ export async function convert(file) {
   if (s.type === 'unknown') return done({ error: '无法识别的文件类型' });
   if (s.type === 'pptx') return done({ error: 'PPTX 不在 v1 支持范围（见 README），v2 再议' });
   if (s.type === 'zip') return done({ error: '暂不支持普通 ZIP 文件，请解压后再转换' });
+  // t5·契约组 O：老版 .doc（OLE2 复合文档）——v1 范围不含，给「另存为 .docx」友好指引（真实用户反馈 2026-09-08）
+  if (s.type === 'doc') return done({ error: '老版 .doc（Word 97-2003）暂不支持，请用 Word/WPS 打开后另存为 .docx 再转换' });
   if (!registry[s.type]) return done({ error: '无法识别的文件类型' });
   try {
     const res = await registry[s.type](file, buf);

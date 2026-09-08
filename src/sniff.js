@@ -83,6 +83,9 @@ export async function sniff(buf) {
   // PDF：先认首部；再兜底「偶有前置垃圾字节」——前 1024 字节内搜首个 %PDF（architecture §3）
   const pdfAt = ascii.indexOf('%PDF');
   if (pdfAt >= 0 && pdfAt <= 1024) return { type: 'pdf' };
+  // OLE2 复合文档魔数（Word 97-2003 二进制 .doc 等老 Office 格式；t5 新增·契约组 O——专型化便于
+  // convert 层给「另存为 .docx」友好指引；不再落入未知二进制/文本，E5 断言允许 unknown|doc）
+  if (startsWith(head, [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])) return { type: 'doc' };
   // 图片
   if (startsWith(head, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) return { type: 'image', detail: 'png' };
   if (head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF) return { type: 'image', detail: 'jpeg' };
