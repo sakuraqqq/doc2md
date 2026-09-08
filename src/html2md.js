@@ -4,7 +4,7 @@
  *  - P0 修复（2026-09-05，审查报告 §1.1/§1.2）：行内拼接不再全局 out.join(' ')，改「片段流 + 相邻规则」；
  *    结构：UL/OL 递归缩进、LI 内子节点 walker、BLOCKQUOTE 多段逐行 >、TABLE 单元格 walker、
  *    A 包图片 [![alt](src)](href)、H1-H6 内 <br> 软换行保留。
- *  - 片段 { t: markdown 文本, vStart/vEnd: 可见首/尾字符（无可见字符如 BR/IMG 为 null） }
+ *  - 片段 { t: markdown 文本, lead/trail: 原始文本首/尾是否有空白（t14 §1.2——空格判定以原文空白为准） }
  */
 import { normWs } from './sniff.js';
 
@@ -12,26 +12,24 @@ const BLOCK_TAGS = new Set(['H1','H2','H3','H4','H5','H6','P','UL','OL','LI','DL
 // 注：早期版本曾有 INLINE_TRANSPARENT（透明行内标签集合），P0 重构后 fragFor 已统一改「未知标签一律
 // 子节点行内平铺」（与旧 textContent 抽取语义对齐），该集合路径不可达——t12 按 lint 删除（行为等价，见 fragFor 注释）。
 
-function firstVisible(s) { const m = /^\s*(\S)/.exec(s); return m ? m[1] : null; }
-function lastVisible(s) { const m = /(\S)\s*$/.exec(s); return m ? m[1] : null; }
-
 // MD 链接/图片目标 URL 转义（审查报告 §1.3）：() 与空白 → 百分号编码（%28/%29/%20），防语法截断
 function escUrl(u) {
   return String(u).replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/\s/g, '%20');
 }
 
-// 行内片段拼接：贴靠 + 相邻规则（见文件头注释）。
+// 行内片段拼接：以**原文空白为准**（t14 §1.2，第六轮审查报告 §1.2）——
+// 片段携带边界元数据 lead/trail（原始文本首/尾是否有空白）；仅当原文存在空白时在标记
+// （**/*/`/[]()）外侧补空格。旧「前后可见字符均 [A-Za-z0-9] 即补空格」会凭空造空格
+// （foo<span>bar</span>baz → foo bar baz）——已废止；文本节点自身的空白由 t 内嵌（normWs 保留）。
 
 function joinFrags(frags) {
   let t = '';
-  let curV = null;
+  let trail = false;
   for (const f of frags) {
     if (f.t === '') continue;
-    if (t === '') { t = f.t; curV = f.vEnd !== null ? f.vEnd : null; continue; }
-    if (/\s$/.test(t) || /^\s/.test(f.t)) t += f.t;
-    else if (curV !== null && f.vStart !== null && /[A-Za-z0-9]/.test(curV) && /[A-Za-z0-9]/.test(f.vStart)) t += ' ' + f.t;
-    else t += f.t;
-    curV = f.vEnd !== null ? f.vEnd : null;
+    if (t !== '' && !/\s$/.test(t) && !/^\s/.test(f.t) && (trail || f.lead)) t += ' ';
+    t += f.t;
+    trail = f.trail;
   }
   return t;
 }
@@ -40,8 +38,9 @@ function joinFrags(frags) {
 function collectFrags(node, mode, out) {
   node.childNodes.forEach((child) => {
     if (child.nodeType === 3) {
-      const t = normWs(child.textContent);
-      if (t !== '') out.push({ t: t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+      const raw = child.textContent;
+      const t = normWs(raw);
+      if (t !== '') out.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
       return;
     }
     if (child.nodeType !== 1) return;
@@ -64,17 +63,24 @@ function fragFor(el, mode, out) {
   }
   if (tag === 'STRONG' || tag === 'B') {
     const inner = joinFrags(collectFrags(el, mode, [])).trim();
-    if (inner) out.push({ t: '**' + inner + '**', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+    if (inner) {
+      const raw = el.textContent || '';
+      out.push({ t: '**' + inner + '**', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
+    }
     return;
   }
   if (tag === 'EM' || tag === 'I') {
     const inner = joinFrags(collectFrags(el, mode, [])).trim();
-    if (inner) out.push({ t: '*' + inner + '*', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+    if (inner) {
+      const raw = el.textContent || '';
+      out.push({ t: '*' + inner + '*', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
+    }
     return;
   }
   if (tag === 'CODE') {
-    const c = el.textContent.trim();
-    if (c) out.push({ t: '`' + c + '`', vStart: firstVisible(c), vEnd: lastVisible(c) });
+    const raw = el.textContent || '';
+    const c = raw.trim();
+    if (c) out.push({ t: '`' + c + '`', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
     return;
   }
   if (tag === 'A') {
@@ -82,21 +88,22 @@ function fragFor(el, mode, out) {
     // 纵深防御（审查报告 §1.3）：javascript:/vbscript: 伪协议一律过滤为空（本工具只产出文本，
     // 防下游渲染器误执行；data: 同理——内联图片 data URI 仅 IMG 分支放行）
     if (/^\s*(javascript|vbscript|data):/i.test(href)) href = '';
+    const raw = el.textContent || '';
     const inner = joinFrags(collectFrags(el, mode, [])).trim();
     if (!inner) return;
     // 锚包图片：<a><img…></a> → [![alt](src)](href)（审查报告 §1.2 建议 #4）
     if (el.querySelector('img') && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
-      out.push({ t: '[' + inner + '](' + escUrl(href) + ')', vStart: null, vEnd: null });
+      out.push({ t: '[' + inner + '](' + escUrl(href) + ')', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
       return;
     }
-    out.push({ t: '[' + inner.replace(/\]/g, '\\]') + '](' + escUrl(href) + ')', vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+    out.push({ t: '[' + inner.replace(/\]/g, '\\]') + '](' + escUrl(href) + ')', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
     return;
   }
   if (tag === 'IMG') {
     const alt = el.getAttribute('alt') || '';
     const src = el.getAttribute('src') || '';
     // alt 内 ] 转义 + src URL 转义（审查报告 §1.3；k4b 口径：alt 的 ] 以 %5D 转义——契约正则定版）
-    out.push({ t: '![' + alt.replace(/\]/g, '%5D') + '](' + escUrl(src) + ')', vStart: null, vEnd: null });
+    out.push({ t: '![' + alt.replace(/\]/g, '%5D') + '](' + escUrl(src) + ')', lead: false, trail: false });
     return;
   }
   // 透明/未知/块级标签出现在行内位置：子节点按行内平铺（与旧 textContent 抽取语义对齐）
@@ -115,8 +122,9 @@ function blockifyContainer(el, ctx) {
   };
   for (const child of Array.from(el.childNodes)) {
     if (child.nodeType === 3) {
-      const t = normWs(child.textContent);
-      if (t !== '') frags.push({ t: t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+      const raw = child.textContent;
+      const t = normWs(raw);
+      if (t !== '') frags.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
       continue;
     }
     if (child.nodeType !== 1) continue;
@@ -182,40 +190,68 @@ function listElToMd(listEl, indent) {
     lines.push(...liToLines(li, indent, isOL, n));
     if (isOL) n++;
   }
-  return lines.filter((l) => l !== '').join('\n');
+  // t14 §1.3：'' = 列表项内段间空行（保留）；null = 过滤哨兵（当前无产出，仅防误删空行分隔）
+  return lines.filter((l) => l !== null).join('\n');
 }
 function liToLines(li, indent, isOL, num) {
   const prefix = ' '.repeat(indent);
   const marker = isOL ? (num + '. ') : '- ';
+  const contIndent = prefix + ' '.repeat(marker.length); // 续行缩进（CommonMark 列表继续行）
   const lines = [];
   const frags = [];
   let nested = false; // li 内是否出现嵌套列表
+  let blocked = false; // li 内是否已输出块级子元素（P/DIV 等——后续 tail 一律续行缩进）
+  let usedMarker = false; // marker 行已产出（首行文本或首个子块——后续块级内容按续行处理）
   for (const child of Array.from(li.childNodes)) {
     if (child.nodeType === 3) {
-      const t = normWs(child.textContent);
-      if (t !== '') frags.push({ t: t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+      const raw = child.textContent;
+      const t = normWs(raw);
+      if (t !== '') frags.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
       continue;
     }
     if (child.nodeType !== 1) continue;
     const tag = child.tagName;
     if (tag === 'UL' || tag === 'OL') {
       const head = joinFrags(frags).trim();
-      if (head !== '') lines.push(prefix + marker + head);
+      if (head !== '') { lines.push(prefix + marker + head); usedMarker = true; }
       frags.length = 0;
       nested = true;
       const sub = listElToMd(child, indent + marker.length);
       if (sub) sub.split('\n').forEach((l) => lines.push(l));
+    } else if (BLOCK_TAGS.has(tag) && tag !== 'LI') {
+      // t14 §1.3（第六轮审查报告 §1.3）：li 内块级子元素（P/DIV 等）flush 当前片段，按
+      // 「首块 marker 行 + 段间空行 + 续行缩进」换行（CommonMark 列表续行）；旧实现行内平铺
+      // 把 <li><p>a</p><p>b</p></li> 合并为「- a b」——多段列表项结构丢失
+      const head = joinFrags(frags).trim();
+      if (head !== '') { lines.push(prefix + marker + head); frags.length = 0; usedMarker = true; }
+      const subBlocks = blockOfEl(child, null);
+      for (let bi = 0; bi < subBlocks.length; bi++) {
+        const blk = subBlocks[bi];
+        if (blk === '') continue;
+        const blkLines = blk.split('\n');
+        if (!usedMarker) {
+          lines.push(prefix + marker + blkLines[0]);
+          for (let k = 1; k < blkLines.length; k++) lines.push(contIndent + blkLines[k]);
+          usedMarker = true;
+        } else {
+          lines.push(''); // 段间空行（CommonMark 列表继续行语义）
+          lines.push(contIndent + blkLines[0]);
+          for (let k = 1; k < blkLines.length; k++) lines.push(contIndent + blkLines[k]);
+        }
+        blocked = true;
+      }
     } else {
-      // LI 内子节点 walker：保留行内格式（fragFor 走元素级片段；P/DIV 等容器由 fragFor 平铺）
+      // LI 内子节点 walker：保留行内格式（fragFor 走元素级片段）
       fragFor(child, 'newline', frags);
     }
   }
   const tail = joinFrags(frags).trim();
   if (tail !== '') {
-    const cont = prefix + (nested ? ' '.repeat(marker.length) : marker);
     const tl = tail.split('\n');
+    if (blocked) lines.push(''); // 块级内容之后的新段落：段间空行（t14 §1.3 口径）
+    const cont = nested || blocked ? contIndent : prefix + marker;
     lines.push(cont + tl[0]);
-    for (let i = 1; i < tl.length; i++) lines.push(prefix + ' '.repeat(marker.length) + tl[i]);
+    for (let i = 1; i < tl.length; i++) lines.push(contIndent + tl[i]);
   }
   return lines;
 }
@@ -260,9 +296,19 @@ function tableToMd(table, ctx) {
   return [header, sep, ...body].join('\n');
 }
 
+/* t14 §1.4：PRE 围栏判定（块字符串首/尾闭合栅栏——``` 起收）——\n{3,} 归一化须跳过其内部
+ * （线性字符串操作，避免无界量词正则的 sonarjs super-linear-regex 告警） */
+function isPreBlock(b) {
+  if (!b.startsWith('```')) return false;
+  return b.trimEnd().endsWith('```');
+}
+
 export function htmlToMarkdown(html, ctx) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll('script, style, noscript, head, template').forEach((n) => n.remove());
   const blocks = blockifyContainer(doc.body, ctx || null);
-  return blocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+  // t14 §1.4（第六轮审查报告 §1.4）：块间/普通块内 \n{3,} → \n\n 归一化**跳过 PRE 围栏内部**——
+  // 代码块内连续空行原样保留（旧实现全局替换把 <pre> 内 3 个空行吞到 1 个；块间由 join 的 2 个空行分隔，逐块归一化等价）
+  const joined = blocks.map((b) => (isPreBlock(b) ? b : b.replace(/\n{3,}/g, '\n\n')));
+  return joined.join('\n\n').trim();
 }
