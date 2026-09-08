@@ -283,7 +283,7 @@
       if (mode === "br") brT = "<br>";
       else if (mode === "space") brT = " ";
       else brT = "\n";
-      out.push({ t: brT, vStart: null, vEnd: null });
+      out.push({ t: brT });
       return;
     }
     if (tag === "STRONG" || tag === "B") {
@@ -811,6 +811,7 @@
       let target = ridToTarget.get(s.rid);
       if (!target) throw new Error("workbook.xml.rels \u7F3A r:id \u6620\u5C04\uFF08" + s.rid + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
       target = target.replace(/^\/+/, "");
+      target = target.replace(/^(?:\.{1,2}\/)+/, "");
       if (!target.startsWith("xl/")) target = "xl/" + target;
       map.push({ name: s.name, target });
     }
