@@ -64,7 +64,7 @@ doc2md/
 ├── manifest.json / sw.js   # PWA：安装清单 + 离线 Service Worker（v3→v4：precache 应用外壳，OCR 大资源运行时缓存）
 ├── icons/                  # PWA 图标（192/180/512/512-maskable，tools/gen-icons.mjs 生成）
 ├── vendor/                 # 库同源分文件（mammoth/pdf.js/tesseract/core/read-excel-file；构建件+审查用）
-├── langs/                  # OCR 语言包（eng/chi_sim，同源懒加载；SW 预缓存）
+├── langs/                  # OCR 语言包（eng/chi_sim，同源懒加载；SW v4 运行时缓存——首次 OCR 后入缓存）
 ├── tools/
 │   ├── embed-bline.mjs     # 单文件组装（历史：B线资源嵌入；DD-7——T9′ 拆分后仅存档）
 │   ├── gen-icons.mjs       # PWA 图标生成（零依赖）
