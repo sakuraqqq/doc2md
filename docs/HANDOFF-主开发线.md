@@ -1,14 +1,14 @@
 # HANDOFF · doc2md 主开发线（2026-09-08 夜）
 
 > 交接对象：新会话（AI 助手）· 项目：doc2md（纯前端离线文档转 Markdown）
-> 基线：**HEAD `513b31a`（main，CI 绿）** · 契约：**140/140**（用户机实测）· 工作区：与版本库同目录
-> 开场白模板：`项目：doc2md 主开发线 · 基线 513b31a · 先读本文件 + AGENTS.md + docs/RELEASE.md`
+> 基线：**HEAD `2f38ad3`（main；§8.1 批后）** · 契约：**145/145**（本会话实跑，含新增契约组 Q）· 工作区：与版本库同目录
+> 上一基线：`513b31a`（本批起点）· 开场白模板：`项目：doc2md 主开发线 · 基线 <HEAD SHA> · 先读本文件 + AGENTS.md + docs/RELEASE.md`
 
 ---
 
 ## 1. 现状一句话
 
-已发布 **v0.1.1**（tag `v0.1.1` = `3265b0c`）；**v0.1.2 未发版**，已积累三批改动（图片方案 A / .doc 提示 / 第六轮 P1 批），全部验收闭环、CI 绿。
+已发布 **v0.1.1**（tag `v0.1.1` = `3265b0c`）；**v0.1.2 未发版**，已积累四批改动（图片方案 A / .doc 提示 / 第六轮 P1 批 / §8.1 护栏与文档批），全部验收闭环、契约 145/145 绿。
 
 ## 2. 本会话（9/7-9/8）已完成
 
@@ -19,6 +19,7 @@
 | v0.1.2 批2 | .doc（OLE2）友好提示「另存为 .docx」 | `d584ff4` |
 | 第五轮审查 A+B+C | 8 bug（sheet 映射错位/PDF 质量门/FFFD/zip 边界/OLE2 文案/backend/Cs/库路径裸异常）+ cmaps 许可 + 部署白名单 + 减脂 | `9148f4c`→`c3a8a10` |
 | 第六轮审查 P1 | html2md 原文空白判定 + 列表块边界 + PRE 空行；xlsx numFmt 日期格式化 | `8a4722e` / `d19d565` |
+| **§8.1 批（9/8 夜）** | §2.4 内嵌单遍 + 20MB 上限自动切 zip · 预览 1MB 截断 · §2.10 死文件清理 · §3 文档漂移 + 数字回填 | `7534990`→`2f38ad3` |
 | 隐私清洗 | 全历史重写（5 个真实邮箱→noreply、本地路径脱敏、敏感文档移出）；Actions 旧 run 删除 | 历史重写 + `489b431` |
 
 **纪律沉淀**（已写进 AGENTS.md / 全局 AGENTS.md）：
@@ -32,14 +33,14 @@
 **A. 第六轮审查剩余**（报告：`docs/doc2md-第六轮审查报告-2026-09-08.md` §2/§3）
 1. §2.2 real-cid-paper 再分发（**半修**：Pages 已不部署，但文件仍 tracked 在公开仓库）
 2. §2.3 xlsx sheet XML 无解压护栏（sharedStrings 有 4MB，sheet 没有）
-3. §2.4 单文件内嵌导出 O(n²) + 无上限（ui.js 每 asset 两次全串拷贝）
-4. §2.6 PDF 扩展 B 区 CJK 代理对（`slice(-1)` UTF-16 边界）
-5. §2.7 xlsx `<rPh>` 注音重复（collectTTexts 未排除）
-6. §2.9 metrics 未接 CI（当前 lint 31w / metrics 23 超限）
-7. §2.10 `patches/router-bootstrap.mjs` 死文件 + 预览全量灌 textarea
-8. §3 文档口径漂移：template 徽标「单文件」/ SW 注释 v3（实际 v4）/ README「85KB」（实际 ~98KB）/ architecture §4.4
+3. §2.6 PDF 扩展 B 区 CJK 代理对（`slice(-1)` UTF-16 边界）
+4. §2.7 xlsx `<rPh>` 注音重复（collectTTexts 未排除）
+5. §2.9 metrics 未接 CI（当前 lint 31w / metrics 23 超限）
+6. ~~§2.4 单文件内嵌导出 O(n²) + 无上限~~ ✅ **已闭环（§8.1 批，`70fb56a`）**——单遍替换 + 20MB 上限自动切 zip（拍板 T-7）
+7. ~~§2.10 `patches/router-bootstrap.mjs` 死文件 + 预览全量灌 textarea~~ ✅ **已闭环**——死文件移入 `.私档/`（`9a53d15`）+ 预览 1MB 截断（`24e22bd`）
+8. ~~§3 文档口径漂移~~ ✅ **已闭环（`fb0710b` + `2f38ad3`）**——template 徽标/注释 + SW v4 口径 + 体积数字回填 **102KB（104,064 B）** + RELEASE-CHECKLIST 补 CACHE_NAME 硬检查；**architecture §4.4 经实测回读已于 `d19d565` 同步，无残余**
 
-**B. v0.1.2 剩余功能**：预览 1MB 截断 · PDF 图纸页保图（27 页机械指导书实测触发）
+**B. v0.1.2 剩余功能**：PDF 图纸页保图（27 页机械指导书实测触发）｜~~预览 1MB 截断~~ ✅ 已闭环（§8.1 批）
 
 **C. 发版**：v0.1.2（bump `0.1.2` + 产物重建 + tag + gh release + RELEASE.md 回填）——待 backlog 收敛后
 
@@ -57,8 +58,9 @@
 | 场景 | 做法 |
 |---|---|
 | git log | `git --no-pager log --oneline -N`（PowerShell 下分页器报 `'nutc': unknown terminal type.`） |
+| git 其它命令 | **不加管道/重定向**：`git … \| Select-Object` / `2>&1` / `\| Out-String` → `Program 'git.exe' failed to run: Access is denied`（沙箱禁命名管道，**命令根本没执行**——易误判为 commit 失败）；`-c safe.directory='*'` 在 pwsh 下引号被吞 → 用同进程三件套 `$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*`（§8.1 批实测固化） |
 | 提交身份 | 全局已设 `sakuraqqq` / `sakuraqqq@users.noreply.github.com`（noreply，防邮箱泄露） |
-| build / test | **用户终端**跑（沙箱禁 esbuild spawn / node --test / 浏览器 spawn） |
+| build / test | **用户终端**跑（沙箱禁 esbuild spawn / node --test / 浏览器 spawn）；经用户批准的一次性升权可在会话内实跑（§8.1 批已实证：`npm run build` + `npm test` 145/145） |
 | 发布动作 | `git push` / `tag` / `gh release` **用户执行**（AI 只到 dry-run） |
 | 工作树 | `.私档/`（私人文档）· `docs/copyright/` `tools/gen-copyright.mjs` `.script-archive/`（软著材料）——均 gitignore，**禁止 add** |
 | 提交范围 | 只 `git add` 指定路径，**禁用 `git add -A`**（并行线文件混入） |
@@ -74,10 +76,11 @@
 
 ## 7. 团队状态
 
-`doc2md-v012`（队长本会话）：qa-dev / conv-dev / core-dev 三人，全部 idle/ready；任务 t1-t16 全 completed（v0.1.2 两批 + 第五轮 A/B/C + 第六轮 P1）。新会话可复用（`agent_teams_status` 一次确认）或重建。
+`doc2md-v012`（上一会话）：qa-dev / conv-dev / core-dev 三人，任务 t1-t16 全 completed。**§8.1 批未组队**——单会话自干（用户拍板省 token 模式）；新会话小改动自干、跨模块/高风险再拉 AgentTeams。
 
 ## 8. 下一批建议
 
-1. **第六轮 §2 高价值项**：单文件内嵌 O(n²) + 预览截断（§2.4 + B 组预览项）+ 死文件清理（§2.10）+ 文档漂移（§3）——一批可做
-2. 或**直接收敛发 v0.1.2**（bump/tag/Release）
-3. 毕设线待用户开口（视觉构想 v2 + YOLO26 环境清单）
+1. **第六轮剩余 5 项**：§2.2 real-cid-paper 处置（历史清洗 or 移出公开仓）+ §2.3 sheet XML 护栏 + §2.6 CJK 代理对 + §2.7 `<rPh>` + §2.9 metrics 接 CI——一批可做
+2. **v0.1.2 剩余功能**：PDF 图纸页保图（真实 27 页机械指导书 25-27 页）
+3. 或**直接收敛发 v0.1.2**（bump `0.1.2` + 产物重建 + tag + gh release + RELEASE.md 回填）——当前契约 145/145 全绿、pwa 48/48，已具备发版条件
+4. 毕设线待用户开口（视觉构想 v2 + YOLO26 环境清单）
