@@ -24,7 +24,7 @@
 
 - 市面上的转换工具大多要上传文件、注册账号或装 Python 环境；MarkItDown 是 CLI/服务端思路，网页版体验友好但基本都走云端。
 - 大多数「文档转 Markdown」网页版要么在服务器转（有隐私风险），要么依赖 CDN（断网即废）。
-- 本项目把这两条路都堵上：**零外发 + 单目录离线（index+`vendor/`+`langs/`，同源分文件）+ PWA 离线缓存**，`index.html`（约 85KB 构建产物——应用逻辑 bundle 约 47KB + 模板壳）+ 本地库文件就是一个完整的工具。
+- 本项目把这两条路都堵上：**零外发 + 单目录离线（index+`vendor/`+`langs/`，同源分文件）+ PWA 离线缓存**，`index.html`（约 102KB 构建产物——应用逻辑 bundle 约 64KB + 模板壳）+ 本地库文件就是一个完整的工具。
 
 ## 功能一览（v1）
 
@@ -38,7 +38,7 @@
 | 图片（PNG/JPG/…） | tesseract.js OCR | ✅ | eng+chi_sim（LSTM 量化，语言包 `langs/` 同源懒加载） |
 | PWA | manifest + service worker | ✅ | 添加到主屏（standalone）+ 离线缓存（SW precache + 离线回退） |
 
-全部库（mammoth / pdf.js / tesseract.js / read-excel-file）与 OCR 语言包为**同源分文件**（`vendor/` + `langs/`，`index.html` 约 85KB 构建产物——应用逻辑 bundle 约 47KB + 模板壳）；worker/WASM 本地 blob——无任何 CDN 引用。
+全部库（mammoth / pdf.js / tesseract.js / read-excel-file）与 OCR 语言包为**同源分文件**（`vendor/` + `langs/`，`index.html` 约 102KB 构建产物——应用逻辑 bundle 约 64KB + 模板壳）；worker/WASM 本地 blob——无任何 CDN 引用。
 
 ## 为什么这么定（口径）
 
@@ -60,7 +60,7 @@
 
 ```
 doc2md/
-├── index.html              # 构建产物（≈85KB：应用逻辑 bundle ≈47KB（注册表/嗅探/UI/挂钩）+ 模板壳；库全部同源分文件引入）
+├── index.html              # 构建产物（≈102KB / 104,064 B：应用逻辑 bundle ≈64KB（注册表/嗅探/UI/挂钩）+ 模板壳；库全部同源分文件引入）
 ├── manifest.json / sw.js   # PWA：安装清单 + 离线 Service Worker（v3→v4：precache 应用外壳，OCR 大资源运行时缓存）
 ├── icons/                  # PWA 图标（192/180/512/512-maskable，tools/gen-icons.mjs 生成）
 ├── vendor/                 # 库同源分文件（mammoth/pdf.js/tesseract/core/read-excel-file；构建件+审查用）

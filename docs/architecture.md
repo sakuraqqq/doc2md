@@ -127,7 +127,7 @@ async function convert(file /* File */) -> Promise<{
 - 默认 `eng+chi_sim`；输出纯文本 + warnings（空结果 / 置信度 <60% 提示）；`backend='tesseract'`。
 - ⚠️ **已知限制（2026-09-04 实测）**：契约样例 `sample.png` 曾为合成 5×7 点阵字体（0 为斜杠零、2 为折线形），与 tesseract 训练分布差异过大——
   LSTM/legacy 引擎、放大/逐字符识别均无法正确识别 `DOC2MD`/`2026`。QA 已于 DD-8 将 '0' 改标准字形重生成样例（保留断言），**2026-09-04 B 线重测：`HELLO DOC2MD 2026` 三令牌全中（懒加载首次 427ms）**。
-- 首载体积（T9′，DD-15）：index.html **32KB**（仅应用逻辑）+ vendor/（mammoth 636KB / pdfjs 1.4MB / tesseract 176KB / core 7.9MB / read-excel 39KB）+ langs/（5.2MB+2.5MB）——**全部同源分文件，无内联**；SW 分段缓存（sw.js v4：外壳 PRECACHE 全量 + vendor/langs/cmaps 运行时缓存）断网离线全功能。
+- 首载体积（T9′，DD-15）：index.html **102KB**（104,064 B——应用逻辑 bundle ≈64KB + 模板壳）+ vendor/（mammoth 636KB / pdfjs 1.4MB / tesseract 176KB / core 7.9MB / read-excel 39KB）+ langs/（5.2MB+2.5MB）——**全部同源分文件，无内联**；SW 分段缓存（sw.js v4：外壳 PRECACHE 全量 + vendor/langs/cmaps 运行时缓存）断网离线全功能。
 
 ## 5. 错误处理策略（全部本地化，中文友好）
 
