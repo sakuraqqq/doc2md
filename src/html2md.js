@@ -58,7 +58,9 @@ function fragFor(el, mode, out) {
     if (mode === 'br') brT = '<br>';
     else if (mode === 'space') brT = ' ';
     else brT = '\n';
-    out.push({ t: brT, vStart: null, vEnd: null });
+    // 第七轮 §2.4：原 {t, vStart, vEnd} 的 vStart/vEnd 是 t12「可见字符」规则残留死字段
+    //（joinFrags 现只读 lead/trail，见文件头注释）——清理为纯文本片段。
+    out.push({ t: brT });
     return;
   }
   if (tag === 'STRONG' || tag === 'B') {
