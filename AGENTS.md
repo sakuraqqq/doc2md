@@ -29,6 +29,7 @@
 - 提交身份用 `-c user.name=... -c user.email=...` 局部覆盖（基线 commit 同款），以仓库历史既有身份为准，不猜。
 - npm 依赖：如需安装，cache 指到工作区内（`$env:npm_config_cache='<workspace>/.npm-cache'`），禁止在 ~/.dsh / AppData 安装；装完确认许可再内联。
 - 工作区外文件：先复制进工作区再处理；沙箱拒绝如实上报，同一操作不重试超过 2 次。
+- PowerShell 下 `git log`/`git diff` 触发分页器会报 `'nutc': unknown terminal type.`（TERM 未设）→ 一律用 `git --no-pager log --oneline -N`（已踩 2 次，2026-09-08 固化）。
 
 ## 决策史（指针）
 
