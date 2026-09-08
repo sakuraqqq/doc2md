@@ -249,39 +249,26 @@
 
   // src/html2md.js
   var BLOCK_TAGS = /* @__PURE__ */ new Set(["H1", "H2", "H3", "H4", "H5", "H6", "P", "UL", "OL", "LI", "DL", "DT", "DD", "BLOCKQUOTE", "TABLE", "PRE", "HR", "DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "MAIN", "ASIDE", "FIGURE", "FIGCAPTION", "ADDRESS", "NAV"]);
-  function firstVisible(s) {
-    const m = /^\s*(\S)/.exec(s);
-    return m ? m[1] : null;
-  }
-  function lastVisible(s) {
-    const m = /(\S)\s*$/.exec(s);
-    return m ? m[1] : null;
-  }
   function escUrl(u) {
     return String(u).replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\s/g, "%20");
   }
   function joinFrags(frags) {
     let t = "";
-    let curV = null;
+    let trail = false;
     for (const f of frags) {
       if (f.t === "") continue;
-      if (t === "") {
-        t = f.t;
-        curV = f.vEnd !== null ? f.vEnd : null;
-        continue;
-      }
-      if (/\s$/.test(t) || /^\s/.test(f.t)) t += f.t;
-      else if (curV !== null && f.vStart !== null && /[A-Za-z0-9]/.test(curV) && /[A-Za-z0-9]/.test(f.vStart)) t += " " + f.t;
-      else t += f.t;
-      curV = f.vEnd !== null ? f.vEnd : null;
+      if (t !== "" && !/\s$/.test(t) && !/^\s/.test(f.t) && (trail || f.lead)) t += " ";
+      t += f.t;
+      trail = f.trail;
     }
     return t;
   }
   function collectFrags(node, mode, out) {
     node.childNodes.forEach((child) => {
       if (child.nodeType === 3) {
-        const t = normWs(child.textContent);
-        if (t !== "") out.push({ t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+        const raw = child.textContent;
+        const t = normWs(raw);
+        if (t !== "") out.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
         return;
       }
       if (child.nodeType !== 1) return;
@@ -301,35 +288,43 @@
     }
     if (tag === "STRONG" || tag === "B") {
       const inner = joinFrags(collectFrags(el, mode, [])).trim();
-      if (inner) out.push({ t: "**" + inner + "**", vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+      if (inner) {
+        const raw = el.textContent || "";
+        out.push({ t: "**" + inner + "**", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
+      }
       return;
     }
     if (tag === "EM" || tag === "I") {
       const inner = joinFrags(collectFrags(el, mode, [])).trim();
-      if (inner) out.push({ t: "*" + inner + "*", vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+      if (inner) {
+        const raw = el.textContent || "";
+        out.push({ t: "*" + inner + "*", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
+      }
       return;
     }
     if (tag === "CODE") {
-      const c = el.textContent.trim();
-      if (c) out.push({ t: "`" + c + "`", vStart: firstVisible(c), vEnd: lastVisible(c) });
+      const raw = el.textContent || "";
+      const c = raw.trim();
+      if (c) out.push({ t: "`" + c + "`", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
       return;
     }
     if (tag === "A") {
       let href = el.getAttribute("href") || "";
       if (/^\s*(javascript|vbscript|data):/i.test(href)) href = "";
+      const raw = el.textContent || "";
       const inner = joinFrags(collectFrags(el, mode, [])).trim();
       if (!inner) return;
       if (el.querySelector("img") && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
-        out.push({ t: "[" + inner + "](" + escUrl(href) + ")", vStart: null, vEnd: null });
+        out.push({ t: "[" + inner + "](" + escUrl(href) + ")", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
         return;
       }
-      out.push({ t: "[" + inner.replace(/\]/g, "\\]") + "](" + escUrl(href) + ")", vStart: firstVisible(inner), vEnd: lastVisible(inner) });
+      out.push({ t: "[" + inner.replace(/\]/g, "\\]") + "](" + escUrl(href) + ")", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
       return;
     }
     if (tag === "IMG") {
       const alt = el.getAttribute("alt") || "";
       const src = el.getAttribute("src") || "";
-      out.push({ t: "![" + alt.replace(/\]/g, "%5D") + "](" + escUrl(src) + ")", vStart: null, vEnd: null });
+      out.push({ t: "![" + alt.replace(/\]/g, "%5D") + "](" + escUrl(src) + ")", lead: false, trail: false });
       return;
     }
     collectFrags(el, mode, out);
@@ -347,8 +342,9 @@
     };
     for (const child of Array.from(el.childNodes)) {
       if (child.nodeType === 3) {
-        const t = normWs(child.textContent);
-        if (t !== "") frags.push({ t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+        const raw = child.textContent;
+        const t = normWs(raw);
+        if (t !== "") frags.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
         continue;
       }
       if (child.nodeType !== 1) continue;
@@ -409,39 +405,70 @@
       lines.push(...liToLines(li, indent, isOL, n));
       if (isOL) n++;
     }
-    return lines.filter((l) => l !== "").join("\n");
+    return lines.filter((l) => l !== null).join("\n");
   }
   function liToLines(li, indent, isOL, num) {
     const prefix = " ".repeat(indent);
     const marker = isOL ? num + ". " : "- ";
+    const contIndent = prefix + " ".repeat(marker.length);
     const lines = [];
     const frags = [];
     let nested = false;
+    let blocked = false;
+    let usedMarker = false;
     for (const child of Array.from(li.childNodes)) {
       if (child.nodeType === 3) {
-        const t = normWs(child.textContent);
-        if (t !== "") frags.push({ t, vStart: firstVisible(t), vEnd: lastVisible(t) });
+        const raw = child.textContent;
+        const t = normWs(raw);
+        if (t !== "") frags.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
         continue;
       }
       if (child.nodeType !== 1) continue;
       const tag = child.tagName;
       if (tag === "UL" || tag === "OL") {
         const head = joinFrags(frags).trim();
-        if (head !== "") lines.push(prefix + marker + head);
+        if (head !== "") {
+          lines.push(prefix + marker + head);
+          usedMarker = true;
+        }
         frags.length = 0;
         nested = true;
         const sub = listElToMd(child, indent + marker.length);
         if (sub) sub.split("\n").forEach((l) => lines.push(l));
+      } else if (BLOCK_TAGS.has(tag) && tag !== "LI") {
+        const head = joinFrags(frags).trim();
+        if (head !== "") {
+          lines.push(prefix + marker + head);
+          frags.length = 0;
+          usedMarker = true;
+        }
+        const subBlocks = blockOfEl(child, null);
+        for (let bi = 0; bi < subBlocks.length; bi++) {
+          const blk = subBlocks[bi];
+          if (blk === "") continue;
+          const blkLines = blk.split("\n");
+          if (!usedMarker) {
+            lines.push(prefix + marker + blkLines[0]);
+            for (let k = 1; k < blkLines.length; k++) lines.push(contIndent + blkLines[k]);
+            usedMarker = true;
+          } else {
+            lines.push("");
+            lines.push(contIndent + blkLines[0]);
+            for (let k = 1; k < blkLines.length; k++) lines.push(contIndent + blkLines[k]);
+          }
+          blocked = true;
+        }
       } else {
         fragFor(child, "newline", frags);
       }
     }
     const tail = joinFrags(frags).trim();
     if (tail !== "") {
-      const cont = prefix + (nested ? " ".repeat(marker.length) : marker);
       const tl = tail.split("\n");
+      if (blocked) lines.push("");
+      const cont = nested || blocked ? contIndent : prefix + marker;
       lines.push(cont + tl[0]);
-      for (let i = 1; i < tl.length; i++) lines.push(prefix + " ".repeat(marker.length) + tl[i]);
+      for (let i = 1; i < tl.length; i++) lines.push(contIndent + tl[i]);
     }
     return lines;
   }
@@ -484,11 +511,16 @@
     const body = norm.slice(1).map((r) => "| " + r.join(" | ") + " |");
     return [header, sep, ...body].join("\n");
   }
+  function isPreBlock(b) {
+    if (!b.startsWith("```")) return false;
+    return b.trimEnd().endsWith("```");
+  }
   function htmlToMarkdown(html, ctx) {
     const doc = new DOMParser().parseFromString(html, "text/html");
     doc.querySelectorAll("script, style, noscript, head, template").forEach((n) => n.remove());
     const blocks = blockifyContainer(doc.body, ctx || null);
-    return blocks.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+    const joined = blocks.map((b) => isPreBlock(b) ? b : b.replace(/\n{3,}/g, "\n\n"));
+    return joined.join("\n\n").trim();
   }
 
   // src/docx.js
@@ -916,7 +948,78 @@
     const body = norm.slice(1).map((r) => "| " + r.map(esc).join(" | ") + " |");
     return [header, sep, ...body].join("\n");
   }
-  function xlsxParseSheet(xml, rowLimit, strings) {
+  function excelSerialToDate(serial) {
+    const s = Math.floor(serial);
+    let off = s;
+    if (s >= 1 && s < 61) off = s + 1;
+    const d = new Date(Date.UTC(1899, 11, 30) + off * 864e5);
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const da = String(d.getUTCDate()).padStart(2, "0");
+    return y + "-" + mo + "-" + da;
+  }
+  function isoDateOnly(v) {
+    return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : decodeXml(v);
+  }
+  function stripBracketed(code) {
+    let out = "";
+    let p = 0;
+    while (true) {
+      const b = code.indexOf("[", p);
+      if (b < 0) {
+        out += code.slice(p);
+        break;
+      }
+      out += code.slice(p, b);
+      const e = code.indexOf("]", b + 1);
+      if (e < 0) break;
+      p = e + 1;
+    }
+    return out;
+  }
+  function parseStylesDateFormats(stylesXml) {
+    const start = stylesXml.indexOf("<cellXfs");
+    const end = start >= 0 ? stylesXml.indexOf("</cellXfs>", start) : -1;
+    if (start < 0 || end < 0) throw new Error("styles.xml \u7F3A cellXfs\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+    const cellXfsXml = stylesXml.slice(start, end);
+    const numFmtCodes = /* @__PURE__ */ new Map();
+    const nfRe = /<numFmt\s[^>]*>/g;
+    let nm;
+    while (nm = nfRe.exec(stylesXml)) {
+      const tag = nm[0];
+      const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(tag);
+      const fcM = /formatCode\s*=\s*"([^"]*)"/.exec(tag);
+      if (idM && fcM) numFmtCodes.set(parseInt(idM[1], 10), decodeXml(fcM[1]));
+    }
+    const xfIds = [];
+    const xfRe = /<xf\s[^>]*>/g;
+    let xm;
+    while (xm = xfRe.exec(cellXfsXml)) {
+      const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(xm[0]);
+      xfIds.push(idM ? parseInt(idM[1], 10) : 0);
+    }
+    const isBuiltinDateId = (id) => id >= 14 && id <= 22 || id >= 27 && id <= 36 || id >= 45 && id <= 47 || id >= 50 && id <= 58;
+    const dateFlags = xfIds.map((id) => {
+      if (!id) return false;
+      if (isBuiltinDateId(id)) return true;
+      const code = numFmtCodes.get(id);
+      return typeof code === "string" && /[ymdhs]/i.test(stripBracketed(code));
+    });
+    return {
+      isDateStyle(styleIdx) {
+        return !!dateFlags[styleIdx];
+      }
+    };
+  }
+  var NO_DATE_STYLES = { isDateStyle: () => false };
+  function serialDateOrRaw(c, styles) {
+    const numeric = /^[+-]?[\d.]+$/.test(c.v);
+    if (c.s === "" || !numeric) return decodeXml(c.v);
+    if (!styles.isDateStyle(parseInt(c.s, 10))) return decodeXml(c.v);
+    return excelSerialToDate(parseFloat(c.v));
+  }
+  function xlsxParseSheet(xml, rowLimit, strings, dateStyles) {
+    const styles = dateStyles || NO_DATE_STYLES;
     const { rawRows, maxS, more } = scanSheetRows(xml, rowLimit);
     const ss = maxS >= 0 ? parseSharedStrings(strings || "", maxS) : [];
     const rows = rawRows.map((cells) => cells.map((c) => {
@@ -932,7 +1035,8 @@
         if (c.v === "0") return "false";
         return c.v;
       }
-      return decodeXml(c.v);
+      if (c.t === "d") return isoDateOnly(c.v);
+      return serialDateOrRaw(c, styles);
     }));
     return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more };
   }
@@ -950,6 +1054,8 @@
       }
       stringsXml = new TextDecoder().decode(stringsEntry.data);
     }
+    const stylesEntry = await zipEntry(buf, "xl/styles.xml");
+    const dateStyles = stylesEntry ? parseStylesDateFormats(new TextDecoder().decode(stylesEntry.data)) : null;
     const parts = [];
     const warnings = [];
     let truncated = false;
@@ -959,7 +1065,7 @@
       const entry = await zipEntry(buf, s.target);
       if (!entry) throw new Error("\u7F3A\u5DE5\u4F5C\u8868 XML\uFF08" + s.target + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
       const xml = new TextDecoder().decode(entry.data);
-      const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml);
+      const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml, dateStyles);
       totalRows += scanned;
       if (sheetTrunc) truncated = true;
       parts.push(`### Sheet: ${s.name === null ? "Sheet1" : s.name}
