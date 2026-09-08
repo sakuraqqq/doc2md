@@ -271,6 +271,19 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | Q3 | 内嵌上限默认口径：`window.__doc2md.embedMaxBytes === 20 * 1024 * 1024` | 严格相等 | 🔴 红（**先红**：页面无 `embedMaxBytes` 挂钩） |
 | Q4 | 超限自动切 zip：上限调至 1000 B → 单文件导出产物 `.zip`（md + 2 assets 成对）+ 状态提示含「超过内嵌上限」 | 后缀 + readZip + includes | 🔴 红（**先红**：当前无上限判定，产物恒为 .md 内嵌） |
 
+### 契约组 G6 — xlsx rels Target `../` 相对路径（第七轮审查报告 §2.2；2026-09-09 契约先红）
+
+口径：OOXML 的 rels Target 以 `xl/` 为基准，允许 `../worksheets/sheet1.xml` 这类相对形态（第三方工具会多带一层 `../`）。实现须先归一化 `./`、`../` 段再按 `xl/` 补全，使自解析路径（流式/日期/截断精度）对该形态同样可用；仍命不中 zip 条目时才回退库路径。
+
+样例：`sample-rels-dotdot.xlsx`（1,922 B / SHA `478AD123…`——单 sheet `DotDot`，worksheet Target=`../worksheets/sheet1.xml`；gen-samples 确定性生成 + manifest 字节锁）。
+
+| 编号 | 断言 | 标准 | 当前（基线 f5aed38，契约先红） |
+|---|---|---|---|
+| G6-0 | 样例存在且与 manifest 字节级一致 | 静态（字节锁） | 🟢 绿（本批新增登记） |
+| G6-1 | 内容正确：转换成功 + 含 `### Sheet: DotDot` 与令牌 `DOC2MD-RELSDOT-2026` | error=undefined + includes | 🔴 红（**先红实测**：`转换失败：文件已损坏或不是有效的 Excel 文档（zip/解析失败）`——**库回退路径同样读不了 `../` 形态**，故本条不是「降级」而是**用户可见失败**；第七轮报告 §2.2「影响」低估，本表按实测口径登记） |
+| G6-2 | `backend='xlsx-self'`（../ 归一化后走自解析） | 严格相等 | 🔴 红（**先红实测**：`backend=null`——`xlsxWorkbookMap` 拼成 `xl/../worksheets/sheet1.xml` → zip 精确匹配失败 → 抛错 → 回退库路径同样失败 → 整篇失败） |
+| G6-3 | 无 error/warnings | deepEqual [] | 🟢 绿（失败路径下 `meta.warnings` 仍为 `[]`——本条不区分红绿，仅守「正常文件无提示」） |
+
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |

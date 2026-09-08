@@ -1256,6 +1256,79 @@ test('契约组 G5：xlsx 日期格式化（sample-numfmt-date.xlsx / real-date.
     await server.close();
   }
 });
+// ---------------------------------------------------------------------------
+// 契约组 G6：xlsx rels Target `../` 相对路径归一化（第七轮审查报告 §2.2，P2；契约先红）
+// 口径：OOXML 的 rels Target 以 `xl/` 为基准，允许 `../worksheets/sheet1.xml` 这类相对形态
+//   （第三方工具会多带一层 `../`）。实现须先归一化 `./`、`../` 段再按 `xl/` 补全，
+//   使自解析路径（流式/日期/截断精度）对该形态同样可用；仍命不中 zip 条目时才回退库路径。
+// 样例：tests/data/sample-rels-dotdot.xlsx（单 sheet `DotDot`，worksheet Target=`../worksheets/sheet1.xml`；
+//   gen-samples 确定性生成 + manifest 字节锁）。
+// 断言：G6-1 转换成功且令牌 DOC2MD-RELSDOT-2026 保留（内容正确）；G6-2 backend='xlsx-self'
+//   （当前实现拼成 xl/../worksheets/… 命不中 → 回退库路径 → backend='read-excel-file' → 红）；
+//   G6-3 无 error/warnings（正常文件不该有任何提示）。
+// ---------------------------------------------------------------------------
+test('契约组 G6：xlsx rels Target ../ 相对路径（sample-rels-dotdot.xlsx；第七轮审查报告 §2.2）—— 契约先红', async (t) => {
+  await t.test('G6-0 sample-rels-dotdot.xlsx 存在且与 manifest 字节级一致', () => {
+    const p = nodePath.join(DATA, 'sample-rels-dotdot.xlsx');
+    assert.ok(fs.existsSync(p), 'sample-rels-dotdot.xlsx 缺失——请运行 npm run gen:samples');
+    const rec = readManifest().files['sample-rels-dotdot.xlsx'];
+    assert.ok(rec, 'sample-rels-dotdot.xlsx 未登记于 manifest');
+    const buf = fs.readFileSync(p);
+    assert.equal(buf.length, rec.bytes, '大小与 manifest 不一致（样例被改动）');
+    assert.equal(crypto.createHash('sha256').update(buf).digest('hex'), rec.sha256, 'SHA 与 manifest 不一致（样例被改动）');
+  });
+
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-rels-dotdot.xlsx')).toString('base64');
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-rels-dotdot.xlsx'));
+        },
+        { b64 }
+      );
+      const md = res.markdown || '';
+      await t.test('G6-1 内容正确：转换成功且含 ### Sheet: DotDot 与令牌 DOC2MD-RELSDOT-2026', () => {
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}（rels Target 用 ../ 相对路径的正常文件不得失败）`);
+        assert.ok(md.includes('### Sheet: DotDot'), `输出缺 sheet 分区：${JSON.stringify(md.slice(0, 160))}`);
+        assert.ok(md.includes('DOC2MD-RELSDOT-2026'), `输出缺令牌 DOC2MD-RELSDOT-2026：${JSON.stringify(md.slice(0, 200))}`);
+      });
+      await t.test("G6-2 backend='xlsx-self'（../ 归一化后走自解析；当前回退库路径 → 红）", () => {
+        assert.equal(
+          res.meta.backend,
+          'xlsx-self',
+          `backend=${res.meta.backend}（当前 xlsxWorkbookMap 把 ../worksheets/sheet1.xml 拼成 xl/../worksheets/… → 命不中 zip 条目 → 抛错回退库路径——第七轮 §2.2）`
+        );
+      });
+      await t.test('G6-3 无 error/warnings（正常文件不该有任何提示）', () => {
+        assert.deepEqual(res.meta.warnings || [], [], `warnings=${JSON.stringify(res.meta.warnings)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
 // 离线静态断言（无浏览器依赖）：读 index.html 源码文本。
 // 断言（断言语义）：
 //   H1 源码不含 'doc2md.local'（伪域名 corePath——红线：任何外域请求都是违约）。
