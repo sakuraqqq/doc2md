@@ -33,7 +33,7 @@ registry[type](file, buf) ── 转换器实现 ──────────�
 | `html2md.js` | HTML→Markdown 结构化 | BLOCK_TAGS/INLINE_TRANSPARENT、片段流行走器（joinFrags/fragFor/collectFrags）、列表/表格/引用/标题块级转换、htmlToMarkdown |
 | `bline.js` | B线资源层 | vendor 同源 URL（pdf worker、tesseract worker 入口 + 外域抛错 patch） |
 | `ocr.js` | OCR 资源/WORKER | ocrAssetsWarm（SW 分段缓存就绪检测 + 首载下载量提示）、getOcrWorker（lazy-init 单例） |
-| `pdf.js` | PDF 转换器 | pdfjs 加载、逐页文本层/OCR 判断（单页 <10 字符）、page N/M 进度 |
+| `pdf.js` | PDF 转换器 | pdfjs 加载、逐页文本层/OCR 判断（单页 <10 字符或质量占比 <40%）、page N/M 进度、单页 OCR 兜底 |
 | `xlsx.js` | XLSX 转换器 | zipEntry（中央目录 + DecompressionStream）、xlsxSheetNames（workbook.xml 自读）、表格格式化、截断口径 |
 | `docx.js` | DOCX 转换器 | fflate 解包/重打包、OMML→LaTeX（占位令牌法）、图片阈值抽取（≤100KB 内嵌/＞→meta.assets）、alt 口径 |
 | `convert.js` | 注册表/统一入口 | registry = { pdf, docx, xlsx, image, text }、convert()（护栏/嗅探调度/meta 同步） |
@@ -106,16 +106,18 @@ async function convert(file /* File */) -> Promise<{
 ### 4.3 pdf —— B线已实现 ✅（pdf.js 3.11.174 vendor 分文件 + tesseract OCR 降级）
 - 文本层：`pdfjs-dist@3.11.174`（Apache-2.0，**legacy UMD** 同源分文件 `vendor/pdfjs.pdf.min.js`，全局 `pdfjsLib`）；
   worker 同源文件 `./vendor/pdfjs.pdf.worker.min.js` 赋 `GlobalWorkerOptions.workerSrc`（T9′，零外发；file:// 下 pdf.js 自动回退主线程 fake worker）。
-- 扫描页/无文本层（全书文本量 < 10 字符）：tesseract.js LSTM OCR（见 §4.5 资源说明），逐页 render（scale 2）→ canvas → PNG → 识别。
+- 逐页门（审查报告 §2.3 逐页判断 + t27/t8 质量门槛）：页文本量 <10 字符 **或** 有效占比 <40% → 该页 OCR 降级；质量判类（t8）仅私用区（E000-F8FF/F0000-10FFFF）/替换符 FFFD/控制符记 garbage，字母/数字/符号/全角/emoji 等不误杀（纯符号文本层、西里尔/阿拉伯/泰文页不再误触发 OCR）；OCR = tesseract.js LSTM（见 §4.5 资源说明），逐页 render（scale 2）→ canvas → PNG → 识别。
+- 单页 OCR 兜底（t8）：`ocrPageToText` 失败（file:// worker/WASM 受限、引擎初始化失败）→ 有文本层页保留原文本层 + warning「第 N 页 OCR 不可用，已保留原文本层」；无文本层页跳过 + warning——单页失败不拖垮整篇。
 - 输出：`<!-- page N/M -->` 分页注释 + 正文；`backend='pdfjs'`（文本层）或 `'tesseract'`（OCR 降级）。
 - 错误处理：损坏 PDF（getDocument reject）→ `convert()` 捕获 → `转换失败：<原因>`。
 
-### 4.4 xlsx —— B线已实现 ✅（read-excel-file 5.8.7 vendor 分文件）
-- `read-excel-file@5.8.7`（MIT）官方 browser bundle 同源分文件 `vendor/read-excel-file.min.js`（UMD，全局 `readXlsxFile`，内嵌 fflate/@xmldom）。
+### 4.4 xlsx —— B线已实现 ✅（自解析主路径 + read-excel-file 5.8.7 回退；t33 流式 / t8 映射）
+- 主路径为内置流式自解析（零依赖 ZIP 中央目录 + DecompressionStream('deflate-raw')，t33）；`read-excel-file@5.8.7`（MIT）官方 browser bundle 同源分文件 `vendor/read-excel-file.min.js`（UMD，全局 `readXlsxFile`）仅作异常/护栏回退。
+- sheet 映射（t8）：`xlsxWorkbookMap` 解析 `xl/workbook.xml`（`<sheet name + r:id>` 按 tab 顺序）+ `xl/_rels/workbook.xml.rels`（`Id→Target`）→ 自解析按 target 读表——不再按 `sheet{N}.xml` 索引（Excel 拖表重排/删表后文件名与顺序脱钩 → 旧实现静默张冠李戴；解析失败回退库路径）。
 - 每 sheet 一张 GFM 表；`### Sheet: <名>` 分隔；第一行作表头；单元格 `|` 转义 `\|`。
 - 单元格格式化（与参考 `dsh-file-upload-convert.js` 口径一致）：`null/undefined → ''`、`Date → toISOString().slice(0,10)`（UTC YYYY-MM-DD）、其余 `String(v)`。
 - 护栏：每 sheet 前 1000 行、最多前 5 个 sheet；超出 → warnings + 说明行（`truncated` 语义由 convert 层 meta 携带）。
-- `backend='read-excel-file'`；空 sheet → `（空 sheet）`。
+- `backend='read-excel-file'`（契约枚举保持；自解析/库路径同值，信息性）；空 sheet → `（空 sheet）`。
 
 ### 4.5 image —— B线已实现 ✅（tesseract.js 6.0.1 vendor 分文件 OCR）
 - `tesseract.js@6.0.1`（Apache-2.0）同源分文件 `vendor/tesseract.tesseract.min.js`（UMD，全局 `Tesseract`）→ LSTM OCR（`oem=1`）。
