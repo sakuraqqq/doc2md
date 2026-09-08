@@ -90,6 +90,7 @@
 | F4 | `convert`(Big5 HTML `<meta charset="big5">` + Big5 字节「你好」) → 输出含「你好」 | includes | 🔴 红（**t23 新增·先红**：实测 Big5 字节 A741A66E 被 gb18030 解码误读为乱码——meta 命中后统一 gb18030 解码，**未按 meta charset 选 decoder**（big5 ≠ gb2312 族）；修复方向=t24 按 charset 值分派 TextDecoder('big5')） |
 | F5 | `convert`(viewport 前置 + `<meta charset="gb2312">` GB2312 HTML) → 输出含「hello 你好」 | includes | 🔴 红（**t23 新增·先红**：实测输出 `hello 乱码`——decodeText 只查**第一个** `<meta>`（viewport 无 charset）→ 后续 charset=gb2312 漏检 → 不重解；修复方向=t24 从所有 meta 标签中查找 charset（线性扫描全部）） |
 | F6 | `convert`(无 meta 短 GBK 'hello world 你好') → 输出无 U+FFFD 且含原串 | !includes \uFFFD | 🔴 红（**t23 新增·先红**：实测 `hello world ���`（含 U+FFFD）——替换字符占比 2/16=12.5% <30% 阈值未触发兜底；修复方向=t24 短文本判定（绝对替换数≥1 或调整阈值/按 CJK 字节特征兜底）） |
+| F7 | UTF-8 文本截掉**最后一个字节**（'你好世界，这是一个测试文档。' 42 B → 41 B；例 sample-truncated.txt）→ 输出含「你好世界，这是一个测试文档」且无 GB18030 mojibake 签名「浣犲ソ」 | includes ×2 | 🔴 红（**t10 新增·先红**：实测整篇 mojibake `浣犲ソ涓栫晫锛岃繖鏄竴涓祴璇曟枃妗ｃ€`——「任意 FFFD → 整篇 GB18030 重解」（1 个坏字节毁掉整篇）；修复方向=FFFD 占比阈值 ≥2% / 双解码评分（报告 §1.4）） |
 
 ### 契约组 G — xlsx 多 sheet 截断（2026-09-05 新增：契约先红 t4；审查报告 §1.5）
 
@@ -124,6 +125,17 @@
 | G3-2 | `### Sheet: First` 段落含 **BBB**、`### Sheet: Second` 段落含 **AAA**（名↔内容按 rels 映射） | includes | 🔴 红（**t7 新增·先红**：实测 First→`\| AAA \|`、Second→`\| BBB \|`——按 sheetN 索引读，名与内容错位；修复方向=读 rels r:id→Target） |
 | G3-3 | 无 error/warnings（当前为**静默**错位——错数据无任何提示） | error=undefined + warnings=[] | 🔴 红（**t7 登记**：实测 error=undefined、warnings=[]——正是「静默给错数据」的定性证据；修复属静默纠错，不警告） |
 
+### 契约组 G4 — 损坏 xlsx 越界防护 + xlsx-self backend（第五轮审查报告 §1.5/§1.7；2026-09-08 契约先红 t10）
+
+样例 `sample-corrupt-xlsx.xlsx`（113 B / SHA `54F22ECC…`——PK\x03 本地头名 'xl/workbook.xml'（sniff 判 xlsx）+ 中央目录条目 localOff=0x7FFFFF00 **越界** + EOCD count=1；zipEntry 无边界校验 → DataView/typed array 越界）。
+断言语义：G4-1 不得透出**裸实现异常**（`Offset is outside the bounds of the DataView` / `Invalid typed array length` / `RangeError` 类——引擎差异同类，断言按类别匹配不绑定单个文案；修复方向=localOff+30 > n 返回 null）；G4-2 自解析路径 backend=`'xlsx-self'`（用户 2026-09-08 拍板 §1.7 枚举扩展：`'builtin'|'mammoth'|'pdfjs'|'tesseract'|'read-excel-file'|'xlsx-self'`——当前恒 'read-excel-file' 信息失真）。
+
+| 编号 | 断言 | 标准 | 当前（基线 e420805 宿主浏览器实测，t10） |
+|---|---|---|---|
+| G4-0 | `sample-corrupt-xlsx.xlsx` 存在且与 manifest 字节级一致（113 B / SHA `54F22ECC…`） | 静态（字节锁） | 🟢 绿（t10 生成登记；gen:samples 幂等） |
+| G4-1 | convert(损坏 xlsx) 不得透出裸实现异常（应回退库解析或友好错误） | !match 裸异常类别 | 🔴 红（**t10 新增·先红**：实测 error='转换失败：Invalid typed array length: -2147483309'——本环境 V8 文案与报告实录的 'Offset is outside the bounds of the DataView' 不同（引擎差异），同类裸异常透传；xlsxSheetNames 先于自解析调用未捕获） |
+| G4-2 | convert(sample.xlsx) `meta.backend === 'xlsx-self'`（自解析路径如实报引擎） | equal | 🔴 红（**t10 新增·先红**：实测 backend='read-excel-file'——自解析恒报引擎值失真；既有 C 组断言无 backend 引用（登记：无需改既有断言；docs/architecture.md §2 枚举行同步属实现侧/文档侧批次） |
+
 ### 契约组 H — corePath 同源 / 零外域字面量 / SW v4 分段缓存（2026-09-05 新增：契约先红 t4；审查报告 §2.1/§2.2，红线相关）
 
 离线静态断言（读 index.html/sw.js 源码，无浏览器依赖）。H3-H6 为 t7 独立验收新增（任务授权：SW v4 分段缓存 PRECACHE 清单断言）。
@@ -139,6 +151,9 @@
 | H7 | sw.js activate 只清理 `doc2md-` 前缀缓存（不误删同源其他缓存） | 前缀过滤 | 🔴 红（**t23 新增·先红**：实测 `keys.filter((k) => k !== CACHE_NAME)` 无前缀过滤——会把同源其他 SW 缓存一并删掉；修复方向=t24 改 `k.startsWith('doc2md-')`） |
 | H8 | ocr.js 含 `file:` 检测分支 + 可行动错误文案 | location.protocol + 文案 | 🔴 红（**t23 新增·先红**：实测 ocr.js 无 `location.protocol` 检测、无可行动文案（仅注释提及 file://）；修复方向=t24 `location.protocol === 'file:'` → setStatus/throw 可行动提示（如「OCR 需在 http 服务下使用」）） |
 | H9 | sw.js 浮动 `caches.open(...).then(...)` 均链式带 `.catch` | 链式 .catch | 🔴 红（**t23 新增·先红**：实测 2 处（navigate/资源路径）`caches.open(CACHE_NAME).then((c) => c.put(...))` 未接 `.catch`——v3 有 catch、v4 重写丢失（备注：断言用精确链式匹配，不误吞外层 fetch 的 .catch）；修复方向=t24 补链式 `.catch`） |
+| H10 | sw.js **导航分支**：`cache.put` 前须有 `res.ok` 判断（非 2xx 不得缓存——404/500 离线回放） | 导航块内 ok 先于 put | 🔴 红（**t10 新增·先红**：实测导航分支（`req.mode === 'navigate'`）写缓存无 `res.ok`（资源分支已有 `if (res.ok)`，导航分支缺失——修复=同款一行包裹；报告 §2.5）） |
+| H11 | `docs/licenses.md` 登记 vendor/cmaps 许可（cmaps + Adobe——168 个 .bcmap + LICENSE 随库分发义务） | includes ×2（cmaps/Adobe） | 🔴 红（**t10 新增·先红**：实测 licenses.md 无「cmaps」/「Adobe」——pdf.js 官方 cmaps 资产未登记（「逐库一手证据」纪律缺口；修复=补 1 行条目，注明 Adobe 1990-2009 可再分发条款；报告 §2.1 合规）） |
+| H12 | `.github/workflows/deploy-pages.yml` 不得以 `path: .` 整仓部署（显式站点白名单） | !includes 'path: .' | 🔴 红（**t10 新增·先红**：实测 `path: .`（第 32 行）——tests/data（511KB 真实论文/大样例）与 docs/ 随 Pages 公开；用户 2026-09-08 拍板 §2.2「部署白名单」方案；修复=显式白名单：index.html/vendor/langs/icons/manifest/sw/.nojekyll 等必要项） |
 
 ### 契约组 I — docx 图片全抽取 + 导出二选一（2026-09-05 新增：契约先红 t4；审查报告 §2.4；**2026-09-07 口径更新：方案 A 用户拍板**，调研背书 `docs/图片导出方案-调研-20260907.md`）
 
@@ -220,7 +235,8 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 |---|---|---|---|
 | O1 | `sample-legacy-doc.doc` 存在且与 manifest 字节级一致（512 B / SHA `A899FB44…`）+ 前 8 字节 = OLE2 魔数 | 静态（字节锁 + magic） | 🟢 绿（t4 生成登记；gen:samples 幂等） |
 | O2 | convert(.doc) 失败响应同时包含「另存为」与「docx」（≈“老版 .doc（Word 97-2003）暂不支持，请用 Word/WPS 打开后另存为 .docx 再转换”） | includes ×2 | 🔴 红（**t4 新增·先红**：实测 error='无法识别的文件类型'——无「另存为」/「docx」；sniff 对 OLE2 判 unknown(binary)） |
-| E5（E 组追加） | OLE2 魔数 `D0CF11E0A1B11AE1` 不得判回 text（允许 unknown/doc——机制不绑定） | allowedTypes + notType | 🟢 绿（t4 新增·登记：实测 type='unknown'/detail='binary'——二进制启发式已兜住；守护「乱码成功」回归） |
+| O3 | OLE2 通用口径（第五轮审查报告 §1.6，用户 2026-09-08 拍板 B+C 批·**口径更新**）：OLE2 + 命名 `book.xls` → 错误含「另存为」与「.xls」（OLE2 是 .doc/.xls/.ppt/加密 Office 公共容器——不得误导为「老版 .doc…另存 .docx」） | includes ×2 | 🔴 红（**t10 新增·先红**：实测 error='老版 .doc（Word 97-2003）暂不支持，请用 Word/WPS 打开后另存为 .docx 再转换'——含「另存为」但无「.xls」（book.xls 被提示另存为 .docx = 误导）；修复方向=通用文案（报告 §1.6）） |
+| E5（E 组追加） | OLE2 魔数 `D0CF11E0A1B11AE1` 不得判回 text（允许 unknown/doc——机制不绑定） | allowedTypes + notType | 🟢 绿（t4 新增·登记：实测 type='unknown'/detail='binary'——二进制启发式已兜住；守护「乱码成功」回归；**t10 口径补充**：允许集合加入 'ole2'（报告 §1.6 通用类型名路径——实现机制不绑定，用户已拍板 B+C 批）） |
 
 ### 契约组 P — PDF 质量门与 OCR 失败兜底（第五轮审查报告 §1.2；P1 误杀 / P2 兜底；2026-09-08 契约先红 t7）
 
@@ -272,6 +288,8 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | `sample-shuffle-sheets.xlsx` | XLSX（合成） | 契约组 G3——sheet 名与内容错位（workbook 顺序 First→rId1/Second→rId2；rels **反指** rId1→sheet2.xml(BBB)、rId2→sheet1.xml(AAA)——Excel 拖动重排/删表形态；第五轮审查报告 §1.1） | 2,234 B / SHA `6A8C74C3…`；zip 合法，workbook.xml 2×`<sheet>`，rels 映射反指，sheet1/2.xml + sharedStrings 齐 | 字节锁（manifest）；确定性生成（生成而非人工）；新名不动既有 sample.* |
 | `sample-symbols.pdf` | PDF（合成） | 契约组 P1——纯 ASCII 符号文本层（`~^&*+={}<>|/@#$`×2，26 字符 >10；质量门误杀场景——第五轮审查报告 §1.2） | 613 B / SHA `3432DDE2…`；%PDF-1.4 合法，Type1 Helvetica 单 run 文本层 | 字节锁（manifest）；纯拉丁单字节（T-2 口径）；确定性生成 |
 | `sample-lowtext.pdf` | PDF（合成） | 契约组 P2——私用区 U+E050×8 文本层（Type1 `/Encoding /Differences[ 80 /uniE050 ]` → pdf.js 抽取 U+E050——任何质量门都判 garbage → 必走 OCR 分支；OCR 不可用兜底确定性复现——第五轮审查报告 §1.2） | 652 B / SHA `0F714EB0…`；%PDF-1.4 合法；文本层抽取已验证（pdf.js getTextContent → U+E050×8，宿主浏览器实证） | 字节锁（manifest）；确定性生成 |
+| `sample-truncated.txt` | TXT（合成） | 契约组 F7——UTF-8 末尾截断一字节（'你好世界，这是一个测试文档。' 42 B → 41 B；FFFD 过度触发——第五轮审查报告 §1.4） | 41 B / SHA `DBEFD79D…`；UTF-8 合法至结尾残序列（E3 80），正文 13 字完好 | 字节锁（manifest）；确定性生成 |
+| `sample-corrupt-xlsx.xlsx` | XLSX（损坏构造） | 契约组 G4-1——EOCD 中央目录 localOff=0x7FFFFF00 越界（zipEntry 无边界校验 → DataView/typed array 裸异常——第五轮审查报告 §1.5） | 113 B / SHA `54F22ECC…`；PK\x03 本地头（名 'xl/workbook.xml' 供 sniff 判 xlsx）+ CD 条目 + EOCD（count=1） | 字节锁（manifest）；确定性构造（非 zip 打包——纯结构字节） |
 
 ### 真实样例清单（T-3 通路落地：用户终端自 GitHub 上游下载，2026-09-04 登记）
 
@@ -342,6 +360,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-08 第五轮审查 B+C 批契约先红 t10（qa-dev；只改 tests/指定文件）**：基线 HEAD `e420805`（t7 A 批后同链）。来源：`docs/doc2md-第五轮审查报告-2026-09-08.md` §1.4/§1.5/§1.6/§1.7/§2.5/§2.1/§2.2+§2.10（用户 2026-09-08 拍板 B+C 一起做；§2.2 采「部署白名单」方案；§1.7 backend 枚举扩展已授权——同步 architecture §2 属实现侧/文档侧批次，本批只登记）。**样例 ×2（gen-samples 确定性生成 + manifest 字节锁；既有 21 样例重跑 SHA 零漂移 = 幂等）**：`sample-truncated.txt`（41 B / SHA `DBEFD79D…`——'你好世界，这是一个测试文档。' 42 B 截末字节）；`sample-corrupt-xlsx.xlsx`（113 B / SHA `54F22ECC…`——CD localOff=0x7FFFFF00 越界）。**断言新增/更新**：F-0 字节锁 + **F7**（截断 UTF-8 不整篇 mojibake：含「你好世界，这是一个测试文档」+ 无「浣犲ソ」）；**G4** ×3（G4-0 字节锁/G4-1 损坏 xlsx 不得透出裸实现异常（DataView 越界/Invalid typed array length/RangeError 类）/G4-2 backend='xlsx-self'）；**O3**（口径更新：OLE2+book.xls 命名 → 含「另存为」+「.xls」通用口径）；**H10**（sw.js 导航分支 res.ok 先于 cache.put）/H11（licenses.md 含 cmaps+Adobe）/H12（deploy-pages.yml 不得 `path: .`）；**E5 口径补充**（允许集合 + 'ole2'——机制路径不绑定）。**实测（宿主浏览器真实页面；沙箱 Playwright spawn EPERM 按 §5 基建红登记制）**：F7 = 🔴 红（实测整篇 mojibake `浣犲ソ涓栫晫锛岃繖鏄竴涓祴璇曟枃妗ｃ€`）；G4-1 = 🔴 红（实测 error='转换失败：Invalid typed array length: -2147483309'——**本环境 V8 文案与报告实录的 'Offset is outside the bounds of the DataView' 不同，同类裸异常透传**（登记：断言按类别匹配不绑定单文案））；G4-2 = 🔴 红（backend='read-excel-file'）；O3 = 🔴 红（实测 '老版 .doc…另存为 .docx'——含「另存为」无「.xls」）；H10（sw.js 导航分支无 res.ok）/H11（licenses.md 无 cmaps/Adobe）/H12（`path: .`）= 🔴 红（源码/文件静态实证）；F-0/G4-0 = 🟢。**既有断言口径更新（改断言=改口径例外=用户拍板）**：① O3 追加（O2 不改——通用文案须仍含「另存为」+「docx」）；② E5 允许集合 +'ole2'（无既有断言被改弱——E5 语义「不得判 text」不变）；③ **既有 C 组断言零改动**（无 backend 引用；仅登记 architecture.md §2 枚举行待同步）。**转绿条件**：实现侧按报告修复方向（FFFD 阈值/双解码评分；zipEntry 边界校验；OLE2 通用文案；backend 枚举；sw.js 导航 if(res.ok)；licenses.md cmaps 条目；deploy 白名单）后逐条自动转绿。用户机终验：`npm install && node node_modules/@playwright/test/cli.js install chromium && npm test` → 当前预期 F7/G4-1/G4-2/O3/H10/H11/H12 真跑红、其余绿。不做：src/sw.js/docs/.github 修复（实现侧批次——本批禁改）。
 - **2026-09-08 第五轮审查 A 批契约先红 t7（qa-dev；只改 tests/指定文件）**：基线 HEAD `f6dd73d`（v0.1.2 前两项已收官，112/112 全绿——O2 已由 t5/t6 转绿）。来源：`docs/doc2md-第五轮审查报告-2026-09-08.md` §1.1/§1.2（用户 2026-09-08 拍板 A+B+C 一起做）。**样例 ×3（gen-samples 确定性生成 + manifest 字节锁；既有 18 样例重跑 SHA 零漂移 = 幂等）**：`sample-shuffle-sheets.xlsx`（2,234 B / SHA `6A8C74C3F40441A8…`——workbook 顺序≠文件顺序、rels 反指）；`sample-symbols.pdf`（613 B / SHA `3432DDE28E448999…`——纯 ASCII 符号文本层 26 字符）；`sample-lowtext.pdf`（652 B / SHA `0F714EB0813AC49B…`——Differences[/uniE050] → pdf.js 抽 U+E050×8，**宿主浏览器实证抽取成功**）。**断言新增**（契约组 G3 ×4 + 契约组 P ×3，分组放置见 §2）：G3-0 字节锁（静态）/G3-1 恰 2 分区/G3-2 **First↔BBB、Second↔AAA**/G3-3 无 error/warnings；P-0 字节锁×2/P1 **纯符号不得走 OCR**（backend=pdfjs、无 OCR warning、符号原文保留）/P2 **OCR 不可用兜底**（file:// 下成功 + 文本层原文 U+E050 保留 + warning 含「保留原文本层」）。**实测（宿主浏览器真实页面；沙箱 Playwright spawn EPERM 按 §5 基建红登记制）**：G3-2 = 🔴 红（实测 First→`| AAA |`、Second→`| BBB |`——按 sheetN 索引读的静默错位，error/warnings 均空 = 「成功但不正确」最危险形态）；G3-0/G3-1 = 🟢（分区名正确——错位只发生在内容侧）；P1 = 🔴 红（实测 backend=**tesseract**、warning「…已用 OCR 识别」、输出 OCR 乱码——纯符号文本层被误判 garbage）；P2 = 🔴 红（file:// 宿主页面实测 error='转换失败：file:// 直接打开时 OCR 不可用…'、markdown 空——ocrPageToText 未捕获 getOcrWorker throw → 整篇失败）；P-0 = 🟢。**转绿条件**：实现侧按报告修复方向——G3-2 = xlsx 读 rels r:id→Target（A1 抽映射函数，重构配额 ≤50 行另提交）；P1 = 质量判类改 Unicode 属性/私用区+替换符+控制符记 garbage；P2 = 每页 OCR try/catch 失败保留文本层 + warning——本组断言无需改动自动转绿。**重构配额约定**：实现侧 ≤50 行小重构（A1 抽 sheet 映射函数、A2 判类表驱动）与本批断言无耦合；「重构后断言全绿」的验证归实现侧提交时点。用户机终验：`npm install && node node_modules/@playwright/test/cli.js install chromium && npm test` → 当前预期 G3-2/P1/P2 真跑红、其余绿；修复转绿后 G3 4/4 + P 3/3。不做：src 修复（实现侧批次——本批禁改 src/）。
 - **2026-09-08 .doc 友好提示独立验收 t6（qa-dev；修验分离——只验收不修改，产品/断言/样例零改动）**：基线 HEAD `d584ff4`（t4 契约 ad1387f + t5 src：src/sniff.js OLE2→type=doc + src/convert.js doc→「另存为 .docx」指引 + README 已知限制行）；**index.html 产物同步未就绪**（最后产物提交 = `a335204`（v0.1.2-t2），即 t3 已验证字节 EFFF0E02…——t5 特征未进产物，见发现①）。**结论：通过（无阻塞发现；O2 为源码级绿 + 产物级预期暂红，同步闭环后即转）**——①O1 绿（静态字节锁+魔数）、O2 源码级绿（ESM 直载 src/：文案命中「另存为」+「docx」、sniff→type=doc）、E5 双绿（src→doc ∈ {unknown,doc}；产物→unknown/binary ∈ 允许集，均 ≠ text——乱码成功守护）；②零回归（src 级全路径：E1-E4 5 项快照/txt/docx GFM/xlsx/pdf[pdfjs]/sample-images.docx[2 assets+2 refs+0 data:image]；产物级 txt/docx/pdf/imgDocx 抽查；静态 B/H 同语义复刻 **46/46**（B1 现 17 项含 sample-legacy-doc.doc）；pwa-audit 48/48）；③边界：非 OLE 未知二进制（MZ exe 构造）→ '无法识别的文件类型' 原语义零「另存为」泄漏（src+产物双验）；.docx/.pdf/.txt 正常路径零影响；④产物级=待构建同步（grep 当前 index.html 无 t5 特征——另存为文案/OLE2 分支均未出现=同步未发生；t5 为新增分支非替换，无「旧路径分支残留」问题）；⑤用户机终验说明见发现⑤。**5 个登记项（1 流程待闭环 + 2 环境/工具 + 2 信息），均只报告未修改**。
   **实测**（宿主浏览器；src 级 = 临时 ESM 直载页（.tmp/src-harness.html 与 /h.html——须在仓库根，见发现④；验收后已删）直载 src/convert.js+sniff.js，产物级 = 真实 index.html（96,642 B / SHA `EFFF0E02…` = HEAD a335204））：

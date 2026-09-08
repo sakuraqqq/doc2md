@@ -481,6 +481,8 @@ put('sample-legacy-doc.doc', buildLegacyDoc());
 put('sample-shuffle-sheets.xlsx', buildShuffleSheetsXlsx());
 put('sample-symbols.pdf', buildSymbolsPdf());
 put('sample-lowtext.pdf', buildLowtextPdf());
+put('sample-truncated.txt', buildTruncatedTxt());
+put('sample-corrupt-xlsx.xlsx', buildCorruptXlsx());
 
 /* ---------------- real-big.xlsx（大行数：50,000 行 × 3 列；契约组 L4/L5，t32） ----------------
  * 单 sheet 大行数样例：触发 L4（流式/性能——当前实现全量解析后截断，50K 行预计超 3000ms）与
@@ -689,10 +691,76 @@ function buildLegacyDoc() {
   return buf;
 }
 
+/* ---------------- sample-truncated.txt（UTF-8 末尾截断一字节；契约组 F7） ----------------
+ * 第五轮审查报告 §1.4（2026-09-08）：decodeText 的 FFFD 启发式过度触发——「出现任意 U+FFFD →
+ * 整篇改判 GB18030」→ 1 个坏字节毁掉整篇（P2）。
+ * 构造：'你好世界，这是一个测试文档。' 的 UTF-8 字节（14 字 ×3 = 42 B）截掉**最后一个字节**
+ * （。= E3 80 82 的 0x82）→ 41 B；容错 UTF-8 解码仅结尾出现 U+FFFD，正文 13 字完好。
+ * 断言（F7）：convert 输出含「你好世界，这是一个测试文档」且不含 GB18030 mojibake 签名「浣犲ソ」。
+ * 确定性：恒定字节。
+ */
+function buildTruncatedTxt() {
+  const full = Buffer.from('你好世界，这是一个测试文档。', 'utf8');
+  return full.subarray(0, full.length - 1);
+}
+
+/* ---------------- sample-corrupt-xlsx.xlsx（EOCD localOff 越界；契约组 G4） ----------------
+ * 第五轮审查报告 §1.5（2026-09-08）：zipEntry 读 central directory 的 localOff 前无边界校验 →
+ * DataView 越界裸 RangeError 透传（P3；第四轮已报未修）。
+ * 构造：本地文件头（PK\x03\x04，名 'xl/workbook.xml'——前 64KB 含 'xl/' 供 sniff 判 xlsx）
+ * + 中央目录条目（签名 0x02014b50，名相同，localOff=0x7FFFFF00 **越界**）+ EOCD（count=1）——
+ * zipEntry 匹配后读 localOff+26 → RangeError('Offset is outside the bounds of the DataView')。
+ * 断言（G4-1）：convert 不得透出该裸异常（回退结果或友好错误）。
+ * 确定性：恒定字节（无 zip 压缩，纯结构字节）。
+ */
+function buildCorruptXlsx() {
+  const name = Buffer.from('xl/workbook.xml', 'ascii');
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(0, 6);
+  local.writeUInt16LE(0, 8);
+  local.writeUInt16LE(0, 10);
+  local.writeUInt16LE(0, 14);
+  local.writeUInt32LE(0, 18);
+  local.writeUInt32LE(0, 22);
+  local.writeUInt16LE(name.length, 26);
+  local.writeUInt16LE(0, 28);
+  const cd = Buffer.alloc(46);
+  cd.writeUInt32LE(0x02014b50, 0);
+  cd.writeUInt16LE(20, 4);
+  cd.writeUInt16LE(20, 6);
+  cd.writeUInt16LE(0, 8);
+  cd.writeUInt16LE(0, 10);
+  cd.writeUInt16LE(0, 12);
+  cd.writeUInt16LE(0, 14);
+  cd.writeUInt16LE(0, 16);
+  cd.writeUInt32LE(0, 18);
+  cd.writeUInt32LE(0, 22);
+  cd.writeUInt32LE(0, 26);
+  cd.writeUInt16LE(name.length, 28);
+  cd.writeUInt16LE(0, 30);
+  cd.writeUInt16LE(0, 32);
+  cd.writeUInt16LE(0, 34);
+  cd.writeUInt16LE(0, 36);
+  cd.writeUInt32LE(0, 38);
+  cd.writeUInt32LE(0x7FFFFF00, 42); // local header offset —— 越界（实际文件仅 ~130 B）
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(0, 4);
+  eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(1, 8);
+  eocd.writeUInt16LE(1, 10);
+  eocd.writeUInt32LE(46 + name.length, 12);
+  eocd.writeUInt32LE(30 + name.length, 16); // central dir offset
+  eocd.writeUInt16LE(0, 20);
+  return Buffer.concat([local, name, cd, eocd]);
+}
+
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）；sample-truncated.txt 为 UTF-8 末尾截断样例（第五轮审查报告 §1.4 FFFD 过度触发——契约组 F7）；sample-corrupt-xlsx.xlsx 为损坏 xlsx 越界样例（EOCD localOff 越界，第五轮审查报告 §1.5——契约组 G4）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
