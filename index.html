@@ -216,6 +216,7 @@
     const ascii = headAscii(head);
     const pdfAt = ascii.indexOf("%PDF");
     if (pdfAt >= 0 && pdfAt <= 1024) return { type: "pdf" };
+    if (startsWith(head, [208, 207, 17, 224, 161, 177, 26, 225])) return { type: "doc" };
     if (startsWith(head, [137, 80, 78, 71, 13, 10, 26, 10])) return { type: "image", detail: "png" };
     if (head[0] === 255 && head[1] === 216 && head[2] === 255) return { type: "image", detail: "jpeg" };
     if (ascii.startsWith("GIF8")) return { type: "image", detail: "gif" };
@@ -1501,6 +1502,7 @@ ${p.text}
     if (s.type === "unknown") return done({ error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B" });
     if (s.type === "pptx") return done({ error: "PPTX \u4E0D\u5728 v1 \u652F\u6301\u8303\u56F4\uFF08\u89C1 README\uFF09\uFF0Cv2 \u518D\u8BAE" });
     if (s.type === "zip") return done({ error: "\u6682\u4E0D\u652F\u6301\u666E\u901A ZIP \u6587\u4EF6\uFF0C\u8BF7\u89E3\u538B\u540E\u518D\u8F6C\u6362" });
+    if (s.type === "doc") return done({ error: "\u8001\u7248 .doc\uFF08Word 97-2003\uFF09\u6682\u4E0D\u652F\u6301\uFF0C\u8BF7\u7528 Word/WPS \u6253\u5F00\u540E\u53E6\u5B58\u4E3A .docx \u518D\u8F6C\u6362" });
     if (!registry[s.type]) return done({ error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B" });
     try {
       const res = await registry[s.type](file, buf);
