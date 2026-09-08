@@ -50,22 +50,59 @@ export async function zipEntry(buf, wantedName) {
   return null;
 }
 
-/* xlsx sheet 名称列表：bundle 未导出 readSheetNames（t4 实测 G 组红根因），自读 xl/workbook.xml */
-export async function xlsxSheetNames(buf) {
-  // zipEntry 自身对损坏/异常结构返回 null（不再 try/catch 吞异常——t12；解析失败即回退单 sheet）
-  const entry = await zipEntry(buf, 'xl/workbook.xml');
-  if (!entry) return null;
-  const text = new TextDecoder().decode(entry.data);
-  const names = [];
-  // ZCode A 批 ④（2.2）：先在**原始 XML**上按 name="…" 捕获值，再对捕获值逐个解码实体——
-  // 此前先全局解码再正则：name 含 &quot; 的 sheet（如 报表"1"）会先变成引号截断正则 → 名被切断
-  const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
-  let m;
-  while ((m = re.exec(text))) {
-    const raw = m[1];
-    names.push(raw.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10))));
+/* xlsx workbook 映射（t8 · 第五轮审查 §1.1）：解析 xl/workbook.xml（<sheet> 按 tab 顺序，含 name + r:id）
+ * 与 xl/_rels/workbook.xml.rels（Id→Target），产出 [{name, target}]——内容按 rels 映射的 target 读取，
+ * 不再按 'sheet{N}.xml' 索引（Excel 拖表重排/删表后文件名与顺序脱钩 → 旧实现静默张冠李戴）。
+ * 任一解析失败/缺映射 → throw（调用方回退库路径，不静默错位）。 */
+/* workbook.xml 的 <sheet> 标签解析（tab 顺序 name + r:id；t8——防新增函数复杂度 → 拆小块） */
+function parseSheetTags(wbText) {
+  const sheets = [];
+  const sheetRe = /<sheet\s[^>]*>/g;
+  let sm;
+  while ((sm = sheetRe.exec(wbText))) {
+    const tag = sm[0];
+    const nm = /name\s*=\s*"([^"]*)"/.exec(tag);
+    const rid = /r:id\s*=\s*"([^"]*)"/.exec(tag);
+    if (!nm || !rid) throw new Error('workbook.xml sheet 定义缺 name/r:id，回退库解析');
+    sheets.push({ name: decodeXml(nm[1]), rid: rid[1] });
   }
-  return names.length > 0 ? names : null;
+  if (sheets.length === 0) throw new Error('workbook.xml 无 sheet 定义，回退库解析');
+  return sheets;
+}
+function parseRelsMap(relText) {
+  const map = new Map();
+  const relRe = /<Relationship\s[^>]*>/g;
+  let rm;
+  while ((rm = relRe.exec(relText))) {
+    const tag = rm[0];
+    const idM = /Id\s*=\s*"([^"]*)"/.exec(tag);
+    const tgM = /Target\s*=\s*"([^"]*)"/.exec(tag);
+    if (idM && tgM) map.set(idM[1], tgM[1]);
+  }
+  return map;
+}
+export async function xlsxWorkbookMap(buf) {
+  const wb = await zipEntry(buf, 'xl/workbook.xml');
+  if (!wb) throw new Error('缺 xl/workbook.xml，回退库解析');
+  const sheets = parseSheetTags(new TextDecoder().decode(wb.data));
+  const rels = await zipEntry(buf, 'xl/_rels/workbook.xml.rels');
+  if (!rels) throw new Error('缺 xl/_rels/workbook.xml.rels，回退库解析');
+  const ridToTarget = parseRelsMap(new TextDecoder().decode(rels.data));
+  const map = [];
+  for (const s of sheets) {
+    let target = ridToTarget.get(s.rid);
+    if (!target) throw new Error('workbook.xml.rels 缺 r:id 映射（' + s.rid + '），回退库解析');
+    target = target.replace(/^\/+/, ''); // 允许绝对路径形态（/xl/worksheets/…）
+    if (!target.startsWith('xl/')) target = 'xl/' + target;
+    map.push({ name: s.name, target });
+  }
+  return map;
+}
+
+/* xlsx sheet 名称列表（t4 兼容导出：tab 顺序；解析失败返回 null——调用方回退单 sheet 语义不变） */
+export async function xlsxSheetNames(buf) {
+  const map = await xlsxWorkbookMap(buf).catch(() => null);
+  return map && map.length > 0 ? map.map((s) => s.name) : null;
 }
 
 function decodeXml(s) {
@@ -239,8 +276,8 @@ function truncationMessage(readCount, totalRows, skipped) {
   return msg + '）';
 }
 
-/* t33 流式自解析路径（异常/护栏触发即 throw → 外层 .catch 回退库解析） */
-async function xlsxSelfParse(buf, readNames, names) {
+/* t33 流式自解析路径（异常/护栏触发即 throw → 外层 .catch 回退库解析）；t8：按 workbook 映射（name+target）读表 */
+async function xlsxSelfParse(buf, readMap, names) {
   const stringsEntry = await zipEntry(buf, 'xl/sharedStrings.xml');
   let stringsXml = null;
   if (stringsEntry) {
@@ -253,22 +290,22 @@ async function xlsxSelfParse(buf, readNames, names) {
   const warnings = [];
   let truncated = false;
   let totalRows = 0;
-  for (let i = 0; i < readNames.length; i++) {
-    const name = readNames[i];
-    const entry = await zipEntry(buf, 'xl/worksheets/sheet' + (i + 1) + '.xml');
-    if (!entry) throw new Error('缺工作表 XML（sheet' + (i + 1) + '），回退库解析');
+  for (let i = 0; i < readMap.length; i++) {
+    const s = readMap[i];
+    const entry = await zipEntry(buf, s.target);
+    if (!entry) throw new Error('缺工作表 XML（' + s.target + '），回退库解析');
     const xml = new TextDecoder().decode(entry.data);
     const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml);
     totalRows += scanned;
     if (sheetTrunc) truncated = true;
-    parts.push(`### Sheet: ${name === null ? 'Sheet1' : name}\n\n${xlsxRowsToMd(rows)}`);
+    parts.push(`### Sheet: ${s.name === null ? 'Sheet1' : s.name}\n\n${xlsxRowsToMd(rows)}`);
   }
-  const skipped = names.length - readNames.length;
+  const skipped = names.length - readMap.length;
   if (skipped > 0) {
     parts.push(`> 另有 ${skipped} 个 sheet 未读取（v1 上限 ${XLSX_SHEET_LIMIT} 个）`);
     truncated = true;
   }
-  if (truncated) warnings.push(truncationMessage(readNames.length, totalRows, skipped));
+  if (truncated) warnings.push(truncationMessage(readMap.length, totalRows, skipped));
   return { markdown: parts.join('\n\n').trim(), warnings, truncated, backend: 'read-excel-file' }; // backend 值保持契约枚举（信息性）
 }
 
@@ -300,9 +337,12 @@ async function xlsxByLib(file, buf, readNames, names) {
 
 /** xlsx 转换器（注册表 contract：见 docs/architecture.md §4.4） */
 export async function xlsxConvert(file, buf) {
-  const sheetNames = await xlsxSheetNames(buf);
-  const names = sheetNames && sheetNames.length > 0 ? sheetNames : [null];
-  const readNames = names.slice(0, XLSX_SHEET_LIMIT);
+  // t8：workbook 映射（tab 顺序 name + rels r:id→Target）为一等公民——自解析按 target 读；
+  // 映射失败（损坏/无 workbook.xml 或 rels）→ 直接回退库路径（不静默错位/不静默单 sheet）
+  const map = await xlsxWorkbookMap(buf).catch(() => null);
+  if (!map || map.length === 0) return xlsxByLib(file, buf, [null], [null]);
+  const readMap = map.slice(0, XLSX_SHEET_LIMIT);
+  const names = map.map((s) => s.name); // 全量名（截断计数用）
   // 首选：t33 流式自解析（线性扫描 ≤ROW_LIMIT+1 行即停）；任何异常/护栏 → .catch 回退库路径（无 try/catch 吞异常）
-  return await xlsxSelfParse(buf, readNames, names).catch(() => xlsxByLib(file, buf, readNames, names));
+  return await xlsxSelfParse(buf, readMap, names).catch(() => xlsxByLib(file, buf, readMap.map((s) => s.name), names));
 }

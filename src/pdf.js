@@ -136,20 +136,22 @@ function runsToPageText(runs) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/** 有效文本比例（CID 质量门槛，t27）：
- * good = CJK/假名/谚文 + ASCII 字母数字 + 常见标点（全角/半角）；其余可打印符号与所有控制字符 = garbage。
- * CID 无 ToUnicode 的「符号流垃圾」good 占比低（真实样例标定 <40%）；正常中文/英文文档 >80%（不误触发）。
- */
+/** 有效文本比例（CID 质量门槛，t27；t8 判类改 Unicode 属性思路——第五轮审查 §1.2）：
+ * 表驱动口径：仅私用区（E000-F8FF / F0000-10FFFF）/替换符 FFFD/控制符（C0-C1）记 garbage；
+ * 其余一切可打印字符（字母/数字/全角/符号/emoji/西里尔/阿拉伯/泰文…）记 good——
+ * 纯符号文本层不再误触发 OCR（P1 契约）；CID 无 ToUnicode 的垃圾特征 = PUA/FFFD 密集 → 仍判 garbage。 */
+function isPdfGarbageCode(code) {
+  if (code === 0xfffd) return true; // 替换符（解码失败/映射缺失）
+  if (code >= 0xe000 && code <= 0xf8ff) return true; // BMP 私用区
+  if (code >= 0xf0000 && code <= 0x10ffff) return true; // 补充平面私用区
+  return code < 0x20 || (code >= 0x7f && code <= 0x9f); // C0/C1 控制符（空白已在上层跳过）
+}
 export function textQualityRatio(text) {
-  const GOOD_PUNCT = '.,;:!?"\'%()[]-、。，；：？！（）《》【】…—·';
   let good = 0, garbage = 0;
   for (const ch of String(text || '')) {
     if (/\s/.test(ch)) continue;
-    const code = ch.codePointAt(0);
-    if ((code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3040 && code <= 0x30ff) || (code >= 0xac00 && code <= 0xd7af)) { good++; continue; }
-    if ((code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)) { good++; continue; }
-    if (GOOD_PUNCT.includes(ch)) { good++; continue; }
-    garbage++;
+    if (isPdfGarbageCode(ch.codePointAt(0))) garbage++;
+    else good++;
   }
   return good + garbage > 0 ? good / (good + garbage) : 0;
 }
@@ -193,16 +195,24 @@ export async function pdfConvert(file, buf) {
           text = lines.join('\n').trim();
         }
         // 逐页判断（审查报告 §2.3 + t27 质量门槛）：
-        // ① 文本量 <10 字符 或 ② 有效占比 <40%（CID 假文本层——质量链综述实测 garbage）→ 该页 OCR 降级
+        // ① 文本量 <10 字符 或 ② 有效占比 <40%（PUA/FFFD 密集的假文本层）→ 该页 OCR 降级
         if (text.length < 10 || textQualityRatio(text) < 0.40) {
-          const ocrText = await ocrPageToText(page, i, pageCount);
+          let ocrText = null;
+          try {
+            ocrText = await ocrPageToText(page, i, pageCount);
+          } catch {
+            ocrText = null; // OCR 引擎不可用（file:// worker/WASM 受限、初始化失败）——t8：单页失败不得拖垮整篇
+          }
           if (ocrText) {
             ocrCount++;
             pages.push({ idx: i, text: ocrText });
           } else if (text.trim() !== '') {
-            // OCR 也失败/低置信 → 保留文本层原样 + warning（不猜测；t27 口径）
+            // OCR 失败/无产出 → 保留文本层原样 + warning（不猜测；t8 口径「第 N 页 OCR 不可用，已保留原文本层」）
             pages.push({ idx: i, text });
-            warnings.push(`第 ${i} 页疑似无有效文本层（OCR 未产出）——保留原文本层，结果可能不可读`);
+            warnings.push(`第 ${i} 页 OCR 不可用，已保留原文本层（结果可能不可读）`);
+          } else {
+            // 无文本层且 OCR 不可用 → 跳过该页并提示（扫描页在 file:// 下的真实场景）
+            warnings.push(`第 ${i} 页无文本层且 OCR 不可用，已跳过该页`);
           }
         } else {
           pages.push({ idx: i, text });
