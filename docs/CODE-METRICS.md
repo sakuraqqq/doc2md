@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-08T17:09:09.440Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-08T17:53:06.077Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -27,19 +27,19 @@
 | src\docx.js | docxParseForMd | 108 | 26 ⚠️ | 46 ⚠️ |
 | src\docx.js | docxConvert | 171 | 18 ⚠️ | 18 ⚠️ |
 | src\html2md.js | fragFor | 53 | 25 ⚠️ | 32 ⚠️ |
-| src\html2md.js | blockOfEl | 141 | 23 ⚠️ | 28 ⚠️ |
-| src\html2md.js | liToLines | 196 | 23 ⚠️ | 56 ⚠️ |
-| src\html2md.js | tableToMd | 270 | 13 ⚠️ | 13 |
-| src\html2md.js | (anonymous) | 275 | 11 ⚠️ | 11 |
+| src\html2md.js | blockOfEl | 143 | 23 ⚠️ | 28 ⚠️ |
+| src\html2md.js | liToLines | 198 | 23 ⚠️ | 56 ⚠️ |
+| src\html2md.js | tableToMd | 272 | 13 ⚠️ | 13 |
+| src\html2md.js | (anonymous) | 277 | 11 ⚠️ | 11 |
 | src\pdf.js | pdfPageRuns | 46 | 29 ⚠️ | 59 ⚠️ |
 | src\pdf.js | runsToPageText | 96 | 20 ⚠️ | 27 ⚠️ |
 | src\pdf.js | pdfConvert | 163 | 16 ⚠️ | 34 ⚠️ |
 | src\sniff.js | decodeText | 20 | 31 ⚠️ | 62 ⚠️ |
 | src\sniff.js | sniff | 89 | 32 ⚠️ | 35 ⚠️ |
 | src\xlsx.js | zipEntry | 17 | 16 ⚠️ | 44 ⚠️ |
-| src\xlsx.js | scanSheetRows | 120 | 26 ⚠️ | 64 ⚠️ |
-| src\xlsx.js | parseStylesDateFormats | 279 | 19 ⚠️ | 20 ⚠️ |
-| src\xlsx.js | xlsxParseSheet | 327 | 13 ⚠️ | 16 ⚠️ |
+| src\xlsx.js | scanSheetRows | 124 | 26 ⚠️ | 64 ⚠️ |
+| src\xlsx.js | parseStylesDateFormats | 283 | 19 ⚠️ | 20 ⚠️ |
+| src\xlsx.js | xlsxParseSheet | 331 | 13 ⚠️ | 16 ⚠️ |
 | tools\gen-icons.mjs | sample | 23 | 19 ⚠️ | 22 ⚠️ |
 | tools\metrics.mjs | childNodes | 25 | 9 | 20 ⚠️ |
 | tools\metrics.mjs | fnName | 59 | 13 ⚠️ | 12 |
@@ -53,43 +53,43 @@
 | src\sniff.js | sniff | 89 | 32 | 35 |
 | src\sniff.js | decodeText | 20 | 31 | 62 |
 | src\pdf.js | pdfPageRuns | 46 | 29 | 59 |
-| src\xlsx.js | scanSheetRows | 120 | 26 | 64 |
+| src\xlsx.js | scanSheetRows | 124 | 26 | 64 |
 | src\docx.js | docxParseForMd | 108 | 26 | 46 |
 | src\html2md.js | fragFor | 53 | 25 | 32 |
-| src\html2md.js | liToLines | 196 | 23 | 56 |
-| src\html2md.js | blockOfEl | 141 | 23 | 28 |
+| src\html2md.js | liToLines | 198 | 23 | 56 |
+| src\html2md.js | blockOfEl | 143 | 23 | 28 |
 | src\pdf.js | runsToPageText | 96 | 20 | 27 |
 | src\convert.js | convert | 52 | 20 | 20 |
 | tools\gen-icons.mjs | sample | 23 | 19 | 22 |
-| src\xlsx.js | parseStylesDateFormats | 279 | 19 | 20 |
+| src\xlsx.js | parseStylesDateFormats | 283 | 19 | 20 |
 | src\docx.js | docxConvert | 171 | 18 | 18 |
 | src\xlsx.js | zipEntry | 17 | 16 | 44 |
 | src\pdf.js | pdfConvert | 163 | 16 | 34 |
-| src\xlsx.js | xlsxParseSheet | 327 | 13 | 16 |
-| src\html2md.js | tableToMd | 270 | 13 | 13 |
+| src\xlsx.js | xlsxParseSheet | 331 | 13 | 16 |
+| src\html2md.js | tableToMd | 272 | 13 | 13 |
 | tools\metrics.mjs | fnName | 59 | 13 | 12 |
-| src\html2md.js | (anonymous) | 275 | 11 | 11 |
+| src\html2md.js | (anonymous) | 277 | 11 | 11 |
 | tools\metrics.mjs | cogVisit | 110 | 11 | 11 |
 | src\convert.js | imageConvert | 15 | 11 | 10 |
-| src\xlsx.js | (anonymous) | 332 | 10 | 13 |
-| src\xlsx.js | (anonymous) | 332 | 10 | 13 |
-| src\xlsx.js | xlsxSelfParse | 359 | 10 | 13 |
-| src\html2md.js | (anonymous) | 277 | 10 | 10 |
+| src\xlsx.js | (anonymous) | 336 | 10 | 13 |
+| src\xlsx.js | (anonymous) | 336 | 10 | 13 |
+| src\xlsx.js | xlsxSelfParse | 363 | 10 | 13 |
+| src\html2md.js | (anonymous) | 279 | 10 | 10 |
 | tools\metrics.mjs | childNodes | 25 | 9 | 20 |
-| src\xlsx.js | collectTTexts | 184 | 9 | 14 |
+| src\xlsx.js | collectTTexts | 188 | 9 | 14 |
 | src\ui.js | buildEmbedMap | 110 | 9 | 13 |
 | tools\gen-copyright.mjs | parseArgs | 24 | 9 | 12 |
 | src\ocr.js | ocrAssetsWarm | 11 | 9 | 11 |
 | src\ui.js | renderResult | 195 | 9 | 10 |
-| src\xlsx.js | xlsxByLib | 405 | 9 | 10 |
+| src\xlsx.js | xlsxByLib | 409 | 9 | 10 |
 | src\html2md.js | joinFrags | 25 | 8 | 10 |
 | src\ui.js | downloadZip | 54 | 8 | 8 |
 | src\sniff.js | isTrimCh | 50 | 8 | 7 |
-| src\xlsx.js | isBuiltinDateId | 300 | 8 | 7 |
-| src\html2md.js | blockifyContainer | 115 | 7 | 13 |
+| src\xlsx.js | isBuiltinDateId | 304 | 8 | 7 |
+| src\html2md.js | blockifyContainer | 117 | 7 | 13 |
 | tools\metrics.mjs | countCycPoints | 84 | 7 | 6 |
-| src\xlsx.js | parseSharedStrings | 212 | 6 | 11 |
-| src\html2md.js | listElToMd | 181 | 6 | 9 |
+| src\xlsx.js | parseSharedStrings | 216 | 6 | 11 |
+| src\html2md.js | listElToMd | 183 | 6 | 9 |
 | src\ocr.js | getOcrWorker | 30 | 6 | 9 |
 | src\pdf.js | textQualityRatio | 152 | 6 | 8 |
 | src\xlsx.js | xlsxWorkbookMap | 88 | 6 | 7 |
@@ -98,7 +98,7 @@
 | src\docx.js | (anonymous) | 191 | 6 | 5 |
 | src\pdf.js | isCjkChar | 90 | 6 | 5 |
 | src\ui.js | buildActions | 167 | 6 | 5 |
-| src\xlsx.js | extractInlineText | 201 | 6 | 5 |
+| src\xlsx.js | extractInlineText | 205 | 6 | 5 |
 | tools\gen-copyright.mjs | main | 125 | 5 | 7 |
 | src\docx.js | docxInjectLatex | 157 | 5 | 5 |
 | src\docx.js | (anonymous) | 159 | 5 | 5 |
@@ -107,7 +107,7 @@
 | src\docx.js | extForContentType | 18 | 5 | 4 |
 | src\ui.js | downloadMdEmbedded | 130 | 5 | 4 |
 | src\ui.js | truncatePreview | 159 | 5 | 4 |
-| src\xlsx.js | stripBracketed | 263 | 4 | 7 |
+| src\xlsx.js | stripBracketed | 267 | 4 | 7 |
 | tools\gen-icons.mjs | (anonymous) | 101 | 4 | 6 |
 | tools\metrics.mjs | walkFiles | 42 | 4 | 5 |
 | src\docx.js | ommlConcat | 101 | 4 | 4 |
@@ -126,10 +126,10 @@
 | src\docx.js | ommlIs | 45 | 4 | 3 |
 | src\docx.js | (anonymous) | 211 | 4 | 3 |
 | src\pdf.js | ocrPageToText | 13 | 4 | 3 |
-| src\xlsx.js | xlsxCellText | 228 | 4 | 3 |
-| src\xlsx.js | xlsxRowsToMd | 233 | 4 | 3 |
-| src\xlsx.js | (anonymous) | 303 | 4 | 3 |
-| src\xlsx.js | serialDateOrRaw | 316 | 4 | 3 |
+| src\xlsx.js | xlsxCellText | 232 | 4 | 3 |
+| src\xlsx.js | xlsxRowsToMd | 237 | 4 | 3 |
+| src\xlsx.js | (anonymous) | 307 | 4 | 3 |
+| src\xlsx.js | serialDateOrRaw | 320 | 4 | 3 |
 | tools\metrics.mjs | collectFunctions | 139 | 4 | 3 |
 | src\docx.js | ommlChild | 46 | 3 | 3 |
 | src\pdf.js | isPdfGarbageCode | 148 | 3 | 3 |
@@ -138,17 +138,17 @@
 | tools\gen-icons.mjs | pngRGBA | 64 | 3 | 3 |
 | src\docx.js | docxSafeBase | 26 | 3 | 2 |
 | src\docx.js | docxAltFromName | 31 | 3 | 2 |
-| src\html2md.js | quoteElToMd | 260 | 3 | 2 |
-| src\html2md.js | (anonymous) | 263 | 3 | 2 |
-| src\html2md.js | htmlToMarkdown | 306 | 3 | 2 |
+| src\html2md.js | quoteElToMd | 262 | 3 | 2 |
+| src\html2md.js | (anonymous) | 265 | 3 | 2 |
+| src\html2md.js | htmlToMarkdown | 308 | 3 | 2 |
 | src\ui.js | setStatus | 13 | 3 | 2 |
 | src\ui.js | fmtSize | 17 | 3 | 2 |
 | src\ui.js | downloadMd | 40 | 3 | 2 |
 | src\ui.js | embedImagesIntoMd | 124 | 3 | 2 |
-| src\xlsx.js | xlsxSheetNames | 107 | 3 | 2 |
-| src\xlsx.js | excelSerialToDate | 248 | 3 | 2 |
-| src\xlsx.js | readSheetSafely | 396 | 3 | 2 |
-| src\xlsx.js | xlsxConvert | 431 | 3 | 2 |
+| src\xlsx.js | xlsxSheetNames | 111 | 3 | 2 |
+| src\xlsx.js | excelSerialToDate | 252 | 3 | 2 |
+| src\xlsx.js | readSheetSafely | 400 | 3 | 2 |
+| src\xlsx.js | xlsxConvert | 435 | 3 | 2 |
 | tools\gen-copyright.mjs | splitLines | 53 | 3 | 2 |
 | tools\metrics.mjs | isFunctionNode | 51 | 3 | 2 |
 | src\app.js | (anonymous) | 31 | 2 | 1 |
@@ -156,21 +156,21 @@
 | src\bline.js | (anonymous) | 7 | 2 | 1 |
 | src\bline.js | pdfWorkerUrl | 15 | 2 | 1 |
 | src\bline.js | tessWorkerUrl | 21 | 2 | 1 |
-| src\html2md.js | flush | 118 | 2 | 1 |
-| src\html2md.js | (anonymous) | 265 | 2 | 1 |
-| src\html2md.js | (anonymous) | 292 | 2 | 1 |
-| src\html2md.js | isPreBlock | 301 | 2 | 1 |
-| src\html2md.js | (anonymous) | 312 | 2 | 1 |
+| src\html2md.js | flush | 120 | 2 | 1 |
+| src\html2md.js | (anonymous) | 267 | 2 | 1 |
+| src\html2md.js | (anonymous) | 294 | 2 | 1 |
+| src\html2md.js | isPreBlock | 303 | 2 | 1 |
+| src\html2md.js | (anonymous) | 314 | 2 | 1 |
 | src\sniff.js | headAscii | 13 | 2 | 1 |
 | src\ui.js | copyText | 22 | 2 | 1 |
 | src\ui.js | setEmbedMaxBytes | 88 | 2 | 1 |
 | src\ui.js | bytesToB64 | 89 | 2 | 1 |
 | src\ui.js | (anonymous) | 125 | 2 | 1 |
 | src\ui.js | (anonymous) | 187 | 2 | 1 |
-| src\xlsx.js | decodeXml | 112 | 2 | 1 |
-| src\xlsx.js | (anonymous) | 236 | 2 | 1 |
-| src\xlsx.js | isoDateOnly | 259 | 2 | 1 |
-| src\xlsx.js | truncationMessage | 352 | 2 | 1 |
+| src\xlsx.js | decodeXml | 116 | 2 | 1 |
+| src\xlsx.js | (anonymous) | 240 | 2 | 1 |
+| src\xlsx.js | isoDateOnly | 263 | 2 | 1 |
+| src\xlsx.js | truncationMessage | 356 | 2 | 1 |
 | tools\gen-copyright.mjs | renderHtml | 98 | 2 | 1 |
 | tools\gen-icons.mjs | crc32 | 110 | 2 | 1 |
 | tools\metrics.mjs | (anonymous) | 220 | 2 | 1 |
@@ -184,16 +184,16 @@
 | src\app.js | (anonymous) | 68 | 1 | 0 |
 | src\docx.js | (anonymous) | 198 | 1 | 0 |
 | src\html2md.js | escUrl | 16 | 1 | 0 |
-| src\html2md.js | inlineTrim | 112 | 1 | 0 |
-| src\html2md.js | (anonymous) | 167 | 1 | 0 |
-| src\html2md.js | (anonymous) | 177 | 1 | 0 |
-| src\html2md.js | (anonymous) | 194 | 1 | 0 |
-| src\html2md.js | (anonymous) | 220 | 1 | 0 |
-| src\html2md.js | (anonymous) | 261 | 1 | 0 |
-| src\html2md.js | (anonymous) | 291 | 1 | 0 |
-| src\html2md.js | (anonymous) | 294 | 1 | 0 |
-| src\html2md.js | (anonymous) | 295 | 1 | 0 |
-| src\html2md.js | (anonymous) | 308 | 1 | 0 |
+| src\html2md.js | inlineTrim | 114 | 1 | 0 |
+| src\html2md.js | (anonymous) | 169 | 1 | 0 |
+| src\html2md.js | (anonymous) | 179 | 1 | 0 |
+| src\html2md.js | (anonymous) | 196 | 1 | 0 |
+| src\html2md.js | (anonymous) | 222 | 1 | 0 |
+| src\html2md.js | (anonymous) | 263 | 1 | 0 |
+| src\html2md.js | (anonymous) | 293 | 1 | 0 |
+| src\html2md.js | (anonymous) | 296 | 1 | 0 |
+| src\html2md.js | (anonymous) | 297 | 1 | 0 |
+| src\html2md.js | (anonymous) | 310 | 1 | 0 |
 | src\ocr.js | (anonymous) | 15 | 1 | 0 |
 | src\ocr.js | (anonymous) | 17 | 1 | 0 |
 | src\ocr.js | (anonymous) | 19 | 1 | 0 |
@@ -217,20 +217,20 @@
 | src\ui.js | (anonymous) | 177 | 1 | 0 |
 | src\ui.js | (anonymous) | 183 | 1 | 0 |
 | src\xlsx.js | (anonymous) | 46 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 108 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 109 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 114 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 115 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 235 | 1 | 0 |
-| src\xlsx.js | esc | 237 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 112 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 113 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 118 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 119 | 1 | 0 |
 | src\xlsx.js | (anonymous) | 239 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 240 | 1 | 0 |
-| src\xlsx.js | isDateStyle | 310 | 1 | 0 |
-| src\xlsx.js | isDateStyle | 313 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 434 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 437 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 439 | 1 | 0 |
-| src\xlsx.js | (anonymous) | 439 | 1 | 0 |
+| src\xlsx.js | esc | 241 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 243 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 244 | 1 | 0 |
+| src\xlsx.js | isDateStyle | 314 | 1 | 0 |
+| src\xlsx.js | isDateStyle | 317 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 438 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 441 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 443 | 1 | 0 |
+| src\xlsx.js | (anonymous) | 443 | 1 | 0 |
 | tools\build.mjs | (anonymous) | 42 | 1 | 0 |
 | tools\embed-bline.mjs | read | 7 | 1 | 0 |
 | tools\embed-bline.mjs | readB | 8 | 1 | 0 |

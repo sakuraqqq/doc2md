@@ -620,3 +620,25 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 文档数字与产物绑定：每批收尾必须「构建 → 回读字节 + SHA → 回填文档数字」一步不落（本批 85KB 漂移的根因即上批未回填）。
 
 
+## 2026-09-09 · 第七轮审查批（2.2 xlsx rels `../` 归一化 + 2.4 BR 死字段清理 + 2.5/2.6 留档）
+
+### 背景与范围（用户 2026-09-09 拍板）
+第七轮审查报告（`docs/doc2md-第七轮审查报告-2026-09-09.md`，已入库）结论：上轮 8 项全闭环，本轮 8 项新发现**全为 P2-P4、无 P0/P1**。用户拍板：**本批只做低风险的 2.2 + 2.4**；**2.1（PDF 多栏切分）与 2.3（formatCode 引号剥离）留后续**；**2.5/2.6 作留档处理**。
+
+### 做了什么
+- **契约先红（`5b9bb72`）**：新增**契约组 G6**（G6-0..G6-3）+ 新样例 `sample-rels-dotdot.xlsx`（1,922 B / SHA `478AD123…`——单 sheet `DotDot`，worksheet Target=`../worksheets/sheet1.xml`；gen-samples 确定性合成 + manifest 字节锁）+ CONTRACT.md 组 G6 表。
+- **实现 2.2（`b95a4ce`）**：`src/xlsx.js` `xlsxWorkbookMap` 增加相对路径归一化——`target.replace(/^(?:\.{1,2}\/)+/, '')` 后再按 `xl/` 前缀补全。原实现只剥前导 `/`，`../worksheets/sheet1.xml` 被拼成 `xl/../worksheets/sheet1.xml` → zip 精确匹配失败。
+- **实现 2.4（`8633ffb`）**：`src/html2md.js` BR 分支删 `vStart/vEnd` 死字段（t12「可见字符」规则残留；joinFrags 现只读 lead/trail）。
+- **留档 2.5/2.6**：README PDF 行「已知限制」补三条——连续空格折叠（代码缩进/ASCII art 丢失）、竖排/旋转未算变换矩阵（run 定位与空格判定可能偏差）、多栏未切分（§2.1，v2 候选）。
+- **登记为第八轮候选**：2.1 PDF 多栏切分（需先拍板算法口径与「怎么先红」——仓库无双栏样例）、2.3 formatCode 引号剥离（报告建议观察半年）、2.7/2.8（无害，不做）。
+
+### 实测（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）
+- **先红（修复前产物 `BB8BA7AD…`）**：`npm test` → **150 tests / 147 pass / 3 fail**，失败项 = G6-1 + G6-2（+ 父用例）。**关键事实：G6-1 的失败是 `转换失败：文件已损坏或不是有效的 Excel 文档（zip/解析失败）`——即修复前是「用户可见失败」，不是第七轮报告 §2.2 说的「回退后仍可用、只是丢精度」；报告影响评估低估，已按实测口径写入 CONTRACT.md 组 G6 表**。
+- **后绿（重建产物 `0347560E…`，提交 `fa65152`）**：`npm test` → **150/150 pass / 0 fail（39.3s）**——G6-0..G6-3 全绿 + 既有 145 断言零回归。
+- 本地 src 级（`.tmp/check-rels.mjs`）：旧逻辑 target `xl/../worksheets/sheet1.xml` → zip 未命中；新逻辑 `xl/worksheets/sheet1.xml` → 命中，sheet=`DotDot`。
+- `npm run gen:samples`：既有 23 样例**字节零漂移**（仅 manifest 新增条目 + note）；`lint` **31w/0e**（零新增）；`metrics` 函数 197 / 超限 **23**（持平）/ 重复率 4%。
+
+### 防再犯
+- 审查报告的「影响」评级不能替代实测：本次 P2 实为「用户可见失败」——**先红必须跑到真实失败文案**，再据实回填报告口径差异（不改审查报告原文，修正记在 CONTRACT/DEV-NOTES）。
+
+
