@@ -1,6 +1,6 @@
 {
   "name": "doc2md",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "开源的「文档转 Markdown」工具：纯前端、离线、全本地转换（PDF/DOCX/XLSX/图片OCR/TXT·HTML）· v1。契约测试用于网页版与手机视口双端断言。",
   "private": true,
   "license": "MIT",
