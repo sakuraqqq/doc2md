@@ -104,7 +104,7 @@
   <p>文档一键转 Markdown · 全部转换在浏览器本地完成</p>
   <div class="badges">
     <span class="badge">🔒 零外发 · 文件不出设备</span>
-    <span class="badge blue">⚡ 离线可用 · 单文件</span>
+    <span class="badge blue">⚡ 离线可用 · 单目录</span>
     <span class="badge">📄 PDF / DOCX / XLSX / 图片OCR / TXT·HTML</span>
   </div>
 </header>
@@ -121,7 +121,7 @@
   <div class="empty-hint" id="hint">把文件拖进上方的区域，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
 </main>
 
-<!-- T9′ 首载彻底优化（DD-15）：内联库 → 同源分文件（零外发：全同源相对路径；file:// 双击同目录可加载；SW PRECACHE 见 sw.js v3） -->
+<!-- T9′ 首载彻底优化（DD-15）：内联库 → 同源分文件（零外发：全同源相对路径；file:// 双击同目录可加载；SW 分段缓存见 sw.js v4） -->
 <script src="./vendor/mammoth.browser.min.js"></script>
 <script src="./vendor/pdfjs.pdf.min.js"></script>
 <script src="./vendor/tesseract.tesseract.min.js"></script>
@@ -1234,6 +1234,14 @@ ${xlsxRowsToMd(kept)}`);
       }, 1500);
     }
   }
+  var EMBED_MAX_BYTES = 20 * 1024 * 1024;
+  var embedMaxBytes = EMBED_MAX_BYTES;
+  function getEmbedMaxBytes() {
+    return embedMaxBytes;
+  }
+  function setEmbedMaxBytes(n) {
+    embedMaxBytes = Number(n) || 0;
+  }
   function bytesToB64(bytes) {
     let s = "";
     const CH = 32768;
@@ -1245,8 +1253,13 @@ ${xlsxRowsToMd(kept)}`);
   function escAssetName(n) {
     return String(n).replace(/\(/g, "%28").replace(/\)/g, "%29").replace(/\s/g, "%20");
   }
-  async function embedImagesIntoMd(md, assets) {
-    let out = String(md || "");
+  function assetsTotalBytes(assets) {
+    let total = 0;
+    for (const a of assets || []) if (a && a.blob) total += a.blob.size || 0;
+    return total;
+  }
+  async function buildEmbedMap(assets) {
+    const map = /* @__PURE__ */ new Map();
     for (const a of assets || []) {
       if (!a || !a.blob) continue;
       let bytes = null;
@@ -1256,15 +1269,27 @@ ${xlsxRowsToMd(kept)}`);
       }
       if (!bytes || bytes.length === 0) continue;
       const dataUrl = "data:" + (a.type || "image/png") + ";base64," + bytesToB64(bytes);
-      out = out.split("](" + a.name + ")").join("](" + dataUrl + ")");
-      out = out.split("](" + escAssetName(a.name) + ")").join("](" + dataUrl + ")");
+      map.set(a.name, dataUrl);
+      map.set(escAssetName(a.name), dataUrl);
     }
-    return out;
+    return map;
+  }
+  function embedImagesIntoMd(md, map) {
+    return String(md == null ? "" : md).replace(/\]\(([^)]+)\)/g, (m, target) => {
+      const dataUrl = map.get(target);
+      return dataUrl ? "](" + dataUrl + ")" : m;
+    });
   }
   async function downloadMdEmbedded(text, fileName, assets, btn) {
+    const total = assetsTotalBytes(assets);
+    if (total > embedMaxBytes) {
+      setStatus("\u56FE\u7247\u5171 " + fmtSize(total) + "\uFF0C\u8D85\u8FC7\u5185\u5D4C\u4E0A\u9650 " + fmtSize(embedMaxBytes) + "\uFF0C\u5DF2\u81EA\u52A8\u6539\u7528 zip \u4E0B\u8F7D\uFF08.md + \u56FE\u7247\uFF09");
+      await downloadZip(text, fileName, assets, btn);
+      return;
+    }
     try {
       const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
-      const md = await embedImagesIntoMd(text, assets);
+      const md = embedImagesIntoMd(text, await buildEmbedMap(assets));
       const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1282,7 +1307,17 @@ ${xlsxRowsToMd(kept)}`);
       }, 1500);
     }
   }
-  function buildActions(ta, file, result) {
+  var PREVIEW_MAX_CHARS = 1024 * 1024;
+  var PREVIEW_CUT_HINT = "\uFF08\u9884\u89C8\u5DF2\u622A\u65AD\uFF0C\u5B8C\u6574\u5185\u5BB9\u8BF7\u590D\u5236/\u4E0B\u8F7D\uFF09";
+  function truncatePreview(text, max = PREVIEW_MAX_CHARS) {
+    const s = String(text == null ? "" : text);
+    if (s.length <= max) return s;
+    let cut = max;
+    const c = s.charCodeAt(cut - 1);
+    if (c >= 55296 && c <= 56319) cut -= 1;
+    return s.slice(0, cut) + "\n\n" + PREVIEW_CUT_HINT;
+  }
+  function buildActions(file, result, fullText) {
     const actions = document.createElement("div");
     actions.className = "card-actions";
     const hasAssets = result.meta.assets && result.meta.assets.length > 0;
@@ -1290,19 +1325,19 @@ ${xlsxRowsToMd(kept)}`);
       const btnZip = document.createElement("button");
       btnZip.className = "btn primary";
       btnZip.textContent = "\u{1F4E6} \u4E0B\u8F7D .md + \u56FE\u7247\uFF08zip\uFF09";
-      btnZip.addEventListener("click", () => downloadZip(ta.value, file.name, result.meta.assets, btnZip));
+      btnZip.addEventListener("click", () => downloadZip(fullText, file.name, result.meta.assets, btnZip));
       actions.appendChild(btnZip);
     }
     const btnCopy = document.createElement("button");
     btnCopy.className = "btn";
     btnCopy.textContent = "\u{1F4CB} \u590D\u5236 Markdown";
-    btnCopy.addEventListener("click", () => copyText(ta.value, btnCopy));
+    btnCopy.addEventListener("click", () => copyText(fullText, btnCopy));
     const btnDl = document.createElement("button");
     btnDl.className = "btn" + (hasAssets ? "" : " primary");
     btnDl.textContent = hasAssets ? "\u{1F5BC} \u4E0B\u8F7D .md\uFF08\u56FE\u7247\u5185\u5D4C\uFF09" : "\u2B07 \u4E0B\u8F7D .md";
     btnDl.addEventListener("click", () => {
-      if (hasAssets) downloadMdEmbedded(ta.value, file.name, result.meta.assets, btnDl);
-      else downloadMd(ta.value, file.name);
+      if (hasAssets) downloadMdEmbedded(fullText, file.name, result.meta.assets, btnDl);
+      else downloadMd(fullText, file.name);
     });
     actions.appendChild(btnCopy);
     actions.appendChild(btnDl);
@@ -1338,7 +1373,8 @@ ${xlsxRowsToMd(kept)}`);
       const ta = document.createElement("textarea");
       ta.className = "md";
       ta.readOnly = true;
-      ta.value = result.markdown;
+      const fullText = String(result.markdown == null ? "" : result.markdown);
+      ta.value = truncatePreview(fullText);
       body.appendChild(ta);
       if (result.meta.warnings && result.meta.warnings.length) {
         const w = document.createElement("div");
@@ -1346,7 +1382,7 @@ ${xlsxRowsToMd(kept)}`);
         w.textContent = "\u26A0 " + result.meta.warnings.join("\uFF1B");
         body.appendChild(w);
       }
-      body.appendChild(buildActions(ta, file, result));
+      body.appendChild(buildActions(file, result, fullText));
     }
     card.appendChild(body);
     resultsEl.appendChild(card);
@@ -1684,7 +1720,20 @@ ${p.text}
     handleFiles(fileInput.files);
     fileInput.value = "";
   });
-  window.__doc2md = { convert, sniff, registry, htmlToMarkdown, decodeText, MAX_BYTES };
+  window.__doc2md = {
+    convert,
+    sniff,
+    registry,
+    htmlToMarkdown,
+    decodeText,
+    MAX_BYTES,
+    get embedMaxBytes() {
+      return getEmbedMaxBytes();
+    },
+    set embedMaxBytes(n) {
+      setEmbedMaxBytes(n);
+    }
+  };
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("./sw.js").catch(() => {
