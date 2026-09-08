@@ -27,6 +27,11 @@ pastes/
 # --- 私人/策略文档（永不入库：毕设策略/导师沟通/商业化攻略）---
 .私档/
 
+# --- 软著/商业化材料与脚本存档（红线 9：永不入库；2026-09-08 第六轮 §1.1）---
+docs/copyright/
+tools/gen-copyright.mjs
+.script-archive/
+
 # --- 系统 / 编辑器 ---
 Thumbs.db
 .DS_Store
