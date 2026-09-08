@@ -561,6 +561,38 @@ const HTML_MD_SNAPSHOTS = [
     html: '<h1>A<br>B</h1>',
     expected: '# A<br>B',
   },
+  // 第六轮审查报告 §1.2（拉丁相邻被强插空格，P1）：行内标记拆分词/标记包裹时「前后可见字符均
+  // [A-Za-z0-9] 就补空格」规则凭空造空格——原文无空格应保持贴靠。d1-1/d1-2/d1-3（既有快照）
+  // 已锁「原空白照旧」三例（互不回归），本组补「无空格相邻」两例。
+  {
+    id: 'd1-5', group: 'D1 行内拼接（第六轮审查报告 §1.2）', name: 'span 拆分拉丁词（原文无空格不得强插）',
+    html: '<p>foo<span>bar</span>baz</p>',
+    expected: 'foobarbaz',
+  },
+  {
+    id: 'd1-6', group: 'D1 行内拼接（第六轮审查报告 §1.2）', name: '行内 sub 拆词（IP<sub>v6</sub>——原文无空格）',
+    html: '<p>IP<sub>v6</sub>地址</p>',
+    expected: 'IPv6地址',
+  },
+  // 第六轮审查报告 §1.3（列表项内多块级段落，P1）：<li> 内 P/DIV 走行内平铺 → 段结构丢失。
+  // 期望（CommonMark 列表续行）：首行 marker + 段间空行 + 续行缩进（缩进 = marker 宽度）。
+  {
+    id: 'd2-7', group: 'D2 结构（第六轮审查报告 §1.3）', name: '列表项内两个 <p>（段间空行 + 续行缩进）',
+    html: '<ul><li><p>para one</p><p>para two</p></li></ul>',
+    expected: '- para one\n\n  para two',
+  },
+  {
+    id: 'd2-8', group: 'D2 结构（第六轮审查报告 §1.3）', name: '列表项内两个 <div>（块级同理）',
+    html: '<ul><li><div>d1</div><div>d2</div></li></ul>',
+    expected: '- d1\n\n  d2',
+  },
+  // 第六轮审查报告 §1.4（PRE 内连续空行被全局归一化吞掉，P2）：末尾 .replace(/\n{3,}/g,'\n\n')
+  // 对整篇生效未保护围栏内部——代码块内 3 个空行不得被压缩。
+  {
+    id: 'd2-9', group: 'D2 结构（第六轮审查报告 §1.4）', name: 'PRE 内连续空行保留（围栏内 \n{3,} 不得归一化）',
+    html: '<pre>line1\n\n\n\nline2</pre>',
+    expected: '```\nline1\n\n\n\nline2\n```',
+  },
 ];
 
 test('契约组 D：htmlToMarkdown 精确输出快照 —— 契约先红（当前实现输出与快照不符，修复 1.1/1.2 后转绿）', async (t) => {
@@ -1134,6 +1166,87 @@ test('契约组 G4：损坏 xlsx 越界防护 + xlsx-self backend（sample-corru
           rs.meta.backend,
           'xlsx-self',
           `backend=${rs.meta.backend}（自解析路径应按实际引擎报 xlsx-self——用户已拍板枚举扩展；当前恒 read-excel-file 无法区分引擎）`
+        );
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+// ---------------------------------------------------------------------------
+// 契约组 G5：xlsx 日期格式化（第六轮审查报告 §2.3，P1；契约先红 t13）
+// 样例：tests/data/sample-numfmt-date.xlsx（合成：styles.xml cellXfs → `<xf numFmtId="14"
+//   applyNumberFormat="1"/>`（内置日期）+ 序列号 45123 / 45292.75；gen-samples 确定性 + manifest 字节锁）。
+// 断言语义（口径：README「日期/数字格式化」宣称 + 报告「至少 YYYY-MM-DD」）：
+//   G5-1 convert(sample-numfmt-date.xlsx) 输出含 `2023-07-16`（45123，报告/Excel 口径确认）与
+//     `2024-01-01`（45292.75 → 2024-01-01T18:00 的日期部分——任务书「2023-12-02」估值为误，
+//     以 1899-12-30 + 序列号精确计算为准）；当前原样输出 `45123`/`45292.75`（静默无 warning）→ 红。
+//   G5-2 real-date.xlsx（t="d" ISO 日期）输出含 `2021-06-10` 且**不得带时间**（当前
+//     `2021-06-10T00:47:45.700Z` 原样 → 红）——「日期」口径 = 只到天。
+// 实现路径不绑定（styles.xml numFmt 解析 / 检测日期样式回退库路径 / warning 冒泡——断言只锁输出形态）。
+// ---------------------------------------------------------------------------
+test('契约组 G5：xlsx 日期格式化（sample-numfmt-date.xlsx / real-date.xlsx；第六轮审查报告 §2.3）—— 契约先红', async (t) => {
+  await t.test('G5-0 sample-numfmt-date.xlsx 存在且与 manifest 字节级一致', () => {
+    const p = nodePath.join(DATA, 'sample-numfmt-date.xlsx');
+    assert.ok(fs.existsSync(p), 'sample-numfmt-date.xlsx 缺失——请运行 npm run gen:samples');
+    const rec = readManifest().files['sample-numfmt-date.xlsx'];
+    assert.ok(rec, 'sample-numfmt-date.xlsx 未登记于 manifest');
+    const buf = fs.readFileSync(p);
+    assert.equal(buf.length, rec.bytes, '大小与 manifest 不一致（样例被改动）');
+    assert.equal(crypto.createHash('sha256').update(buf).digest('hex'), rec.sha256, 'SHA 与 manifest 不一致（样例被改动）');
+  });
+
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64n = fs.readFileSync(nodePath.join(DATA, 'sample-numfmt-date.xlsx')).toString('base64');
+      const rn = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-numfmt-date.xlsx'));
+        },
+        { b64: b64n }
+      );
+      await t.test('G5-1 numFmt=14 序列号 → YYYY-MM-DD（45123 → 2023-07-16；45292.75 → 2024-01-01）', () => {
+        assert.equal(rn.error, undefined, `convert 返回错误：${rn.error}`);
+        const md = rn.markdown || '';
+        assert.ok(md.includes('2023-07-16'), `序列号 45123 未格式化为 2023-07-16：${JSON.stringify(md)}（当前原样输出 45123——自解析不读 styles.xml numFmt；修复方向=numFmt 内置日期 id 14 解析/回退库路径）`);
+        assert.ok(md.includes('2024-01-01'), `序列号 45292.75 未格式化为 2024-01-01：${JSON.stringify(md)}（45292.75 = 2024-01-01T18:00——日期部分应 2024-01-01）`);
+      });
+      const b64d = fs.readFileSync(nodePath.join(DATA, 'real-date.xlsx')).toString('base64');
+      const rd = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'real-date.xlsx'));
+        },
+        { b64: b64d }
+      );
+      await t.test('G5-2 t="d" ISO 日期：含 2021-06-10 且不得带时间（不得原样 T00:47:45.700Z）', () => {
+        assert.equal(rd.error, undefined, `convert 返回错误：${rd.error}`);
+        const md = rd.markdown || '';
+        assert.ok(md.includes('2021-06-10'), `real-date.xlsx 输出缺 2021-06-10：${JSON.stringify(md)}`);
+        assert.ok(
+          !md.includes('T00:47:45.700Z'),
+          `t="d" 日期原样带出时间：${JSON.stringify(md)}（「日期」口径 = 只到天——当前 ISO 原样输出与 README「日期」表述不符）`
         );
       });
     } finally {
