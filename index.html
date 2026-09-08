@@ -198,14 +198,19 @@
       }
       metaIdx = headTxt.indexOf("<meta", metaIdx + 1);
     }
-    if (headTxt.includes("\uFFFD")) {
+    if (countFffd(headTxt, 2) >= 2) {
       try {
         const g = new TextDecoder("gb18030").decode(buf);
-        if (!g.includes("\uFFFD")) return g;
+        if (countFffd(g, 2) < 2) return g;
       } catch {
       }
     }
     return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+  }
+  function countFffd(s, cap) {
+    let n = 0;
+    for (let i = 0; i < s.length && n < cap; i++) if (s[i] === "\uFFFD") n++;
+    return n;
   }
   function normWs(s) {
     return s.replace(/\s+/g, " ");
@@ -718,8 +723,10 @@
           const localOff = dv.getUint32(off + 42, true);
           const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
           if (name === wantedName) {
+            if (localOff + 30 > n) return null;
             const ln = dv.getUint16(localOff + 26, true);
             const le = dv.getUint16(localOff + 28, true);
+            if (localOff + 30 + ln + le + compSize > n) return null;
             const data = buf.subarray(localOff + 30 + ln + le, localOff + 30 + ln + le + compSize);
             if (method === 0) return { data, compSize };
             if (typeof DecompressionStream === "undefined") return null;
@@ -734,18 +741,48 @@
     }
     return null;
   }
-  async function xlsxSheetNames(buf) {
-    const entry = await zipEntry(buf, "xl/workbook.xml");
-    if (!entry) return null;
-    const text = new TextDecoder().decode(entry.data);
-    const names = [];
-    const re = /<sheet\s[^>]*?name\s*=\s*"([^"]*)"/g;
-    let m;
-    while (m = re.exec(text)) {
-      const raw = m[1];
-      names.push(raw.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10))));
+  function parseSheetTags(wbText) {
+    const sheets = [];
+    const sheetRe = /<sheet\s[^>]*>/g;
+    let sm;
+    while (sm = sheetRe.exec(wbText)) {
+      const tag = sm[0];
+      const nm = /name\s*=\s*"([^"]*)"/.exec(tag);
+      const rid = /r:id\s*=\s*"([^"]*)"/.exec(tag);
+      if (!nm || !rid) throw new Error("workbook.xml sheet \u5B9A\u4E49\u7F3A name/r:id\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+      sheets.push({ name: decodeXml(nm[1]), rid: rid[1] });
     }
-    return names.length > 0 ? names : null;
+    if (sheets.length === 0) throw new Error("workbook.xml \u65E0 sheet \u5B9A\u4E49\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+    return sheets;
+  }
+  function parseRelsMap(relText) {
+    const map = /* @__PURE__ */ new Map();
+    const relRe = /<Relationship\s[^>]*>/g;
+    let rm;
+    while (rm = relRe.exec(relText)) {
+      const tag = rm[0];
+      const idM = /Id\s*=\s*"([^"]*)"/.exec(tag);
+      const tgM = /Target\s*=\s*"([^"]*)"/.exec(tag);
+      if (idM && tgM) map.set(idM[1], tgM[1]);
+    }
+    return map;
+  }
+  async function xlsxWorkbookMap(buf) {
+    const wb = await zipEntry(buf, "xl/workbook.xml");
+    if (!wb) throw new Error("\u7F3A xl/workbook.xml\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+    const sheets = parseSheetTags(new TextDecoder().decode(wb.data));
+    const rels = await zipEntry(buf, "xl/_rels/workbook.xml.rels");
+    if (!rels) throw new Error("\u7F3A xl/_rels/workbook.xml.rels\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+    const ridToTarget = parseRelsMap(new TextDecoder().decode(rels.data));
+    const map = [];
+    for (const s of sheets) {
+      let target = ridToTarget.get(s.rid);
+      if (!target) throw new Error("workbook.xml.rels \u7F3A r:id \u6620\u5C04\uFF08" + s.rid + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+      target = target.replace(/^\/+/, "");
+      if (!target.startsWith("xl/")) target = "xl/" + target;
+      map.push({ name: s.name, target });
+    }
+    return map;
   }
   function decodeXml(s) {
     return String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10)));
@@ -814,6 +851,24 @@
     if (rawRows.length > rowLimit) more = true;
     return { rawRows: rawRows.slice(0, rowLimit), maxS, more };
   }
+  function collectTTexts(s, from, to) {
+    let out = "";
+    let p = from;
+    while (p < to) {
+      const ts = s.indexOf("<t", p);
+      if (ts < 0 || ts > to) break;
+      if (s[ts + 2] !== " " && s[ts + 2] !== ">") {
+        p = ts + 3;
+        continue;
+      }
+      const tp = s.indexOf(">", ts);
+      const te = s.indexOf("</t>", tp);
+      if (tp < 0 || te < 0 || te > to) break;
+      out += s.slice(tp + 1, te);
+      p = te + 4;
+    }
+    return out;
+  }
   function extractInlineText(inner) {
     const isOpen = inner.indexOf("<is");
     if (isOpen < 0) return "";
@@ -821,22 +876,7 @@
     const gt = inner.indexOf(">", isOpen);
     const isEnd = inner.indexOf("</is>", gt);
     if (gt < 0 || isEnd < 0) return "";
-    let s = "";
-    let p = gt + 1;
-    while (p < isEnd) {
-      const ts = inner.indexOf("<t", p);
-      if (ts < 0 || ts > isEnd) break;
-      if (inner[ts + 2] !== " " && inner[ts + 2] !== ">") {
-        p = ts + 3;
-        continue;
-      }
-      const tp = inner.indexOf(">", ts);
-      const te = inner.indexOf("</t>", tp);
-      if (tp < 0 || te < 0 || te > isEnd) break;
-      s += inner.slice(tp + 1, te);
-      p = te + 4;
-    }
-    return s;
+    return collectTTexts(inner, gt + 1, isEnd);
   }
   function parseSharedStrings(xml, maxS) {
     const out = [];
@@ -850,22 +890,7 @@
       }
       const se = xml.indexOf("</si>", si);
       if (se < 0) break;
-      let s = "";
-      let p = si + 3;
-      while (true) {
-        const ts = xml.indexOf("<t", p);
-        if (ts < 0 || ts > se) break;
-        if (xml[ts + 2] !== " " && xml[ts + 2] !== ">") {
-          p = ts + 3;
-          continue;
-        }
-        const tp = xml.indexOf(">", ts);
-        const te = xml.indexOf("</t>", tp);
-        if (tp < 0 || te < 0 || te > se) break;
-        s += xml.slice(tp + 1, te);
-        p = te + 4;
-      }
-      out.push(decodeXml(s));
+      out.push(decodeXml(collectTTexts(xml, si + 3, se)));
       pos = se + 5;
     }
     return out;
@@ -916,7 +941,7 @@
     if (skipped > 0) msg += `\uFF1B\u53E6\u6709 ${skipped} \u4E2A sheet \u672A\u8BFB\u53D6`;
     return msg + "\uFF09";
   }
-  async function xlsxSelfParse(buf, readNames, names) {
+  async function xlsxSelfParse(buf, readMap, names) {
     const stringsEntry = await zipEntry(buf, "xl/sharedStrings.xml");
     let stringsXml = null;
     if (stringsEntry) {
@@ -929,25 +954,25 @@
     const warnings = [];
     let truncated = false;
     let totalRows = 0;
-    for (let i = 0; i < readNames.length; i++) {
-      const name = readNames[i];
-      const entry = await zipEntry(buf, "xl/worksheets/sheet" + (i + 1) + ".xml");
-      if (!entry) throw new Error("\u7F3A\u5DE5\u4F5C\u8868 XML\uFF08sheet" + (i + 1) + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+    for (let i = 0; i < readMap.length; i++) {
+      const s = readMap[i];
+      const entry = await zipEntry(buf, s.target);
+      if (!entry) throw new Error("\u7F3A\u5DE5\u4F5C\u8868 XML\uFF08" + s.target + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
       const xml = new TextDecoder().decode(entry.data);
       const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml);
       totalRows += scanned;
       if (sheetTrunc) truncated = true;
-      parts.push(`### Sheet: ${name === null ? "Sheet1" : name}
+      parts.push(`### Sheet: ${s.name === null ? "Sheet1" : s.name}
 
 ${xlsxRowsToMd(rows)}`);
     }
-    const skipped = names.length - readNames.length;
+    const skipped = names.length - readMap.length;
     if (skipped > 0) {
       parts.push(`> \u53E6\u6709 ${skipped} \u4E2A sheet \u672A\u8BFB\u53D6\uFF08v1 \u4E0A\u9650 ${XLSX_SHEET_LIMIT} \u4E2A\uFF09`);
       truncated = true;
     }
-    if (truncated) warnings.push(truncationMessage(readNames.length, totalRows, skipped));
-    return { markdown: parts.join("\n\n").trim(), warnings, truncated, backend: "read-excel-file" };
+    if (truncated) warnings.push(truncationMessage(readMap.length, totalRows, skipped));
+    return { markdown: parts.join("\n\n").trim(), warnings, truncated, backend: "xlsx-self" };
   }
   async function xlsxByLib(file, buf, readNames, names) {
     const RX = window.readXlsxFile;
@@ -976,10 +1001,11 @@ ${xlsxRowsToMd(kept)}`);
     return { markdown: parts.join("\n\n").trim(), warnings, truncated, backend: "read-excel-file" };
   }
   async function xlsxConvert(file, buf) {
-    const sheetNames = await xlsxSheetNames(buf);
-    const names = sheetNames && sheetNames.length > 0 ? sheetNames : [null];
-    const readNames = names.slice(0, XLSX_SHEET_LIMIT);
-    return await xlsxSelfParse(buf, readNames, names).catch(() => xlsxByLib(file, buf, readNames, names));
+    const map = await xlsxWorkbookMap(buf).catch(() => null);
+    if (!map || map.length === 0) return xlsxByLib(file, buf, [null], [null]);
+    const readMap = map.slice(0, XLSX_SHEET_LIMIT);
+    const names = map.map((s) => s.name);
+    return await xlsxSelfParse(buf, readMap, names).catch(() => xlsxByLib(file, buf, readMap.map((s) => s.name), names));
   }
 
   // src/bline.js
@@ -1362,25 +1388,20 @@ ${xlsxRowsToMd(kept)}`);
     }
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
+  function isPdfGarbageCode(ch) {
+    const code = ch.codePointAt(0);
+    if (code === 65533) return true;
+    if (code >= 57344 && code <= 63743) return true;
+    if (code >= 983040 && code <= 1114111) return true;
+    if (code < 32 || code >= 127 && code <= 159) return true;
+    return !/\p{Assigned}/u.test(ch);
+  }
   function textQualityRatio(text) {
-    const GOOD_PUNCT = `.,;:!?"'%()[]-\u3001\u3002\uFF0C\uFF1B\uFF1A\uFF1F\uFF01\uFF08\uFF09\u300A\u300B\u3010\u3011\u2026\u2014\xB7`;
     let good = 0, garbage = 0;
     for (const ch of String(text || "")) {
       if (/\s/.test(ch)) continue;
-      const code = ch.codePointAt(0);
-      if (code >= 19968 && code <= 40959 || code >= 12352 && code <= 12543 || code >= 44032 && code <= 55215) {
-        good++;
-        continue;
-      }
-      if (code >= 48 && code <= 57 || code >= 65 && code <= 90 || code >= 97 && code <= 122) {
-        good++;
-        continue;
-      }
-      if (GOOD_PUNCT.includes(ch)) {
-        good++;
-        continue;
-      }
-      garbage++;
+      if (isPdfGarbageCode(ch)) garbage++;
+      else good++;
     }
     return good + garbage > 0 ? good / (good + garbage) : 0;
   }
@@ -1421,13 +1442,20 @@ ${xlsxRowsToMd(kept)}`);
             text = lines.join("\n").trim();
           }
           if (text.length < 10 || textQualityRatio(text) < 0.4) {
-            const ocrText = await ocrPageToText(page, i, pageCount);
+            let ocrText = null;
+            try {
+              ocrText = await ocrPageToText(page, i, pageCount);
+            } catch {
+              ocrText = null;
+            }
             if (ocrText) {
               ocrCount++;
               pages.push({ idx: i, text: ocrText });
             } else if (text.trim() !== "") {
               pages.push({ idx: i, text });
-              warnings.push(`\u7B2C ${i} \u9875\u7591\u4F3C\u65E0\u6709\u6548\u6587\u672C\u5C42\uFF08OCR \u672A\u4EA7\u51FA\uFF09\u2014\u2014\u4FDD\u7559\u539F\u6587\u672C\u5C42\uFF0C\u7ED3\u679C\u53EF\u80FD\u4E0D\u53EF\u8BFB`);
+              warnings.push(`\u7B2C ${i} \u9875 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u4FDD\u7559\u539F\u6587\u672C\u5C42\uFF08\u7ED3\u679C\u53EF\u80FD\u4E0D\u53EF\u8BFB\uFF09`);
+            } else {
+              warnings.push(`\u7B2C ${i} \u9875\u65E0\u6587\u672C\u5C42\u4E14 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u8DF3\u8FC7\u8BE5\u9875`);
             }
           } else {
             pages.push({ idx: i, text });
@@ -1502,7 +1530,7 @@ ${p.text}
     if (s.type === "unknown") return done({ error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B" });
     if (s.type === "pptx") return done({ error: "PPTX \u4E0D\u5728 v1 \u652F\u6301\u8303\u56F4\uFF08\u89C1 README\uFF09\uFF0Cv2 \u518D\u8BAE" });
     if (s.type === "zip") return done({ error: "\u6682\u4E0D\u652F\u6301\u666E\u901A ZIP \u6587\u4EF6\uFF0C\u8BF7\u89E3\u538B\u540E\u518D\u8F6C\u6362" });
-    if (s.type === "doc") return done({ error: "\u8001\u7248 .doc\uFF08Word 97-2003\uFF09\u6682\u4E0D\u652F\u6301\uFF0C\u8BF7\u7528 Word/WPS \u6253\u5F00\u540E\u53E6\u5B58\u4E3A .docx \u518D\u8F6C\u6362" });
+    if (s.type === "doc") return done({ error: "\u8001\u7248 Office \u4E8C\u8FDB\u5236\u683C\u5F0F\uFF08.doc/.xls/.ppt\uFF09\u6216\u52A0\u5BC6\u6587\u6863\u6682\u4E0D\u652F\u6301\uFF0C\u8BF7\u7528 Word/Excel/WPS \u6253\u5F00\u540E\u53E6\u5B58\u4E3A\u65B0\u683C\u5F0F\uFF08.docx/.xlsx\uFF09\u518D\u8F6C\u6362" });
     if (!registry[s.type]) return done({ error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B" });
     try {
       const res = await registry[s.type](file, buf);
