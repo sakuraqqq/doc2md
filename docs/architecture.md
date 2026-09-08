@@ -115,7 +115,7 @@ async function convert(file /* File */) -> Promise<{
 - 主路径为内置流式自解析（零依赖 ZIP 中央目录 + DecompressionStream('deflate-raw')，t33）；`read-excel-file@5.8.7`（MIT）官方 browser bundle 同源分文件 `vendor/read-excel-file.min.js`（UMD，全局 `readXlsxFile`）仅作异常/护栏回退。
 - sheet 映射（t8）：`xlsxWorkbookMap` 解析 `xl/workbook.xml`（`<sheet name + r:id>` 按 tab 顺序）+ `xl/_rels/workbook.xml.rels`（`Id→Target`）→ 自解析按 target 读表——不再按 `sheet{N}.xml` 索引（Excel 拖表重排/删表后文件名与顺序脱钩 → 旧实现静默张冠李戴；解析失败回退库路径）。
 - 每 sheet 一张 GFM 表；`### Sheet: <名>` 分隔；第一行作表头；单元格 `|` 转义 `\|`。
-- 单元格格式化（与参考 `dsh-file-upload-convert.js` 口径一致）：`null/undefined → ''`、`Date → toISOString().slice(0,10)`（UTC YYYY-MM-DD）、其余 `String(v)`。
+- 单元格格式化：`null/undefined → ''`、`Date → toISOString().slice(0,10)`（UTC YYYY-MM-DD）；t15 §2.3 起自解析路径按 styles.xml numFmt 判定**日期样式**（内置 14-22/27-36/45-47/50-58 + 自定义含 y/m/d/h/s）→ Excel 序列号转 `YYYY-MM-DD`（1900 日期系统，含 1900-02-29 历史 bug 兼容；时间部分截断）；`t="d"` ISO 值截断到天；千分位/百分比等其他数字样式按原值输出。
 - 护栏：每 sheet 前 1000 行、最多前 5 个 sheet；超出 → warnings + 说明行（`truncated` 语义由 convert 层 meta 携带）。
 - `backend='xlsx-self'`（自解析路径，t11 §1.7 实际引擎口径）/ `'read-excel-file'`（库回退路径）；空 sheet → `（空 sheet）`。
 

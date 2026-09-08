@@ -241,11 +241,91 @@ function xlsxRowsToMd(rows) {
   return [header, sep, ...body].join('\n');
 }
 
+/* t15 §2.3 日期（样式序列号 → YYYY-MM-DD）：Excel 1900 日期系统（含 1900-02-29 历史 bug）——
+ * 序列 ≥61 时基准 1899-12-30 + 序列（Excel 序列 61 = 真实 1900-03-01）；序列 1..59 = 基准 + 序列 + 1
+ * （Excel 序列 1 = 真实 1900-01-01——Jan/Feb 区间含虚构闰日）；序列 60（虚构 1900-02-29）顺延 1900-03-01。
+ * 时间部分按口径截断（G5-2「日期」= 只到天）。 */
+function excelSerialToDate(serial) {
+  const s = Math.floor(serial);
+  let off = s;
+  if (s >= 1 && s < 61) off = s + 1; // 序列 1..59（Jan/Feb 含虚构闰日）+1；≥61 基准+序列；≤0 原样
+  const d = new Date(Date.UTC(1899, 11, 30) + off * 86400000);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const da = String(d.getUTCDate()).padStart(2, '0');
+  return y + '-' + mo + '-' + da;
+}
+/* t="d"（ISO 日期字符串，如 2021-06-10T00:47:45.700Z）：按「日期」口径截断到天（G5-2） */
+function isoDateOnly(v) {
+  return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : decodeXml(v);
+}
+/* formatCode 方括号段剥离（[h]、[Red]、[$-409] — 线性 indexOf 循环，无正则回溯） */
+function stripBracketed(code) {
+  let out = '';
+  let p = 0;
+  while (true) {
+    const b = code.indexOf('[', p);
+    if (b < 0) { out += code.slice(p); break; }
+    out += code.slice(p, b);
+    const e = code.indexOf(']', b + 1);
+    if (e < 0) break; // 未闭合括号段：舍弃余部
+    p = e + 1;
+  }
+  return out;
+}
+/* t15：styles.xml → cellXfs 样式索引的日期判定表（内置日期 id 14-22/27-36/45-47/50-58 +
+ * 自定义 formatCode 含 y/m/d/h/s 组合——方括号段剥离后判定，防 [Red] 颜色误判）。
+ * 返回 { isDateStyle(styleIdx) }；styles.xml 缺失 → 无格式化（全 false）；结构损坏 → throw（回退库路径）。 */
+function parseStylesDateFormats(stylesXml) {
+  const start = stylesXml.indexOf('<cellXfs');
+  const end = start >= 0 ? stylesXml.indexOf('</cellXfs>', start) : -1;
+  if (start < 0 || end < 0) throw new Error('styles.xml 缺 cellXfs，回退库解析');
+  const cellXfsXml = stylesXml.slice(start, end);
+  const numFmtCodes = new Map();
+  const nfRe = /<numFmt\s[^>]*>/g;
+  let nm;
+  while ((nm = nfRe.exec(stylesXml))) {
+    const tag = nm[0];
+    const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(tag);
+    const fcM = /formatCode\s*=\s*"([^"]*)"/.exec(tag);
+    if (idM && fcM) numFmtCodes.set(parseInt(idM[1], 10), decodeXml(fcM[1]));
+  }
+  const xfIds = [];
+  const xfRe = /<xf\s[^>]*>/g;
+  let xm;
+  while ((xm = xfRe.exec(cellXfsXml))) {
+    const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(xm[0]);
+    xfIds.push(idM ? parseInt(idM[1], 10) : 0);
+  }
+  const isBuiltinDateId = (id) =>
+    (id >= 14 && id <= 22) || (id >= 27 && id <= 36) || (id >= 45 && id <= 47) || (id >= 50 && id <= 58);
+  // 预计算每号样式的日期标记（运行时判定 O(1)，无闭包复杂度负担）
+  const dateFlags = xfIds.map((id) => {
+    if (!id) return false;
+    if (isBuiltinDateId(id)) return true;
+    const code = numFmtCodes.get(id);
+    return typeof code === 'string' && /[ymdhs]/i.test(stripBracketed(code));
+  });
+  return {
+    isDateStyle(styleIdx) { return !!dateFlags[styleIdx]; },
+  };
+}
+const NO_DATE_STYLES = { isDateStyle: () => false };
+
+/* t15：序列号/普通值单元格 → 文本（样式命中日期 → YYYY-MM-DD；否则原样）——拆函数防复杂度越限 */
+function serialDateOrRaw(c, styles) {
+  const numeric = /^[+-]?[\d.]+$/.test(c.v);
+  if (c.s === '' || !numeric) return decodeXml(c.v);
+  if (!styles.isDateStyle(parseInt(c.s, 10))) return decodeXml(c.v);
+  return excelSerialToDate(parseFloat(c.v));
+}
+
 /* t33 自解析单 sheet：流式读取前 ROW_LIMIT 行（扫描到 ROW_LIMIT+1 个即判定截断），行内单元格映射为字符串数组。
  * 类型（与库口径一致）：t="s"→共享字符串；t="inlineStr"→is/t 文本；t="str"→v 文本；t="b"→true/false；
- * 其余（数字/日期序列号）→ v 原样（日期序列号按基础数值处理——样式日期转换未做，限制记录于文档/报告）。
- * 返回 { rows, scanned, truncated } */
-function xlsxParseSheet(xml, rowLimit, strings) {
+ * t="d"→ISO 日期（t15：按「日期」口径截断到天）；数字/日期序列号→命中日期样式的转 YYYY-MM-DD（t15 §2.3），
+ * 其余原样。返回 { rows, scanned, truncated } */
+function xlsxParseSheet(xml, rowLimit, strings, dateStyles) {
+  const styles = dateStyles || NO_DATE_STYLES;
   const { rawRows, maxS, more } = scanSheetRows(xml, rowLimit);
   // 共享字符串按需解析：maxS 已知后再解（守卫已在外层基于 compSize 判定，此处仅截断索引）
   const ss = maxS >= 0 ? parseSharedStrings(strings || '', maxS) : [];
@@ -262,7 +342,8 @@ function xlsxParseSheet(xml, rowLimit, strings) {
       if (c.v === '0') return 'false';
       return c.v;
     }
-    return decodeXml(c.v);
+    if (c.t === 'd') return isoDateOnly(c.v);
+    return serialDateOrRaw(c, styles);
   }));
   return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more };
 }
@@ -284,6 +365,9 @@ async function xlsxSelfParse(buf, readMap, names) {
     }
     stringsXml = new TextDecoder().decode(stringsEntry.data);
   }
+  // t15 §2.3：styles.xml → 日期样式判定表（缺失 = 无格式化；结构损坏 → throw 回退库路径——不静默错值）
+  const stylesEntry = await zipEntry(buf, 'xl/styles.xml');
+  const dateStyles = stylesEntry ? parseStylesDateFormats(new TextDecoder().decode(stylesEntry.data)) : null;
   const parts = [];
   const warnings = [];
   let truncated = false;
@@ -293,7 +377,7 @@ async function xlsxSelfParse(buf, readMap, names) {
     const entry = await zipEntry(buf, s.target);
     if (!entry) throw new Error('缺工作表 XML（' + s.target + '），回退库解析');
     const xml = new TextDecoder().decode(entry.data);
-    const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml);
+    const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml, dateStyles);
     totalRows += scanned;
     if (sheetTrunc) truncated = true;
     parts.push(`### Sheet: ${s.name === null ? 'Sheet1' : s.name}\n\n${xlsxRowsToMd(rows)}`);
