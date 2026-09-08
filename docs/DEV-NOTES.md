@@ -508,4 +508,59 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - **t6 终验闭环（用户机 112/112，captain 转交 2026-09-08）**：用户终端 `npm test` = **112 tests / 112 pass / 0 fail（30.9s）**——O1/O2/E5 全绿（含 .doc 友好提示文案断言）+ 既有全量零回归；计数 112 = 108 + 新增 4（O 组父测试/O1/O2/e5）——t6 ⑤「≈109-111 保守估计」以实测更新。验收结论锁定：**通过（无阻塞发现）**；O2 产品级（同步产物）闭环 = 用户机全量数字已含（用户机验证的即同步后或当前产物——以用户机自 build 为准，本条与 CONTRACT §7 t6 记录共同收尾）。
 - **t6 产物级补验闭环（2026-09-08）**：产物同步已落 git——commit `5dfbc52`（v0.1.2-t5 .doc友好提示产物；index.html 96,940 B / SHA `0BCEC88A…` = HEAD）。产品级 O2 宿主浏览器实测绿（error 含「另存为」+「docx」、sniff→{type:'doc'}）；grep 命中 L219 OLE2 魔数（[208,207,17,224,161,177,26,225]→{type:"doc"}）+ L1505 另存为文案（\u53E6\u5B58\u4E3A 转义形式）；产品级回归抽查（txt/docx GFM/pdf pdfjs/sample-images.docx 2assets+0内嵌/MZ 边界）零回归。**发现①（产物同步待闭环）关闭**；t6 终态 = 通过（产品级全链 + 用户机 112/112）。
 
+## 2026-09-08 · 第五轮审查 A 批 独立验收 t9（qa-dev，修验分离）
+
+### 验证了什么（基线 HEAD 946fabf = t7 契约 e420805 + t8 实现 9148f4c（xlsxWorkbookMap 映射修复 / PDF 判类 Unicode 化 / 单页 OCR try/catch 兜底）+ t10 B+C 批先红（预期红，不在本批）；index.html 产物同步未就绪（HEAD 产物 = 5dfbc52 t5 时点））
+- **t7 断言全绿（src 级 ESM 直载逐条）**：G3-1/2/3（shuffle-sheets：First→BBB、Second→AAA 映射正确）；P1（纯符号 backend=pdfjs 无 OCR warning 符号保留）；P2（OCR 引擎不可用模拟：lowtext 转换成功 + U+E050×8 + warning「保留原文本层」）。
+- **零回归（src 级 25+ 项）**：G1-G3/L6/real-date/real-schema/L4a 27ms+L4b+L5/I 组/GFM/J/L1+L2a+L3/pdf k6+k7/txt/html/F1-F2/O/D 4/4/E 5/5；**C2 关键回归**：real-cid-paper 判类调整后 backend=pdfjs、CJK 4109/0.619、三高置信子串全命中（不误触发 OCR、可读性保持）；静态复刻 51/51（B1 21 项样例字节锁）+ pwa 48/48。
+- **④边界**：无 rels/目标缺失/无 xl 三构造 → 全为友好错误或护栏（零裸异常/零静默错位）；质量门单元 8 例（西里尔/希腊/全角/emoji/符号/CJK=1.0；PUA/FFFD=0.0；混合 0.5）。
+- **⑤重构核验**：lint 35 warning/0 error（AGENTS 基线 37 → -2 无新增）；metrics 超限 25（基线 26 → -1）；t8 重构 = xlsx parseSheetTags/parseRelsMap + pdf isPdfGarbageCode 小块化（断言全绿、lint 无新增——配额合规）。
+
+### 实测要点（层级注明）
+- src 级 = 根目录临时 ESM 直载页（#status/#results 挂点——t6 防再犯同款）；产物级 = 真实 index.html（5dfbc52 / 0BCEC88A…，t8 未进产物——预期）。P2 以「不加载 tesseract 全局」模拟 OCR 引擎不可用（getOcrWorker throw 语义等价）；file:// 真页面请在用户机/宿主产物闭环。
+- F 组首测误用字节（C0E4≠CEC4）得「中冷测试」——验收方构造错误，修正为 D6D0CEC4B2E2CAD4 后命中；非产品问题（防再犯：GBK 字节对照表先核）。
+
+### 发现（仅登记，无阻塞）
+1. [流程] 产物同步未就绪（t8 特征不在产物）——captain 协调 build 后补验闭环（同 t6 模式）。
+2. [并发] 验收期间 src/sniff.js M（countFffd ≥2 启发式——B+C 批 F7 修复进行中）；验收方零触碰；A 批路径不涉。
+3. [工具] docs/CODE-METRICS.md 工作树 M（conv 未提交）；本验收 metrics 运行重生成（确定性输出；未手改未提交）；AGENTS.md M 为并行工作。
+4. [环境] 本会话沙箱拒跑测试形态（未升权）——src 直载+复刻替代；用户机闭环后回填。
+5. [信息] 用户机预期：未同步产物下 A 批红（预期）+ B+C 先红；同步后 A 批全绿 + 既有 112 全绿 + B+C 仍先红（下一批）；总数字以实测回填。
+
+### 防再犯
+- **并发工作树识别**：验收前与验收后各记一次 `git status`；中途出现新的 M（如 src/sniff.js）立即 diff 识别归属（B+C 批 F7 = t10 断言对应实现）——登记不触碰，验收结论标注「当时磁盘版本」。
+- **GBK 测试字节**：先按 CONTRACT §2 F 组登记对照表（中文测试 = D6D0CEC4B2E2CAD4）再构造，不凭记忆（本批 C0E4 误用教训）。
+- **质量门单元回归模板**：textQualityRatio 8 例（西里尔/希腊/全角/emoji/符号/CJK/PUA/FFFD/混合）可直接复用（src/pdf.js 导出）——守卫「误杀」回归。
+- **xlsx 破坏样例模板**：无 rels / 目标缺失 / 无 xl 三构造件（fflate zipSync 页内构造）——守卫「回退库路径」而非「静默错位/裸异常」。
+
+### 环境事实
+- 用户机终验：**待闭环**（captain 转交后回填；未同步产物下预期 A 批红 + B+C 先红）。
+- 实测核验：src/、tests/、index.html、sw.js、样例零改动（除并发 src/sniff.js M 与既存 M）；临时直载页 h.html 已删。
+- **t9 基线更新补验（01f516d，Cn 入黑名单）**：captain 口径指令 → 质量门补「未分配码点（Cn，!/\p{Assigned}/u）」（commit 01f516d，仅 src/pdf.js +9/-7；HEAD 后续 t11 未触 pdf.js）。复验：原有 8 例全保持（cyr/greek/fullwidth/emoji/symbols/cjk=1.0；pua/fffd=0.0；mixed=0.5）+ Cn 组（U+0378/U+FDD0/U+FFFE=0.0；混合=0.667）+ P1/P2/C2 全绿（与 conv 44/44 一致）。**新登记【低】**：孤立代理项 `q('\uD800')=1.0`——`\p{Assigned}` 按 ECMA =「非 Cn」，Cs≠Cn → 代理项仍记 good；01f516d 注释「含孤立代理项」与实测相反；关键断言不涉、影响面极低；方向=黑名单补 0xD800-0xDFFF（待拍板）。t9 结论「通过」维持。
+
+## 2026-09-08 · 第五轮审查 B+C 批 独立验收 t12（qa-dev，修验分离）
+
+### 验证了什么（基线 HEAD 14cfe7f = t11 b91a6f8 + d5cc799（Cs 判类 PDF_GARBAGE_RE 表驱动——t9 低登记关闭）+ c3a8a10（G4-1 readSheetSafely 友好错误——用户机 129/131 暴露）+ A+B+C 产物补同步 14cfe7f）
+- **t10 断言全绿**：F7（截断不整篇 mojibake）/ G4-1（**src+产品级**均零裸异常——友好文案「文件已损坏或不是有效的 Excel 文档…」）/ G4-2（xlsx-self）/ O2/O3（OLE2 通用文案：docx/xls 双命名场景）/ H10（sw 导航 res.ok 先于 put）/ H11（licenses cmaps+Adobe）/ H12（yml 无 `path: .`）。
+- **判类全组 12 例 + P1/P2/C2 零回归**；**F1-F6/G/G2/L6/O/D/E5/I/J 全绿**；部署白名单七件套磁盘实证 + tests/docs 不在部署集；合规（licenses ↔ vendor/cmaps/LICENSE 实物 + 168 bcmap）；重构（lint 32w/0e 零新增——t9 35 → -3；metrics 23——t9 25 → -2）；产物级特征全命中 + pwa 48/48 + 静态 51/51。
+
+### 实测要点（层级注明）
+- src 级 = 根目录临时 ESM 直载页；产品级 = 真实 index.html（14cfe7f）+ file:// 真场景（P2：成功 + U+E050×8 + 「已保留原文本层」）；质量门判类以导出函数单元验证（Cs=0.0/Cn=0.0/PUA=0.0/FFFD=0.0/C0=0.0；西里尔/希腊/全角/emoji/符号/CJK=1.0；混合 0.5）。
+- 用户机 129/131 = G4-1（c3a8a10 已修）+ 1 项未明说——captain 转交 131/131 重跑结果后回填。
+
+### 发现（仅登记，无阻塞）
+1. [信息] 用户机 129/131（2 红）——G4-1 已由 c3a8a10 关闭（本验收 src+产品双证）；另一红项未明说；重跑预期 131/131。
+2. [信息] lint/metrics 子集口径（t8/t11/两补丁声明）vs 全量（32w/23）——以全量为准。
+3. [信息] K 组（k1-k5）/M 组 UI 端到端未逐条重跑（t11 及补丁未涉 html2md/ui）——t9/t3 证据 + 用户机闭环。
+4. [工具] CODE-METRICS.md 工作树 M（metrics 重生成、未提交）。
+5. [工具] 临时直载页 h.html 已删；浏览器实测服务 .tmp/srv.mjs（ignored）。
+
+### 防再犯
+- **用户机先红=产品级事实链**（本轮教训）：用户机 129/131 拉起的两个补丁（d5cc799/c3a8a10）→ 验收前先查「用户机→补丁→产物同步」是否闭环（本次 captain 已同步 14cfe7f——验收直接就产品级闭环）；后续批次沿用「用户机红 → 补丁 → 产物同步 → 验收」顺序。
+- **表驱动判类回归模板**（d5cc799 后）：`PDF_GARBAGE_RE = [/\p{Cs}/u, /\p{Co}/u, /\p{Cc}/u, /\uFFFD/u]` + `/\p{Assigned}/u` 兜底——12 例单元模板（Cs/Cn/PUA/FFFD/C0 + 西里尔/希腊/全角/emoji/符号/CJK/混合）直接复用即可守回归。
+
+### 环境事实
+- 用户机终验：**待闭环**（重跑 131/131 预期；结果 captain 转交后回填）。
+- 实测核验：src/、tests/、index.html、sw.js、.github/、文档、样例零改动；仅 CONTRACT/DEV-NOTES 追加记录；临时直载页 h.html 已删。
+
 
