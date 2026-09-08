@@ -479,6 +479,7 @@ put('real-big.xlsx', buildBigXlsx());
 put('sample-inlinestr.xlsx', buildInlineStrXlsx());
 put('sample-legacy-doc.doc', buildLegacyDoc());
 put('sample-shuffle-sheets.xlsx', buildShuffleSheetsXlsx());
+put('sample-rels-dotdot.xlsx', buildRelsDotdotXlsx());
 put('sample-symbols.pdf', buildSymbolsPdf());
 put('sample-lowtext.pdf', buildLowtextPdf());
 put('sample-truncated.txt', buildTruncatedTxt());
@@ -626,6 +627,53 @@ function buildShuffleSheetsXlsx() {
     { name: 'xl/sharedStrings.xml', data: Buffer.from(ss, 'utf8') },
     { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(sheet(1), 'utf8') }, // AAA（rId2 → Second）
     { name: 'xl/worksheets/sheet2.xml', data: Buffer.from(sheet(2), 'utf8') }, // BBB（rId1 → First）
+  ]);
+}
+
+/* ---------------- sample-rels-dotdot.xlsx（rels Target 用 ../ 相对路径；契约组 G6） ----------------
+ * 第七轮审查报告 §2.2（2026-09-09）：OOXML 的 rels Target 允许相对形态
+ *   （`../worksheets/sheet1.xml`，以 xl/ 为基准、第三方工具会多带一层 ../）。当前实现只剥前导 `/`
+ *   → 拼成 `xl/../worksheets/sheet1.xml` → zip 精确匹配失败 → xlsxWorkbookMap 抛错 → 回退库路径
+ *   （功能不错误，但丢自解析的流式/日期/截断精度）。
+ * 构造：单 sheet `DotDot`；xl/_rels/workbook.xml.rels 的 worksheet Target = `../worksheets/sheet1.xml`。
+ * 断言（G6）：backend='xlsx-self' + 令牌 DOC2MD-RELSDOT-2026 保留 + 无 error。
+ * 确定性：buildZip 固定时间戳 + 恒定 XML。
+ */
+function buildRelsDotdotXlsx() {
+  const shared = ['标题', 'DOC2MD-RELSDOT-2026'];
+  const ss = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${shared.length}" uniqueCount="${shared.length}">${shared.map((s) => `<si><t>${s}</t></si>`).join('')}</sst>`;
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="s"><v>0</v></c></row>
+<row r="2"><c r="A2" t="s"><v>1</v></c></row>
+</sheetData></worksheet>`;
+  const wb = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="DotDot" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+  const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="../worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+</Relationships>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'xl/workbook.xml', data: Buffer.from(wb, 'utf8') },
+    { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from(wbRels, 'utf8') },
+    { name: 'xl/sharedStrings.xml', data: Buffer.from(ss, 'utf8') },
+    { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(sheet, 'utf8') },
   ]);
 }
 
@@ -813,7 +861,7 @@ function buildNumFmtDateXlsx() {
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）；sample-truncated.txt 为 UTF-8 末尾截断样例（第五轮审查报告 §1.4 FFFD 过度触发——契约组 F7）；sample-corrupt-xlsx.xlsx 为损坏 xlsx 越界样例（EOCD localOff 越界，第五轮审查报告 §1.5——契约组 G4）；sample-numfmt-date.xlsx 为 numFmt=14 序列号日期样例（45123/45292.75，第六轮审查报告 §2.3——契约组 G5）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）；sample-truncated.txt 为 UTF-8 末尾截断样例（第五轮审查报告 §1.4 FFFD 过度触发——契约组 F7）；sample-corrupt-xlsx.xlsx 为损坏 xlsx 越界样例（EOCD localOff 越界，第五轮审查报告 §1.5——契约组 G4）；sample-numfmt-date.xlsx 为 numFmt=14 序列号日期样例（45123/45292.75，第六轮审查报告 §2.3——契约组 G5）；sample-rels-dotdot.xlsx 为 rels Target 用 `../` 相对路径样例（第七轮审查报告 §2.2——契约组 G6）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
