@@ -15,7 +15,7 @@
 // 运行：npm test （= node --test tests/）或 npm run test:contract
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import nodePath from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -946,6 +946,82 @@ test('契约组 G2：xlsx 大行数（L4 性能/L4b 护栏/L5 文案）—— L5
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 G3：xlsx sheet 映射错位（第五轮审查报告 §1.1，P1 静默错数据；契约先红 t7）
+// 样例：tests/data/sample-shuffle-sheets.xlsx——workbook.xml 顺序 First→rId1、Second→rId2；
+//   xl/_rels/workbook.xml.rels **反指** rId1→worksheets/sheet2.xml（内容 BBB）、
+//   rId2→worksheets/sheet1.xml（内容 AAA）；两文件均存在且各自内容表内含共享串 AAA/BBB——Excel
+//   拖动标签重排/删表后的真实形态（仅重排时文件名与顺序脱钩、不抛错 → 静默错位）。
+//   确定性生成 + manifest 字节锁（gen-samples；既有 G 组 real-multisheet 断言零改动）。
+// 断言语义：sheet 名来自 xl/workbook.xml 的 tab 顺序，内容必须按 rels 的 r:id→Target 映射取
+//   （「名 ↔ sheetN.xml」按索引一一对应不成立——当前实现按 sheet{i+1} 读 → 错位 → 红）：
+//   G3-1 输出恰 2 个 ### Sheet: 分区（First/Second）；G3-2 First 段落含 BBB、Second 段落含 AAA；
+//   G3-3 无 error/warnings（最危险形态 = 成功但不正确——静默错数据）。
+// ---------------------------------------------------------------------------
+test('契约组 G3：xlsx sheet 映射错位（sample-shuffle-sheets.xlsx；第五轮审查报告 §1.1）—— 契约先红', async (t) => {
+  await t.test('G3-0 sample-shuffle-sheets.xlsx 存在且与 manifest 字节级一致', () => {
+    const p = nodePath.join(DATA, 'sample-shuffle-sheets.xlsx');
+    assert.ok(fs.existsSync(p), 'sample-shuffle-sheets.xlsx 缺失——请运行 npm run gen:samples');
+    const rec = readManifest().files['sample-shuffle-sheets.xlsx'];
+    assert.ok(rec, 'sample-shuffle-sheets.xlsx 未登记于 manifest');
+    const buf = fs.readFileSync(p);
+    assert.equal(buf.length, rec.bytes, '大小与 manifest 不一致（样例被改动）');
+    assert.equal(crypto.createHash('sha256').update(buf).digest('hex'), rec.sha256, 'SHA 与 manifest 不一致（样例被改动）');
+  });
+
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-shuffle-sheets.xlsx')).toString('base64');
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-shuffle-sheets.xlsx'));
+        },
+        { b64 }
+      );
+      const md = res.markdown || '';
+      const sections = {};
+      for (const part of md.split('### Sheet: ').slice(1)) {
+        const nl = part.indexOf('\n');
+        sections[part.slice(0, nl).trim()] = part.slice(nl + 1).trim();
+      }
+      await t.test('G3-1 输出恰 2 个 ### Sheet: 分区（First/Second）', () => {
+        assert.deepEqual(Object.keys(sections).sort(), ['First', 'Second'], `分区名=${JSON.stringify(Object.keys(sections))}（期望 First/Second——workbook 的 tab 顺序）`);
+      });
+      await t.test('G3-2 First 含 BBB、Second 含 AAA（名↔内容按 rels r:id→Target 映射）', () => {
+        assert.ok(sections['First'] && sections['First'].includes('BBB'), `First 段落=${JSON.stringify(sections['First'])}（当前自解析按 sheet{i+1} 索引读 → 内容与名错位——First 应为 rels 目标 sheet2.xml 的 BBB）`);
+        assert.ok(sections['Second'] && sections['Second'].includes('AAA'), `Second 段落=${JSON.stringify(sections['Second'])}（Second 应为 rels 目标 sheet1.xml 的 AAA）`);
+      });
+      await t.test('G3-3 无 error/warnings（当前为静默错位——成功但不正确，最危险形态；修复属静默纠错不警告）', () => {
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
+        assert.deepEqual(res.meta.warnings || [], [], `warnings=${JSON.stringify(res.meta.warnings)}——错位场景当前无任何提示（P1 静默错数据）`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
 // 离线静态断言（无浏览器依赖）：读 index.html 源码文本。
 // 断言（断言语义）：
 //   H1 源码不含 'doc2md.local'（伪域名 corePath——红线：任何外域请求都是违约）。
@@ -1679,6 +1755,111 @@ test('契约组 O：.doc 老格式友好提示（sample-legacy-doc.doc；真实�
         assert.ok(res.error.includes('另存为'), `错误信息不含「另存为」：${JSON.stringify(res.error)}（当前无 .doc 指引——用户只有「无法识别的文件类型」）`);
         assert.ok(res.error.includes('docx'), `错误信息不含「docx」：${JSON.stringify(res.error)}`);
       });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 P：PDF 质量门与 OCR 失败兜底（第五轮审查报告 §1.2；P1 误杀 / P2 兜底；契约先红 t7）
+// 样例：
+//   sample-symbols.pdf——文本层完全有效、内容为纯 ASCII 符号（~^&*+={}<>|/@#$ ×2，26 字符 >10）；
+//     当前 textQualityRatio 的 GOOD 集不含符号 → 有效占比 0 → 误触发 OCR → 误杀（file:// 下整篇失败）。
+//   sample-lowtext.pdf——Type1 /Encoding /Differences[ 80 /uniE050 ] → pdf.js 抽取 U+E050×8
+//     （私用区 E000-F8FF = 任何质量门（含报告 §1.2 修复方向「只把私用区/替换符/控制符记 garbage」）
+//     都判 garbage → 必走 OCR 分支）——用于「OCR 引擎不可用（file:// 下 getOcrWorker 同步 throw）时
+//     有文本层的页仍输出文本层 + warning」的**确定性**复现场景（真实 file:// 用户场景）。
+// 断言语义（宽松处注明；实现路径不绑定——只锁用户可见行为）：
+//   P1 纯符号文本层不得走 OCR：convert 成功 + meta.backend='pdfjs' + warnings 无「OCR」+
+//      符号原文保留（~^&*+={}<>|/@#$）。
+//   P2 OCR 引擎不可用兜底：file:// 页面（getOcrWorker 抛错——真实场景）下 convert(sample-lowtext.pdf)
+//      仍成功（error 无）+ 输出保留文本层原文（U+E050）+ warnings 含「保留原文本层」
+//      （当前未捕获 → 整篇失败 → 红）。
+// ---------------------------------------------------------------------------
+test('契约组 P：PDF 质量门与 OCR 兜底（sample-symbols.pdf / sample-lowtext.pdf；第五轮审查报告 §1.2）—— 契约先红', async (t) => {
+  await t.test('P-0 样例存在且与 manifest 字节级一致（×2）', () => {
+    for (const name of ['sample-symbols.pdf', 'sample-lowtext.pdf']) {
+      const p = nodePath.join(DATA, name);
+      assert.ok(fs.existsSync(p), `${name} 缺失——请运行 npm run gen:samples`);
+      const rec = readManifest().files[name];
+      assert.ok(rec, `${name} 未登记于 manifest`);
+      const buf = fs.readFileSync(p);
+      assert.equal(buf.length, rec.bytes, `${name} 大小与 manifest 不一致（样例被改动）`);
+      assert.equal(crypto.createHash('sha256').update(buf).digest('hex'), rec.sha256, `${name} SHA 与 manifest 不一致（样例被改动）`);
+    }
+  });
+
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      // P1：http 页面 + sample-symbols.pdf——纯符号文本层不得走 OCR
+      const page = await (await browser.newContext()).newPage();
+      try {
+        await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-symbols.pdf')).toString('base64');
+        const res = await page.evaluate(
+          async (arg) => {
+            const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+            return window.__doc2md.convert(new File([bytes], 'sample-symbols.pdf'));
+          },
+          { b64 }
+        );
+        await t.test('P1 纯符号文本层不得走 OCR（backend=pdfjs + 无 OCR warning + 符号原文保留）', () => {
+          assert.equal(res.error, undefined, `convert 返回错误：${res.error}（当前 file:// 下为「OCR 不可用」整篇失败——纯符号文本层是有效文本层，不得触发 OCR）`);
+          assert.equal(res.meta.backend, 'pdfjs', `backend=${res.meta.backend}（纯符号文本层应直出文本层——质量门不得把符号判 garbage）`);
+          const w = (res.meta.warnings || []).join(' ');
+          assert.ok(!w.includes('OCR'), `warnings 含 OCR 相关：${JSON.stringify(res.meta.warnings)}`);
+          const md = res.markdown || '';
+          assert.ok(md.includes('~^&*+={}<>|/@#$'), `输出未保留符号原文：${JSON.stringify(md.slice(0, 160))}`);
+        });
+      } finally {
+        await page.close();
+      }
+
+      // P2：file:// 页面（OCR 引擎不可用——getOcrWorker 同步 throw 的真实场景）+ sample-lowtext.pdf
+      // 注：file:// 下 pdf.js worker 受限 → fake worker 主线程回退（bline.js 注释 + 宿主浏览器实证）；
+      // 文档其余组件（vendor 同目录引用）file:// 可加载（红线 2 单目录离线承诺）。
+      const fp = pathToFileURL(nodePath.join(ROOT, 'index.html')).href;
+      const fPage = await (await browser.newContext()).newPage();
+      try {
+        await fPage.goto(fp, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-lowtext.pdf')).toString('base64');
+        const res = await fPage.evaluate(
+          async (arg) => {
+            const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+            return window.__doc2md.convert(new File([bytes], 'sample-lowtext.pdf'));
+          },
+          { b64 }
+        );
+        await t.test('P2 OCR 引擎不可用兜底：file:// 下转换成功 + 文本层原文保留（U+E050）+ warning 含「保留原文本层」', () => {
+          assert.equal(res.error, undefined, `convert 返回错误：${JSON.stringify(res.error)}（当前 OCR 调用未捕获 → 整篇失败——有文本层的页应保留文本层 + warning）`);
+          const md = res.markdown || '';
+          assert.ok(md.length > 0, '输出为空——应保留文本层原文（U+E050×8）');
+          assert.ok((md.match(/\uE050/g) || []).length >= 4, `文本层原文未保留：${JSON.stringify(md.slice(0, 120))}（期望 ≥4 个 U+E050——私用区字符是 fallback 应保留的内容）`);
+          const w = (res.meta.warnings || []).join(' ');
+          assert.ok(w.includes('保留原文本层'), `warnings 缺「保留原文本层」：${JSON.stringify(res.meta.warnings)}`);
+        });
+      } finally {
+        await fPage.close();
+      }
     } finally {
       await browser.close();
     }

@@ -112,6 +112,18 @@
 | L5 | 文案微瑕：单 sheet 无未读时输出/warnings **不含「另有 0 个」** | !includes | 🔴 红（t32 实测：warnings =「已截断：已读取前 1 个 sheet 共 50000 行（每 sheet 保留前 1000 行；**另有 0 个 sheet 未读取**）」——单 sheet 无未读却出「另有 0 个」；修复方向=t33 该子句仅在 `skipped>0` 时拼接） |
 | L6 | inlineStr 单元格文本保留（t35 新增·先红）：`t="inlineStr"`（文本在 `<is><t>`、不在 `<v>`）输出须含「INLINE-STR-OK-2026」「内联中文」（t=`s` 共享串/数值作对照） | includes | 🔴 红（**t35 实测**：输出 `\| 共享文本 \|  \|` / `\|  \| 42 \|`——inlineStr 单元格全空（流式 xlsxParseSheet inlineStr 分支读 `c.v` 而文本在 `<is><t>`），共享串/数值保留；t34 发现项转契约；样例 sample-inlinestr.xlsx（1,973 B / SHA `90DE7256…`）；修复方向=t36 inlineStr 分支改读 `<is><t>`） |
 
+### 契约组 G3 — xlsx sheet 映射错位（第五轮审查报告 §1.1，P1 静默错数据；2026-09-08 契约先红 t7）
+
+样例 `sample-shuffle-sheets.xlsx`（workbook 顺序 First→rId1、Second→rId2；rels **反指** rId1→sheet2.xml(内容 BBB)、rId2→sheet1.xml(内容 AAA)；两文件均存在——Excel 拖动标签重排/删表后的真实形态；确定性生成 + manifest 字节锁 2,234 B / SHA `6A8C74C3…`）。
+断言语义：sheet 名来自 `xl/workbook.xml` tab 顺序，内容必须按 `xl/_rels/workbook.xml.rels` 的 r:id→Target 映射取——「名 ↔ sheetN.xml」按索引一一对应不成立（当前 `xlsxSelfParse` 按 `sheet{i+1}` 读 → 错位且无 warning = 最危险形态：成功但不正确）。
+
+| 编号 | 断言 | 标准 | 当前（基线 f6dd73d 宿主浏览器实测，t7） |
+|---|---|---|---|
+| G3-0 | `sample-shuffle-sheets.xlsx` 存在且与 manifest 字节级一致（2,234 B / SHA `6A8C74C3…`） | 静态（字节锁） | 🟢 绿（t7 生成登记；gen:samples 幂等） |
+| G3-1 | 输出恰 2 个 `### Sheet:` 分区（First/Second） | deepEqual keys | 🟢 绿（实测分区名 ['First','Second']（+后续 1 分割段）） |
+| G3-2 | `### Sheet: First` 段落含 **BBB**、`### Sheet: Second` 段落含 **AAA**（名↔内容按 rels 映射） | includes | 🔴 红（**t7 新增·先红**：实测 First→`\| AAA \|`、Second→`\| BBB \|`——按 sheetN 索引读，名与内容错位；修复方向=读 rels r:id→Target） |
+| G3-3 | 无 error/warnings（当前为**静默**错位——错数据无任何提示） | error=undefined + warnings=[] | 🔴 红（**t7 登记**：实测 error=undefined、warnings=[]——正是「静默给错数据」的定性证据；修复属静默纠错，不警告） |
+
 ### 契约组 H — corePath 同源 / 零外域字面量 / SW v4 分段缓存（2026-09-05 新增：契约先红 t4；审查报告 §2.1/§2.2，红线相关）
 
 离线静态断言（读 index.html/sw.js 源码，无浏览器依赖）。H3-H6 为 t7 独立验收新增（任务授权：SW v4 分段缓存 PRECACHE 清单断言）。
@@ -209,6 +221,16 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | O1 | `sample-legacy-doc.doc` 存在且与 manifest 字节级一致（512 B / SHA `A899FB44…`）+ 前 8 字节 = OLE2 魔数 | 静态（字节锁 + magic） | 🟢 绿（t4 生成登记；gen:samples 幂等） |
 | O2 | convert(.doc) 失败响应同时包含「另存为」与「docx」（≈“老版 .doc（Word 97-2003）暂不支持，请用 Word/WPS 打开后另存为 .docx 再转换”） | includes ×2 | 🔴 红（**t4 新增·先红**：实测 error='无法识别的文件类型'——无「另存为」/「docx」；sniff 对 OLE2 判 unknown(binary)） |
 | E5（E 组追加） | OLE2 魔数 `D0CF11E0A1B11AE1` 不得判回 text（允许 unknown/doc——机制不绑定） | allowedTypes + notType | 🟢 绿（t4 新增·登记：实测 type='unknown'/detail='binary'——二进制启发式已兜住；守护「乱码成功」回归） |
+
+### 契约组 P — PDF 质量门与 OCR 失败兜底（第五轮审查报告 §1.2；P1 误杀 / P2 兜底；2026-09-08 契约先红 t7）
+
+样例：`sample-symbols.pdf`（613 B / SHA `3432DDE2…`——文本层完全有效、纯 ASCII 符号 `~^&*+={}<>|/@#$`×2（26 字符 >10）；当前 textQualityRatio 的 GOOD 集不含符号 → 有效占比 0 → **误触发 OCR** → file:// 下整篇失败）；`sample-lowtext.pdf`（652 B / SHA `0F714EB0…`——Type1 `/Encoding /Differences[ 80 /uniE050 ]` → pdf.js 抽取 **U+E050×8**（私用区 E000-F8FF = 任何质量门（含报告修复方向「只把私用区/替换符/控制符记 garbage」）都判 garbage → 必走 OCR 分支）——「OCR 引擎不可用时保留文本层」的确定性复现场景）。
+
+| 编号 | 断言 | 标准 | 当前（基线 f6dd73d 宿主浏览器实测，t7） |
+|---|---|---|---|
+| P-0 | 两样例存在且与 manifest 字节级一致 | 静态（字节锁） | 🟢 绿（t7 生成登记；`sample-symbols.pdf` 613 B / `3432DDE2…`；`sample-lowtext.pdf` 652 B / `0F714EB0…`） |
+| P1 | 纯符号文本层不得走 OCR：convert 成功 + backend=`pdfjs` + warnings 无「OCR」+ 符号原文保留 | 状态 + includes | 🔴 红（**t7 新增·先红**：实测 backend=**tesseract**、warning「书中有 1 页无有效文本层，已用 OCR 识别」、输出为 OCR 乱码（`AE +={(}<>|@…`）——纯符号文本层被质量门误判 garbage → OCR 误杀；修复方向=判类改 Unicode 属性/私用区+替换符+控制符记 garbage（报告 §1.2）） |
+| P2 | OCR 引擎不可用兜底：file:// 页面（getOcrWorker 同步 throw）下 convert(sample-lowtext.pdf) 成功 + 文本层原文保留（U+E050）+ warnings 含「保留原文本层」 | error=undefined + 计数 + includes | 🔴 红（**t7 新增·先红**：实测（file:// 宿主页面）error='转换失败：file:// 直接打开时 OCR 不可用……'、markdown 空、warnings=[]——ocrPageToText 未捕获 getOcrWorker throw → 整篇失败；修复方向=每页 OCR try/catch 失败保留文本层 + warning（报告 §1.2）） |
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |
@@ -242,6 +264,14 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 
 > 生成器幂等已验：`npm run gen:samples` 连续两次运行，三个新样例 SHA 完全一致；
 > manifest 仅追加新条目，既有 6 条 `sample.*` 锁条目未变（diff 验证）。
+
+### 第五轮契约组样例（2026-09-08 t7 新增，合成·确定性·进 manifest 字节锁）
+
+| 文件 | 类别 | 用途（契约组） | 验证规模（生成器实测） | 登记规则 |
+|---|---|---|---|---|
+| `sample-shuffle-sheets.xlsx` | XLSX（合成） | 契约组 G3——sheet 名与内容错位（workbook 顺序 First→rId1/Second→rId2；rels **反指** rId1→sheet2.xml(BBB)、rId2→sheet1.xml(AAA)——Excel 拖动重排/删表形态；第五轮审查报告 §1.1） | 2,234 B / SHA `6A8C74C3…`；zip 合法，workbook.xml 2×`<sheet>`，rels 映射反指，sheet1/2.xml + sharedStrings 齐 | 字节锁（manifest）；确定性生成（生成而非人工）；新名不动既有 sample.* |
+| `sample-symbols.pdf` | PDF（合成） | 契约组 P1——纯 ASCII 符号文本层（`~^&*+={}<>|/@#$`×2，26 字符 >10；质量门误杀场景——第五轮审查报告 §1.2） | 613 B / SHA `3432DDE2…`；%PDF-1.4 合法，Type1 Helvetica 单 run 文本层 | 字节锁（manifest）；纯拉丁单字节（T-2 口径）；确定性生成 |
+| `sample-lowtext.pdf` | PDF（合成） | 契约组 P2——私用区 U+E050×8 文本层（Type1 `/Encoding /Differences[ 80 /uniE050 ]` → pdf.js 抽取 U+E050——任何质量门都判 garbage → 必走 OCR 分支；OCR 不可用兜底确定性复现——第五轮审查报告 §1.2） | 652 B / SHA `0F714EB0…`；%PDF-1.4 合法；文本层抽取已验证（pdf.js getTextContent → U+E050×8，宿主浏览器实证） | 字节锁（manifest）；确定性生成 |
 
 ### 真实样例清单（T-3 通路落地：用户终端自 GitHub 上游下载，2026-09-04 登记）
 
@@ -312,6 +342,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-08 第五轮审查 A 批契约先红 t7（qa-dev；只改 tests/指定文件）**：基线 HEAD `f6dd73d`（v0.1.2 前两项已收官，112/112 全绿——O2 已由 t5/t6 转绿）。来源：`docs/doc2md-第五轮审查报告-2026-09-08.md` §1.1/§1.2（用户 2026-09-08 拍板 A+B+C 一起做）。**样例 ×3（gen-samples 确定性生成 + manifest 字节锁；既有 18 样例重跑 SHA 零漂移 = 幂等）**：`sample-shuffle-sheets.xlsx`（2,234 B / SHA `6A8C74C3F40441A8…`——workbook 顺序≠文件顺序、rels 反指）；`sample-symbols.pdf`（613 B / SHA `3432DDE28E448999…`——纯 ASCII 符号文本层 26 字符）；`sample-lowtext.pdf`（652 B / SHA `0F714EB0813AC49B…`——Differences[/uniE050] → pdf.js 抽 U+E050×8，**宿主浏览器实证抽取成功**）。**断言新增**（契约组 G3 ×4 + 契约组 P ×3，分组放置见 §2）：G3-0 字节锁（静态）/G3-1 恰 2 分区/G3-2 **First↔BBB、Second↔AAA**/G3-3 无 error/warnings；P-0 字节锁×2/P1 **纯符号不得走 OCR**（backend=pdfjs、无 OCR warning、符号原文保留）/P2 **OCR 不可用兜底**（file:// 下成功 + 文本层原文 U+E050 保留 + warning 含「保留原文本层」）。**实测（宿主浏览器真实页面；沙箱 Playwright spawn EPERM 按 §5 基建红登记制）**：G3-2 = 🔴 红（实测 First→`| AAA |`、Second→`| BBB |`——按 sheetN 索引读的静默错位，error/warnings 均空 = 「成功但不正确」最危险形态）；G3-0/G3-1 = 🟢（分区名正确——错位只发生在内容侧）；P1 = 🔴 红（实测 backend=**tesseract**、warning「…已用 OCR 识别」、输出 OCR 乱码——纯符号文本层被误判 garbage）；P2 = 🔴 红（file:// 宿主页面实测 error='转换失败：file:// 直接打开时 OCR 不可用…'、markdown 空——ocrPageToText 未捕获 getOcrWorker throw → 整篇失败）；P-0 = 🟢。**转绿条件**：实现侧按报告修复方向——G3-2 = xlsx 读 rels r:id→Target（A1 抽映射函数，重构配额 ≤50 行另提交）；P1 = 质量判类改 Unicode 属性/私用区+替换符+控制符记 garbage；P2 = 每页 OCR try/catch 失败保留文本层 + warning——本组断言无需改动自动转绿。**重构配额约定**：实现侧 ≤50 行小重构（A1 抽 sheet 映射函数、A2 判类表驱动）与本批断言无耦合；「重构后断言全绿」的验证归实现侧提交时点。用户机终验：`npm install && node node_modules/@playwright/test/cli.js install chromium && npm test` → 当前预期 G3-2/P1/P2 真跑红、其余绿；修复转绿后 G3 4/4 + P 3/3。不做：src 修复（实现侧批次——本批禁改 src/）。
 - **2026-09-08 .doc 友好提示独立验收 t6（qa-dev；修验分离——只验收不修改，产品/断言/样例零改动）**：基线 HEAD `d584ff4`（t4 契约 ad1387f + t5 src：src/sniff.js OLE2→type=doc + src/convert.js doc→「另存为 .docx」指引 + README 已知限制行）；**index.html 产物同步未就绪**（最后产物提交 = `a335204`（v0.1.2-t2），即 t3 已验证字节 EFFF0E02…——t5 特征未进产物，见发现①）。**结论：通过（无阻塞发现；O2 为源码级绿 + 产物级预期暂红，同步闭环后即转）**——①O1 绿（静态字节锁+魔数）、O2 源码级绿（ESM 直载 src/：文案命中「另存为」+「docx」、sniff→type=doc）、E5 双绿（src→doc ∈ {unknown,doc}；产物→unknown/binary ∈ 允许集，均 ≠ text——乱码成功守护）；②零回归（src 级全路径：E1-E4 5 项快照/txt/docx GFM/xlsx/pdf[pdfjs]/sample-images.docx[2 assets+2 refs+0 data:image]；产物级 txt/docx/pdf/imgDocx 抽查；静态 B/H 同语义复刻 **46/46**（B1 现 17 项含 sample-legacy-doc.doc）；pwa-audit 48/48）；③边界：非 OLE 未知二进制（MZ exe 构造）→ '无法识别的文件类型' 原语义零「另存为」泄漏（src+产物双验）；.docx/.pdf/.txt 正常路径零影响；④产物级=待构建同步（grep 当前 index.html 无 t5 特征——另存为文案/OLE2 分支均未出现=同步未发生；t5 为新增分支非替换，无「旧路径分支残留」问题）；⑤用户机终验说明见发现⑤。**5 个登记项（1 流程待闭环 + 2 环境/工具 + 2 信息），均只报告未修改**。
   **实测**（宿主浏览器；src 级 = 临时 ESM 直载页（.tmp/src-harness.html 与 /h.html——须在仓库根，见发现④；验收后已删）直载 src/convert.js+sniff.js，产物级 = 真实 index.html（96,642 B / SHA `EFFF0E02…` = HEAD a335204））：
   - ✅ **O1**：sample-legacy-doc.doc 512 B / SHA `A899FB4496AFA7230C378D5BE03CF3461990994993110FD2DAD3257111081275`（与 manifest 一致）+ 前 8 字节 `d0 cf 11 e0 a1 b1 1a e1`（OLE2）；gen-samples 确定性（磁盘 = manifest）。
