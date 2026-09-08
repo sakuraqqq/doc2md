@@ -9,7 +9,7 @@
 import { convert, registry, MAX_BYTES } from './convert.js';
 import { htmlToMarkdown } from './html2md.js';
 import { decodeText, sniff } from './sniff.js';
-import { setStatus, renderResult, dropzone, fileInput, hintEl } from './ui.js';
+import { setStatus, renderResult, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes } from './ui.js';
 
 export async function handleFiles(files) {
   const list = Array.from(files || []);
@@ -46,8 +46,19 @@ fileInput.addEventListener('change', () => {
 
 /* OCR 语言包懒初始化（DD-14）：不再页面加载时预热（避免首载全量拉取）；首次 OCR 时 getOcrWorker 才创建 */
 
-/* 测试挂钩（C线契约测试用；不改变行为） */
-window.__doc2md = { convert, sniff, registry, htmlToMarkdown, decodeText, MAX_BYTES };
+/* 测试挂钩（C线契约测试用；不改变行为）
+ * embedMaxBytes：单文件内嵌上限（默认 20MB，2026-09-08 拍板）——可读写，契约组 Q 用调低上限
+ * 验证「超限自动切 zip」分支（无需入库 >20MB 样例）。 */
+window.__doc2md = {
+  convert,
+  sniff,
+  registry,
+  htmlToMarkdown,
+  decodeText,
+  MAX_BYTES,
+  get embedMaxBytes() { return getEmbedMaxBytes(); },
+  set embedMaxBytes(n) { setEmbedMaxBytes(n); },
+};
 
 /* PWA：service worker 注册（离线缓存；仅 http(s)/localhost 生效，
  * file:// 双击打开时静默跳过——单文件本身离线可用，SW 是增强）。

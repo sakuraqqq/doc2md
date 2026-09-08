@@ -80,6 +80,12 @@ export async function downloadZip(text, fileName, assets, btn) {
 }
 // 方案 A（2026-09-07 拍板）：单文件 .md 导出——assets 图片转 data URL 内嵌（自包含单文件）；
 // 引用替换：](assets/<name>) → ](data:<mime>;base64,…)（本地生成，零外发；预览区不内嵌——预览与导出分离）
+// 2026-09-08 拍板（第六轮审查 §2.4）：① 单遍替换（原实现每图两次 split/join 全串拷贝 = O(n²)）；
+// ② 内嵌上限 20MB——assets 总字节超限时不再内嵌，自动改用 zip 下载（见 downloadMdEmbedded）。
+const EMBED_MAX_BYTES = 20 * 1024 * 1024;
+let embedMaxBytes = EMBED_MAX_BYTES; // 测试/调试可调（window.__doc2md.embedMaxBytes）
+export function getEmbedMaxBytes() { return embedMaxBytes; }
+export function setEmbedMaxBytes(n) { embedMaxBytes = Number(n) || 0; }
 function bytesToB64(bytes) {
   let s = '';
   const CH = 0x8000;
@@ -94,23 +100,43 @@ function bytesToB64(bytes) {
 function escAssetName(n) {
   return String(n).replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/\s/g, '%20');
 }
-async function embedImagesIntoMd(md, assets) {
-  let out = String(md || '');
+/** assets 总字节（上限判定只看原图字节——不先构造 base64 再放弃，避免内存放大） */
+function assetsTotalBytes(assets) {
+  let total = 0;
+  for (const a of assets || []) if (a && a.blob) total += a.blob.size || 0;
+  return total;
+}
+/** 引用表：原始名 / escUrl 转义名 → data URL（单遍替换用 Map 查询） */
+async function buildEmbedMap(assets) {
+  const map = new Map();
   for (const a of assets || []) {
     if (!a || !a.blob) continue;
     let bytes = null;
     try { bytes = new Uint8Array(await a.blob.arrayBuffer()); } catch { /* 单图读取失败跳过（其他图照常内嵌） */ }
     if (!bytes || bytes.length === 0) continue;
     const dataUrl = 'data:' + (a.type || 'image/png') + ';base64,' + bytesToB64(bytes);
-    out = out.split('](' + a.name + ')').join('](' + dataUrl + ')');
-    out = out.split('](' + escAssetName(a.name) + ')').join('](' + dataUrl + ')');
+    map.set(a.name, dataUrl);
+    map.set(escAssetName(a.name), dataUrl);
   }
-  return out;
+  return map;
+}
+/** 单遍替换：](target) 命中引用表才替换，未命中原样保留（标题/外链等不受影响） */
+function embedImagesIntoMd(md, map) {
+  return String(md == null ? '' : md).replace(/\]\(([^)]+)\)/g, (m, target) => {
+    const dataUrl = map.get(target);
+    return dataUrl ? '](' + dataUrl + ')' : m;
+  });
 }
 export async function downloadMdEmbedded(text, fileName, assets, btn) {
+  const total = assetsTotalBytes(assets);
+  if (total > embedMaxBytes) {
+    setStatus('图片共 ' + fmtSize(total) + '，超过内嵌上限 ' + fmtSize(embedMaxBytes) + '，已自动改用 zip 下载（.md + 图片）');
+    await downloadZip(text, fileName, assets, btn);
+    return;
+  }
   try {
     const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md'); // 复审 §1.7：空兜底
-    const md = await embedImagesIntoMd(text, assets);
+    const md = embedImagesIntoMd(text, await buildEmbedMap(assets));
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
