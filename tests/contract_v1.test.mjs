@@ -630,6 +630,15 @@ const SNIFF_CASES = [
     bytes: [],
     expected: { type: 'unknown', detail: 'empty' },
   },
+  // e5（t4 新增）：OLE2 魔数（Word 97-2003 二进制 .doc）——不得判回 text（判 text = 乱码「成功」；
+  // 当前实测 type='unknown'/detail='binary'（0x11/0x1A 等控制字节）→ 本断言现绿，如实登记；
+  // 允许未来实现新增 type='doc'（友好提示分支）——机制不绑定，只锁「不得判回 text」
+  {
+    id: 'e5', name: 'OLE2 魔数（D0CF11E0A1B11AE1 + NUL 密集）——.doc 老格式，不得判回 text',
+    bytes: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    allowedTypes: ['unknown', 'doc'],
+    notType: 'text',
+  },
 ];
 
 test('契约组 E：sniff 精确快照 —— 契约先红（E1/E2 红；E3/E4 现绿，如实登记）', async (t) => {
@@ -1598,6 +1607,78 @@ test('契约组 N：外部语料 BLNS（静态完整性 + TXT 全量转换冒烟
       });
       assert.deepEqual(consoleErrors, [], `console error 非零：${consoleErrors.join(' | ')}`);
       assert.deepEqual(externalRequests, [], `非本地网络请求（零外发红线）：${externalRequests.join(', ')}`);
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 O：.doc 老格式友好提示（真实用户反馈 2026-09-08；契约先红 t4）
+// 背景：用户拖入《2026春*毛中特*实践教学计划.doc》（36,864 B，OLE2 复合文档魔数 D0CF11E0A1B11AE1 =
+//   Word 97-2003 二进制 .doc，非 docx）→ 转换失败、无「怎么办」提示。v1 范围不含 .doc
+//   （拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）——目标是让用户得到友好指引而非困惑。
+// 样例：tests/data/sample-legacy-doc.doc（合成：OLE2 魔数头 + 确定性 0x00 填充，共 512 B；
+//   gen-samples 确定性生成；manifest 字节锁）。不收录用户真实文件（脱敏合成替代）。
+// 断言（断言语义；宽松处注明）：
+//   O1 样例存在且与 manifest 字节级一致 + 前 8 字节 = OLE2 魔数（离线静态，无浏览器依赖）。
+//   O2 失败响应必须同时包含「另存为」与「docx」字样（≈“老版 .doc（Word 97-2003）暂不支持，
+//      请用 Word/WPS 打开后另存为 .docx 再转换”）——不绑定实现位置（sniff 新类型 or convert 检查），
+//      只锁用户可见文案；当前 convert 对 OLE2 判 unknown → error='无法识别的文件类型'
+//      （无「另存为」/「docx」）→ 红。
+// ---------------------------------------------------------------------------
+test('契约组 O：.doc 老格式友好提示（sample-legacy-doc.doc；真实用户反馈 2026-09-08）—— 契约先红', async (t) => {
+  await t.test('O1 sample-legacy-doc.doc 存在且与 manifest 字节级一致 + OLE2 魔数', () => {
+    const p = nodePath.join(DATA, 'sample-legacy-doc.doc');
+    assert.ok(fs.existsSync(p), 'sample-legacy-doc.doc 缺失——请运行 npm run gen:samples');
+    const m = readManifest();
+    const rec = m.files['sample-legacy-doc.doc'];
+    assert.ok(rec, 'sample-legacy-doc.doc 未登记于 manifest（生成器只登记不生成——请运行 npm run gen:samples）');
+    const buf = fs.readFileSync(p);
+    assert.equal(buf.length, rec.bytes, 'sample-legacy-doc.doc 大小与 manifest 不一致（样例被改动）');
+    assert.equal(crypto.createHash('sha256').update(buf).digest('hex'), rec.sha256, 'sample-legacy-doc.doc SHA 与 manifest 不一致（样例被改动）');
+    assert.deepEqual(
+      [...buf.subarray(0, 8)],
+      [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1],
+      '前 8 字节非 OLE2 复合文档魔数（D0CF11E0A1B11AE1 = Word 97-2003 二进制 .doc）'
+    );
+  });
+
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-legacy-doc.doc')).toString('base64');
+      const res = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample-legacy-doc.doc'));
+        },
+        { b64 }
+      );
+      await t.test('O2 失败响应含「另存为」与「docx」（友好指引文案——老版 .doc 请另存为 .docx 再转换）', () => {
+        assert.ok(res.error, `convert 未返回 error：${JSON.stringify({ error: res.error, markdown: (res.markdown || '').slice(0, 120) })}（.doc 为二进制老格式——必须显式失败，不得按文本乱码「成功」）`);
+        assert.ok(res.error.includes('另存为'), `错误信息不含「另存为」：${JSON.stringify(res.error)}（当前无 .doc 指引——用户只有「无法识别的文件类型」）`);
+        assert.ok(res.error.includes('docx'), `错误信息不含「docx」：${JSON.stringify(res.error)}`);
+      });
     } finally {
       await browser.close();
     }

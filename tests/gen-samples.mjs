@@ -477,6 +477,7 @@ if (fs.existsSync(cidPdf)) {
 }
 put('real-big.xlsx', buildBigXlsx());
 put('sample-inlinestr.xlsx', buildInlineStrXlsx());
+put('sample-legacy-doc.doc', buildLegacyDoc());
 
 /* ---------------- real-big.xlsx（大行数：50,000 行 × 3 列；契约组 L4/L5，t32） ----------------
  * 单 sheet 大行数样例：触发 L4（流式/性能——当前实现全量解析后截断，50K 行预计超 3000ms）与
@@ -572,10 +573,23 @@ function buildInlineStrXlsx() {
   ]);
 }
 
+/* ---------------- sample-legacy-doc.doc（OLE2 魔数 .doc；契约组 O） ----------------
+ * 合成 .doc 老格式样例：OLE2 复合文档魔数头 D0CF11E0A1B11AE1（Word 97-2003 二进制 .doc 签名）
+ * + 确定性 0x00 填充（共 512 B）——真实 .doc 首部即 NUL 密集，触发二进制启发式
+ * → type='unknown'/detail='binary' → 当前 convert 报「无法识别的文件类型」（无「另存为 .docx」指引，
+ * 契约先红 O2——真实用户反馈 2026-09-08：用户拖入《2026春*毛中特*实践教学计划.doc》转换失败无怎么办提示）。
+ * 确定性：恒定字节（无随机/时间戳），重复运行字节相同。
+ */
+function buildLegacyDoc() {
+  const buf = Buffer.alloc(512, 0x00);
+  Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]).copy(buf, 0);
+  return buf;
+}
+
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');

@@ -197,6 +197,18 @@
 | N2 | 关键脏字符串存在（`1;DROP TABLE users` / `<script>alert(0)</script>` / U+200B / Zalgo / undefined / NULL）且无 U+FFFD | 静态 | 🟢 绿（2026-09-05 引入） |
 | N3a | 浏览器全量转换：type=text / backend=builtin / elapsedMs>0 / 外部计时 <5000ms | 浏览器 | 待终验（实测约 24ms） |
 | N3b | 转换输出原样保留关键脏字符串（长度 >25000） | 浏览器 | 待终验（实测通过） |
+
+### 契约组 O — .doc 老格式友好提示（2026-09-08 新增：契约先红 t4；真实用户反馈——用户拖入 .doc 老格式文档转换失败、无「怎么办」提示）
+
+样例 `sample-legacy-doc.doc`（合成：OLE2 复合文档魔数 `D0CF11E0A1B11AE1`（Word 97-2003 二进制 .doc 签名）+ 确定性 0x00 填充，共 **512 B**；gen-samples 确定性生成 + manifest 字节锁；不收录用户真实文件——脱敏合成替代）。
+v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）——**本组锁的是「用户得到友好指引而非困惑」**：失败时必须说清「怎么办」（另存为 .docx）。
+断言语义（宽松处注明）：O2 只锁用户可见文案（error 同时含「另存为」与「docx」），不绑定实现位置（sniff 新类型 or convert 级检查）；e5 锁「.doc 不得判回 text」（判 text = 乱码「成功」）。
+
+| 编号 | 断言 | 标准 | 当前（基线 b43a6ba 宿主浏览器实测，t4） |
+|---|---|---|---|
+| O1 | `sample-legacy-doc.doc` 存在且与 manifest 字节级一致（512 B / SHA `A899FB44…`）+ 前 8 字节 = OLE2 魔数 | 静态（字节锁 + magic） | 🟢 绿（t4 生成登记；gen:samples 幂等） |
+| O2 | convert(.doc) 失败响应同时包含「另存为」与「docx」（≈“老版 .doc（Word 97-2003）暂不支持，请用 Word/WPS 打开后另存为 .docx 再转换”） | includes ×2 | 🔴 红（**t4 新增·先红**：实测 error='无法识别的文件类型'——无「另存为」/「docx」；sniff 对 OLE2 判 unknown(binary)） |
+| E5（E 组追加） | OLE2 魔数 `D0CF11E0A1B11AE1` 不得判回 text（允许 unknown/doc——机制不绑定） | allowedTypes + notType | 🟢 绿（t4 新增·登记：实测 type='unknown'/detail='binary'——二进制启发式已兜住；守护「乱码成功」回归） |
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |
@@ -241,6 +253,7 @@
 | `real-cid-paper.pdf` | PDF（真实中文，4 页） | 用户提供《质量链管理理论研究综述_金国强》（学术综述，公开性质、无个人敏感信息）——**CID 内嵌字体无 ToUnicode 映射**：契约组 C2 的契约先红样例（锁定复现 CID 乱码现象） | 511,508 B / SHA `703636DD…`（与用户 Downloads 源文件一致 2026-09-05 核验）；%PDF- 头；4 页中文正文 | **LOCK（字节锁）**：与 real-* non-lock 不同——本样例是复现 CID 现象的固定资产（discardable 只随 bug 修复生命周期），内容不可随上游演进；manifest 登记由 gen-samples「只登记不生成」；B5 断言锁一致性 |
 | `real-big.xlsx` | XLSX（合成，50,000 行 × 3 列） | 契约组 G2——大行数流式（L4a 性能基线/L4b 护栏/L5 文案微瑕） | 773,494 B / SHA `1C191958…`；zip 合法，`xl/worksheets/sheet1.xml` 含 50,001×`<row>`（表头+50K 数据；共享串/数值混合结构确定性生成） | 字节锁（manifest）；gen-samples 确定性生成（生成而非人工） |
 | `sample-inlinestr.xlsx` | XLSX（合成，inlineStr 单元格） | 契约组 G2 L6——inlineStr 文本保留（t34 发现项；t=`s` 共享串 + 数值对照列） | 1,973 B / SHA `90DE7256…`；zip 合法，sheet1.xml 含 2×`t="inlineStr"`（`<is><t>`）单元格 + 1×共享串 + 1×数值 | 字节锁（manifest）；确定性生成（幂等已验证） |
+| `sample-legacy-doc.doc` | DOC（合成 OLE2） | 契约组 O——.doc 老格式友好提示（真实用户反馈 2026-09-08：拖入 .doc 转换失败无「怎么办」提示；脱敏合成替代，不收录用户真实文件） | 512 B / SHA `A899FB44…`；前 8 字节 = OLE2 魔数 `D0CF11E0A1B11AE1`（Word 97-2003 签名），余为确定性 0x00 填充 | 字节锁（manifest）；gen-samples 确定性生成（不注册真实文件） |
 
 > **为何不绑定转换输出断言**：C6 已用 `sample.docx` 锁定 GFM 表格契约（简单、确定性）；`real-*` 的用途是
 > 「真实样本补强」（供 B 线/T4 交叉验证），其内容**允许随上游演进**——一旦绑定转换输出断言，
@@ -299,6 +312,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-08 .doc 老格式友好提示契约先红 t4（qa-dev；只改 tests/指定文件）**：基线 `578d0c6`（2026-09-08 历史清洗后；HEAD `b43a6ba` = 其后两笔文档提交——src 自基线零变更，行为等价，实测在 b43a6ba 产物进行）。真实用户反馈 2026-09-08：用户拖入《2026春*毛中特*实践教学计划.doc》（36,864 B，OLE2 魔数 `D0CF11E0A1B11AE1` = Word 97-2003 二进制 .doc）→ 转换失败、无「怎么办」提示。v1 范围不含 .doc（拍板红线 6）——目标 = 友好指引而非困惑。**样例**：`sample-legacy-doc.doc`（合成：OLE2 魔数 + 0x00 填充 512 B / SHA `A899FB4496AFA7230C378D5BE03CF3461990994993110FD2DAD3257111081275`；gen-samples 确定性生成 + manifest 字节锁 + 磁盘实测一致；不收录用户真实文件——脱敏合成替代，隐私红线 11）。**断言新增**（放置：独立契约组 O + E 组 e5 追加）：O1 样例字节锁 + OLE2 魔数（静态）；O2 convert(.doc) 失败响应须同时含「另存为」与「docx」（≈“老版 .doc（Word 97-2003）暂不支持，请用 Word/WPS 打开后另存为 .docx 再转换”——只锁用户可见文案，不绑定实现位置）；E5 OLE2 不得判回 text（允许 unknown/doc，守护「乱码成功」）。**实测（宿主浏览器真实页面 b43a6ba 产物；沙箱 Playwright spawn EPERM 按 §5 基建红登记制）**：O1 = 🟢（512 B / SHA `A899FB44…` 磁盘一致 + 魔数命中）；O2 = 🔴 红（实证 error='无法识别的文件类型'——无「另存为」/「docx」；sniff 对 OLE2 判 unknown(binary)）；E5 = 🟢 绿（如实登记：二进制启发式已兜住 .doc 不判 text）。`node tests/contract_v1.test.mjs` 实录：**59 tests = 30 pass / 29 fail**（29 = 浏览器基建红，零断言红——O1 静态绿真跑、O2 随 O 组浏览器基建红如实登记、E5 在 E 组浏览器块内（未单独真跑，红绿以宿主浏览器 sniff 实证登记）；真实断言红在用户机跑）。**转绿条件**：实现侧给 .doc 加友好提示（sniff 新类型 'doc' 或 convert 级 OLE2/.doc 检查，任一路径——断言机制不绑定）后 O2 无需改测试自动转绿。用户机终验：`npm install && node node_modules/@playwright/test/cli.js install chromium && npm test` → 当前预期 O2 红、O1/E5 绿；实现后 O 组 2/2 + E 组 5/5。不做：src 修复（实现侧批次）。
 - **2026-09-07 docx 图片方案 A 独立验收 t3（qa-dev；修验分离——只验收不修改，产品代码/断言/样例零改动）**：基线 `984e0c2` = t2 src（ce57be3：docx.js 阈值 0 全抽取 + ui.js 导出二选一）+ captain 协调构建产物同步（仅 index.html +76/-34）。**结论：通过（无阻塞发现）**——I1–I7 全绿（宿主浏览器真实 index.html 产品级逐条复现；index.html 96,642 B / SHA `EFFF0E023B1A72132204929D91370E67ECC9BB5F38727AFBF4F31106F3F310AE` = HEAD，工作树零意外改动）；括号名转义回归零回归；既有断言组零回归（浏览器转换级全样例 + 静态 B/H 同语义复刻 45/45 + D 4/4 + E 4/4 抽查）；pwa-audit 48/48；产物级阈值分支无残留。**4 个登记项（1 环境受限 + 3 低/信息级），均只报告未修改**。
   **实测**（宿主浏览器 http://127.0.0.1:8123（tools/_srv.mjs 映射仓库根）真实 index.html；convert 经 `window.__doc2md.convert`，UI 流经真实 file input（DataTransfer 注入）+ .card-actions 按钮 + createObjectURL/anchor 捕获产物字节——非静态推断）：
   - ✅ **I1/I2/I3/I7（convert 级）**：`data:image` 计数 **0**；图片引用恰 2 个且文档序 = `[{alt:small→assets/sample-images-1.png},{alt:large→assets/sample-images-2.png}]`；`meta.assets` 恰 2 项 = `[{name:assets/sample-images-1.png,size:7982},{name:assets/sample-images-2.png,size:786738}]`（<100KB 小图 7,982 B 与 >100KB 大图全部抽取——方案 A 阈值 0 成立）；alt=['small','large']（docPr 名去扩展名，无「图片包含/AI 生成」）；无 error、elapsedMs=373。
