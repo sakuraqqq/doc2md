@@ -104,7 +104,7 @@
   <p>文档一键转 Markdown · 全部转换在浏览器本地完成</p>
   <div class="badges">
     <span class="badge">🔒 零外发 · 文件不出设备</span>
-    <span class="badge blue">⚡ 离线可用 · 单文件</span>
+    <span class="badge blue">⚡ 离线可用 · 单目录</span>
     <span class="badge">📄 PDF / DOCX / XLSX / 图片OCR / TXT·HTML</span>
   </div>
 </header>
@@ -121,7 +121,7 @@
   <div class="empty-hint" id="hint">把文件拖进上方的区域，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
 </main>
 
-<!-- T9′ 首载彻底优化（DD-15）：内联库 → 同源分文件（零外发：全同源相对路径；file:// 双击同目录可加载；SW PRECACHE 见 sw.js v3） -->
+<!-- T9′ 首载彻底优化（DD-15）：内联库 → 同源分文件（零外发：全同源相对路径；file:// 双击同目录可加载；SW 分段缓存见 sw.js v4） -->
 <script src="./vendor/mammoth.browser.min.js"></script>
 <script src="./vendor/pdfjs.pdf.min.js"></script>
 <script src="./vendor/tesseract.tesseract.min.js"></script>
