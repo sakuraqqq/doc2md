@@ -595,3 +595,28 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - 实测核验：src/、tests/、index.html、sw.js、样例零改动；仅 CONTRACT/DEV-NOTES 追加；临时直载页 h.html 已删。
 
 
+## 2026-09-08 · 主开发线 §8.1 批（第六轮 §2.4 / §2.10 死文件 + B 组预览截断 + §3 文档漂移）
+
+### 做了什么（单会话自干；用户 2026-09-08 逐项拍板 → 拍板点 T-7）
+- **契约先红（`7534990`）**：新增**契约组 Q**（Q1-Q4）+ CONTRACT.md 组 Q 表 + 拍板点 **T-7**；无新增样例——Q1/Q2 用测试内合成 1.25MB 文本（`setInputFiles({ buffer })`，不入库、不进 manifest），Q4 复用 `sample-images.docx` 并压低上限验证超限分支。
+- **实现 ①（`70fb56a`）**：`src/ui.js` 单文件内嵌改**单遍替换**（引用表 Map + 单次 regex `replace`；原实现每图两次 `split/join` 全串拷贝 = O(n²)）+ **内嵌上限 20MB**——assets 总字节超限 → `downloadMdEmbedded` **自动改走 `downloadZip`** + 状态提示「图片共 X，超过内嵌上限 20.00 MB，已自动改用 zip 下载（.md + 图片）」；`src/app.js` 暴露 `window.__doc2md.embedMaxBytes`（get/set，供契约调低上限，无需入库 >20MB 样例）。
+- **实现 ②（`24e22bd`）**：预览 **1MB 截断**——`truncatePreview`（按 UTF-16 边界回退，不切代理对）+ 固定提示行「（预览已截断，完整内容请复制/下载）」；`buildActions` 改用闭包持有的完整文本（**复制/下载仍为完整内容**，**不加「查看完整」按钮**，预览与导出分离口径不变）。
+- **仓库卫生（`9a53d15`）**：`patches/router-bootstrap.mjs`（零引用 DSH 补丁存档）移入 `.私档/`（gitignore，永不入库）+ 仓库侧删除（248 行）；空 `patches/` 目录一并清理。
+- **文档口径（`fb0710b`）**：template 徽标「单文件→**单目录**」+ 注释 v3→v4；README 结构树/architecture §4.5 SW 口径改 **v4 分段缓存**；RELEASE-CHECKLIST 补「**改 vendor/langs 必须 bump CACHE_NAME**」硬检查行。**注**：第六轮 §3.3（architecture §4.4 xlsx 口径）在 `d19d565` 已同步——本批实测回读确认无残余，未重复改动。
+- **数字回填（`2f38ad3`）**：README×3 / architecture §4.5 / RELEASE-CHECKLIST——85KB→**102KB（104,064 B）**、bundle 47KB→64KB、32KB→102KB。
+- **产物 + 度量**：`index.html` 重建 **104,064 B** / SHA `BB8BA7AD726CE40AD31E2D74E9591DE6FEDE377279F026E242FC251A509C0C56`（`6a15492`，103,294 chars / bundle 65,903 chars）；CODE-METRICS 刷新（函数 189→197、**超限 23 持平**、重复率 4%，`156a901`）。
+
+### 实测（本会话实跑；环境 = Windows / Node 24.18.1 + 系统 Edge 回退）
+- `npm test` → **145/145 pass / 0 fail（41.2s）**：Q 组 **Q1-Q4 全绿**（Q1 预览长度 ≤1MB+提示且尾令牌不出现；Q2 产物含尾令牌 + 填充 ≥1,248,576；Q3 `embedMaxBytes === 20MB`；Q4 超限产物 **.zip**（md+2 assets 成对）+ 状态提示含「超过内嵌上限」）；既有 **140 断言零回归**。
+- `node tests/pwa-audit.mjs` → **48/48**；`npm run lint` → **31 warning / 0 error**（基线 31，零新增）；`npm run metrics` → 超限 **23**（持平）。
+- 沙箱事实：`npm run build`（esbuild spawn）与 `npm test`（浏览器 spawn）在 workspace-write 下 **EPERM**——本会话经一次性升权审批后实跑通过；未升权时按 §5 由用户终端执行。
+
+### 坑（本会话新踩，2026-09-08 固化）
+- pwsh 下 `git -c safe.directory='*'` 引号被吞 → `fatal: detected dubious ownership`；**改用同进程环境变量**：`$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*`。
+- git 输出经管道/重定向（`| Select-Object`、`2>&1`、`| Out-String`）→ `Program 'git.exe' failed to run: Access is denied`（沙箱禁命名管道，**且命令根本没执行**——曾误判为 commit 失败）；git 命令一律**不加管道/重定向**。
+
+### 防再犯
+- 阈值/文案一律「断言 + 拍板点」双落盘（T-7）；改数字 = 改口径，须重新拍板。
+- 文档数字与产物绑定：每批收尾必须「构建 → 回读字节 + SHA → 回填文档数字」一步不落（本批 85KB 漂移的根因即上批未回填）。
+
+
