@@ -478,6 +478,9 @@ if (fs.existsSync(cidPdf)) {
 put('real-big.xlsx', buildBigXlsx());
 put('sample-inlinestr.xlsx', buildInlineStrXlsx());
 put('sample-legacy-doc.doc', buildLegacyDoc());
+put('sample-shuffle-sheets.xlsx', buildShuffleSheetsXlsx());
+put('sample-symbols.pdf', buildSymbolsPdf());
+put('sample-lowtext.pdf', buildLowtextPdf());
 
 /* ---------------- real-big.xlsx（大行数：50,000 行 × 3 列；契约组 L4/L5，t32） ----------------
  * 单 sheet 大行数样例：触发 L4（流式/性能——当前实现全量解析后截断，50K 行预计超 3000ms）与
@@ -573,6 +576,106 @@ function buildInlineStrXlsx() {
   ]);
 }
 
+/* ---------------- sample-shuffle-sheets.xlsx（workbook 顺序 ≠ 文件名顺序；契约组 G3） ----------------
+ * 第五轮审查报告 §1.1（2026-09-08）：xlsx 自解析按索引读 sheetN.xml——sheet 名与内容错位（P1 静默错数据）。
+ * 构造：workbook.xml 顺序 First→rId1、Second→rId2；xl/_rels/workbook.xml.rels **反指**
+ *   rId1→worksheets/sheet2.xml（内容 BBB）、rId2→worksheets/sheet1.xml（内容 AAA）——
+ *   Excel 拖动标签重排/删表后的真实形态。文档序 = First 在前、Second 在后；两文件均存在 →
+ *   当前实现按 sheet{i+1} 读 → First→AAA、Second→BBB（错位且无 warning）。
+ * 断言（G3）：`### Sheet: First` 段落含 BBB、`### Sheet: Second` 段落含 AAA。
+ * 确定性：buildZip 固定时间戳 + 恒定 XML。
+ */
+function buildShuffleSheetsXlsx() {
+  const shared = ['内容', 'AAA', 'BBB'];
+  const ss = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${shared.length}" uniqueCount="${shared.length}">${shared.map((s) => `<si><t>${s}</t></si>`).join('')}</sst>`;
+  const sheet = (sv) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="s"><v>0</v></c></row>
+<row r="2"><c r="A2" t="s"><v>${sv}</v></c></row>
+</sheetData></worksheet>`;
+  const wb = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="First" sheetId="1" r:id="rId1"/><sheet name="Second" sheetId="2" r:id="rId2"/></sheets></workbook>`;
+  const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'xl/workbook.xml', data: Buffer.from(wb, 'utf8') },
+    { name: 'xl/_rels/workbook.xml.rels', data: Buffer.from(wbRels, 'utf8') },
+    { name: 'xl/sharedStrings.xml', data: Buffer.from(ss, 'utf8') },
+    { name: 'xl/worksheets/sheet1.xml', data: Buffer.from(sheet(1), 'utf8') }, // AAA（rId2 → Second）
+    { name: 'xl/worksheets/sheet2.xml', data: Buffer.from(sheet(2), 'utf8') }, // BBB（rId1 → First）
+  ]);
+}
+
+/* ---------------- PDF 通用壳（buildPdf 同构：xref 动态偏移，确定性） ---------------- */
+function buildPdfShell(objs) {
+  let body = '%PDF-1.4\n';
+  const offs = [0];
+  objs.forEach((o, i) => {
+    offs.push(Buffer.byteLength(body, 'ascii'));
+    body += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xrefPos = Buffer.byteLength(body, 'ascii');
+  body += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 0; i < objs.length; i++) body += `${String(offs[i + 1]).padStart(10, '0')} 00000 n \n`;
+  body += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`;
+  return Buffer.from(body, 'ascii');
+}
+function buildPdfFontPage(fontObj, stream) {
+  return [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    fontObj,
+    `<< /Length ${Buffer.byteLength(stream, 'ascii')} >>\nstream\n${stream}endstream`,
+  ];
+}
+
+/* ---------------- sample-symbols.pdf（纯 ASCII 符号文本层；契约组 P） ----------------
+ * 第五轮审查报告 §1.2（2026-09-08）：文本层完全有效但内容为纯 ASCII 符号（~^&*+={}<>|/@#$…长度 >10）——
+ * 当前 textQualityRatio 的 GOOD 集不含符号 → 有效占比 0 → 误触发 OCR（误杀：file:// 下整篇失败）。
+ * 断言（P1）：不得走 OCR 路径（backend=pdfjs）、不得报「OCR 不可用」错误、符号原文保留。
+ * 确定性：恒定文本 + 动态 xref；纯拉丁单字节（WinAnsi 覆盖）。
+ */
+function buildSymbolsPdf() {
+  const sym = '~^&*+={}<>|/@#$~^&*+={}<>|/@#$';
+  const stream = `BT\n/F1 20 Tf\n1 0 0 1 50 780 Tm\n(${sym}) Tj\nET\n`;
+  return buildPdfShell(buildPdfFontPage('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', stream));
+}
+
+/* ---------------- sample-lowtext.pdf（私用区 U+E050 文本层；契约组 P） ----------------
+ * 第五轮审查报告 §1.2（2026-09-08）：OCR 引擎不可用（file:// 下 getOcrWorker 同步 throw）时，
+ * 有文本层的页仍应输出文本层内容 + warning「保留原文本层」——当前未捕获 → 整篇失败。
+ * 构造：Type1 /Encoding /Differences [ 80 /uniE050 ] → 字节 'P' 映射字形 uniE050 → pdf.js 抽取 U+E050
+ *   （私用区 E000-F8FF = 任何质量门（含报告 §1.2 修复方向「只把私用区/替换符/控制符记 garbage」）
+ *   都判 garbage → 必走 OCR 分支——确定性触发「文本层存在但质量门判失效」的兜底场景）。
+ * 确定性：恒定字节。
+ */
+function buildLowtextPdf() {
+  const stream = 'BT\n/F1 20 Tf\n1 0 0 1 50 780 Tm\n(PPPPPPPP) Tj\nET\n';
+  const fontObj = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /Type /Encoding /Differences [ 80 /uniE050 ] >> >>';
+  return buildPdfShell(buildPdfFontPage(fontObj, stream));
+}
+
 /* ---------------- sample-legacy-doc.doc（OLE2 魔数 .doc；契约组 O） ----------------
  * 合成 .doc 老格式样例：OLE2 复合文档魔数头 D0CF11E0A1B11AE1（Word 97-2003 二进制 .doc 签名）
  * + 确定性 0x00 填充（共 512 B）——真实 .doc 首部即 NUL 密集，触发二进制启发式
@@ -589,7 +692,7 @@ function buildLegacyDoc() {
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
