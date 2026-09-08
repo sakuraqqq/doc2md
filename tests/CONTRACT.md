@@ -258,6 +258,19 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | P-0 | 两样例存在且与 manifest 字节级一致 | 静态（字节锁） | 🟢 绿（t7 生成登记；`sample-symbols.pdf` 613 B / `3432DDE2…`；`sample-lowtext.pdf` 652 B / `0F714EB0…`） |
 | P1 | 纯符号文本层不得走 OCR：convert 成功 + backend=`pdfjs` + warnings 无「OCR」+ 符号原文保留 | 状态 + includes | 🔴 红（**t7 新增·先红**：实测 backend=**tesseract**、warning「书中有 1 页无有效文本层，已用 OCR 识别」、输出为 OCR 乱码（`AE +={(}<>|@…`）——纯符号文本层被质量门误判 garbage → OCR 误杀；修复方向=判类改 Unicode 属性/私用区+替换符+控制符记 garbage（报告 §1.2）） |
 | P2 | OCR 引擎不可用兜底：file:// 页面（getOcrWorker 同步 throw）下 convert(sample-lowtext.pdf) 成功 + 文本层原文保留（U+E050）+ warnings 含「保留原文本层」 | error=undefined + 计数 + includes | 🔴 红（**t7 新增·先红**：实测（file:// 宿主页面）error='转换失败：file:// 直接打开时 OCR 不可用……'、markdown 空、warnings=[]——ocrPageToText 未捕获 getOcrWorker throw → 整篇失败；修复方向=每页 OCR try/catch 失败保留文本层 + warning（报告 §1.2）） |
+### 契约组 Q — 预览截断 1MB + 单文件内嵌上限 20MB 自动切 zip（第六轮审查报告 §2.4 + B 组预览项；2026-09-08 用户拍板 T-7；契约先红）
+
+口径（拍板点 T-7）：① **预览截断 1MB**——textarea 只渲染前 1,048,576 字符 + 尾部提示行「（预览已截断，完整内容请复制/下载）」，**不加「查看完整」按钮**；复制/下载仍为完整内容（预览与导出分离，沿用 I 组③）。② **单文件内嵌上限 20MB**——assets 总字节 > 20MB → 「下载 .md（图片内嵌）」**自动改用 zip 下载**（.md + assets 成对）+ 状态提示含「超过内嵌上限」。
+
+样例：无新增样例——Q1/Q2 用测试内合成 1.25MB 文本（`setInputFiles({ buffer })`，不入库、不进 manifest）；Q4 复用 `sample-images.docx`（786,738 B 图 > 压低的 1000 B 上限，验证超限分支）。
+
+| 编号 | 断言 | 标准 | 当前（基线 da755f9，契约先红） |
+|---|---|---|---|
+| Q1 | 预览截断：>1MB 文本 → textarea 长度 ≤ 1MB + 提示行、含固定提示文案、头令牌保留、尾令牌不出现 | 长度 + includes | 🔴 红（**先红**：当前 textarea 全量灌入——长度 = 全文 ≈1.25MB、无提示行） |
+| Q2 | 导出仍完整：点「下载 .md」→ 产物含尾令牌 + 正文填充字符 ≥ 1,248,576 | includes + 计数 | 🔴 红（**先红**：当前 `ta.value` 直传；截断落地后仍须完整——Q1 未绿则本项无意义） |
+| Q3 | 内嵌上限默认口径：`window.__doc2md.embedMaxBytes === 20 * 1024 * 1024` | 严格相等 | 🔴 红（**先红**：页面无 `embedMaxBytes` 挂钩） |
+| Q4 | 超限自动切 zip：上限调至 1000 B → 单文件导出产物 `.zip`（md + 2 assets 成对）+ 状态提示含「超过内嵌上限」 | 后缀 + readZip + includes | 🔴 红（**先红**：当前无上限判定，产物恒为 .md 内嵌） |
+
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |
@@ -369,6 +382,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 | T-4 | package.json 归属 | ✅ **已拍板**：四脚本语义保留（`test` / `test:direct` / `test:contract` / `gen:samples`）；devDependencies 合并追加不改语义 | 其他线扩展 package.json 时按此合并 |
 | T-5 | docx 保留 GFM 表格 | ✅ **已拍板**（2026-09-04 用户）：docx 转换保留 GFM 表格，路径 = **mammoth→HTML→复用 HTML→MD 转换器** | 已落地为 C6 断言（docx 用例附加）：表格行 ≥2 + `| --- |` 分隔行 + 表头单元格文本「项目」「状态」；样例 sample.docx 已含 2×2 中文表格（无需改样例）；先红后绿：B 线 t10 按此路径实现后转绿 |
 | T-6 | H2 白名单口径（2026-09-05 用户拍板，t10 发现 esbuild 常量折叠） | ✅ **已拍板**：断言语义改为「index.html 中 **fetchable 外域 URL ⊆ 白名单**」——白名单登记**解析性命名空间标识符**（域名级：`schemas.openxmlformats.org`、`www.w3.org`；理由注释：xmlns/DTD/schemaLocation 声明符，非网络请求、从不出现在 fetch/URL 构造）；运行时零外发由 C4（请求监听）兜底 | **已落地**（t11）：H2 改为域名级白名单判定（`H_URL_WHITELIST_HOSTS`）+ fetchable 语义注释；eee7ca1 构建产物实测复绿。**口径变更记录**：t10 发现 t6 的拆串（`'http'+'://schemas…'`）被 esbuild 常量折叠回完整 URL 字面量——语义未变（仍非网络请求），仅源码形态变化 → 白名单定版（域名级）；新增白名单域名须先在此拍板 |
+| T-7 | 导出/预览护栏阈值（2026-09-08 用户拍板，第六轮审查 §2.4 + B 组预览项） | ✅ **已拍板**：① 单文件内嵌上限 **20MB**——超限**自动切 zip 下载**（不报错、不静默）；② 预览截断 **1MB** + 固定提示文案「（预览已截断，完整内容请复制/下载）」，**不加「查看完整」按钮**（复制/下载仍为完整内容） | 落地为契约组 Q；上限经 `window.__doc2md.embedMaxBytes` 读写（测试调低上限验证超限分支，默认值 20MB 由 Q3 锁）；预览提示文案与阈值同属断言，调整即改口径 |
 
 ## 7. 红绿状态与转绿路径（如实）
 
