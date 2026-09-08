@@ -2165,3 +2165,129 @@ test('契约组 P：PDF 质量门与 OCR 兜底（sample-symbols.pdf / sample-lo
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 Q：预览截断 1MB + 单文件内嵌上限 20MB 自动切 zip（第六轮审查报告 §2.4 + B 组预览项）
+// 口径（用户 2026-09-08 拍板）：
+//   ① 预览截断 1MB：textarea 只渲染前 1,048,576 字符 + 尾部提示行「（预览已截断，完整内容请复制/下载）」；
+//      **不加「查看完整」按钮**；复制/下载仍为完整内容（预览与导出分离，沿用 I 组③）。
+//   ② 单文件内嵌上限 20MB：assets 总字节 > 20MB → 点「下载 .md（图片内嵌）」**自动改用 zip 下载**
+//      （.md + assets 成对）+ 状态提示「超过内嵌上限」；不再产出内嵌单文件。
+// 断言：
+//   Q1 预览截断：>1MB 文本 → 预览长度 ≤ 1MB + 提示行；含固定提示文案；头部令牌保留、尾部令牌不出现。
+//   Q2 导出仍完整：点「下载 .md」→ 产物含尾部令牌且正文全长保留（导出不得被截断）。
+//   Q3 上限默认口径：window.__doc2md.embedMaxBytes === 20 * 1024 * 1024（测试/调试可调，见 §4 页面接口）。
+//   Q4 超限自动切 zip：上限调至 1000 B → sample-images.docx（786,738 B 图）单文件导出 → 产物 .zip
+//      （含 md + 2 assets 成对）+ 状态提示含「超过内嵌上限」。
+// ---------------------------------------------------------------------------
+const PREVIEW_MAX_CHARS = 1024 * 1024;
+const PREVIEW_HINT = '（预览已截断，完整内容请复制/下载）';
+const EMBED_MAX_BYTES = 20 * 1024 * 1024;
+const PREVIEW_HEAD = 'DOC2MD-PREVIEW-HEAD-2026';
+const PREVIEW_TAIL = 'DOC2MD-PREVIEW-TAIL-2026';
+const PREVIEW_FILLER = PREVIEW_MAX_CHARS + 200000;
+test('契约组 Q：预览截断 1MB + 单文件内嵌上限 20MB 自动切 zip —— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const ctx = await browser.newContext({ acceptDownloads: true });
+      try {
+        const page = await ctx.newPage();
+        await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+        await t.test('Q3 内嵌上限默认口径：window.__doc2md.embedMaxBytes === 20MB', async () => {
+          const cap = await page.evaluate(() => window.__doc2md.embedMaxBytes);
+          assert.equal(cap, EMBED_MAX_BYTES, `embedMaxBytes=${cap}（拍板口径 20MB——超限自动切 zip）`);
+        });
+
+        // Q1/Q2：>1MB 文本（头令牌 + 填充 + 尾令牌）——预览截断、导出完整
+        const bigText = PREVIEW_HEAD + '\n' + 'x'.repeat(PREVIEW_FILLER) + '\n' + PREVIEW_TAIL;
+        const input = page.locator('input[type=file]');
+        await input.waitFor({ state: 'attached', timeout: 10000 });
+        await input.setInputFiles({ name: 'big-preview.txt', mimeType: 'text/plain', buffer: Buffer.from(bigText, 'utf8') });
+        await page.waitForFunction(
+          (tok) => {
+            const ta = document.querySelector('textarea.md');
+            return !!ta && ta.value.includes(tok);
+          },
+          PREVIEW_HEAD,
+          { timeout: 30000 }
+        );
+
+        await t.test('Q1 预览截断：textarea ≤ 1MB + 固定提示行；头令牌保留、尾令牌不出现', async () => {
+          const v = await page.evaluate(() => document.querySelector('textarea.md').value);
+          assert.ok(
+            v.length <= PREVIEW_MAX_CHARS + 64,
+            `预览长度=${v.length}（上限 1MB=${PREVIEW_MAX_CHARS} + 提示行；全文=${bigText.length}）`
+          );
+          assert.ok(v.includes(PREVIEW_HINT), `预览缺固定提示文案「${PREVIEW_HINT}」：${JSON.stringify(v.slice(-80))}`);
+          assert.ok(v.startsWith(PREVIEW_HEAD), `预览未保留开头内容：${JSON.stringify(v.slice(0, 60))}`);
+          assert.ok(!v.includes(PREVIEW_TAIL), '预览含尾部令牌（未截断——超过 1MB 必须截断）');
+        });
+
+        await t.test('Q2 导出仍完整：点「下载 .md」→ 产物含尾令牌 + 正文全长保留', async () => {
+          const btn = page.locator('.card-actions button', { hasText: '下载 .md' }).last();
+          const dlP = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
+          await btn.click();
+          const dl = await dlP;
+          assert.ok(dl, '点击「下载 .md」未产生下载事件');
+          assert.ok(dl.suggestedFilename().endsWith('.md'), `产物非 .md：${dl.suggestedFilename()}`);
+          const out = fs.readFileSync(await dl.path(), 'utf8');
+          assert.ok(out.includes(PREVIEW_TAIL), '产物缺尾部令牌（导出被截断——复制/下载必须为完整内容）');
+          const fillers = (out.match(/x/g) || []).length;
+          assert.ok(
+            fillers >= PREVIEW_FILLER,
+            `产物正文填充字符=${fillers}（期望 ≥${PREVIEW_FILLER}——导出为完整原文，非预览截断版）`
+          );
+        });
+
+        // Q4：上限压到 1000 B → sample-images.docx（图 786,738 B）单文件导出自动切 zip
+        await page.evaluate(() => {
+          window.__doc2md.embedMaxBytes = 1000;
+        });
+        await page.locator('input[type=file]').setInputFiles(nodePath.join(DATA, 'sample-images.docx'));
+        await page.waitForFunction(() => document.querySelectorAll('textarea.md').length >= 2, { timeout: 30000 });
+        await t.test('Q4 超限自动切 zip：产物 .zip（md+assets 成对）+ 状态提示含「超过内嵌上限」', async () => {
+          const card = page.locator('.card').last();
+          const btn = card.locator('.card-actions button', { hasText: '下载 .md' }).last();
+          const dlP = page.waitForEvent('download', { timeout: 20000 }).catch(() => null);
+          await btn.click();
+          const dl = await dlP;
+          assert.ok(dl, '点击「下载 .md（图片内嵌）」未产生下载事件');
+          assert.ok(
+            dl.suggestedFilename().endsWith('.zip'),
+            `超限未自动切 zip：产物=${dl.suggestedFilename()}（拍板口径：assets 总字节 > 上限 → 自动 zip 下载）`
+          );
+          const entries = readZip(fs.readFileSync(await dl.path()));
+          const names = entries.map((e) => e.name);
+          for (const need of ['sample-images.md', 'assets/sample-images-1.png', 'assets/sample-images-2.png']) {
+            assert.ok(names.includes(need), `自动切 zip 产物缺 ${need}（现有条目：${JSON.stringify(names)}）`);
+          }
+          const status = await page.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
+          assert.ok(status.includes('超过内嵌上限'), `状态提示缺「超过内嵌上限」：${JSON.stringify(status)}`);
+        });
+      } finally {
+        await ctx.close();
+      }
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
