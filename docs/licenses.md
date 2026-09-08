@@ -15,6 +15,7 @@
 | 6 | tesseract.js | github.com/naptha/tesseract.js（master） | 本地 6.0.1 | **Apache-2.0** | 本地安装包 package.json `"license": "Apache-2.0"` | ✅ 可商用；随分发附 Apache-2.0 文本 + NOTICE（若上游有）+ 版权声明 |
 | 7 | tesseract.js-core | npm: tesseract.js-core（github.com/naptha/tesseract.js-core） | 本地 6.0.0（wasm 单文件内联） | **Apache-2.0** | 本地安装包 package.json `"license": "Apache-2.0"` | ✅ 可商用；附 Apache-2.0 文本与声明 |
 | 8 | tessdata（语言包数据） | npm: @tesseract.js-data/{eng,chi_sim}@1.0.0（naptha/tessdata 发布通道） | 4.0.0_best_int（eng/chi_sim，base64 内联） | **MIT** | 本地安装包 package.json `"license": "MIT"`（一手证据）；上游数据源自 tesseract-ocr/tessdata（Apache-2.0），本项目跟随 npm 包声明 | ✅ 可商用，保留声明 |
+| 9 | Adobe cmaps（`vendor/cmaps/`，t27 引入） | pdfjs-dist 官方资产（github.com/mozilla/pdf.js 打包分发；上游 Adobe 1990-2009 cmaps 集） | 168 `.bcmap` + `LICENSE`（t11 §2.1 登记） | **BSD-3-Clause 类**（允许再分发、需保留版权声明与免责条款） | `vendor/cmaps/LICENSE` 原文（一手证据）：`Copyright 1990-2009 Adobe Systems Incorporated. All rights reserved.` + "Redistribution and use in source and binary forms…"（ BSD-3 条款形态） | ✅ 可商用；随 `vendor/cmaps/` 分发即附 LICENSE 原文（已随仓库提交，无需额外动作） |
 
 ## 使用与分发义务（本项目执行清单）
 

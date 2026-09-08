@@ -63,14 +63,24 @@ export function decodeText(buf) {
     }
     metaIdx = headTxt.indexOf('<meta', metaIdx + 1); // 继续找下一个 meta
   }
-  // ③ 启发式（替代 30% 固定阈值）：UTF-8 容错解码出现 U+FFFD **且** gb18030 解码无 U+FFFD → 回退 gb18030（F6）
-  if (headTxt.includes('\uFFFD')) {
+  // ③ 启发式（t11 §1.4 修订——旧「任意 1 个 U+FFFD 即整篇回退 gb18030」把 UTF-8 尾部截断 1 字节的
+  //    文件整篇重解成 mojibake——F7）：UTF-8 容错解码出现 **≥2 个** U+FFFD 且 gb18030 解码替换符更少
+  //    → 回退 gb18030（GBK 短文本任一汉字在 UTF-8 下产生 ≥2 个 FFFD——每个坏字节一个 → F6 不回归；
+  //    正常 UTF-8 仅损坏 1 字符时 1 个 FFFD → 保持 UTF-8，只损坏尾部 1 字符）
+  if (countFffd(headTxt, 2) >= 2) {
     try {
       const g = new TextDecoder('gb18030').decode(buf);
-      if (!g.includes('\uFFFD')) return g;
-    } catch { /* 保持原行为 */ }
+      // 提前退出：只数到 utf8 的 FFFD 数即可判定「更少」
+      if (countFffd(g, 2) < 2) return g;
+    } catch { /* 极端环境不支持该 label：保持原行为 */ }
   }
   return new TextDecoder('utf-8', { fatal: false }).decode(buf);
+}
+/* U+FFFD 计数（t11 §1.4 辅助：cap 提前退出——只关心「是否 ≥ cap」） */
+function countFffd(s, cap) {
+  let n = 0;
+  for (let i = 0; i < s.length && n < cap; i++) if (s[i] === '\uFFFD') n++;
+  return n;
 }
 // 行内空白归一（html2md 域共用；行内拼接规则的文本节点处理由 html2md.js 使用）
 export function normWs(s) { return s.replace(/\s+/g, ' '); }

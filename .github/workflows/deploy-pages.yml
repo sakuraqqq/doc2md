@@ -27,8 +27,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # t11 §2.2/§2.10 站点白名单部署：只发布站点必要文件（应用壳 + vendor + langs + icons + PWA 资源），
+      # 不再整仓上传——tests/data（511KB 真实论文/大样例）与 docs/ 不得公开到 Pages（再分发风险）
+      - name: 站点白名单组装
+        run: |
+          mkdir _site
+          cp index.html manifest.json sw.js .nojekyll _site/
+          cp -r vendor langs icons _site/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

@@ -62,11 +62,14 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          // 写缓存失败不得阻塞响应（拒绝处理；多行链式——H9 契约形态）
-          caches.open(CACHE_NAME)
-            .then((c) => c.put(req, copy))
-            .catch(() => {});
+          // t11 §2.5：非 2xx 导航响应不得入缓存（404/500 离线回放——与资源分支同口径；不 bump CACHE_NAME）
+          if (res.ok) {
+            const copy = res.clone();
+            // 写缓存失败不得阻塞响应（拒绝处理；多行链式——H9 契约形态）
+            caches.open(CACHE_NAME)
+              .then((c) => c.put(req, copy))
+              .catch(() => {});
+          }
           return res;
         })
         .catch(() => caches.match('./index.html').then((hit) => hit || caches.match('./')))
