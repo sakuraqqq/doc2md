@@ -76,3 +76,24 @@
   - **P2 三批**：UI 键盘可达/忙碌锁定/清空按钮、徽标文案「单文件→单目录」、架构 §8.2 cache-first 文档同步、vendor 版本化文件名、测试快照补全。
   - **ZCode 第三轮审查（2026-09-05，`docs/doc2md-第三轮审查报告-2026-09-05.md`）**：A 批已修（1.1 elapsedMs/1.2 m:d/1.4 审计/2.1/2.2/3.1/3.6）；**B 批待下版**：1.3 oMathPara 多公式、1.5 预览 1MB 截断、2.3 zip 越界、2.4 sw catch、2.6 pdf cmaps（中文 PDF +1MB 取舍，单独拍板）；3.2-3.8 观察项（deploy 白名单/copyText/拖放闪烁/TXT 归一化/docx 主线程/表驱动重构）。
   - **PDF 增强组（v2 候选，2026-09-05 真实反馈追加）**：①图纸页保图——无文本层页 OCR 置信度低/碎片化时输出整页图片引用 `![第N页](assets/pdf-xxx-pN.png)` 走 assets 下载链路（替代当前 OCR 误识碎片——真实 27 页机械指导书 25-27 页实测触发）；②pdf cmaps（非嵌入 CJK 字体，同上）；③多栏/表格布局（README 已注限制）。
+
+## v0.1.2 · 2026-09-09
+
+- **来源**：commit `f5aed38`（版本 bump 提交，tag 指向它）/ tag `v0.1.2`
+- **测试结果**（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）：
+  - 契约：`npm test` → **145/145 pass / 0 fail（41.2s）**（新增契约组 Q 5 例：预览截断 1MB + 单文件内嵌上限 20MB 自动切 zip；既有 140 断言零回归）
+  - PWA：`node tests/pwa-audit.mjs` → **48/48**
+  - OCR：`npm run verify:ocr` → HELLO/DOC2MD/2026 全命中，置信度 **93%**（离线实证；worker 就绪 396ms）
+  - 构建：`npm run build` → index.html 103,294 chars（bundle 65,903 chars）；CI `tests #25`（run 34256192704）**Success**（含 build-consistency 复核）
+- **产物 SHA256**（tag 基线 `f5aed38` 回读实测，与当时磁盘一致）：
+  | 文件 | 大小 | SHA256（完整） |
+  |---|---|---|
+  | index.html | 104,064 B | BB8BA7AD726CE40AD31E2D74E9591DE6FEDE377279F026E242FC251A509C0C56 |
+  | manifest.json | 730 B | D5B46A975B60640318252A39D4C83D2766A62E9A3E907E182945C7C89B858E98 |
+  | sw.js | 4,253 B | FAF9771E1009CD83721116E6AD0D61BB15D644FE061B271D3183B04C312C3F85 |
+- **发布动作**（用户终端执行）：`git push origin main`（至 `f5aed38`）/ `git push origin v0.1.2`（先 commit 后 tag、禁 `--tags`）；GitHub Release：<https://github.com/sakuraqqq/doc2md/releases/tag/v0.1.2>（notes 内联，未落 docs/release-notes-v0.1.2.md）；Pages deploy `#35`（f5aed38）自动触发——线上 index.html 实测 SHA256 = `BB8BA7AD…`，与本地产物逐字节一致
+- **观察期**：开始 2026-09-09 → 复盘 ≥2026-09-12（≥3 天）；反馈汇总：<待填>
+- **备注**：
+  - v0.1.2 = v0.1.1 之后四批：docx 图片方案 A（`ce57be3`）· .doc 友好提示（`d584ff4`）· 第六轮 P1 批（`8a4722e` / `d19d565`）· §8.1 批（`7534990`→`2f38ad3`：内嵌单遍 + 20MB 上限自动切 zip / 预览 1MB 截断 / 死文件清理 / 文档漂移与数字回填）
+  - **tag 之后 main 继续前进（不重打 tag，用户 2026-09-09 拍板）**：第七轮批 `5b9bb72`→`8a21e4f`（xlsx rels Target `../` 归一化 + html2md 死字段清理 + 审查报告入库）与 v0.1.3 首提交准备 `03e3a03`（footer `v0.1.1`→`v0.1.2` + package-lock 版本同步）→ 当前 main 产物 **104,092 B / `A243230E251332395909CDE2AE8E4D708691E8ACCEC546D490108F7F740436D`**（footer 与线上已对齐；tag 内产物仍为 `BB8BA7AD…`、footer 仍 `v0.1.1`）
+  - 契约数：106（v0.1.1）→ 140（第六轮 P1 批）→ **145**（本版，组 Q）；lint 31w / metrics 超限 23 持平（本版零新增）
