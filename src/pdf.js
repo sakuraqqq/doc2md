@@ -136,21 +136,23 @@ function runsToPageText(runs) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/** 有效文本比例（CID 质量门槛，t27；t8 判类改 Unicode 属性思路——第五轮审查 §1.2）：
- * 表驱动口径：仅私用区（E000-F8FF / F0000-10FFFF）/替换符 FFFD/控制符（C0-C1）记 garbage；
- * 其余一切可打印字符（字母/数字/全角/符号/emoji/西里尔/阿拉伯/泰文…）记 good——
- * 纯符号文本层不再误触发 OCR（P1 契约）；CID 无 ToUnicode 的垃圾特征 = PUA/FFFD 密集 → 仍判 garbage。 */
-function isPdfGarbageCode(code) {
+/** 有效文本比例（CID 质量门槛，t27；t8 判类方向锁定**黑名单**——2026-09-08 captain 口径补充）：
+ * 仅记 garbage：私用区（E000-F8FF / F0000-10FFFF）/替换符 FFFD/控制符（C0-C1）/未分配码点（Cn，
+ * 含孤立代理项——`\p{Assigned}` 为否）；其余一切（字母/数字/全角/符号/emoji/西里尔/阿拉伯/泰文…）
+ * 记 good——纯符号文本层不得误触发 OCR（P1 契约）；CID 无映射垃圾 = PUA/FFFD/Cn 密集 → 仍判 garbage。 */
+function isPdfGarbageCode(ch) {
+  const code = ch.codePointAt(0);
   if (code === 0xfffd) return true; // 替换符（解码失败/映射缺失）
   if (code >= 0xe000 && code <= 0xf8ff) return true; // BMP 私用区
   if (code >= 0xf0000 && code <= 0x10ffff) return true; // 补充平面私用区
-  return code < 0x20 || (code >= 0x7f && code <= 0x9f); // C0/C1 控制符（空白已在上层跳过）
+  if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true; // C0/C1 控制符（空白已在上层跳过）
+  return !/\p{Assigned}/u.test(ch); // 未分配码点（Cn）/孤立代理项——CID 无映射的常见落点
 }
 export function textQualityRatio(text) {
   let good = 0, garbage = 0;
   for (const ch of String(text || '')) {
     if (/\s/.test(ch)) continue;
-    if (isPdfGarbageCode(ch.codePointAt(0))) garbage++;
+    if (isPdfGarbageCode(ch)) garbage++;
     else good++;
   }
   return good + garbage > 0 ? good / (good + garbage) : 0;
