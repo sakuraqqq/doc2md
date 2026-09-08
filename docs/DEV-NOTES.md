@@ -480,4 +480,32 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - **t3 补充（captain 构建信息核对 + 复验）**：用户终端 `npm run build` 产物 = 95,880 chars（bundle 58,484 chars）、commit 984e0c2；本验收方核对工作树 index.html 96,642 B / 95,880 chars / SHA `EFFF0E02…` = HEAD 字节一致；宿主浏览器复跑 I1–I7 全流程逐项与首轮相同（I4 按钮结构/I5 zip 成对/I6 内嵌 2 处零残留）。**用户机终验待闭环**：`npm test`（Playwright 真实下载事件 E2E，预期 I 组 7/7）结果待 captain 转交后回填——不阻塞其余验收结论；此前以 DOM+createObjectURL/anchor 产物字节捕获作为产品级证据（比事件监听更硬）。
 - **t3 终验闭环（用户机 108/108，captain 转交 2026-09-07）**：用户终端 `npm test` = **108 tests / 108 pass / 0 fail（31.4s）**——I 组 7/7（含 I4–I6 真实下载事件 E2E）+ 既有断言全量零回归；数字与 t3 预期（106−5+7=108）精确吻合。验收结论锁定：**通过（无阻塞发现）**，证据链全线闭合（产品级逐条 + 静态同语义复刻 + 用户机全量）。
 
+## 2026-09-08 · .doc 老格式友好提示 独立验收 t6（qa-dev，修验分离）
+
+### 验证了什么（基线 HEAD d584ff4 = t4 契约 ad1387f + t5 src（sniff OLE2→type=doc + convert「另存为 .docx」指引 + README 已知限制行）；index.html 产物同步未就绪——HEAD 产物 = a335204 = t3 已验证字节（96,642 B / EFFF0E02…））
+- **O1 绿**（sample-legacy-doc.doc：512 B / SHA `A899FB44…` / OLE2 魔数 `d0 cf 11 e0 a1 b1 1a e1`——manifest 字节锁复刻覆盖）；**O2 源码级绿**（ESM 直载 src/：error = 「老版 .doc（Word 97-2003）暂不支持，请用 Word/WPS 打开后另存为 .docx 再转换」——「另存为」+「docx」双命中；sniff → {type:'doc'}）；**E5 双绿**（src→doc；产物→unknown/binary——均 ≠ text，乱码成功守护）。
+- **零回归（src 级全路径）**：E1-E4 快照（pdf/unknown-binary/zip/unknown-empty）/ sample.txt / sample.docx（GFM）/ sample.xlsx（华东区）/ sample.pdf（**backend=pdfjs**——pdf 路径零影响）/ sample-images.docx（assets=2、refs=2、data:image=0——方案 A 未回退）；**产物级抽查**：txt/docx/pdf/imgDocx 同绿；**静态复刻 46/46**（B1 现 17 项含 sample-legacy-doc.doc）；**pwa-audit 48/48**。
+- **③边界**：非 OLE 未知二进制（MZ exe 构造）→ '无法识别的文件类型'（原友好语义零「另存为」泄漏——src+产物双验）；.docx/.pdf/.txt 正常路径零影响。
+
+### 实测要点（层级注明）
+- src 级 = 临时 ESM 直载页（根目录 h.html；.tmp/src-harness.html 版因相对基准失败——见防再犯）；产物级 = 真实 index.html（= HEAD a335204）。直载页验收后已删。
+- 产物级 O2 当前红 = **预期**（t5 未进产物——grep index.html 无「另存为」转义形式 \u53E6\u5B58\u4E3A 与 OLE2 分支；构建同步待 captain，同 t2→t3 两段式）。
+
+### 发现（仅登记，无阻塞）
+1. [流程] 产物同步未就绪——captain 协调用户终端 build 后补验闭环（预期一条构建提交 + 本记录补一行）。
+2. [环境] 本会话 node --test / test:direct 沙箱拒绝（t3 先例：升权被用户拒绝；本批未再升权）——O 组以 src 直载 + 产物逐条复现；用户机数字后回填。
+3. [工具] tools/_srv.mjs 已被历史清洗删除——本会话重建等价品 .tmp/srv.mjs（gitignored）。
+4. [信息] 用户机预期 = 108 + 新增（O1/O2/e5 = 3 子断言；node --test 计数口径以实测为准——captain +1≈109 为保守估计）；未同步产物下用户机当前预期 O2 红其余绿。
+
+### 防再犯
+- **src 直载验收的页面基准**（t6 教训）：src/pdf.js 经 `src/bline.js` 模块（ⅡFE，workerSrc='./vendor/…' 相对路径）取 worker 地址——ESM 直载页必须放**仓库根**（相对基准=页面 URL；放 .tmp/ 子目录会解析成 /.tmp/vendor/ → 404 fake worker 假故障）；直载页还须提供 `#status`（pdf 转换中 setStatus 写入——缺元素报「Cannot set properties of null (setting 'textContent')」假故障）与 `#results` 挂点。直载页 = 验收工具，用完即删，不可入库。
+- **沙箱可运行性先探底**（沿用 t3）：先读 CONTRACT §5 + 试跑一次测试形态——本批直接走「src 直载 + 产品逐条 + 静态复刻」，不重复已证不可行的路径。
+- **产物同步哨兵**：grep index.html `\u53E6\u5B58\u4E3A`（另存为转义形式）+ `D0CF11E0`/OLE2 特征——同步完成即命中；同步前验收记录标注「产品级预期红」。
+
+### 环境事实
+- 用户机终验：**待闭环**（captain 转交后回填；未同步产物下预期 O2 红其余绿；同步后预期全绿 + O1/O2/E5）。
+- 实测核验：src/、tests/、index.html、sw.js、样例零改动（git status 干净）；临时直载页 h.html 已删；.tmp/srv.mjs + .tmp/src-harness.html 为 ignored 会话工具。
+- **t6 终验闭环（用户机 112/112，captain 转交 2026-09-08）**：用户终端 `npm test` = **112 tests / 112 pass / 0 fail（30.9s）**——O1/O2/E5 全绿（含 .doc 友好提示文案断言）+ 既有全量零回归；计数 112 = 108 + 新增 4（O 组父测试/O1/O2/e5）——t6 ⑤「≈109-111 保守估计」以实测更新。验收结论锁定：**通过（无阻塞发现）**；O2 产品级（同步产物）闭环 = 用户机全量数字已含（用户机验证的即同步后或当前产物——以用户机自 build 为准，本条与 CONTRACT §7 t6 记录共同收尾）。
+- **t6 产物级补验闭环（2026-09-08）**：产物同步已落 git——commit `5dfbc52`（v0.1.2-t5 .doc友好提示产物；index.html 96,940 B / SHA `0BCEC88A…` = HEAD）。产品级 O2 宿主浏览器实测绿（error 含「另存为」+「docx」、sniff→{type:'doc'}）；grep 命中 L219 OLE2 魔数（[208,207,17,224,161,177,26,225]→{type:"doc"}）+ L1505 另存为文案（\u53E6\u5B58\u4E3A 转义形式）；产品级回归抽查（txt/docx GFM/pdf pdfjs/sample-images.docx 2assets+0内嵌/MZ 边界）零回归。**发现①（产物同步待闭环）关闭**；t6 终态 = 通过（产品级全链 + 用户机 112/112）。
+
 
