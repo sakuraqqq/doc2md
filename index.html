@@ -974,6 +974,13 @@ ${xlsxRowsToMd(rows)}`);
     if (truncated) warnings.push(truncationMessage(readMap.length, totalRows, skipped));
     return { markdown: parts.join("\n\n").trim(), warnings, truncated, backend: "xlsx-self" };
   }
+  async function readSheetSafely(readXlsx, ab, name) {
+    try {
+      return await readXlsx(ab, name ? { sheet: name } : void 0);
+    } catch {
+      throw new Error("\u6587\u4EF6\u5DF2\u635F\u574F\u6216\u4E0D\u662F\u6709\u6548\u7684 Excel \u6587\u6863\uFF08zip/\u89E3\u6790\u5931\u8D25\uFF09\uFF0C\u8BF7\u7528 Excel/WPS \u53E6\u5B58\u540E\u91CD\u8BD5");
+    }
+  }
   async function xlsxByLib(file, buf, readNames, names) {
     const RX = window.readXlsxFile;
     if (!RX) throw new Error("read-excel-file \u5E93\u672A\u52A0\u8F7D");
@@ -984,7 +991,7 @@ ${xlsxRowsToMd(rows)}`);
     let truncated = false;
     let totalRows = 0;
     for (const name of readNames) {
-      const rows = await readXlsx(ab, name ? { sheet: name } : void 0);
+      const rows = await readSheetSafely(readXlsx, ab, name);
       totalRows += rows.length;
       const kept = rows.slice(0, XLSX_ROW_LIMIT);
       if (kept.length < rows.length) truncated = true;
@@ -1388,12 +1395,9 @@ ${xlsxRowsToMd(kept)}`);
     }
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
+  var PDF_GARBAGE_RE = [/\p{Cs}/u, /\p{Co}/u, /\p{Cc}/u, /\uFFFD/u];
   function isPdfGarbageCode(ch) {
-    const code = ch.codePointAt(0);
-    if (code === 65533) return true;
-    if (code >= 57344 && code <= 63743) return true;
-    if (code >= 983040 && code <= 1114111) return true;
-    if (code < 32 || code >= 127 && code <= 159) return true;
+    for (const re of PDF_GARBAGE_RE) if (re.test(ch)) return true;
     return !/\p{Assigned}/u.test(ch);
   }
   function textQualityRatio(text) {
