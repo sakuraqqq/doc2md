@@ -136,17 +136,18 @@ function runsToPageText(runs) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/** 有效文本比例（CID 质量门槛，t27；t8 判类方向锁定**黑名单**——2026-09-08 captain 口径补充）：
- * 仅记 garbage：私用区（E000-F8FF / F0000-10FFFF）/替换符 FFFD/控制符（C0-C1）/未分配码点（Cn，
- * 含孤立代理项——`\p{Assigned}` 为否）；其余一切（字母/数字/全角/符号/emoji/西里尔/阿拉伯/泰文…）
- * 记 good——纯符号文本层不得误触发 OCR（P1 契约）；CID 无映射垃圾 = PUA/FFFD/Cn 密集 → 仍判 garbage。 */
+/** 有效文本比例（CID 质量门槛，t27；t8 判类方向锁定**黑名单**——2026-09-08 captain 口径补充；
+ * t8 补遗：孤立代理项（Cs）显式记 garbage——core-dev 复验发现 `\p{Assigned}`=「非 Cn」而 Cs ≠ Cn，
+ * 孤立代理项被误判为有效（q('\uD800')=1.0，应 0.0））：
+ * 仅记 garbage：私用区（\p{Co}，含 E000-F8FF 与补充平面）/替换符 FFFD/控制符（\p{Cc}，C0-C1）/
+ * 未分配码点（Cn）/孤立代理项（Cs）；其余一切（字母/数字/全角/符号/emoji/西里尔/阿拉伯/泰文…）
+ * 记 good——纯符号文本层不得误触发 OCR（P1 契约）；CID 无映射垃圾 = PUA/FFFD/Cn/Cs 密集 → 仍判 garbage。 */
+/* garbage 判类表（t8 补遗：孤立代理项 Cs 显式入表——`\p{Assigned}` = 「非 Cn」，Cs ≠ Cn 会被误判为有效；
+ * \p{Co} 覆盖三种私用区平面；\p{Cc} 覆盖 C0/C1；FFFD 为 So 类别需单列；空白已在调用方 \s 跳过） */
+const PDF_GARBAGE_RE = [/\p{Cs}/u, /\p{Co}/u, /\p{Cc}/u, /\uFFFD/u];
 function isPdfGarbageCode(ch) {
-  const code = ch.codePointAt(0);
-  if (code === 0xfffd) return true; // 替换符（解码失败/映射缺失）
-  if (code >= 0xe000 && code <= 0xf8ff) return true; // BMP 私用区
-  if (code >= 0xf0000 && code <= 0x10ffff) return true; // 补充平面私用区
-  if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true; // C0/C1 控制符（空白已在上层跳过）
-  return !/\p{Assigned}/u.test(ch); // 未分配码点（Cn）/孤立代理项——CID 无映射的常见落点
+  for (const re of PDF_GARBAGE_RE) if (re.test(ch)) return true;
+  return !/\p{Assigned}/u.test(ch); // 未分配码点（Cn）——CID 无映射的常见落点
 }
 export function textQualityRatio(text) {
   let good = 0, garbage = 0;
