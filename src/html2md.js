@@ -212,67 +212,85 @@ function listElToMd(listEl, indent) {
   // t14 §1.3：'' = 列表项内段间空行（保留）；null = 过滤哨兵（当前无产出，仅防误删空行分隔）
   return lines.filter((l) => l !== null).join('\n');
 }
+// 累积片段 → marker 行；clear = true 时未产出也清空片段（UL/OL 分支片段一律丢弃）
+function pushMarkerLine(st, clear) {
+  const head = joinFrags(st.frags).trim();
+  if (head !== '') {
+    st.lines.push(st.prefix + st.marker + head);
+    st.usedMarker = true;
+  }
+  if (clear || head !== '') st.frags.length = 0;
+}
+
+// li 内块级子元素：flush 当前片段，按「首块 marker 行 + 段间空行 + 续行缩进」换行（CommonMark 列表续行）
+function blockChildToLines(st, child) {
+  pushMarkerLine(st, false);
+  for (const blk of blockOfEl(child, null)) {
+    if (blk === '') continue;
+    const blkLines = blk.split('\n');
+    const first = st.usedMarker ? st.contIndent : st.prefix + st.marker;
+    if (st.usedMarker) st.lines.push(''); // 段间空行（CommonMark 列表继续行语义）
+    blkLines.forEach((l, k) => st.lines.push((k === 0 ? first : st.contIndent) + l));
+    st.usedMarker = true;
+    st.blocked = true;
+  }
+}
+
+// li 内嵌套列表：flush 当前片段后递归（缩进 = 父 marker 宽度）
+function nestedListToLines(st, child, indent) {
+  pushMarkerLine(st, true);
+  st.nested = true;
+  const sub = listElToMd(child, indent + st.marker.length);
+  if (sub) sub.split('\n').forEach((l) => st.lines.push(l));
+}
+
+// li 收尾：剩余行内片段按续行缩进输出（块级内容之后另起段 → 段间空行）
+function liTailToLines(st) {
+  const tail = joinFrags(st.frags).trim();
+  if (tail === '') return;
+  const tl = tail.split('\n');
+  if (st.blocked) st.lines.push(''); // 块级内容之后的新段落：段间空行（t14 §1.3 口径）
+  const cont = st.nested || st.blocked ? st.contIndent : st.prefix + st.marker;
+  st.lines.push(cont + tl[0]);
+  for (let i = 1; i < tl.length; i++) st.lines.push(st.contIndent + tl[i]);
+}
+
+// li 子节点分派：嵌套列表 / 块级子元素 / 行内片段（walker 保留行内格式，fragFor 走元素级片段）
+function liChildToLines(child, st, indent) {
+  const tag = child.tagName;
+  if (tag === 'UL' || tag === 'OL') { nestedListToLines(st, child, indent); return; }
+  // t14 §1.3（第六轮审查报告 §1.3）：li 内块级子元素（P/DIV 等）flush 当前片段，按
+  // 「首块 marker 行 + 段间空行 + 续行缩进」换行（CommonMark 列表续行）；旧实现行内平铺
+  // 把 <li><p>a</p><p>b</p></li> 合并为「- a b」——多段列表项结构丢失
+  if (BLOCK_TAGS.has(tag) && tag !== 'LI') { blockChildToLines(st, child); return; }
+  fragFor(child, 'newline', st.frags);
+}
+
 function liToLines(li, indent, isOL, num) {
   const prefix = ' '.repeat(indent);
   const marker = isOL ? (num + '. ') : '- ';
-  const contIndent = prefix + ' '.repeat(marker.length); // 续行缩进（CommonMark 列表继续行）
-  const lines = [];
-  const frags = [];
-  let nested = false; // li 内是否出现嵌套列表
-  let blocked = false; // li 内是否已输出块级子元素（P/DIV 等——后续 tail 一律续行缩进）
-  let usedMarker = false; // marker 行已产出（首行文本或首个子块——后续块级内容按续行处理）
+  const st = {
+    prefix,
+    marker,
+    contIndent: prefix + ' '.repeat(marker.length), // 续行缩进（CommonMark 列表继续行）
+    lines: [],
+    frags: [],
+    nested: false, // li 内是否出现嵌套列表
+    blocked: false, // li 内是否已输出块级子元素（P/DIV 等——后续 tail 一律续行缩进）
+    usedMarker: false, // marker 行已产出（首行文本或首个子块——后续块级内容按续行处理）
+  };
   for (const child of Array.from(li.childNodes)) {
     if (child.nodeType === 3) {
       const raw = child.textContent;
       const t = normWs(raw);
-      if (t !== '') frags.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
+      if (t !== '') st.frags.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
       continue;
     }
     if (child.nodeType !== 1) continue;
-    const tag = child.tagName;
-    if (tag === 'UL' || tag === 'OL') {
-      const head = joinFrags(frags).trim();
-      if (head !== '') { lines.push(prefix + marker + head); usedMarker = true; }
-      frags.length = 0;
-      nested = true;
-      const sub = listElToMd(child, indent + marker.length);
-      if (sub) sub.split('\n').forEach((l) => lines.push(l));
-    } else if (BLOCK_TAGS.has(tag) && tag !== 'LI') {
-      // t14 §1.3（第六轮审查报告 §1.3）：li 内块级子元素（P/DIV 等）flush 当前片段，按
-      // 「首块 marker 行 + 段间空行 + 续行缩进」换行（CommonMark 列表续行）；旧实现行内平铺
-      // 把 <li><p>a</p><p>b</p></li> 合并为「- a b」——多段列表项结构丢失
-      const head = joinFrags(frags).trim();
-      if (head !== '') { lines.push(prefix + marker + head); frags.length = 0; usedMarker = true; }
-      const subBlocks = blockOfEl(child, null);
-      for (let bi = 0; bi < subBlocks.length; bi++) {
-        const blk = subBlocks[bi];
-        if (blk === '') continue;
-        const blkLines = blk.split('\n');
-        if (!usedMarker) {
-          lines.push(prefix + marker + blkLines[0]);
-          for (let k = 1; k < blkLines.length; k++) lines.push(contIndent + blkLines[k]);
-          usedMarker = true;
-        } else {
-          lines.push(''); // 段间空行（CommonMark 列表继续行语义）
-          lines.push(contIndent + blkLines[0]);
-          for (let k = 1; k < blkLines.length; k++) lines.push(contIndent + blkLines[k]);
-        }
-        blocked = true;
-      }
-    } else {
-      // LI 内子节点 walker：保留行内格式（fragFor 走元素级片段）
-      fragFor(child, 'newline', frags);
-    }
+    liChildToLines(child, st, indent);
   }
-  const tail = joinFrags(frags).trim();
-  if (tail !== '') {
-    const tl = tail.split('\n');
-    if (blocked) lines.push(''); // 块级内容之后的新段落：段间空行（t14 §1.3 口径）
-    const cont = nested || blocked ? contIndent : prefix + marker;
-    lines.push(cont + tl[0]);
-    for (let i = 1; i < tl.length; i++) lines.push(contIndent + tl[i]);
-  }
-  return lines;
+  liTailToLines(st);
+  return st.lines;
 }
 
 // 引用：块级子元素逐个处理，每行 > 前缀；多段间以裸 > 行分隔
