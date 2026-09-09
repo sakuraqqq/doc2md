@@ -2364,3 +2364,81 @@ test('契约组 Q：预览截断 1MB + 单文件内嵌上限 20MB 自动切 zip 
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 R：OCR 中文空格合并（2026-09-09；来源：真实样例——PPT 导出的「图片型 PDF」无文字层 →
+//   走 OCR，tesseract 在相邻汉字间插入词分空格，实测 CJK 前置空格率 72–82%）
+// 口径（仅 OCR 文本后处理；文字层路径的排版空格不动）：
+//   行内合并 CJK↔CJK、CJK↔中文标点（含 ASCII 括号、%+）、CJK↔数字；
+//   CJK↔拉丁字母保留（中英混排不被打散）、数字↔数字保留、不跨行（换行是排版信息）。
+// 断言：
+//   R1 纯函数用例表（window.__doc2md.collapseCjkSpaces）——含中英混排保留 / 跨行不合并 / 全角空格。
+//   R2 接入检查（源码级）：OCR 页文本经 collapseCjkSpaces 后处理。
+// 真实样例指标（本地核验；样例含个人信息不入库）：OCR 页空格率 72–82% → 1.4–4.9%；
+//   文字层页 0–1.5% 前后不变（见 docs/DEV-NOTES）。
+// ---------------------------------------------------------------------------
+const CJK_SPACE_CASES = [
+  ['湖南 新 晃 侗 族 自治 县', '湖南新晃侗族自治县'],
+  ['深化 拓展 「 人 工 智能 +」 行 动', '深化拓展「人工智能+」行动'],
+  ['提高 24 元 ， 占 20% 以 上', '提高24元，占20%以上'],
+  ['村 道 。 （ 二 ）', '村道。（二）'],
+  ['分 ) 。 2 课 堂', '分)。 2课堂'],
+  ['中\u3000文', '中文'],
+  ['AI 技术 与 应用', 'AI 技术与应用'],
+  ['8 10', '8 10'],
+  ['甲\n乙', '甲\n乙'],
+  ['第 3-4 周 ： 小组 查阅 资料', '第3-4周：小组查阅资料'],
+  ['（01） 人 工 智能 +', '（01）人工智能+'],
+  ['100% 纯 中文', '100%纯中文'],
+];
+test('契约组 R：OCR 中文空格合并（collapseCjkSpaces）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await t.test('R1 纯函数用例表（中英混排保留 / 跨行不合并 / 全角空格）', async () => {
+        const out = await page.evaluate((cases) => {
+          const fn = window.__doc2md && window.__doc2md.collapseCjkSpaces;
+          if (typeof fn !== 'function') return { missing: true };
+          return { results: cases.map((c) => fn(c[0])) };
+        }, CJK_SPACE_CASES);
+        assert.ok(!out.missing, 'window.__doc2md.collapseCjkSpaces 未挂载（OCR 空格合并未接入）');
+        const mismatches = [];
+        out.results.forEach((got, i) => {
+          if (got !== CJK_SPACE_CASES[i][1]) {
+            mismatches.push({ input: CJK_SPACE_CASES[i][0], expected: CJK_SPACE_CASES[i][1], got });
+          }
+        });
+        assert.deepEqual(mismatches, [], `用例不符：${JSON.stringify(mismatches)}`);
+      });
+      await t.test('R2 接入（源码级）：OCR 页文本经 collapseCjkSpaces 后处理', () => {
+        const src = fs.readFileSync(PAGE, 'utf8');
+        assert.ok(src.includes('collapseCjkSpaces'), 'index.html 不含 collapseCjkSpaces（OCR 后处理未接入）');
+        assert.ok(
+          /collapseCjkSpaces\(text\)/.test(src),
+          'OCR 页文本未经 collapseCjkSpaces 后处理（pdf.js ocrPageToText 未接入）'
+        );
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
