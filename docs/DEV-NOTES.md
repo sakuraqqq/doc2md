@@ -662,6 +662,6 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 ### 坑（本会话新踩）
 - **正则字符类未转义**：`CJK_PUNCT_CLASS` 里含 `[` `]` 时字符类提前闭合 → 前两条合并分支恒不匹配、**静默失效**（实测只剩「数字+空格+CJK」生效——0.72→0.69 的假改善暴露了它）。已转义 `\(\)\[\]\{\}` 并写入注释；教训 = **指标没明显改善时先怀疑正则是否真匹配**，别先怀疑「样本不行」。
 - **本地 lint/metrics 被私有脚本污染**：`tools/gen-copyright.mjs`、`tools/_verify-clean.mjs`（均 gitignored）被 `eslint "tools/**/*.mjs"` 与 metrics 的 glob 计入 → 本地 lint **3 errors**（含 1 个真错 `sonarjs/no-unenclosed-multiline-block`）、metrics 文件 18 / 函数 205 / 超限 25；**仓库真实值（干净检出）仍为 16 / 197 / 23**。CI 不受影响（私有文件不在检出里）；**docs/CODE-METRICS.md 已还原为 HEAD 版本**，避免把本地污染值写进仓库。
-  - **当天已修 lint（用户「先把 lint 错误修掉」）**：`tools/_verify-clean.mjs` 的单行 `if (q) {…}` 展开为多行块（**纯格式，行为不变**）+ `tools/gen-copyright.mjs` 的 `CLEAN_RULES` 用**作用域内** `/* eslint-disable sonarjs/super-linear-regex */`（**正则语义未动**）→ `npm run lint` **0 errors / 33 warnings**（26 src + 7 tools，全是既有复杂度告警，非阻塞）。两文件均 gitignored → 无仓库 diff。**metrics 本地污染仍在**（18/205/25 vs 仓库真实 16/197/23）——建议 metrics 也按「仓库文件」过滤，待拍板。
+  - **当天已修 lint（用户「先把 lint 错误修掉」）**：`tools/_verify-clean.mjs` 的单行 `if (q) {…}` 展开为多行块（**纯格式，行为不变**）+ `tools/gen-copyright.mjs` 的 `CLEAN_RULES` 用**作用域内** `/* eslint-disable sonarjs/super-linear-regex */`（**正则语义未动**）→ `npm run lint` **0 errors / 33 warnings**（26 src + 7 tools，全是既有复杂度告警，非阻塞）。两文件均 gitignored → 无仓库 diff。**metrics 污染也已修**（同日）：`tools/metrics.mjs` 增加「只看仓库文件」过滤（按 `.gitignore` 的精确路径/目录前缀条目跳过私有脚本，jscpd 同步 `--ignore`）→ 本地与 CI 一致 **16 文件 / 196 函数 / 超限 23 / 重复率 4%**。
 
 
