@@ -24,19 +24,16 @@ const COG_MAX = 15;
 /* ---------- AST 工具 ---------- */
 function childNodes(n) {
   const out = [];
-  for (const k of Object.keys(n)) {
-    const v = n[k];
-    if (v && typeof v === 'object') {
-      if (Array.isArray(v)) {
-        for (const x of v) {
-          if (x && x.type) out.push(x);
-        }
-      } else if (v.type) {
-        out.push(v);
-      }
-    }
+  for (const v of Object.values(n)) {
+    if (Array.isArray(v)) out.push(...v.filter(isNode));
+    else if (isNode(v)) out.push(v);
   }
   return out;
+}
+
+/* 是否为 AST 节点（有 type 字段的对象） */
+function isNode(v) {
+  return !!v && typeof v === 'object' && !!v.type;
 }
 
 function walkFiles(dir, exts, out) {
@@ -85,16 +82,24 @@ function isFunctionNode(n) {
   );
 }
 
+/* 父节点类型 → 函数名取法（表驱动；取不到 → '(anonymous)'） */
+const PARENT_NAME_OF = {
+  VariableDeclarator: (p) => identName(p.id),
+  Property: (p) => namedKey(p.key),
+  MethodDefinition: (p) => namedKey(p.key),
+  AssignmentExpression: (p) => namedKey(p.left),
+};
+function identName(n) {
+  return n && n.type === 'Identifier' ? n.name : null;
+}
+function namedKey(k) {
+  return k && k.name ? k.name : null;
+}
 function fnName(node, parent) {
   if (node.type === 'FunctionDeclaration' && node.id) return node.id.name;
   if (!parent) return '(anonymous)';
-  const lookup = {
-    VariableDeclarator: parent.id && parent.id.type === 'Identifier' ? parent.id.name : null,
-    Property: parent.key && parent.key.name ? parent.key.name : null,
-    MethodDefinition: parent.key && parent.key.name ? parent.key.name : null,
-    AssignmentExpression: parent.left && parent.left.name ? parent.left.name : null,
-  };
-  return lookup[parent.type] || '(anonymous)';
+  const pick = PARENT_NAME_OF[parent.type];
+  return (pick && pick(parent)) || '(anonymous)';
 }
 
 /* ---------- 圈复杂度：1 + 分支点 ---------- */
@@ -137,21 +142,27 @@ const COG_STRUCT = new Set([
 const COG_JUMP = new Set(['BreakStatement', 'ContinueStatement']);
 
 function cogVisit(n, nesting) {
+  let total = nodeCogPoints(n, nesting);
+  const nextNest = COG_STRUCT.has(n.type) ? nesting + 1 : nesting;
+  for (const c of childNodes(n)) {
+    total += cogVisit(c, childNesting(n, c, nextNest, nesting));
+  }
+  return total;
+}
+
+/* 单节点认知分：控制流结构 1+嵌套深度 / break·continue +1 / 逻辑运算符 +1 */
+function nodeCogPoints(n, nesting) {
   let total = 0;
   if (COG_STRUCT.has(n.type)) total += 1 + nesting;
   if (COG_JUMP.has(n.type)) total += 1;
   if (n.type === 'LogicalExpression' && LOGICAL_OPS.has(n.operator)) total += 1;
-  const nextNest = COG_STRUCT.has(n.type) ? nesting + 1 : nesting;
-  for (const c of childNodes(n)) {
-    // else-if 链：嵌套不递增（Sonar 口径）
-    const keep =
-      c === n.alternate &&
-      n.type === 'IfStatement' &&
-      n.alternate &&
-      n.alternate.type === 'IfStatement';
-    total += cogVisit(c, keep ? nesting : nextNest);
-  }
   return total;
+}
+
+/* 子节点递归用的嵌套深度：else-if 链不递增（Sonar 口径） */
+function childNesting(parent, child, nextNest, nesting) {
+  const isElseIf = child === parent.alternate && parent.type === 'IfStatement' && child.type === 'IfStatement';
+  return isElseIf ? nesting : nextNest;
 }
 
 function cognitive(node) {
