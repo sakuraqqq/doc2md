@@ -2,6 +2,7 @@
 
 > 抓取时间：2026-09-04（browser 直读 github.com/microsoft/markitdown README，v178k★）。
 > 用途：与 docs/architecture.md 的 v1 范围对照查漏。**只做参考，不抄代码**（规划文档纪律）。
+> **说明：本清单不包含第三方原文**——只记录功能支持的有无（事实性对照），不摘录上游 README / issue / 讨论的文字；上游代码与文档的复用一律走 `docs/licenses.md` 的许可流程。
 
 ## 上游格式支持（全量）
 
