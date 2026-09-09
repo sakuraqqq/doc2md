@@ -46,45 +46,56 @@ async function ocrPageToText(page, idx, pageCount) {
  */
 const PN = { BT: 31, ET: 32, TF: 37, TM: 42, TD_MOVE: 40, TD_LEAD: 41, NL: 43, SHOW: 44, SHOW_SPACED: 45 };
 
+/** 单个 glyph 项累加进 { str, w }：字形对象取 unicode/width，对象型定位修正取 h（文本空间） */
+function addGlyph(acc, g, fontSize) {
+  if (!g || typeof g !== 'object') return;
+  if (typeof g.unicode === 'string') {
+    acc.str += g.unicode;
+    acc.w += ((g.width || 0) * fontSize) / 1000;
+  } else if (typeof g.h === 'number') {
+    acc.w += g.h; // 对象型定位修正（文本空间）
+  }
+}
+
+/** showText/TJ 的 glyph 序列 → { str, w }：数值项 = 千分之一 em 的字距调整；对象项见 addGlyph */
+function glyphRun(glyphs, fontSize) {
+  const acc = { str: '', w: 0 };
+  for (const g of glyphs) {
+    if (typeof g === 'number') { acc.w += (g * fontSize) / 1000; continue; } // TJ 数值调整（千分之一 em）
+    addGlyph(acc, g, fontSize);
+  }
+  return acc;
+}
+
+/** Tj/TJ：按当前文本状态产出一条 run（空串不产出），并把笔位移到 run 末尾 */
+function showTextRun(st, args, runs) {
+  const { str, w } = glyphRun(args[0] || [], st.fontSize);
+  if (str !== '') runs.push({ str, x: st.cx, y: st.cy, w, fontSize: st.fontSize });
+  st.cx += w;
+}
+
+/* 文本算子分派表：st = 文本状态（fontSize/cx/cy/leading），args = 算子参数，runs = 输出累积。
+ * BT 注释（t16 回归；t18 修复）：PDF 规范规定 BT 将文本矩阵/行矩阵重置为单位阵——跨 BT...ET 块，
+ * Td/TD/T* 从**各块自己的**文本空间原点起步（上一块的尾部平移不复用）。若不重置，下一块的 Td 会累加到
+ * 上一块的 cx/cy 上 → 行坐标错乱、跨块行序倒挂。注：leading 属文本状态（BT 不重置），保留。 */
+const TEXT_OPS = {
+  [PN.BT]: (st) => { st.cx = 0; st.cy = 0; },
+  [PN.TF]: (st, args) => { st.fontSize = args[1] || 0; },
+  [PN.TM]: (st, args) => { st.cx = args[4] || 0; st.cy = args[5] || 0; },
+  [PN.TD_MOVE]: (st, args) => { st.cx += args[0] || 0; st.cy += args[1] || 0; },
+  [PN.TD_LEAD]: (st, args) => { st.leading = -(args[1] || 0); st.cx += args[0] || 0; st.cy += args[1] || 0; },
+  [PN.NL]: (st) => { st.cy -= st.leading; },
+  [PN.SHOW]: showTextRun,
+  [PN.SHOW_SPACED]: showTextRun,
+};
+
 async function pdfPageRuns(page) {
   const opList = await page.getOperatorList();
   const runs = [];
-  let fontSize = 0, cx = 0, cy = 0, leading = 0;
+  const st = { fontSize: 0, cx: 0, cy: 0, leading: 0 };
   for (let i = 0; i < opList.fnArray.length; i++) {
-    const fn = opList.fnArray[i];
-    const args = opList.argsArray[i] || [];
-    if (fn === PN.BT) {
-      // PDF 规范：BT 将文本矩阵/行矩阵重置为单位阵——跨 BT...ET 块，Td/TD/T* 从**各块自己的**文本空间
-      // 原点起步（上一块的尾部平移不复用）。若不重置，下一块的 Td 会累加到上一块的 cx/cy 上 → 行坐标
-      // 错乱、跨块行序倒挂（t16 回归；t18 修复）。注：leading 属文本状态（BT 不重置），保留。
-      cx = 0; cy = 0;
-    } else if (fn === PN.TF) {
-      fontSize = args[1] || 0;
-    } else if (fn === PN.TM) {
-      cx = args[4] || 0; cy = args[5] || 0;
-    } else if (fn === PN.TD_MOVE) {
-      cx += args[0] || 0; cy += args[1] || 0;
-    } else if (fn === PN.TD_LEAD) {
-      leading = -(args[1] || 0); cx += args[0] || 0; cy += args[1] || 0;
-    } else if (fn === PN.NL) {
-      cy -= leading;
-    } else if (fn === PN.SHOW || fn === PN.SHOW_SPACED) {
-      const glyphs = args[0] || [];
-      let str = '', w = 0;
-      for (const g of glyphs) {
-        if (typeof g === 'number') { w += (g * fontSize) / 1000; continue; } // TJ 数值调整（千分之一 em）
-        if (g && typeof g === 'object') {
-          if (typeof g.unicode === 'string') {
-            if (g.unicode !== '') str += g.unicode;
-            w += ((g.width || 0) * fontSize) / 1000;
-          } else if (typeof g.h === 'number') {
-            w += g.h; // 对象型定位修正（文本空间）
-          }
-        }
-      }
-      if (str !== '') runs.push({ str, x: cx, y: cy, w, fontSize });
-      cx += w;
-    }
+    const op = TEXT_OPS[opList.fnArray[i]];
+    if (op) op(st, opList.argsArray[i] || [], runs);
   }
   return runs;
 }
