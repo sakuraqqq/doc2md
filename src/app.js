@@ -7,6 +7,7 @@
  *  - SW 注册失败静默（不 console.error，见契约 C2「无 console error」）。
  */
 import { convert, registry, MAX_BYTES } from './convert.js';
+import { collapseCjkSpaces } from './cjk.js';
 import { htmlToMarkdown } from './html2md.js';
 import { decodeText, sniff } from './sniff.js';
 import { setStatus, renderResult, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes } from './ui.js';
@@ -48,7 +49,8 @@ fileInput.addEventListener('change', () => {
 
 /* 测试挂钩（C线契约测试用；不改变行为）
  * embedMaxBytes：单文件内嵌上限（默认 20MB，2026-09-08 拍板）——可读写，契约组 Q 用调低上限
- * 验证「超限自动切 zip」分支（无需入库 >20MB 样例）。 */
+ * 验证「超限自动切 zip」分支（无需入库 >20MB 样例）。
+ * collapseCjkSpaces：OCR 中文空格合并纯函数（2026-09-09）——契约组 R 直接喂用例表验证。 */
 window.__doc2md = {
   convert,
   sniff,
@@ -56,6 +58,7 @@ window.__doc2md = {
   htmlToMarkdown,
   decodeText,
   MAX_BYTES,
+  collapseCjkSpaces,
   get embedMaxBytes() { return getEmbedMaxBytes(); },
   set embedMaxBytes(n) { setEmbedMaxBytes(n); },
 };

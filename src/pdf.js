@@ -6,6 +6,7 @@
  *  - 输出：<!-- page N/M --> 分页注释 + 正文（架构 §4.3）。
  */
 import BLINE from './bline.js';
+import { collapseCjkSpaces } from './cjk.js';
 import { getOcrWorker } from './ocr.js';
 import { setStatus } from './ui.js';
 
@@ -23,7 +24,9 @@ async function ocrPageToText(page, idx, pageCount) {
   const r = await worker.recognize(blob);
   const text = (((r && r.data) || {}).text || '').trim();
   setStatus(`第 ${idx}/${pageCount} 页 OCR 完成`);
-  return text;
+  // 2026-09-09：OCR（tesseract 中文）会在汉字间插入词分空格（「湖南 新 晃」）——仅 OCR 路径后处理
+  //（文字层路径的空格是真实排版信息，不动；见 src/cjk.js）
+  return collapseCjkSpaces(text);
 }
 
 /* ---------- PDF 文本层提取：operator list 重建 text runs（复审报告 §1.2，2026-09-05）
