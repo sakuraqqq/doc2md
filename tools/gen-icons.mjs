@@ -19,45 +19,58 @@ fs.mkdirSync(OUT, { recursive: true });
 const ACCENT = [0x4f, 0x8c, 0xff]; // 与 index.html --accent 一致
 const WHITE = [0xff, 0xff, 0xff];
 
+/* ---------- 图案几何参数（相对坐标） ---------- */
+const DOC = { x0: 0.266, x1: 0.734, y0: 0.172, y1: 0.781, r: 0.045 }; // 文档矩形 + 圆角半径
+const FOLD = { w: 0.156, h: 0.156 }; // 右上折角缺口（80/512）
+const LINES = { x0: 0.3, x1: 0.69, y0: 0.3, h: 0.032, step: 0.09, count: 5 }; // 文字横线
+
 /* ---------- 图案判定（u,v ∈ [0,1]，图案相对尺寸，mask 为 maskable 缩放系数） ---------- */
 function sample(u, v, mask) {
-  // maskable：内容缩至安全区（88% 居中，落在 80% 安全圆内）
-  if (mask) {
-    u = (u - 0.5) / mask + 0.5;
-    v = (v - 0.5) / mask + 0.5;
-    if (u < 0 || u > 1 || v < 0 || v > 1) return ACCENT;
-  }
-  // 文档矩形（比例与 512 设计一致：136..376 × 88..400 → 0.266..0.734 × 0.172..0.781）
-  const dx0 = 0.266,
-    dx1 = 0.734,
-    dy0 = 0.172,
-    dy1 = 0.781;
-  const r = 0.045; // 圆角半径（相对坐标）
-  const inDocX = u >= dx0 && u <= dx1,
-    inDocY = v >= dy0 && v <= dy1;
-  if (!inDocX || !inDocY) return ACCENT;
-  // 圆角裁剪（四角）
-  const cx = Math.min(Math.max(u, dx0 + r), dx1 - r);
-  const cy = Math.min(Math.max(v, dy0 + r), dy1 - r);
-  if ((u - cx) * (u - cx) + (v - cy) * (v - cy) > r * r) return ACCENT;
-  // 右上折角缺口：三角形 (dx1-r, dy0) → (dx1, dy0) → (dx1, dy0 + h)
-  const foldW = 0.156,
-    foldH = 0.156; // 80/512
-  const fx0 = dx1 - foldW,
-    fy1 = dy0 + foldH;
-  if (u > fx0 && v < fy1 && (u - fx0) / foldW + (fy1 - v) / foldH > 1) return ACCENT;
-  // 文字横线（5 条）：x ∈ [0.30, 0.69]，y 从 0.30 到 0.66，线高 0.032
-  const lw0 = 0.3,
-    lw1 = 0.69,
-    lh = 0.032,
-    lstep = 0.09;
-  if (u >= lw0 && u <= lw1) {
-    for (let i = 0; i < 5; i++) {
-      const y0 = 0.3 + i * lstep;
-      if (v >= y0 && v <= y0 + lh) return ACCENT;
-    }
-  }
+  const p = maskablePoint(u, v, mask);
+  if (!p) return ACCENT;
+  if (!inDocRect(p.u, p.v)) return ACCENT;
+  if (inRoundedCorner(p.u, p.v)) return ACCENT;
+  if (inFoldNotch(p.u, p.v)) return ACCENT;
+  if (onTextLine(p.u, p.v)) return ACCENT;
   return WHITE;
+}
+
+/* maskable：内容缩至安全区（88% 居中，落在 80% 安全圆内）；超出 → null（背景色） */
+function maskablePoint(u, v, mask) {
+  if (!mask) return { u, v };
+  const su = (u - 0.5) / mask + 0.5;
+  const sv = (v - 0.5) / mask + 0.5;
+  if (su < 0 || su > 1 || sv < 0 || sv > 1) return null;
+  return { u: su, v: sv };
+}
+
+/* 文档矩形内 */
+function inDocRect(u, v) {
+  return u >= DOC.x0 && u <= DOC.x1 && v >= DOC.y0 && v <= DOC.y1;
+}
+
+/* 圆角裁剪（四角外） */
+function inRoundedCorner(u, v) {
+  const cx = Math.min(Math.max(u, DOC.x0 + DOC.r), DOC.x1 - DOC.r);
+  const cy = Math.min(Math.max(v, DOC.y0 + DOC.r), DOC.y1 - DOC.r);
+  return (u - cx) * (u - cx) + (v - cy) * (v - cy) > DOC.r * DOC.r;
+}
+
+/* 右上折角缺口：三角形 (dx1-r, dy0) → (dx1, dy0) → (dx1, dy0 + h) */
+function inFoldNotch(u, v) {
+  const fx0 = DOC.x1 - FOLD.w;
+  const fy1 = DOC.y0 + FOLD.h;
+  return u > fx0 && v < fy1 && (u - fx0) / FOLD.w + (fy1 - v) / FOLD.h > 1;
+}
+
+/* 文字横线上（5 条） */
+function onTextLine(u, v) {
+  if (u < LINES.x0 || u > LINES.x1) return false;
+  for (let i = 0; i < LINES.count; i++) {
+    const y0 = LINES.y0 + i * LINES.step;
+    if (v >= y0 && v <= y0 + LINES.h) return true;
+  }
+  return false;
 }
 
 /* ---------- RGBA PNG 编码（color type 6, bit depth 8, 每行 filter 0） ---------- */
