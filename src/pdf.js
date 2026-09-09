@@ -186,6 +186,68 @@ export function textQualityRatio(text) {
   return good + garbage > 0 ? good / (good + garbage) : 0;
 }
 
+/** 兜底：getTextContent 旧行为（线性化、无修复） */
+async function textContentFallback(page) {
+  const content = await page.getTextContent();
+  const lines = [];
+  let line = '';
+  for (const item of content.items) {
+    if ('str' in item) {
+      line += item.str;
+      if (item.hasEOL) { lines.push(line); line = ''; }
+    }
+  }
+  if (line !== '') lines.push(line);
+  return lines.join('\n').trim();
+}
+
+/** 单页文本层：首选 operator list 重建（保留 run 边界 → 字间距空格修复，复审 §1.2），异常回退 getTextContent */
+async function pageText(page) {
+  try {
+    return runsToPageText(await pdfPageRuns(page));
+  } catch {
+    return textContentFallback(page);
+  }
+}
+
+/** 质量门槛（审查报告 §2.3 + t27）：① 文本量 <10 字符 或 ② 有效占比 <40%（PUA/FFFD 密集的假文本层）→ 该页 OCR 降级 */
+function needsOcr(text) {
+  return text.length < 10 || textQualityRatio(text) < 0.40;
+}
+
+/** 质量门槛命中 → OCR 降级；返回 { text, ocr }（ocr = 本页走了 OCR），无产出返回 null（warning 已记录） */
+async function pageTextWithOcr(page, idx, pageCount, text, warnings) {
+  let ocrText = null;
+  try {
+    ocrText = await ocrPageToText(page, idx, pageCount);
+  } catch {
+    ocrText = null; // OCR 引擎不可用（file:// worker/WASM 受限、初始化失败）——t8：单页失败不得拖垮整篇
+  }
+  if (ocrText) return { text: ocrText, ocr: true };
+  if (text.trim() !== '') {
+    // OCR 失败/无产出 → 保留文本层原样 + warning（不猜测；t8 口径「第 N 页 OCR 不可用，已保留原文本层」）
+    warnings.push(`第 ${idx} 页 OCR 不可用，已保留原文本层（结果可能不可读）`);
+    return { text, ocr: false };
+  }
+  // 无文本层且 OCR 不可用 → 跳过该页并提示（扫描页在 file:// 下的真实场景）
+  warnings.push(`第 ${idx} 页无文本层且 OCR 不可用，已跳过该页`);
+  return null;
+}
+
+/** 单页入库：文本层 → 质量门槛 → OCR 降级；返回本页是否走了 OCR */
+async function collectPage(page, idx, pageCount, pages, warnings) {
+  const text = await pageText(page);
+  if (!needsOcr(text)) {
+    pages.push({ idx, text });
+    setStatus(`转换中：第 ${idx}/${pageCount} 页`);
+    return false;
+  }
+  const r = await pageTextWithOcr(page, idx, pageCount, text, warnings);
+  if (!r) return false;
+  pages.push({ idx, text: r.text });
+  return r.ocr;
+}
+
 /** PDF 转换器（注册表 contract：见 docs/architecture.md §4.3） */
 export async function pdfConvert(file, buf) {
   if (!window.pdfjsLib) throw new Error('pdf.js 库未加载');
@@ -206,48 +268,7 @@ export async function pdfConvert(file, buf) {
     for (let i = 1; i <= pageCount; i++) {
       const page = await doc.getPage(i);
       try {
-        let text = '';
-        try {
-          // 首选：operator list 重建（保留 run 边界 → 字间距空格修复，复审 §1.2）
-          text = runsToPageText(await pdfPageRuns(page));
-        } catch {
-          // 兜底：getTextContent 旧行为（线性化、无修复）
-          const content = await page.getTextContent();
-          const lines = [];
-          let line = '';
-          for (const item of content.items) {
-            if ('str' in item) {
-              line += item.str;
-              if (item.hasEOL) { lines.push(line); line = ''; }
-            }
-          }
-          if (line !== '') lines.push(line);
-          text = lines.join('\n').trim();
-        }
-        // 逐页判断（审查报告 §2.3 + t27 质量门槛）：
-        // ① 文本量 <10 字符 或 ② 有效占比 <40%（PUA/FFFD 密集的假文本层）→ 该页 OCR 降级
-        if (text.length < 10 || textQualityRatio(text) < 0.40) {
-          let ocrText = null;
-          try {
-            ocrText = await ocrPageToText(page, i, pageCount);
-          } catch {
-            ocrText = null; // OCR 引擎不可用（file:// worker/WASM 受限、初始化失败）——t8：单页失败不得拖垮整篇
-          }
-          if (ocrText) {
-            ocrCount++;
-            pages.push({ idx: i, text: ocrText });
-          } else if (text.trim() !== '') {
-            // OCR 失败/无产出 → 保留文本层原样 + warning（不猜测；t8 口径「第 N 页 OCR 不可用，已保留原文本层」）
-            pages.push({ idx: i, text });
-            warnings.push(`第 ${i} 页 OCR 不可用，已保留原文本层（结果可能不可读）`);
-          } else {
-            // 无文本层且 OCR 不可用 → 跳过该页并提示（扫描页在 file:// 下的真实场景）
-            warnings.push(`第 ${i} 页无文本层且 OCR 不可用，已跳过该页`);
-          }
-        } else {
-          pages.push({ idx: i, text });
-          setStatus(`转换中：第 ${i}/${pageCount} 页`);
-        }
+        if (await collectPage(page, i, pageCount, pages, warnings)) ocrCount++;
       } finally {
         page.cleanup();
       }
