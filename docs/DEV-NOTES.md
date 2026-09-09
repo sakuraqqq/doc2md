@@ -665,3 +665,65 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
   - **当天已修 lint（用户「先把 lint 错误修掉」）**：`tools/_verify-clean.mjs` 的单行 `if (q) {…}` 展开为多行块（**纯格式，行为不变**）+ `tools/gen-copyright.mjs` 的 `CLEAN_RULES` 用**作用域内** `/* eslint-disable sonarjs/super-linear-regex */`（**正则语义未动**）→ `npm run lint` **0 errors / 33 warnings**（26 src + 7 tools，全是既有复杂度告警，非阻塞）。两文件均 gitignored → 无仓库 diff。**metrics 污染也已修**（同日）：`tools/metrics.mjs` 增加「只看仓库文件」过滤（按 `.gitignore` 的精确路径/目录前缀条目跳过私有脚本，jscpd 同步 `--ignore`）→ 本地与 CI 一致 **16 文件 / 196 函数 / 超限 23 / 重复率 4%**。
 
 
+## 2026-09-10 · 减脂批（AgentTeams doc2md-slim：metrics 超限 23 → **0**，目标 ≤15）
+
+### 背景与范围
+用户问「每次改动都重构一部分防止屎山有执行吗」→ 只读审计结论：全历史仅 **2 个 `refactor(` 提交**、metrics 超限 **21 → 23（没降）**、CI 里**没有 metrics 门禁**、`AGENTS.md` 的基线数字（lint 37w / metrics 26 超限）与仓库实测对不上 → 纪律基本是纸面。用户拍板「挑个时间长的任务做」→ 组 **AgentTeams**（core-dev / conv-dev / qa-dev），目标 **超限 23 → ≤15**。
+
+纪律：每函数一提交（只动声明文件）、等价性台先行（快照 blob 用 `git hash-object` 校验 = 基线 blob）、断言/样例零改动、build/test 由队长/用户终端执行（沙箱 EPERM）。
+
+### 做了什么（**22 提交 / 19 个函数出 OVER 清单**，每个提交只动 1 个文件）
+| 提交 | 文件 | 函数 | 复杂度 |
+|---|---|---|---|
+| `b9a8388` | src/sniff.js | decodeText | 圈31/认知62 → 不再超限 |
+| `2797231` | src/sniff.js | sniff | 圈32/认知35 → 不再超限 |
+| `3b2a704` | src/convert.js | convert / imageConvert | 20/20、11 → 不再超限 |
+| `ad08aeb` | src/pdf.js | pdfPageRuns | 29/59 → 3/2 |
+| `eb2fea5` | src/pdf.js | runsToPageText | 20/27 → 2/1 |
+| `d618aa0` | tools/gen-icons.mjs | sample | 19/22 → 不再超限（**4 个 PNG 字节零变化**） |
+| `66b728f` | tools/metrics.mjs | childNodes / fnName / cogVisit | 认知20、圈13、圈11 → 不再超限 |
+| `ec26994` | src/xlsx.js | scanSheetRows | 26/64 → 6/13 |
+| `2f66158` | src/html2md.js | fragFor | 25/32 → 不再超限 |
+| `59f53ed` | src/html2md.js | blockOfEl | 23/28 → 不再超限 |
+| `449e8e0` | src/html2md.js | liToLines | 23/56 → 不再超限 |
+| `e88ae2f` | src/docx.js | ommlParts | 34/49 → 9/9 |
+| `adfd512` | src/docx.js | docxParseForMd | 26/46 → 6/9 |
+| `d6c00b2` | src/html2md.js | tableToMd + forEach 回调 | 13/13 + 11/11 → 不再超限 |
+| `e6f7394` | src/pdf.js | pdfConvert | 16/34 → 不再超限 |
+| `ee71fe7` | src/xlsx.js | zipEntry | 16/44 → 6/5 |
+| `b19e0a1` | src/xlsx.js | parseStylesDateFormats | 19/20 → 4/3 |
+| `d3f34ac` | src/xlsx.js | xlsxParseSheet | 13/16 → 4/3 |
+| `3113611` | src/docx.js | docxConvert | 18/18 → 6/5 |
+
+### 等价性证据（6 台，全部 0 差异；每台「重构前快照 vs 当前」逐条比对）
+| 台 | 规模 | 差异 |
+|---|---|---|
+| `.tmp/equiv-sniff.mjs`（队长 t5） | 434 语料（BOM/GBK/Big5/meta/截断/二进制/PDF 偏移/ZIP/图片 + 400 随机） | 0 |
+| `.tmp/equiv-pdf.mjs`（core-dev t3） | 25 场景 + 12992 扫掠 + 600 随机 + isCjkChar 全 BMP + 5 PDF/8 页/6594 runs | 0 |
+| `.tmp/equiv-pdfconvert.mjs`（t9） | 5 PDF × 3 OCR 态 = 15 次转换（markdown+warnings+backend+setStatus 序列） | 0 |
+| `.tmp/equiv-html2md.mjs`（t4/t9） | 579 语料（D 快照 + 手写 + 500 随机 HTML 树） | 0（**负对照可检出 23**） |
+| `.tmp/xlsx-equiv*.mjs`（t1/t8） | 568 + 793 比对点（真实 xlsx + 构造 zip/styles/sheet 边界） | 0 |
+| `.tmp/qa-t6/`（qa-dev **独立验收**） | 逐提交 2912 点 + Node 台 1291 + 真实 Chromium 台 338 | 0 |
+
+### 实测（用户终端权威跑 + 会话内静态门禁）
+- `npm run build` → index.html **108,849 B / SHA `C955D7E67249AB28CFD64B1D7F48EF8A308CE2C111D08C2F60A3940D963CCB8E`**（提交 `1a14b08`；产物已核验含 `FRAG_TAGS`/`pushMarkerLine`/`OMML_HANDLERS`/`findEocd` 等新结构、旧 `trs.forEach` 消失）
+- `npm test` → **153/153 pass / 0 fail（33.7s，用户终端）**；`pwa-audit` **48/48**；`verify:ocr` **93% PASS**
+- `node tools/metrics.mjs` → 文件 16 / 函数 316 / **超限 0**（基线 23）/ 重复率 **4%** / exit 0
+- `eslint "src/**/*.js"` → **0 error / 0 warning**（批前 26 warnings）
+- `git log b9a8388..HEAD -- tests/` → **空**（断言/样例零改动）
+
+### 坑（本批新踩）
+1. **只改 src 不 build → 产物陈旧**：契约组 D/K 断言跑的是 `index.html`，必须先 `npm run build` 再 `npm test`（本批实测旧产物第 487 行仍为 `trs.forEach`）。
+2. **pwsh `Get-Content`/`Set-Content` 改 UTF-8 源会乱码 + 行合并**（生成负对照 mutant 时踩到）→ 一律用 Node `fs`。
+3. **内联 `<script>` 注入语料含 `</script>` 会截断脚本** → `JSON.stringify` 后 `replace(/<\//g,'<\\/')`。
+4. **模板字符串里的 `\n` 会变真换行**（生成复核页时被展开 → SyntaxError）→ 生成器里写 `\\n`。
+5. **file:// 下 ES module 被 CORS 拦** → 等价性台改「内联 classic script + IIFE 注入双版本」在真实浏览器跑 DOM 依赖函数（qa-dev/conv-dev 均用此法，走 dsh-browser 的 Chromium）。
+6. **升权跑命令里不要接管道**：`npm test 2>&1 | Select-String` 在本沙箱会挂住（实测卡 15 分钟未返回）——升权命令一律裸跑。
+
+### 防再犯
+- 等价性台一律「快照 + `git hash-object` 校验快照 = 基线 blob」，杜绝拿改后代码自比自；台子必须带**负对照**（人为改一处必须报差异）。
+- 批次收尾顺序固化：`build` → `test` → 回读产物 SHA → 提交产物 → 文档落盘。
+- **重构配额的可执行化**（待拍板）：CI 加 metrics 门禁（现在超限 = 0，可设「超限数必须为 0」硬门禁）；`AGENTS.md` 基线数字改为实测口径；「每次改动」降级为「每批至少 1 处 ≤50 行重构」并在 DEV-NOTES 记 before→after。
+- **口径澄清（待拍板）**：专项减脂批中「单次 ≤50 行」按函数体量放宽（本批 6 处超：`zipEntry` 55+、`fragFor` 121、`liToLines` 118、`pdfConvert` 105、`ommlParts` 51+、`docxParseForMd` 57+）；顺手重构仍守 ≤50 行。
+
+

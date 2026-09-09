@@ -1,7 +1,7 @@
 # HANDOFF · doc2md 主开发线（2026-09-09）
 
 > 交接对象：新会话（AI 助手）· 项目：doc2md（纯前端离线文档转 Markdown）
-> 基线：**HEAD `1abbe18`（main；真实样例批后）** · 契约：**153/153**（本会话实跑）· 工作区：与版本库同目录
+> 基线：**HEAD `1a14b08`（main；减脂批后）** · 契约：**153/153**（用户终端权威跑）· 工作区：与版本库同目录
 > 发布：**v0.1.2 已发布**（tag `v0.1.2` = `f5aed38`，2026-09-09；观察期 09-09 起 ≥3 天 → 09-12 复盘）
 > 开场白模板：`项目：doc2md 主开发线 · 基线 <HEAD SHA> · 先读本文件 + AGENTS.md + docs/RELEASE.md`
 
@@ -9,7 +9,7 @@
 
 ## 1. 现状一句话
 
-已发布 **v0.1.2**（tag `v0.1.2` = `f5aed38`）。tag 后 main 继续前进到 **`1abbe18`**（第七轮批 + v0.1.3 首提交准备 + 真实样例批：OCR 中文空格合并），**不重打 tag**（用户拍板）。当前契约 **153/153**、PWA 48/48、`eslint src/**` 26w/0e 全绿；远端 main = 本地 HEAD（已 push）。
+已发布 **v0.1.2**（tag `v0.1.2` = `f5aed38`）。tag 后 main 继续前进到 **`1a14b08`**（第七轮批 + v0.1.3 首提交准备 + 真实样例批：OCR 中文空格合并 + **减脂批：metrics 超限 23 → 0**），**不重打 tag**（用户拍板）。当前契约 **153/153**、PWA 48/48、`eslint src/**` **0w/0e**、metrics 超限 **0**（减脂批）。**本地领先远端若干提交待 push。**
 
 ## 2. 本会话（9/7-9/8）已完成
 
@@ -25,6 +25,7 @@
 | **v0.1.2 发布（9/9）** | tag `v0.1.2` + GitHub Release + Pages #35；契约 145/145 · PWA 48/48 · OCR 93% · CI tests #25 绿 | `f5aed38`（tag） |
 | **v0.1.3 首提交准备（9/9）** | footer `v0.1.1`→`v0.1.2` + 产物重建 + package-lock 版本同步 | `03e3a03` |
 | **真实样例批（9/9）** | 用户实转 3 份课程 PDF（2 份文字层为空→OCR）→ 组 R **OCR 中文空格合并**（72-82%→1.4-4.9%）+ README 留档 | `1701efd`→`1abbe18` |
+| **减脂批（9/10，AgentTeams doc2md-slim）** | 22 提交 / 19 函数出 OVER 清单；metrics 超限 **23 → 0**、eslint src **0w/0e**；等价性 6 台全 0 差异 + qa-dev 独立台 2912 点；契约 153/153 | `b9a8388`→`1a14b08` |
 | 隐私清洗 | 全历史重写（5 个真实邮箱→noreply、本地路径脱敏、敏感文档移出）；Actions 旧 run 删除 | 历史重写 + `489b431` |
 
 **纪律沉淀**（已写进 AGENTS.md / 全局 AGENTS.md）：
@@ -40,7 +41,7 @@
 2. §2.3 xlsx sheet XML 无解压护栏（sharedStrings 有 4MB，sheet 没有）
 3. §2.6 PDF 扩展 B 区 CJK 代理对（`slice(-1)` UTF-16 边界）
 4. §2.7 xlsx `<rPh>` 注音重复（collectTTexts 未排除）
-5. §2.9 metrics 未接 CI（当前 lint 31w / metrics 23 超限）
+5. ~~§2.9 metrics 未接 CI~~ ⚠️ **部分闭环**（减脂批）：`eslint src/**` **0w/0e**、metrics 超限 **0**；**CI 门禁待拍板**（现在可设「超限数必须为 0」硬门禁，见 §8）
 6. ~~§2.4 单文件内嵌导出 O(n²) + 无上限~~ ✅ **已闭环（§8.1 批，`70fb56a`）**——单遍替换 + 20MB 上限自动切 zip（拍板 T-7）
 7. ~~§2.10 `patches/router-bootstrap.mjs` 死文件 + 预览全量灌 textarea~~ ✅ **已闭环**——死文件移入 `.私档/`（`9a53d15`）+ 预览 1MB 截断（`24e22bd`）
 8. ~~§3 文档口径漂移~~ ✅ **已闭环（`fb0710b` + `2f38ad3`）**——template 徽标/注释 + SW v4 口径 + 体积数字回填 **102KB（104,064 B）** + RELEASE-CHECKLIST 补 CACHE_NAME 硬检查；**architecture §4.4 经实测回读已于 `d19d565` 同步，无残余**
@@ -93,7 +94,7 @@
 
 ## 7. 团队状态
 
-`doc2md-v012`（上一会话）：qa-dev / conv-dev / core-dev 三人，任务 t1-t16 全 completed。**§8.1 批未组队**——单会话自干（用户拍板省 token 模式）；新会话小改动自干、跨模块/高风险再拉 AgentTeams。
+`doc2md-v012`（上一会话）：qa-dev / conv-dev / core-dev 三人，任务 t1-t16 全 completed。**§8.1 批未组队**（单会话自干）；**减脂批（9/10）组队 `doc2md-slim`**：conv-dev / core-dev / qa-dev 三人，t1-t12 全 completed（t6 独立验收通过；t7 权威跑由用户终端执行）。
 
 ## 8. 下一批建议
 
