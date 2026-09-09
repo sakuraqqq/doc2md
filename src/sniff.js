@@ -18,55 +18,78 @@ export function headAscii(buf) {
   return s;
 }
 export function decodeText(buf) {
+  const bom = decodeBom(buf);
+  if (bom !== null) return bom;
+  const probeN = Math.min(buf.byteLength, 4096);
+  const headTxt = new TextDecoder('utf-8').decode(buf.subarray(0, probeN)); // 容错解码（不抛）
+  for (const enc of charsetLabels(headTxt)) {
+    const decoded = tryDecode(buf, enc);
+    if (decoded !== null) return decoded;
+  }
+  return gb18030Fallback(buf, headTxt);
+}
+
+/* BOM 分支（UTF-8 / UTF-16LE / UTF-16BE）：命中返回解码串，否则 null */
+function decodeBom(buf) {
   if (startsWith(buf, [0xEF, 0xBB, 0xBF])) return new TextDecoder('utf-8').decode(buf.subarray(3));
   if (startsWith(buf, [0xFF, 0xFE])) return new TextDecoder('utf-16le').decode(buf.subarray(2));
-  if (startsWith(buf, [0xFE, 0xFF])) {
-    // utf-16be：浏览器 TextDecoder 支持则用，否则字节交换
-    try { return new TextDecoder('utf-16be').decode(buf.subarray(2)); }
-    catch {
-      const swap = new Uint8Array(buf.length - 2);
-      for (let i = 2; i < buf.length; i += 2) { if (i + 1 < buf.length) { swap[i - 2] = buf[i + 1]; swap[i - 1] = buf[i]; } }
-      return new TextDecoder('utf-16le').decode(swap);
-    }
-  }
-  // 无 BOM：GBK/GB18030/Big5 兜底（第四轮 1.1，t23 F4-F6）
-  const probeN = Math.min(buf.byteLength, 4096);
-  const tolerant = new TextDecoder('utf-8'); // 容错解码（不抛）
-  const headTxt = tolerant.decode(buf.subarray(0, probeN));
-  // ① 全扫描 <meta>：取**第一个带 charset 的**（viewport 等无 charset 的 meta 前置不再漏检；t12 线性纪律：indexOf 循环 + 切片）
+  if (!startsWith(buf, [0xFE, 0xFF])) return null;
+  // utf-16be：浏览器 TextDecoder 支持则用，否则字节交换
+  try { return new TextDecoder('utf-16be').decode(buf.subarray(2)); } catch { return swapUtf16be(buf); }
+}
+/* UTF-16BE 字节交换回退（环境不支持 'utf-16be' 时） */
+function swapUtf16be(buf) {
+  const swap = new Uint8Array(buf.length - 2);
+  for (let i = 2; i + 1 < buf.length; i += 2) { swap[i - 2] = buf[i + 1]; swap[i - 1] = buf[i]; }
+  return new TextDecoder('utf-16le').decode(swap);
+}
+
+/* 全扫描 <meta>：按出现顺序收集 charset 候选（① 第一个带 charset 的 meta 优先；viewport 等无 charset
+ * 的 meta 前置不再漏检；t12 线性纪律：indexOf 循环 + 切片） */
+function charsetLabels(headTxt) {
+  const labels = [];
   let metaIdx = headTxt.indexOf('<meta');
   while (metaIdx >= 0) {
     const metaEnd = headTxt.indexOf('>', metaIdx);
     if (metaEnd < 0) break;
-    const metaAttr = headTxt.slice(metaIdx, metaEnd + 1);
-    const lower = metaAttr.toLowerCase();
-    const csIdx = lower.indexOf('charset');
-    if (csIdx >= 0) {
-      const afterCs = lower.slice(csIdx + 'charset'.length);
-      const eqIdx = afterCs.indexOf('=');
-      if (eqIdx >= 0) {
-        // 手工 trim（t12：不用边缘正则——linear 扫描空白/引号/分号/闭括号）
-        let val = afterCs.slice(eqIdx + 1);
-        const isTrimCh = (ch) => ch === ' ' || ch === '"' || ch === "'" || ch === ';' || ch === '>' || ch === '\t' || ch === '\r' || ch === '\n';
-        while (val.length > 0 && isTrimCh(val[0])) val = val.slice(1);
-        while (val.length > 0 && isTrimCh(val[val.length - 1])) val = val.slice(0, -1);
-        // ② charset 标签 → TextDecoder label（gb2312/gbk/gb18030 → 'gb18030'；big5 → 'big5' 分开——
-        //    Big5 字节被 gb18030 误读成异形字符，F4）
-        let enc = null;
-        if (val === 'gb2312' || val === 'gbk' || val === 'gb18030') enc = 'gb18030';
-        else if (val === 'big5') enc = 'big5';
-        if (enc) {
-          try { return new TextDecoder(enc).decode(buf); }
-          catch { /* 极端环境不支持该 label：保持原行为 */ }
-        }
-      }
-    }
+    const label = charsetLabelOf(headTxt.slice(metaIdx, metaEnd + 1));
+    if (label && !labels.includes(label)) labels.push(label);
     metaIdx = headTxt.indexOf('<meta', metaIdx + 1); // 继续找下一个 meta
   }
-  // ③ 启发式（t11 §1.4 修订——旧「任意 1 个 U+FFFD 即整篇回退 gb18030」把 UTF-8 尾部截断 1 字节的
-  //    文件整篇重解成 mojibake——F7）：UTF-8 容错解码出现 **≥2 个** U+FFFD 且 gb18030 解码替换符更少
-  //    → 回退 gb18030（GBK 短文本任一汉字在 UTF-8 下产生 ≥2 个 FFFD——每个坏字节一个 → F6 不回归；
-  //    正常 UTF-8 仅损坏 1 字符时 1 个 FFFD → 保持 UTF-8，只损坏尾部 1 字符）
+  return labels;
+}
+/* 单个 meta 标签 → TextDecoder label（② gb2312/gbk/gb18030 → 'gb18030'；big5 分开——Big5 字节被
+ * gb18030 误读成异形字符，F4；无 charset/未知名 → null） */
+function charsetLabelOf(metaAttr) {
+  const lower = metaAttr.toLowerCase();
+  const csIdx = lower.indexOf('charset');
+  if (csIdx < 0) return null;
+  const afterCs = lower.slice(csIdx + 'charset'.length); // 基准 = 'charset' 之后（等价性台 2026-09-09 抓过此处偏移算错）
+  const eqIdx = afterCs.indexOf('=');
+  if (eqIdx < 0) return null;
+  const val = trimMetaValue(afterCs.slice(eqIdx + 1));
+  if (val === 'gb2312' || val === 'gbk' || val === 'gb18030') return 'gb18030';
+  if (val === 'big5') return 'big5';
+  return null;
+}
+/* meta 值去首尾空白/引号/分号/闭括号（t12：不用边缘正则——线性扫描；字符集表驱动化消复杂度） */
+const META_TRIM_CHARS = new Set([' ', '"', "'", ';', '>', '\t', '\r', '\n']);
+function trimMetaValue(v) {
+  let s = v;
+  while (s.length > 0 && META_TRIM_CHARS.has(s[0])) s = s.slice(1);
+  while (s.length > 0 && META_TRIM_CHARS.has(s[s.length - 1])) s = s.slice(0, -1);
+  return s;
+}
+/* 用指定 label 解整篇；环境不支持该 label → null（调用方保持原行为） */
+function tryDecode(buf, enc) {
+  try { return new TextDecoder(enc).decode(buf); } catch { return null; }
+}
+
+/* ③ 启发式回退（t11 §1.4 修订——旧「任意 1 个 U+FFFD 即整篇回退 gb18030」把 UTF-8 尾部截断 1 字节的
+ *   文件整篇重解成 mojibake——F7）：UTF-8 容错解码出现 **≥2 个** U+FFFD 且 gb18030 解码替换符更少
+ *   → 回退 gb18030（GBK 短文本任一汉字在 UTF-8 下产生 ≥2 个 FFFD——每个坏字节一个 → F6 不回归；
+ *   正常 UTF-8 仅损坏 1 字符时 1 个 FFFD → 保持 UTF-8，只损坏尾部 1 字符） */
+function gb18030Fallback(buf, headTxt) {
   if (countFffd(headTxt, 2) >= 2) {
     try {
       const g = new TextDecoder('gb18030').decode(buf);
