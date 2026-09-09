@@ -19,9 +19,9 @@
 
 ## 使用与分发义务（本项目执行清单）
 
-1. **内联保留版权**：index.html 内联的 `mammoth.browser.min.js` 头部注释保留 `mammoth v1.12.2 · BSD-2-Clause · (c) Michael Williamson`；vendor/ 留存原文件（已在 .gitignore 之外，随仓库提交）。
-2. **后续内联的库（B线 pdf.js/tesseract.js/read-excel-file）同样处理**：文件头注释写「包名 版本 许可 来源仓库」。
-3. **Apache-2.0 义务**：发布物（含 GitHub Release 的 tgz/zip 与最终分发物）附一份 Apache-2.0 许可证文本副本；tesseract.js 若上游带 NOTICE 文件一并附上（本轮归档时核对）。
+1. **版权声明随分发（2026-09-09 补录，实测状态）**：`vendor/` 现有许可文件——`pdfjs.LICENSE`（Apache-2.0）· `mammoth.LICENSE`（BSD-2-Clause）· `read-excel-file.LICENSE`（MIT）· `tesseract.LICENSE`（Apache-2.0）· `tesseract.min.js.LICENSE.txt` + `worker.min.js.LICENSE.txt`（对应两个 tesseract 构建件头部注释所指）· `cmaps/LICENSE`（Adobe BSD-3 类，库内原有）。`pdfjs.pdf.min.js` / `pdfjs.pdf.worker.min.js` 文件头自带 `@licstart` 版权声明；`mammoth.browser.min.js` / `read-excel-file.min.js` 压缩件头部无声明（以随附 LICENSE 履行）。
+2. **后续内联的库同样处理**：文件头注释写「包名 版本 许可 来源仓库」，或随分发附 `<库名>.LICENSE` 文本。
+3. **Apache-2.0 义务**：发布物（含 GitHub Release 的 tgz/zip 与最终分发物）附 Apache-2.0 许可证文本副本——**已履行（2026-09-09）**：`vendor/pdfjs.LICENSE` + `vendor/tesseract.LICENSE`（tesseract.js 上游无独立 NOTICE，未附）。
 4. **README 引用**：README.md「许可与合规」节指向本表（不做全文复制，状态性内容以本表为唯一权威源）。
 5. **公开前复核**：阶段 3（GitHub 发布）前再逐条核一遍版本与许可（包版本可能更新，以发布时 lock 为准）。
 
