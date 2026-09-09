@@ -316,6 +316,41 @@ function stripBracketed(code) {
   }
   return out;
 }
+/* numFmt 表（t8 重构：从 parseStylesDateFormats 抽出）：numFmtId → formatCode（缺 id 或 formatCode 跳过） */
+function parseNumFmtCodes(stylesXml) {
+  const codes = new Map();
+  const nfRe = /<numFmt\s[^>]*>/g;
+  let nm;
+  while ((nm = nfRe.exec(stylesXml))) {
+    const tag = nm[0];
+    const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(tag);
+    const fcM = /formatCode\s*=\s*"([^"]*)"/.exec(tag);
+    if (idM && fcM) codes.set(parseInt(idM[1], 10), decodeXml(fcM[1]));
+  }
+  return codes;
+}
+/* cellXfs 样式索引表（t8 重构）：<xf> 顺序的 numFmtId（缺属性 → 0） */
+function parseXfIds(cellXfsXml) {
+  const ids = [];
+  const xfRe = /<xf\s[^>]*>/g;
+  let xm;
+  while ((xm = xfRe.exec(cellXfsXml))) {
+    const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(xm[0]);
+    ids.push(idM ? parseInt(idM[1], 10) : 0);
+  }
+  return ids;
+}
+/* 内置日期格式 id（t15 口径）：14-22 / 27-36 / 45-47 / 50-58 */
+function isBuiltinDateId(id) {
+  return (id >= 14 && id <= 22) || (id >= 27 && id <= 36) || (id >= 45 && id <= 47) || (id >= 50 && id <= 58);
+}
+/* 日期判定（t8 重构）：内置 id 直接命中；否则自定义 formatCode 剥离方括号段后含 y/m/d/h/s（防 [Red] 误判） */
+function isDateFormat(id, numFmtCodes) {
+  if (!id) return false;
+  if (isBuiltinDateId(id)) return true;
+  const code = numFmtCodes.get(id);
+  return typeof code === 'string' && /[ymdhs]/i.test(stripBracketed(code));
+}
 /* t15：styles.xml → cellXfs 样式索引的日期判定表（内置日期 id 14-22/27-36/45-47/50-58 +
  * 自定义 formatCode 含 y/m/d/h/s 组合——方括号段剥离后判定，防 [Red] 颜色误判）。
  * 返回 { isDateStyle(styleIdx) }；styles.xml 缺失 → 无格式化（全 false）；结构损坏 → throw（回退库路径）。 */
@@ -323,32 +358,10 @@ function parseStylesDateFormats(stylesXml) {
   const start = stylesXml.indexOf('<cellXfs');
   const end = start >= 0 ? stylesXml.indexOf('</cellXfs>', start) : -1;
   if (start < 0 || end < 0) throw new Error('styles.xml 缺 cellXfs，回退库解析');
-  const cellXfsXml = stylesXml.slice(start, end);
-  const numFmtCodes = new Map();
-  const nfRe = /<numFmt\s[^>]*>/g;
-  let nm;
-  while ((nm = nfRe.exec(stylesXml))) {
-    const tag = nm[0];
-    const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(tag);
-    const fcM = /formatCode\s*=\s*"([^"]*)"/.exec(tag);
-    if (idM && fcM) numFmtCodes.set(parseInt(idM[1], 10), decodeXml(fcM[1]));
-  }
-  const xfIds = [];
-  const xfRe = /<xf\s[^>]*>/g;
-  let xm;
-  while ((xm = xfRe.exec(cellXfsXml))) {
-    const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(xm[0]);
-    xfIds.push(idM ? parseInt(idM[1], 10) : 0);
-  }
-  const isBuiltinDateId = (id) =>
-    (id >= 14 && id <= 22) || (id >= 27 && id <= 36) || (id >= 45 && id <= 47) || (id >= 50 && id <= 58);
+  const numFmtCodes = parseNumFmtCodes(stylesXml);
+  const xfIds = parseXfIds(stylesXml.slice(start, end));
   // 预计算每号样式的日期标记（运行时判定 O(1)，无闭包复杂度负担）
-  const dateFlags = xfIds.map((id) => {
-    if (!id) return false;
-    if (isBuiltinDateId(id)) return true;
-    const code = numFmtCodes.get(id);
-    return typeof code === 'string' && /[ymdhs]/i.test(stripBracketed(code));
-  });
+  const dateFlags = xfIds.map((id) => isDateFormat(id, numFmtCodes));
   return {
     isDateStyle(styleIdx) { return !!dateFlags[styleIdx]; },
   };
