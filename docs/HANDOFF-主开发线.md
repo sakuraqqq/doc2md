@@ -58,6 +58,12 @@
 2. ~~README 提示（图片型 PDF 建议用保留文字层的导出方式）~~ ✅ 已留档
 3. **低质页保图**（= 原「PDF 图纸页保图」backlog）：OCR 页误识/乱码多时输出整页图片引用——需拍板触发阈值（置信度/乱码率）与产物形式（assets + zip 联动），且需要可入库的合成样例
 
+**A4. 格式规范符合性（9/10；机制与清单见 `docs/spec-conformance-tests.md`）**
+1. **S2 删除线语义缺失**——`<s>/<del>/<strike>/CSS line-through` 全丢、DOCX `w:strike` 同样丢（产品级实测）→ **待修**（先红后绿）
+2. **S3 表格列位置错位**——① XLSX 稀疏单元格：`parseCellAttrs` 不取 `r` 列号 → `A2/C2` 变 `| A2 | C2 |  |`；② HTML `colspan` 未展开 → `| wide | c |  |` → **待修**
+3. **S4 编码探测窗口**——`decodeText` 只取前 4096 字节做 `<meta charset>`/U+FFFD 判定 → **待验证**（构造样例）
+4. **S1 表格列数对齐**——我们按最大列宽对齐（符合规范）→ 补断言锁死防回归
+
 **B. v0.1.2 剩余功能**：PDF 图纸页保图（27 页机械指导书实测触发）｜~~预览 1MB 截断~~ ✅ 已闭环（§8.1 批）
 
 **C. 发版**：~~v0.1.2~~ ✅ 已发布（`f5aed38` / tag / Release / Pages #35；观察期 09-09 起）｜**v0.1.3 首提交准备** ✅ 已落地（`03e3a03`）——v0.1.3 本体待 backlog 收敛（第七轮 §2.1/§2.3 + 第六轮 5 项 + PDF 图纸页保图）
@@ -90,6 +96,7 @@
 - 契约权威源：`tests/CONTRACT.md`（~170KB，组 A-P）· `tests/contract_v1.test.mjs`
 - 决策史：`docs/design-decisions.md`（DD-4~17）· 架构：`docs/architecture.md` · 许可：`docs/licenses.md`
 - 审查报告：第五轮 `docs/doc2md-第五轮审查报告-2026-09-08.md`（已闭环）· 第六轮 `docs/doc2md-第六轮审查报告-2026-09-08.md`（§2.4/§2.10/§3 已闭环；§2.2/§2.3/§2.6/§2.7/§2.9 未修）· 第七轮 `docs/doc2md-第七轮审查报告-2026-09-09.md`（§2.2/§2.4 已闭环；§2.1/§2.3 待做；§2.5/§2.6 已留档）
+- 上游对照：`docs/upstream-markitdown-checklist.md`（格式支持对照）· `docs/spec-conformance-tests.md`（**格式规范符合性测试机制 + 对照表**；外部线索台账在本地 `.私档/`，不入公开仓库）
 - 私人文档（`.私档/`，不进仓库）：沟通包、面谈准备、论文选题构想、软著 AI 声明速查、HANDOFF-商业化线（已从 docs/ 移入）
 
 ## 7. 团队状态
