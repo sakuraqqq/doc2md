@@ -26,6 +26,17 @@ const ROOT = nodePath.resolve(nodePath.dirname(fileURLToPath(import.meta.url)), 
 const DATA = nodePath.join(ROOT, 'tests', 'data');
 const PAGE = nodePath.join(ROOT, 'index.html');
 
+// real-cid-paper.pdf = 第三方期刊论文 → **不入库**（2026-09-10 用户拍板：移入本地 `.私档/`）。
+// 解析顺序：tests/data/（历史位置）→ .私档/（本地私有）；CI 干净检出两者皆无 → B5/C2 两组 **skip + 提示**（不是红）。
+// 字节锁改为测试内常量（原 manifest 登记值）——样例不在仓库后 manifest 不再登记它。
+const CID_PAPER = [nodePath.join(DATA, 'real-cid-paper.pdf'), nodePath.join(ROOT, '.私档', 'real-cid-paper.pdf')].find((p) =>
+  fs.existsSync(p)
+);
+const CID_PAPER_SKIP = CID_PAPER
+  ? false
+  : 'real-cid-paper.pdf 为第三方论文、不入库（本地放 .私档/）——提供后本组自动运行';
+const CID_PAPER_LOCK = { bytes: 511508, sha256: '703636ddf1756f8848761e3339c31686d175c769f559504edb27491e86290ff8' };
+
 const sha256 = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const readManifest = () => JSON.parse(fs.readFileSync(nodePath.join(DATA, 'manifest.json'), 'utf8'));
 
@@ -176,18 +187,17 @@ test('契约组 B：固定样例数据有效（6 样例 × 5 类，脱敏/中文
   }
 });
 
-// B5（t26 新增）：real-cid-paper.pdf（用户提供真实中文 PDF——CID 无 ToUnicode 的契约先红样例）
-// 字节锁语义：manifest 登记与磁盘一致（内容不可重生成——若字节变化=样例被改动，断言立即暴露）；
-// 不做内容随上游演进（与 real-tables.docx 等的 non-lock 不同：本样例是「锁定复现 CID 现象」的固定资产）。
-test('契约组 B5：real-cid-paper.pdf 字节锁与格式特征（t26 人工入库样例）', () => {
-  const p = nodePath.join(DATA, 'real-cid-paper.pdf');
-  assert.ok(fs.existsSync(p), 'real-cid-paper.pdf 缺失——从 Downloads 复制《质量链管理理论研究综述_金国强.pdf》为重命名此名');
-  const m = readManifest();
-  const rec = m.files['real-cid-paper.pdf'];
-  assert.ok(rec, 'real-cid-paper.pdf 未登记于 manifest（生成器只登记不生成——请运行 npm run gen:samples）');
-  const buf = fs.readFileSync(p);
-  assert.equal(buf.length, rec.bytes, 'real-cid-paper.pdf 大小与 manifest 不一致（样例被改动）');
-  assert.equal(crypto.createHash('sha256').update(buf).digest('hex'), rec.sha256, 'real-cid-paper.pdf SHA 与 manifest 不一致（样例被改动）');
+// B5（t26 新增）：real-cid-paper.pdf（真实中文 PDF——CID 无 ToUnicode 的契约先红样例）
+// 2026-09-10 口径变更（用户拍板）：该样例为**第三方期刊论文**，移出公开仓库（本地 `.私档/`）——
+// 字节锁改为测试内常量（原 manifest 登记值），文件缺失时本组 **skip**（不再是红）。
+test('契约组 B5：real-cid-paper.pdf 字节锁与格式特征（第三方论文样例——不入库）', { skip: CID_PAPER_SKIP }, () => {
+  const buf = fs.readFileSync(CID_PAPER);
+  assert.equal(buf.length, CID_PAPER_LOCK.bytes, 'real-cid-paper.pdf 大小与字节锁不一致（样例被改动）');
+  assert.equal(
+    crypto.createHash('sha256').update(buf).digest('hex'),
+    CID_PAPER_LOCK.sha256,
+    'real-cid-paper.pdf SHA 与字节锁不一致（样例被改动）'
+  );
   assert.equal(buf.toString('ascii').slice(0, 5), '%PDF-', 'real-cid-paper.pdf 非 PDF 头');
 });
 
@@ -373,9 +383,8 @@ test('契约组 C：浏览器端转换断言（双端：桌面 1280×800 + 手�
 //      判成假绿——本断言以 CJK 为锚，t27 修复（cmaps 或 OCR 路径）后应满足。
 // backend 不锁：文本层 cmaps 修复（pdfjs）或 OCR 降级（tesseract）任一路径均可——结果登记信息。
 // ---------------------------------------------------------------------------
-test('契约组 C2：CID 中文 PDF 可读性（real-cid-paper.pdf）—— 契约先红', async (t) => {
+test('契约组 C2：CID 中文 PDF 可读性（real-cid-paper.pdf；第三方论文样例——不入库）—— 契约先红', { skip: CID_PAPER_SKIP }, async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
-  assert.ok(fs.existsSync(nodePath.join(DATA, 'real-cid-paper.pdf')), 'real-cid-paper.pdf 缺失——从 Downloads 复制（见 B5）');
   let chromium;
   try {
     chromium = await loadPlaywright();
@@ -395,7 +404,7 @@ test('契约组 C2：CID 中文 PDF 可读性（real-cid-paper.pdf）—— 契�
     try {
       const page = await (await browser.newContext()).newPage();
       await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
-      const b64 = fs.readFileSync(nodePath.join(DATA, 'real-cid-paper.pdf')).toString('base64');
+      const b64 = fs.readFileSync(CID_PAPER).toString('base64');
       const res = await page.evaluate(
         async (arg) => {
           const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
