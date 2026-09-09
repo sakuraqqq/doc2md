@@ -35,6 +35,9 @@
 | 语料 | 上游仓库 / 来源 | 固定版本 | 许可 | 查证证据 | 结论 |
 |---|---|---|---|---|---|
 | BLNS（`tests/data/corpus/blns.txt`） | github.com/minimaxir/big-list-of-naughty-strings | commit `db33ec7`（2026-09-05 获取） | **MIT** | 上游 `LICENSE` 原文（"MIT License / Copyright (c) 2015-2020 Max Woolf"）已随语料存放于 `tests/data/corpus/blns.LICENSE` | ✅ 可商用；MIT 分发义务已履行（附版权声明与许可文本副本） |
+| `real-tables.docx`（`tests/data/`） | mammoth 官方测试集（github.com/mwilliamson/mammoth.js） | 随 v0.1.0 引入（2026-09-04 登记） | **BSD-2-Clause**（随 mammoth 同许可） | 与上表第 4 行 mammoth 同源许可（官方 LICENSE 原文已查证） | ✅ 可再分发（保留版权声明）；仅作本地测试输入 |
+| `real-schema.xlsx` / `real-date.xlsx`（`tests/data/`） | read-excel-file 官方测试集（gitlab.com/catamphetamine/read-excel-file） | 随 v0.1.0 引入（2026-09-04 登记） | **MIT**（随 read-excel-file 同许可） | 与上表第 5 行 read-excel-file 同源许可（npm 包 `license` 字段已查证） | ✅ 可再分发（保留版权声明）；仅作本地测试输入 |
+| `real-cid-paper.pdf` | 第三方期刊论文 | — | **未获授权** | — | ❌ **2026-09-10 起不再随仓库分发**：移入本地 `.私档/`；`tests/data/manifest.json` 不再登记；契约组 B5/C2 在样例缺失时 skip（详见 `tests/CONTRACT.md` §7） |
 
 - 语料只用于**本地测试输入**，不进入运行时产物（index.html/vendor/ 不含 BLNS 内容）。
 - 升级语料 = 改口径：同步 `tests/data/corpus/README.md`（提交号/大小/SHA）与契约组 N1。
