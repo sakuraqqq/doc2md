@@ -304,33 +304,42 @@ function quoteElToMd(quoteEl, ctx) {
   return out.join('\n');
 }
 
-function tableToMd(table, ctx) {
-  const rows = [];
-  // 只取本表直接子级行（审查报告 §1.1）：querySelectorAll('tr') 全局选择器会把嵌套表格的内层 <tr> 也选进来
-  // （DOMParser 会把无 tbody 的 <table><tr> 自动包进 tbody，故 thead/tbody/tfoot 三段都要覆盖）
-  const trs = table.querySelectorAll(':scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr');
-  trs.forEach((tr) => {
-    const cells = [];
-    tr.querySelectorAll(':scope > th, :scope > td').forEach((c) => {
-      const rs = parseInt(c.getAttribute('rowspan') || '1', 10) || 1;
-      const cs = parseInt(c.getAttribute('colspan') || '1', 10) || 1;
-      if ((rs > 1 || cs > 1) && ctx && ctx.warnings) {
-        const w = '表格含合并单元格（rowspan/colspan），已按普通单元格展平（v1 不支持合并单元格结构）';
-        if (!ctx.warnings.includes(w)) ctx.warnings.push(w);
-      }
-      // 单元格内子节点 walker（行内格式保留）；<br>→空格（审查报告 §1.2 建议 #2）；GFM 转义 |/换行
-      let cell = joinFrags(collectFrags(c, 'space', [])).trim();
-      cells.push(cell.replace(/\|/g, '\\|').replace(/\n/g, ' '));
-    });
-    if (cells.length) rows.push(cells);
-  });
-  if (rows.length === 0) return '';
+// 合并单元格告警（去重；v1 不支持合并结构，按普通单元格展平）
+function warnMerged(ctx) {
+  const w = '表格含合并单元格（rowspan/colspan），已按普通单元格展平（v1 不支持合并单元格结构）';
+  if (!ctx.warnings.includes(w)) ctx.warnings.push(w);
+}
+
+// 单元格 → md 文本：合并告警 + 行内 walker（<br>→空格，审查报告 §1.2 建议 #2）+ GFM 转义 |/换行
+function cellToMd(c, ctx) {
+  const rs = parseInt(c.getAttribute('rowspan') || '1', 10) || 1;
+  const cs = parseInt(c.getAttribute('colspan') || '1', 10) || 1;
+  if ((rs > 1 || cs > 1) && ctx && ctx.warnings) warnMerged(ctx);
+  const cell = joinFrags(collectFrags(c, 'space', [])).trim();
+  return cell.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+// 一行 → 单元格数组（只取直接子级 th/td）
+function rowCells(tr, ctx) {
+  return Array.from(tr.querySelectorAll(':scope > th, :scope > td')).map((c) => cellToMd(c, ctx));
+}
+
+// 行数组 → GFM 表：列数对齐到最大宽度，首行为表头
+function rowsToMd(rows) {
   const width = Math.max(...rows.map((r) => r.length));
   const norm = rows.map((r) => { while (r.length < width) { r.push(''); } return r; });
   const header = '| ' + norm[0].join(' | ') + ' |';
   const sep = '| ' + norm[0].map(() => '---').join(' | ') + ' |';
   const body = norm.slice(1).map((r) => '| ' + r.join(' | ') + ' |');
   return [header, sep, ...body].join('\n');
+}
+
+function tableToMd(table, ctx) {
+  // 只取本表直接子级行（审查报告 §1.1）：querySelectorAll('tr') 全局选择器会把嵌套表格的内层 <tr> 也选进来
+  // （DOMParser 会把无 tbody 的 <table><tr> 自动包进 tbody，故 thead/tbody/tfoot 三段都要覆盖）
+  const trs = table.querySelectorAll(':scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr');
+  const rows = Array.from(trs).map((tr) => rowCells(tr, ctx)).filter((cells) => cells.length > 0);
+  return rows.length === 0 ? '' : rowsToMd(rows);
 }
 
 /* t14 §1.4：PRE 围栏判定（块字符串首/尾闭合栅栏——``` 起收）——\n{3,} 归一化须跳过其内部
