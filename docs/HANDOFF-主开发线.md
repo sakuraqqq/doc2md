@@ -41,7 +41,7 @@
 2. §2.3 xlsx sheet XML 无解压护栏（sharedStrings 有 4MB，sheet 没有）
 3. §2.6 PDF 扩展 B 区 CJK 代理对（`slice(-1)` UTF-16 边界）
 4. §2.7 xlsx `<rPh>` 注音重复（collectTTexts 未排除）
-5. ~~§2.9 metrics 未接 CI~~ ⚠️ **部分闭环**（减脂批）：`eslint src/**` **0w/0e**、metrics 超限 **0**；**CI 门禁待拍板**（现在可设「超限数必须为 0」硬门禁，见 §8）
+5. ~~§2.9 metrics 未接 CI~~ ✅ **已闭环**（2026-09-10 拍板）：CI 新增 `npm run metrics` 硬门禁（**超限函数数必须为 0**）；`AGENTS.md` 基线改为实测（`eslint src/**` 0w / metrics 0 / 重复率 4%）；`eslint src/**` 已 0w/0e、metrics 超限 0
 6. ~~§2.4 单文件内嵌导出 O(n²) + 无上限~~ ✅ **已闭环（§8.1 批，`70fb56a`）**——单遍替换 + 20MB 上限自动切 zip（拍板 T-7）
 7. ~~§2.10 `patches/router-bootstrap.mjs` 死文件 + 预览全量灌 textarea~~ ✅ **已闭环**——死文件移入 `.私档/`（`9a53d15`）+ 预览 1MB 截断（`24e22bd`）
 8. ~~§3 文档口径漂移~~ ✅ **已闭环（`fb0710b` + `2f38ad3`）**——template 徽标/注释 + SW v4 口径 + 体积数字回填 **102KB（104,064 B）** + RELEASE-CHECKLIST 补 CACHE_NAME 硬检查；**architecture §4.4 经实测回读已于 `d19d565` 同步，无残余**

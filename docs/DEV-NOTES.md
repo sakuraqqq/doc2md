@@ -723,7 +723,7 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 ### 防再犯
 - 等价性台一律「快照 + `git hash-object` 校验快照 = 基线 blob」，杜绝拿改后代码自比自；台子必须带**负对照**（人为改一处必须报差异）。
 - 批次收尾顺序固化：`build` → `test` → 回读产物 SHA → 提交产物 → 文档落盘。
-- **重构配额的可执行化**（待拍板）：CI 加 metrics 门禁（现在超限 = 0，可设「超限数必须为 0」硬门禁）；`AGENTS.md` 基线数字改为实测口径；「每次改动」降级为「每批至少 1 处 ≤50 行重构」并在 DEV-NOTES 记 before→after。
-- **口径澄清（待拍板）**：专项减脂批中「单次 ≤50 行」按函数体量放宽（本批 6 处超：`zipEntry` 55+、`fragFor` 121、`liToLines` 118、`pdfConvert` 105、`ommlParts` 51+、`docxParseForMd` 57+）；顺手重构仍守 ≤50 行。
+- **重构配额可执行化（2026-09-10 用户拍板，已落地）**：① CI 加 `npm run metrics` **硬门禁——超限函数数必须为 0**（`.github/workflows/tests.yml` 新增步骤；`tools/metrics.mjs` 超限即 `process.exitCode = 1`）；② `AGENTS.md` 基线改为实测口径（`eslint src/**` **0w** / metrics 超限 **0** / 重复率 **4%**；`tools/` 2 条告警来自 gitignored 私有脚本、不入库、CI 不计）；③ 每批记 metrics **before → after**（本批 23 → 0）。
+- **口径澄清（2026-09-10 用户拍板「认」）**：专项减脂批中「单次 ≤50 行」按函数体量放宽（本批 6 处超：`zipEntry` 55+、`fragFor` 121、`liToLines` 118、`pdfConvert` 105、`ommlParts` 51+、`docxParseForMd` 57+），**代价是必须配等价性台**（快照 blob 经 `git hash-object` 校验 = 基线 blob，且负对照能报差异）；顺手重构仍守 ≤50 行。
 
 
