@@ -29,7 +29,7 @@
 | B1.*（6） | 每个样例与 manifest 字节级一致（大小 + SHA256；改动 = 改口径） | 静态 | 🟢 绿（生成后） |
 | B2 | 格式特征：txt 头 / html 含 `<table`+`<img` / docx 含 `word/document.xml` / xlsx 含 `xl/worksheets` / pdf 头 `%PDF-` / png 签名 + 尺寸 | 静态 | 🟢 绿（生成后） |
 | B3.*（3） | `real-*` 真实样例可读性：zip 解压成功 + 必需部件（docx 含 `word/document.xml` 且含 `<w:tbl>`；xlsx 含 `xl/workbook.xml` + `xl/worksheets/sheet*.xml`）；**非字节锁、非行为契约**（内容随上游演进） | 静态 | 🟢 绿（2026-09-04 已登记，离线验证通过） |
-| B5 | real-cid-paper.pdf 字节锁与格式特征（t26 新增——**LOCK**，与 real-* non-lock 不同：本样例是「锁定复现 CID 现象」的固定资产，不可随上游演进） | manifest 一致 + `%PDF-` 头 | 🟢 绿（t26 离线实测：manifest 记录 511,508 B / SHA `703636DD…` 与磁盘一致；4 页中文综述、公开性质无个人敏感信息） |
+| B5 | real-cid-paper.pdf 字节锁与格式特征（t26 新增——**LOCK**；**2026-09-10 口径变更：第三方论文样例移出公开仓库（本地 `.私档/`），字节锁改为测试内常量，样例缺失时本组 skip**） | 测试内常量一致 + `%PDF-` 头 | 🟢 绿（本地含样例时）/ ⏭️ skip（干净检出无样例——不再是红） |
 
 ### 契约组 C — 浏览器端转换（双端 × 6 样例 = 12 用例；每用例 5+1 断言）
 
@@ -43,9 +43,9 @@
 | C6 | docx 保留 GFM 表格（仅 docx 用例附加）：表格行 ≥2 行 + 表头分隔行（`| --- |`）+ 表头单元格文本「项目」「状态」 | `gfmTableIssues()` 为空（纯函数，见 contract_v1.test.mjs） | 🟢 绿（宿主浏览器实测 docx 输出 `| 项目 | 状态 |` + `| --- | --- |`，DD-11 附录） |
 | C7 | **成功转换用例附加**（ZCode A 批 ①，先红）：`meta.elapsedMs > 0`——成功路径必须回填耗时（失败/护栏路径不计） | `> 0` | 🔴 红（t20 实测：成功路径 meta.elapsedMs=0——convert.js 成功 return 的 meta 未写 elapsedMs（仅 done() 失败路径更新，恒 0）；修复方向=t21 成功路径 `meta.elapsedMs = Math.round(performance.now() - t0)`） |
 
-### 契约组 C2 — CID 中文 PDF 可读性（2026-09-05 新增：契约先红 t26；样例 real-cid-paper.pdf）
+### 契约组 C2 — CID 中文 PDF 可读性（2026-09-05 新增：契约先红 t26；样例 real-cid-paper.pdf——**2026-09-10 起不入库**）
 
-样例：用户提供《质量链管理理论研究综述_金国强.pdf》（4 页学术综述，公开性质、无个人敏感信息；CID 内嵌字体无 ToUnicode → pdf.js 文本层输出符号流 garbage——**LOCK** 字节锁，B5 断言）。
+样例：`real-cid-paper.pdf`（4 页中文综述；CID 内嵌字体无 ToUnicode → pdf.js 文本层输出符号流 garbage）。**2026-09-10 口径变更（用户拍板）**：该样例为**第三方期刊论文**，移出公开仓库 → 本地 `.私档/real-cid-paper.pdf`；测试解析顺序 `tests/data/` → `.私档/`，两者皆无时 **C2/B5 整组 skip + 提示**（干净检出/CI 即此情形）；字节锁值改为测试内常量（原 manifest 登记值 511,508 B / SHA `703636DD…`）。
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
@@ -349,7 +349,7 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | `real-tables.docx` | DOCX | mammoth.js 官方测试集——真实表格样本（C6 GFM 表格场景的真实补强） | 13,087 B / SHA 9F75A82D…；zip 合法，`word/document.xml` 含 1×`w:tbl`（2×2，表头 Top left/Top right） | **non-lock**：不做字节锁，允许随上游演进 |
 | `real-schema.xlsx` | XLSX | read-excel-file 官方测试集——结构/表头真实样本 | 3,117 B / SHA 4E70C608…；zip 合法，含 `xl/workbook.xml`+`sheet1.xml`+`sharedStrings.xml`+`styles.xml` | 同上 |
 | `real-date.xlsx` | XLSX | read-excel-file 官方测试集——日期类型真实样本 | 4,659 B / SHA 72A2B9A9…；zip 合法，含 workbook/sheet/styles/sharedStrings（`xl/` 目录条目正常） | 同上 |
-| `real-cid-paper.pdf` | PDF（真实中文，4 页） | 用户提供《质量链管理理论研究综述_金国强》（学术综述，公开性质、无个人敏感信息）——**CID 内嵌字体无 ToUnicode 映射**：契约组 C2 的契约先红样例（锁定复现 CID 乱码现象） | 511,508 B / SHA `703636DD…`（与用户 Downloads 源文件一致 2026-09-05 核验）；%PDF- 头；4 页中文正文 | **LOCK（字节锁）**：与 real-* non-lock 不同——本样例是复现 CID 现象的固定资产（discardable 只随 bug 修复生命周期），内容不可随上游演进；manifest 登记由 gen-samples「只登记不生成」；B5 断言锁一致性 |
+| `real-cid-paper.pdf` | PDF（真实中文，4 页） | 第三方期刊论文——**2026-09-10 起不入库**（移入本地 `.私档/`）：C2 契约先红样例（CID 无 ToUnicode → 乱码现象复现） | 511,508 B / SHA `703636DD…`（字节锁值改为**测试内常量**）；%PDF- 头；4 页中文正文 | **不入库（第三方版权）**：manifest 不再登记；测试解析 `tests/data/` → `.私档/`，皆无则 **B5/C2 skip + 提示** |
 | `real-big.xlsx` | XLSX（合成，50,000 行 × 3 列） | 契约组 G2——大行数流式（L4a 性能基线/L4b 护栏/L5 文案微瑕） | 773,494 B / SHA `1C191958…`；zip 合法，`xl/worksheets/sheet1.xml` 含 50,001×`<row>`（表头+50K 数据；共享串/数值混合结构确定性生成） | 字节锁（manifest）；gen-samples 确定性生成（生成而非人工） |
 | `sample-inlinestr.xlsx` | XLSX（合成，inlineStr 单元格） | 契约组 G2 L6——inlineStr 文本保留（t34 发现项；t=`s` 共享串 + 数值对照列） | 1,973 B / SHA `90DE7256…`；zip 合法，sheet1.xml 含 2×`t="inlineStr"`（`<is><t>`）单元格 + 1×共享串 + 1×数值 | 字节锁（manifest）；确定性生成（幂等已验证） |
 | `sample-legacy-doc.doc` | DOC（合成 OLE2） | 契约组 O——.doc 老格式友好提示（真实用户反馈 2026-09-08：拖入 .doc 转换失败无「怎么办」提示；脱敏合成替代，不收录用户真实文件） | 512 B / SHA `A899FB44…`；前 8 字节 = OLE2 魔数 `D0CF11E0A1B11AE1`（Word 97-2003 签名），余为确定性 0x00 填充 | 字节锁（manifest）；gen-samples 确定性生成（不注册真实文件） |
@@ -412,6 +412,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-10 公开仓库合规清扫（用户拍板；口径变更）**：① **`real-cid-paper.pdf`（第三方期刊论文）移出公开仓库** → 本地 `.私档/`；测试解析顺序 `tests/data/` → `.私档/`，皆无则 **B5/C2 整组 skip + 提示**（CI/干净检出即此情形，不再是红）；字节锁由 manifest 改为**测试内常量**（511,508 B / SHA `703636DD…`）；`tests/data/manifest.json` 重生成后不再登记该样例。② `docs/图片导出方案-调研-20260907.md`（含第三方逐字引用）移入 `.私档/`，CONTRACT 两处引用改为「本地私有调研文档」。③ 新增 `docs/spec-conformance-tests.md`（规范符合性机制，S1-S4），公开侧零第三方编号/链接。④ 未推历史已改写（8 个提交 → 3 个干净提交），含第三方文本的中间版本从未推送。
 - **2026-09-10 减脂批（AgentTeams `doc2md-slim`；22 提交 / 19 个函数出 OVER 清单）**：目标 metrics 超限 23 → ≤15，**实达 0**。纪律：每函数一提交（每提交只动 1 个文件）、等价性台先行（快照 blob 经 `git hash-object` 校验 = 基线 blob）、**`git log b9a8388..HEAD -- tests/` 为空**（断言/样例零改动）。**等价性**：实现方 5 台 + qa-dev 独立台（逐提交 2912 点 / Node 1291 / 真实 Chromium 338）全 **0 差异**（含负对照可检出）。**权威跑（用户终端执行）**：`npm run build` → index.html **108,849 B / SHA `C955D7E67249AB28CFD64B1D7F48EF8A308CE2C111D08C2F60A3940D963CCB8E`**（提交 `1a14b08`，产物已核验含 `FRAG_TAGS`/`pushMarkerLine`/`OMML_HANDLERS`/`findEocd` 等新结构）→ `npm test` **153/153 pass / 0 fail（33.7s）** + `pwa-audit` **48/48** + `verify:ocr` **93% PASS**；`node tools/metrics.mjs` 超限 **0** / 重复率 4% / exit 0；`eslint "src/**/*.js"` **0 error / 0 warning**（批前 26w）。**待拍板**：专项减脂批的「单次 ≤50 行」按函数体量放宽（6 处超，见 DEV-NOTES）；metrics 接 CI 硬门禁（现可设「超限 = 0」）；`AGENTS.md` 基线数字修正（原写 lint 37w / metrics 26，实测 src 0w / metrics 0）。
 
 - **2026-09-09 真实样例批（契约组 R：OCR 中文空格合并；captain 单会话自干，用户「按建议走」）**：来源 = 用户实际转换 3 份真实 PDF（其中 2 份为 PPT 导出的**图片型 PDF、文字层为空**，独立工具实测提取 0 行）→ 全走 OCR，CJK 前置空格率 **72–82%**。契约先红 `1701efd`（组 R：R1 纯函数用例表 12 例 / R2 源码级接入）→ 实现 `68ef2a6`（新增 `src/cjk.js` + `pdf.js` OCR 路径接入 + `__doc2md.collapseCjkSpaces` 挂钩）→ 产物 `1abbe18`（index.html **104,793 B** / SHA `9E859C46FD8D284E1EECBADF8524F3B68E22FD337E34BEA82B5FA8EE59CF5907`）。**实测（本会话实跑）**：先红 = 153 tests / **150 pass / 3 fail**（R1 `collapseCjkSpaces 未挂载`、R2 `index.html 不含 collapseCjkSpaces`）；后绿 = **153/153 pass / 0 fail（39.8s）**；pwa 48/48；`eslint src/**` 26w/0e（零新增）。**真实样例指标（本地核验；样例含个人信息，不入库）**：OCR 页空格率 **72–82% → 1.4–4.9%**；文字层页 **0–1.5% 前后不变**（证「只动 OCR」）。**踩坑**：标点字符类里 `[` `]` 未转义 → 字符类提前闭合、合并静默失效（只剩「数字+空格+CJK」生效）——已转义并写入代码注释。
