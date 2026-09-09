@@ -12,46 +12,66 @@ const XLSX_ROW_LIMIT = 1000;
 // sharedStrings 解压后大小护栏（t33 内存保护）：超限 → 回退 read-excel-file 库解析路径
 const XLSX_STRINGS_GUARD_BYTES = 4 * 1024 * 1024;
 
+/* EOCD 定位（t8 重构：从 zipEntry 抽出）——尾部向前最多 65557 字节搜 0x06054b50；-1 = 未找到 */
+function findEocd(buf, n) {
+  for (let i = n - 22; i >= Math.max(0, n - 65557); i--) {
+    if (buf[i] === 0x50 && buf[i + 1] === 0x4b && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) return i;
+  }
+  return -1;
+}
+
+/* 中央目录条目定位（t8 重构：从 zipEntry 抽出）——遍历 EOCD 声明的条目找 wantedName；
+ * 返回 { method, compSize, localOff }；签名/边界异常 → null（调用方按「无此条目」回退） */
+function findCentralEntry(buf, dv, n, eocd, wantedName) {
+  const count = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true);
+  for (let k = 0; k < count; k++) {
+    if (off + 46 > n || dv.getUint32(off, true) !== 0x02014b50) return null;
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const commentLen = dv.getUint16(off + 32, true);
+    const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
+    if (name === wantedName) {
+      return {
+        method: dv.getUint16(off + 10, true),
+        compSize: dv.getUint32(off + 20, true),
+        localOff: dv.getUint32(off + 42, true),
+      };
+    }
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  return null;
+}
+
+/* 条目数据解压（t8 重构：从 zipEntry 抽出）——method 0 = 原样；否则 deflate-raw；
+ * 无 DecompressionStream / 解压失败 → null（按「无此条目」处理，调用方回退；t12 线性无吞异常） */
+async function inflateEntry(data, compSize, method) {
+  if (method === 0) return { data, compSize };
+  if (typeof DecompressionStream === 'undefined') return null; // 极端环境：无法解压
+  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  const out = await new Response(stream).arrayBuffer().catch(() => null);
+  return out ? { data: new Uint8Array(out), compSize } : null;
+}
+
 /* ZIP 中央目录读取指定条目（零依赖：浏览器内置 DecompressionStream('deflate-raw')；用于 xlsx 自解析）
  * 返回 { data, compSize }（compSize 用于 sharedStrings 等大条目的护栏预判——不先解压） */
 export async function zipEntry(buf, wantedName) {
   const n = buf.byteLength;
   if (n < 22) return null;
-  for (let i = n - 22; i >= Math.max(0, n - 65557); i--) {
-    if (buf[i] === 0x50 && buf[i + 1] === 0x4B && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
-      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-      const count = dv.getUint16(i + 10, true);
-      let off = dv.getUint32(i + 16, true);
-      for (let k = 0; k < count; k++) {
-        if (off + 46 > n || dv.getUint32(off, true) !== 0x02014b50) return null;
-        const method = dv.getUint16(off + 10, true);
-        const compSize = dv.getUint32(off + 20, true);
-        const nameLen = dv.getUint16(off + 28, true);
-        const extraLen = dv.getUint16(off + 30, true);
-        const commentLen = dv.getUint16(off + 32, true);
-        const localOff = dv.getUint32(off + 42, true);
-        const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
-        if (name === wantedName) {
-          // t11 §1.5 边界防护：localOff 越界（损坏 zip 中央目录被篡改指向界外）→ 按「无此条目」返回 null
-          // （调用方回退库/单 sheet），不透 DataView/typed array 裸异常给用户（G4-1 契约）
-          if (localOff + 30 > n) return null;
-          const ln = dv.getUint16(localOff + 26, true);
-          const le = dv.getUint16(localOff + 28, true);
-          if (localOff + 30 + ln + le + compSize > n) return null;
-          const data = buf.subarray(localOff + 30 + ln + le, localOff + 30 + ln + le + compSize);
-          if (method === 0) return { data, compSize };
-          if (typeof DecompressionStream === 'undefined') return null; // 极端环境：无法解压
-          const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-          // 解压失败按「无此条目」处理（调用方回退）——Promise 级 .catch，线性无吞异常（t12）
-          const out = await new Response(stream).arrayBuffer().catch(() => null);
-          return out ? { data: new Uint8Array(out), compSize } : null;
-        }
-        off += 46 + nameLen + extraLen + commentLen;
-      }
-      return null;
-    }
-  }
-  return null;
+  const eocd = findEocd(buf, n);
+  if (eocd < 0) return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const entry = findCentralEntry(buf, dv, n, eocd, wantedName);
+  if (!entry) return null;
+  // t11 §1.5 边界防护：localOff 越界（损坏 zip 中央目录被篡改指向界外）→ 按「无此条目」返回 null
+  // （调用方回退库/单 sheet），不透 DataView/typed array 裸异常给用户（G4-1 契约）
+  const { method, compSize, localOff } = entry;
+  if (localOff + 30 > n) return null;
+  const ln = dv.getUint16(localOff + 26, true);
+  const le = dv.getUint16(localOff + 28, true);
+  if (localOff + 30 + ln + le + compSize > n) return null;
+  const start = localOff + 30 + ln + le;
+  return inflateEntry(buf.subarray(start, start + compSize), compSize, method);
 }
 
 /* xlsx workbook 映射（t8 · 第五轮审查 §1.1）：解析 xl/workbook.xml（<sheet> 按 tab 顺序，含 name + r:id）
