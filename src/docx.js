@@ -200,6 +200,34 @@ function docxInjectLatex(md, maths) {
   return out;
 }
 
+/* 单张图片 → { src, alt }（t11 重构：从 docxConvert 的 convertImage 回调抽出）。
+ * state = { idx, seq }：idx 按文档序取 docPr（name → alt）；seq 仅成功抽取时递增（命名 assets/<base>-<N>.<ext>） */
+async function docxImageElement(image, state, docBase, imgNames, assets) {
+  const ct = image.contentType || 'image/png';
+  const metaEntry = imgNames[state.idx] || {};
+  state.idx++;
+  const alt = docxAltFromName(metaEntry.name);
+  // 读取失败按空图处理（上层已有 bytes==null → 空 src/alt 路径）：Promise 级 .catch，无 try/catch 吞异常
+  const ab = await image.readAsArrayBuffer().catch(() => null);
+  const bytes = ab ? new Uint8Array(ab) : null;
+  if (!bytes || bytes.length === 0) return { src: '', alt: '' };
+  // 方案 A（2026-09-07 拍板）：阈值 0 = 全抽取——所有图片一律入 assets/ 附件 + md 相对路径引用
+  // （废止旧 ≤100KB 内嵌 data URI 分支；单文件内嵌由导出侧 ui.js 按需生成，见契约组 I）
+  state.seq++;
+  const name = 'assets/' + docBase + '-' + state.seq + '.' + extForContentType(ct);
+  assets.push({ name, blob: new Blob([bytes], { type: ct }), size: bytes.length, type: ct });
+  return { src: name, alt };
+}
+/* warnings 汇总（t11 重构：从 docxConvert 抽出）——mammoth 非图片提示 + 图片抽取提示（顺序保持） */
+function docxCollectWarnings(result, assets, warnings) {
+  if (result.messages && result.messages.length > 0) {
+    // 图片相关消息：成功路径已由「全量抽取」处理，不再提示「已忽略」；仅透出非图片提示
+    const nonImg = result.messages.filter((m) => !String(m.type || '').includes('image') && !String(m.message || '').includes('image'));
+    if (nonImg.length > 0) warnings.push('转换器提示 ' + nonImg.length + ' 条消息（样式近似渲染）');
+  }
+  if (assets.length > 0) warnings.push(assets.length + ' 张图片已抽取为附件，下载时随 zip 一并取出');
+}
+
 /** docx 转换器（注册表 contract：见 docs/architecture.md §4.2 + t6 扩展） */
 export async function docxConvert(file, buf) {
   const warnings = [];
@@ -218,33 +246,11 @@ export async function docxConvert(file, buf) {
   entries['word/document.xml'] = new TextEncoder().encode(parsed.xml);
   const repacked = F.zipSync(entries);
   const arrayBuffer = repacked.buffer.slice(repacked.byteOffset, repacked.byteOffset + repacked.byteLength);
-  let imgIdx = 0, imgSeq = 0;
+  const state = { idx: 0, seq: 0 };
   const docBase = docxSafeBase(file.name);
-  const result = await window.mammoth.convertToHtml({ arrayBuffer }, {
-    convertImage: window.mammoth.images.imgElement(async (image) => {
-      const ct = image.contentType || 'image/png';
-      const metaEntry = parsed.imgNames[imgIdx] || {};
-      imgIdx++;
-      const alt = docxAltFromName(metaEntry.name);
-      let bytes = null;
-      // 读取失败按空图处理（上层已有 bytes==null → 空 src/alt 路径）：Promise 级 .catch，无 try/catch 吞异常
-      const ab = await image.readAsArrayBuffer().catch(() => null);
-      bytes = ab ? new Uint8Array(ab) : null;
-      if (!bytes || bytes.length === 0) return { src: '', alt: '' };
-      // 方案 A（2026-09-07 拍板）：阈值 0 = 全抽取——所有图片一律入 assets/ 附件 + md 相对路径引用
-      // （废止旧 ≤100KB 内嵌 data URI 分支；单文件内嵌由导出侧 ui.js 按需生成，见契约组 I）
-      imgSeq++;
-      const name = 'assets/' + docBase + '-' + imgSeq + '.' + extForContentType(ct);
-      assets.push({ name, blob: new Blob([bytes], { type: ct }), size: bytes.length, type: ct });
-      return { src: name, alt };
-    }),
-  });
-  if (result.messages && result.messages.length > 0) {
-    // 图片相关消息：成功路径已由「全量抽取」处理，不再提示「已忽略」；仅透出非图片提示
-    const nonImg = result.messages.filter((m) => !String(m.type || '').includes('image') && !String(m.message || '').includes('image'));
-    if (nonImg.length > 0) warnings.push('转换器提示 ' + nonImg.length + ' 条消息（样式近似渲染）');
-  }
-  if (assets.length > 0) warnings.push(assets.length + ' 张图片已抽取为附件，下载时随 zip 一并取出');
+  const convertImage = (image) => docxImageElement(image, state, docBase, parsed.imgNames, assets);
+  const result = await window.mammoth.convertToHtml({ arrayBuffer }, { convertImage: window.mammoth.images.imgElement(convertImage) });
+  docxCollectWarnings(result, assets, warnings);
   // DOMParser 还原 HTML 实体；共享 htmlToMarkdown（TXT/HTML 路径同款，回归由契约组 text-html 用例保障）
   // ctx.warnings：透出表格合并单元格等结构性提示（P0 修复 §1.2）
   const md0 = htmlToMarkdown(result.value || '', { warnings });
