@@ -48,6 +48,35 @@ function walkFiles(dir, exts, out) {
   return out;
 }
 
+/* ---------- 只看仓库文件（2026-09-09）----------
+ * metrics 扫 src/ + tools/ 整目录，会把 .gitignore 里的私有脚本（如 tools/gen-copyright.mjs、
+ * tools/_verify-clean.mjs）一并计入 → 本地数字与 CI（干净检出）不一致。
+ * 这里按 .gitignore 的「精确路径」与「目录前缀」两类条目过滤（glob 型条目如 *.log 不涉及扫描目标）。
+ */
+function loadIgnoreFilter() {
+  let txt = '';
+  try {
+    txt = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
+  } catch {
+    return () => false; // 无 .gitignore（异常环境）→ 不过滤
+  }
+  const entries = [];
+  for (const raw of txt.split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#') || line.startsWith('!') || line.includes('*')) continue;
+    let e = line;
+    while (e.startsWith('/')) e = e.slice(1); // 去前导/尾随斜杠（不用正则——避免 super-linear-regex 告警）
+    while (e.endsWith('/')) e = e.slice(0, -1);
+    entries.push(e);
+  }
+  return (abs) => {
+    const rel = path.relative(ROOT, abs).split(path.sep).join('/');
+    return entries.some((e) => rel === e || rel.startsWith(e + '/'));
+  };
+}
+const isIgnored = loadIgnoreFilter();
+const toRel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
+
 function isFunctionNode(n) {
   return (
     n.type === 'FunctionDeclaration' ||
@@ -133,8 +162,8 @@ function cognitive(node) {
 const targets = [];
 const srcDir = path.join(ROOT, 'src');
 const toolsDir = path.join(ROOT, 'tools');
-if (fs.existsSync(srcDir)) targets.push(...walkFiles(srcDir, ['.js'], []));
-if (fs.existsSync(toolsDir)) targets.push(...walkFiles(toolsDir, ['.mjs'], []));
+if (fs.existsSync(srcDir)) targets.push(...walkFiles(srcDir, ['.js'], []).filter((f) => !isIgnored(f)));
+if (fs.existsSync(toolsDir)) targets.push(...walkFiles(toolsDir, ['.mjs'], []).filter((f) => !isIgnored(f)));
 
 function collectFunctions(node, parent, out) {
   if (isFunctionNode(node)) {
@@ -179,24 +208,26 @@ const jscpdOut = path.join(ROOT, '.tmp', 'metric-jscpd');
 fs.mkdirSync(jscpdOut, { recursive: true });
 const jscpdReport = path.join(jscpdOut, 'jscpd-report.json');
 const jscpdBin = path.join(ROOT, 'node_modules', 'jscpd', 'run-jscpd.js');
-spawnSync(
-  process.execPath,
-  [
-    jscpdBin,
-    ...jscpdTargets,
-    '--format',
-    'javascript',
-    '--min-lines',
-    '5',
-    '--min-tokens',
-    '50',
-    '--reporters',
-    'json',
-    '--output',
-    jscpdOut,
-  ],
-  { cwd: ROOT, encoding: 'utf8', shell: false }
-);
+// 私有/忽略文件同样排除（与函数复杂度口径一致——只看仓库文件）
+const jscpdIgnored = [srcDir, toolsDir]
+  .filter((d) => fs.existsSync(d))
+  .flatMap((d) => walkFiles(d, ['.js', '.mjs'], []).filter(isIgnored).map(toRel));
+const jscpdArgs = [
+  jscpdBin,
+  ...jscpdTargets,
+  '--format',
+  'javascript',
+  '--min-lines',
+  '5',
+  '--min-tokens',
+  '50',
+  '--reporters',
+  'json',
+  '--output',
+  jscpdOut,
+];
+if (jscpdIgnored.length) jscpdArgs.push('--ignore', jscpdIgnored.join(','));
+spawnSync(process.execPath, jscpdArgs, { cwd: ROOT, encoding: 'utf8', shell: false });
 if (fs.existsSync(jscpdReport)) {
   try {
     const rep = JSON.parse(fs.readFileSync(jscpdReport, 'utf8'));
@@ -225,7 +256,7 @@ lines.push(
   `> 生成命令：\`npm run metrics\`（node tools/metrics.mjs）；生成时间：${new Date().toISOString()}`
 );
 lines.push(
-  '> 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）；与 eslint.config.js 白名单一致。'
+  '> 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。'
 );
 lines.push('> 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。');
 lines.push('');
