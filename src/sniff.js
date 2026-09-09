@@ -109,6 +109,22 @@ function countFffd(s, cap) {
 export function normWs(s) { return s.replace(/\s+/g, ' '); }
 
 /* ---------- 类型嗅探（magic bytes，不信任扩展名） ---------- */
+const OLE2_SIG = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const JPEG_SIG = [0xff, 0xd8, 0xff];
+const BOM_SIGS = [
+  [0xef, 0xbb, 0xbf],
+  [0xff, 0xfe],
+  [0xfe, 0xff],
+];
+// ASCII 前缀型图片签名（顺序无关——各前缀互斥）
+const ASCII_IMAGE_SIGS = [
+  ['GIF8', 'gif'],
+  ['BM', 'bmp'],
+  ['II*\u0000', 'tiff'],
+  ['MM\u0000*', 'tiff'],
+];
+
 export async function sniff(buf) {
   const head = buf.subarray(0, 65536);
   if (head.length === 0) return { type: 'unknown', detail: 'empty' };
@@ -118,32 +134,49 @@ export async function sniff(buf) {
   if (pdfAt >= 0 && pdfAt <= 1024) return { type: 'pdf' };
   // OLE2 复合文档魔数（Word 97-2003 二进制 .doc 等老 Office 格式；t5 新增·契约组 O——专型化便于
   // convert 层给「另存为 .docx」友好指引；不再落入未知二进制/文本，E5 断言允许 unknown|doc）
-  if (startsWith(head, [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])) return { type: 'doc' };
-  // 图片
-  if (startsWith(head, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) return { type: 'image', detail: 'png' };
-  if (head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF) return { type: 'image', detail: 'jpeg' };
-  if (ascii.startsWith('GIF8')) return { type: 'image', detail: 'gif' };
-  if (ascii.startsWith('BM')) return { type: 'image', detail: 'bmp' };
-  if (ascii.startsWith('RIFF') && ascii.slice(8, 12) === 'WEBP') return { type: 'image', detail: 'webp' };
-  if (ascii.startsWith('II*\u0000') || ascii.startsWith('MM\u0000*')) return { type: 'image', detail: 'tiff' };
+  if (startsWith(head, OLE2_SIG)) return { type: 'doc' };
+  const image = imageKind(head, ascii);
+  if (image) return { type: 'image', detail: image };
   // ZIP 系（docx/xlsx/pptx/zip）
-  if (head[0] === 0x50 && head[1] === 0x4B && (head[2] === 0x03 || head[2] === 0x05 || head[2] === 0x07)) {
-    if (ascii.includes('word/')) return { type: 'docx' };
-    if (ascii.includes('xl/')) return { type: 'xlsx' };
-    if (ascii.includes('ppt/')) return { type: 'pptx' };
-    return { type: 'zip' };
-  }
+  if (isZipHead(head)) return zipKind(ascii);
   // BOM 文本优先：UTF-16/UTF-8 BOM 先判为文本（UTF-16 含大量 NUL，必须先于二进制启发式，审查报告 §1.3 建议 #3）
-  if (startsWith(head, [0xEF, 0xBB, 0xBF]) || startsWith(head, [0xFF, 0xFE]) || startsWith(head, [0xFE, 0xFF])) {
-    return { type: 'text' };
-  }
+  if (BOM_SIGS.some((sig) => startsWith(head, sig))) return { type: 'text' };
   // 二进制启发式：头部 4KB 采样，NUL/控制字符（<0x09/0x0A/0x0D 之外的 0x00-0x08、0x0E-0x1F）占比 >30% → unknown(binary)
-  const sample = head.subarray(0, 4096);
+  if (ctrlRatio(head.subarray(0, 4096)) > 0.3) return { type: 'unknown', detail: 'binary' };
+  return { type: 'text' };
+}
+
+/* 图片签名 → detail（无命中返回 null） */
+function imageKind(head, ascii) {
+  if (startsWith(head, PNG_SIG)) return 'png';
+  if (startsWith(head, JPEG_SIG)) return 'jpeg';
+  for (const [prefix, kind] of ASCII_IMAGE_SIGS) {
+    if (ascii.startsWith(prefix)) return kind;
+  }
+  if (ascii.startsWith('RIFF') && ascii.slice(8, 12) === 'WEBP') return 'webp';
+  return null;
+}
+
+/* ZIP 头（PK + 03/05/07） */
+function isZipHead(head) {
+  return head[0] === 0x50 && head[1] === 0x4b && (head[2] === 0x03 || head[2] === 0x05 || head[2] === 0x07);
+}
+
+/* ZIP 内目录特征 → docx/xlsx/pptx/zip */
+function zipKind(ascii) {
+  if (ascii.includes('word/')) return { type: 'docx' };
+  if (ascii.includes('xl/')) return { type: 'xlsx' };
+  if (ascii.includes('ppt/')) return { type: 'pptx' };
+  return { type: 'zip' };
+}
+
+/* 头部控制符占比（NUL 与 0x0E-0x1F；0x09/0x0A/0x0D 视为文本控制符不计） */
+function ctrlRatio(sample) {
+  if (sample.length === 0) return 0;
   let ctrl = 0;
   for (let i = 0; i < sample.length; i++) {
     const b = sample[i];
-    if (b <= 0x08 || (b >= 0x0E && b <= 0x1F)) ctrl++;
+    if (b <= 0x08 || (b >= 0x0e && b <= 0x1f)) ctrl++;
   }
-  if (sample.length > 0 && ctrl / sample.length > 0.30) return { type: 'unknown', detail: 'binary' };
-  return { type: 'text' };
+  return ctrl / sample.length;
 }
