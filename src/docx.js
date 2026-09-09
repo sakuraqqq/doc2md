@@ -112,48 +112,74 @@ function ommlConcat(node, df) {
   return parts.join('');
 }
 // 解析 document.xml：图片 docPr（文档序）+ OMML 公式（占位符替换）。返回 {imgNames, maths, xml}
-function docxParseForMd(docXml, warnings) {
+/* document.xml → DOM（t2 重构：从 docxParseForMd 抽出；解析失败 throw） */
+function docxParseDoc(docXml) {
   const doc = new DOMParser().parseFromString(docXml, 'application/xml');
   if (!doc.documentElement || doc.getElementsByTagName('parsererror').length) {
     throw new Error('word/document.xml 解析失败');
   }
-  const imgNames = [];
+  return doc;
+}
+/* 图片 docPr（文档序）：name/descr（t2 重构） */
+function docxImageNames(doc) {
+  const out = [];
   for (const c of Array.from(doc.getElementsByTagNameNS(PIC_NS, 'cNvPr'))) {
-    imgNames.push({ name: c.getAttribute('name') || '', descr: c.getAttribute('descr') || '' });
+    out.push({ name: c.getAttribute('name') || '', descr: c.getAttribute('descr') || '' });
   }
+  return out;
+}
+/* 向上查找包裹的 oMathPara（第四轮 2 / L3；t2 重构：遇 w:p 或非元素即停——null = 无包裹） */
+function ommlEnclosingPara(om) {
+  for (let p = om.parentNode; p && p.nodeType === 1; p = p.parentNode) {
+    if (ommlIs(p, 'oMathPara')) return p;
+    if (p.localName === 'p' && (p.namespaceURI === W_NS || p.namespaceURI === null)) return null;
+  }
+  return null;
+}
+/* 单个 oMath → { latex, rawText, degraded }（t2 重构；degraded = 退化标记或「空 LaTeX 但有文本」） */
+function ommlMathEntry(o) {
+  const df = { degraded: false };
+  const parts = [];
+  for (const c of Array.from(o.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
+  const latex = parts.join('').trim();
+  const rawText = texText(o.textContent || '').replace(/\s+/g, ' ').trim();
+  return { latex, rawText, degraded: df.degraded || (latex === '' && rawText !== '') };
+}
+/* 占位符运行 <w:r><w:t>⟦MATHn⟧</w:t></w:r>（t2 重构） */
+function ommlPlaceholderRun(doc, n) {
+  const r = doc.createElementNS(W_NS, 'w:r');
+  const t = doc.createElementNS(W_NS, 'w:t');
+  t.textContent = '⟦MATH' + n + '⟧';
+  r.appendChild(t);
+  return r;
+}
+/* 一个 oMath 块 → 占位符片段 + maths 条目（t2 重构：整块一次替换，防块内其余 oMath 被摘下——第四轮 2 / L3）。
+ * block 语义：仅「单公式 oMathPara」按块级 $$..$$（正常 display 公式形态）；多公式（异常结构）一律内联
+ * $..$——t23 L3 契约以 $[^$\n]*$ 提取断言，块级双围栏会漏检 */
+function docxMathFragment(doc, maths, list, para) {
+  const frag = doc.createDocumentFragment();
+  let degraded = 0;
+  for (const o of list) {
+    const e = ommlMathEntry(o);
+    if (e.degraded) degraded++;
+    maths.push({ latex: e.latex !== '' ? e.latex : null, block: !!para && list.length === 1, rawText: e.rawText });
+    frag.appendChild(ommlPlaceholderRun(doc, maths.length));
+  }
+  return { frag, degraded };
+}
+function docxParseForMd(docXml, warnings) {
+  const doc = docxParseDoc(docXml);
+  const imgNames = docxImageNames(doc);
   const maths = [];
   let degradedCount = 0;
   for (const om of Array.from(doc.getElementsByTagNameNS(OMML_NS, 'oMath'))) {
     if (!om.isConnected) continue; // 已被外层 oMathPara 整块替换处理
-    // 找包裹的 oMathPara（第四轮 2 / L3）：有 → 收集整块**全部** oMath 逐个生成占位符，
-    // 再整块一次替换（首个标记 block）——此前 target=oMathPara 单个 replaceChild 会把块内
-    // 其余 oMath 一并摘下（detached → 后续 isConnected false 跳过 → 公式丢失）
-    let para = null;
-    for (let p = om.parentNode; p && p.nodeType === 1; p = p.parentNode) {
-      if (ommlIs(p, 'oMathPara')) { para = p; break; }
-      if (p.localName === 'p' && (p.namespaceURI === W_NS || p.namespaceURI === null)) break;
-    }
+    const para = ommlEnclosingPara(om);
     const list = para ? Array.from(para.getElementsByTagNameNS(OMML_NS, 'oMath')) : [om];
-    const frag = doc.createDocumentFragment();
-    for (let li = 0; li < list.length; li++) {
-      const o = list[li];
-      const df = { degraded: false };
-      const parts = [];
-      for (const c of Array.from(o.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
-      const latex = parts.join('').trim();
-      const rawText = texText(o.textContent || '').replace(/\s+/g, ' ').trim();
-      if (df.degraded || (latex === '' && rawText !== '')) degradedCount++;
-      // block 语义：仅「单公式 oMathPara」按块级 $$..$$（正常 display 公式形态）；
-      // 多公式（异常结构）一律内联 $..$——t23 L3 契约以 $[^$\n]*$ 提取断言，块级双围栏会漏检
-      maths.push({ latex: latex !== '' ? latex : null, block: !!para && list.length === 1, rawText });
-      const r = doc.createElementNS(W_NS, 'w:r');
-      const t = doc.createElementNS(W_NS, 'w:t');
-      t.textContent = '⟦MATH' + maths.length + '⟧';
-      r.appendChild(t);
-      frag.appendChild(r);
-    }
-    if (para) para.parentNode.replaceChild(frag, para);
-    else om.parentNode.replaceChild(frag, om); // 单公式（无 oMathPara）——原路径
+    const built = docxMathFragment(doc, maths, list, para);
+    degradedCount += built.degraded;
+    if (para) para.parentNode.replaceChild(built.frag, para);
+    else om.parentNode.replaceChild(built.frag, om); // 单公式（无 oMathPara）——原路径
   }
   if (degradedCount > 0) {
     warnings.push(degradedCount + ' 个复杂公式（积分/矩阵/求和等）已按纯文本保留（LaTeX 支持范围见 README）');
