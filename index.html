@@ -151,53 +151,73 @@
     return s;
   }
   function decodeText(buf) {
+    const bom = decodeBom(buf);
+    if (bom !== null) return bom;
+    const probeN = Math.min(buf.byteLength, 4096);
+    const headTxt = new TextDecoder("utf-8").decode(buf.subarray(0, probeN));
+    for (const enc of charsetLabels(headTxt)) {
+      const decoded = tryDecode(buf, enc);
+      if (decoded !== null) return decoded;
+    }
+    return gb18030Fallback(buf, headTxt);
+  }
+  function decodeBom(buf) {
     if (startsWith(buf, [239, 187, 191])) return new TextDecoder("utf-8").decode(buf.subarray(3));
     if (startsWith(buf, [255, 254])) return new TextDecoder("utf-16le").decode(buf.subarray(2));
-    if (startsWith(buf, [254, 255])) {
-      try {
-        return new TextDecoder("utf-16be").decode(buf.subarray(2));
-      } catch {
-        const swap = new Uint8Array(buf.length - 2);
-        for (let i = 2; i < buf.length; i += 2) {
-          if (i + 1 < buf.length) {
-            swap[i - 2] = buf[i + 1];
-            swap[i - 1] = buf[i];
-          }
-        }
-        return new TextDecoder("utf-16le").decode(swap);
-      }
+    if (!startsWith(buf, [254, 255])) return null;
+    try {
+      return new TextDecoder("utf-16be").decode(buf.subarray(2));
+    } catch {
+      return swapUtf16be(buf);
     }
-    const probeN = Math.min(buf.byteLength, 4096);
-    const tolerant = new TextDecoder("utf-8");
-    const headTxt = tolerant.decode(buf.subarray(0, probeN));
+  }
+  function swapUtf16be(buf) {
+    const swap = new Uint8Array(buf.length - 2);
+    for (let i = 2; i + 1 < buf.length; i += 2) {
+      swap[i - 2] = buf[i + 1];
+      swap[i - 1] = buf[i];
+    }
+    return new TextDecoder("utf-16le").decode(swap);
+  }
+  function charsetLabels(headTxt) {
+    const labels = [];
     let metaIdx = headTxt.indexOf("<meta");
     while (metaIdx >= 0) {
       const metaEnd = headTxt.indexOf(">", metaIdx);
       if (metaEnd < 0) break;
-      const metaAttr = headTxt.slice(metaIdx, metaEnd + 1);
-      const lower = metaAttr.toLowerCase();
-      const csIdx = lower.indexOf("charset");
-      if (csIdx >= 0) {
-        const afterCs = lower.slice(csIdx + "charset".length);
-        const eqIdx = afterCs.indexOf("=");
-        if (eqIdx >= 0) {
-          let val = afterCs.slice(eqIdx + 1);
-          const isTrimCh = (ch) => ch === " " || ch === '"' || ch === "'" || ch === ";" || ch === ">" || ch === "	" || ch === "\r" || ch === "\n";
-          while (val.length > 0 && isTrimCh(val[0])) val = val.slice(1);
-          while (val.length > 0 && isTrimCh(val[val.length - 1])) val = val.slice(0, -1);
-          let enc = null;
-          if (val === "gb2312" || val === "gbk" || val === "gb18030") enc = "gb18030";
-          else if (val === "big5") enc = "big5";
-          if (enc) {
-            try {
-              return new TextDecoder(enc).decode(buf);
-            } catch {
-            }
-          }
-        }
-      }
+      const label = charsetLabelOf(headTxt.slice(metaIdx, metaEnd + 1));
+      if (label && !labels.includes(label)) labels.push(label);
       metaIdx = headTxt.indexOf("<meta", metaIdx + 1);
     }
+    return labels;
+  }
+  function charsetLabelOf(metaAttr) {
+    const lower = metaAttr.toLowerCase();
+    const csIdx = lower.indexOf("charset");
+    if (csIdx < 0) return null;
+    const afterCs = lower.slice(csIdx + "charset".length);
+    const eqIdx = afterCs.indexOf("=");
+    if (eqIdx < 0) return null;
+    const val = trimMetaValue(afterCs.slice(eqIdx + 1));
+    if (val === "gb2312" || val === "gbk" || val === "gb18030") return "gb18030";
+    if (val === "big5") return "big5";
+    return null;
+  }
+  var META_TRIM_CHARS = /* @__PURE__ */ new Set([" ", '"', "'", ";", ">", "	", "\r", "\n"]);
+  function trimMetaValue(v) {
+    let s = v;
+    while (s.length > 0 && META_TRIM_CHARS.has(s[0])) s = s.slice(1);
+    while (s.length > 0 && META_TRIM_CHARS.has(s[s.length - 1])) s = s.slice(0, -1);
+    return s;
+  }
+  function tryDecode(buf, enc) {
+    try {
+      return new TextDecoder(enc).decode(buf);
+    } catch {
+      return null;
+    }
+  }
+  function gb18030Fallback(buf, headTxt) {
     if (countFffd(headTxt, 2) >= 2) {
       try {
         const g = new TextDecoder("gb18030").decode(buf);
@@ -215,36 +235,60 @@
   function normWs(s) {
     return s.replace(/\s+/g, " ");
   }
+  var OLE2_SIG = [208, 207, 17, 224, 161, 177, 26, 225];
+  var PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+  var JPEG_SIG = [255, 216, 255];
+  var BOM_SIGS = [
+    [239, 187, 191],
+    [255, 254],
+    [254, 255]
+  ];
+  var ASCII_IMAGE_SIGS = [
+    ["GIF8", "gif"],
+    ["BM", "bmp"],
+    ["II*\0", "tiff"],
+    ["MM\0*", "tiff"]
+  ];
   async function sniff(buf) {
     const head = buf.subarray(0, 65536);
     if (head.length === 0) return { type: "unknown", detail: "empty" };
     const ascii = headAscii(head);
     const pdfAt = ascii.indexOf("%PDF");
     if (pdfAt >= 0 && pdfAt <= 1024) return { type: "pdf" };
-    if (startsWith(head, [208, 207, 17, 224, 161, 177, 26, 225])) return { type: "doc" };
-    if (startsWith(head, [137, 80, 78, 71, 13, 10, 26, 10])) return { type: "image", detail: "png" };
-    if (head[0] === 255 && head[1] === 216 && head[2] === 255) return { type: "image", detail: "jpeg" };
-    if (ascii.startsWith("GIF8")) return { type: "image", detail: "gif" };
-    if (ascii.startsWith("BM")) return { type: "image", detail: "bmp" };
-    if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WEBP") return { type: "image", detail: "webp" };
-    if (ascii.startsWith("II*\0") || ascii.startsWith("MM\0*")) return { type: "image", detail: "tiff" };
-    if (head[0] === 80 && head[1] === 75 && (head[2] === 3 || head[2] === 5 || head[2] === 7)) {
-      if (ascii.includes("word/")) return { type: "docx" };
-      if (ascii.includes("xl/")) return { type: "xlsx" };
-      if (ascii.includes("ppt/")) return { type: "pptx" };
-      return { type: "zip" };
+    if (startsWith(head, OLE2_SIG)) return { type: "doc" };
+    const image = imageKind(head, ascii);
+    if (image) return { type: "image", detail: image };
+    if (isZipHead(head)) return zipKind(ascii);
+    if (BOM_SIGS.some((sig) => startsWith(head, sig))) return { type: "text" };
+    if (ctrlRatio(head.subarray(0, 4096)) > 0.3) return { type: "unknown", detail: "binary" };
+    return { type: "text" };
+  }
+  function imageKind(head, ascii) {
+    if (startsWith(head, PNG_SIG)) return "png";
+    if (startsWith(head, JPEG_SIG)) return "jpeg";
+    for (const [prefix, kind] of ASCII_IMAGE_SIGS) {
+      if (ascii.startsWith(prefix)) return kind;
     }
-    if (startsWith(head, [239, 187, 191]) || startsWith(head, [255, 254]) || startsWith(head, [254, 255])) {
-      return { type: "text" };
-    }
-    const sample = head.subarray(0, 4096);
+    if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WEBP") return "webp";
+    return null;
+  }
+  function isZipHead(head) {
+    return head[0] === 80 && head[1] === 75 && (head[2] === 3 || head[2] === 5 || head[2] === 7);
+  }
+  function zipKind(ascii) {
+    if (ascii.includes("word/")) return { type: "docx" };
+    if (ascii.includes("xl/")) return { type: "xlsx" };
+    if (ascii.includes("ppt/")) return { type: "pptx" };
+    return { type: "zip" };
+  }
+  function ctrlRatio(sample) {
+    if (sample.length === 0) return 0;
     let ctrl = 0;
     for (let i = 0; i < sample.length; i++) {
       const b = sample[i];
       if (b <= 8 || b >= 14 && b <= 31) ctrl++;
     }
-    if (sample.length > 0 && ctrl / sample.length > 0.3) return { type: "unknown", detail: "binary" };
-    return { type: "text" };
+    return ctrl / sample.length;
   }
 
   // src/html2md.js
@@ -276,55 +320,55 @@
     });
     return out;
   }
+  function brFrag(mode) {
+    let t;
+    if (mode === "br") t = "<br>";
+    else if (mode === "space") t = " ";
+    else t = "\n";
+    return { t };
+  }
+  function emphasisFrag(el, mode, wrap) {
+    const inner = joinFrags(collectFrags(el, mode, [])).trim();
+    if (inner === "") return null;
+    const raw = el.textContent || "";
+    return { t: wrap + inner + wrap, lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+  }
+  function codeFrag(el) {
+    const raw = el.textContent || "";
+    const c = raw.trim();
+    return c === "" ? null : { t: "`" + c + "`", lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+  }
+  function linkFrag(el, mode) {
+    let href = el.getAttribute("href") || "";
+    if (/^\s*(javascript|vbscript|data):/i.test(href)) href = "";
+    const raw = el.textContent || "";
+    const inner = joinFrags(collectFrags(el, mode, [])).trim();
+    if (inner === "") return null;
+    if (el.querySelector("img") && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
+      return { t: "[" + inner + "](" + escUrl(href) + ")", lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+    }
+    return { t: "[" + inner.replace(/\]/g, "\\]") + "](" + escUrl(href) + ")", lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+  }
+  function imgFrag(el) {
+    const alt = el.getAttribute("alt") || "";
+    const src = el.getAttribute("src") || "";
+    return { t: "![" + alt.replace(/\]/g, "%5D") + "](" + escUrl(src) + ")", lead: false, trail: false };
+  }
+  var FRAG_TAGS = /* @__PURE__ */ new Map([
+    ["BR", (el, mode) => brFrag(mode)],
+    ["STRONG", (el, mode) => emphasisFrag(el, mode, "**")],
+    ["B", (el, mode) => emphasisFrag(el, mode, "**")],
+    ["EM", (el, mode) => emphasisFrag(el, mode, "*")],
+    ["I", (el, mode) => emphasisFrag(el, mode, "*")],
+    ["CODE", (el) => codeFrag(el)],
+    ["A", (el, mode) => linkFrag(el, mode)],
+    ["IMG", (el) => imgFrag(el)]
+  ]);
   function fragFor(el, mode, out) {
-    const tag = el.tagName;
-    if (tag === "BR") {
-      let brT;
-      if (mode === "br") brT = "<br>";
-      else if (mode === "space") brT = " ";
-      else brT = "\n";
-      out.push({ t: brT });
-      return;
-    }
-    if (tag === "STRONG" || tag === "B") {
-      const inner = joinFrags(collectFrags(el, mode, [])).trim();
-      if (inner) {
-        const raw = el.textContent || "";
-        out.push({ t: "**" + inner + "**", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-      }
-      return;
-    }
-    if (tag === "EM" || tag === "I") {
-      const inner = joinFrags(collectFrags(el, mode, [])).trim();
-      if (inner) {
-        const raw = el.textContent || "";
-        out.push({ t: "*" + inner + "*", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-      }
-      return;
-    }
-    if (tag === "CODE") {
-      const raw = el.textContent || "";
-      const c = raw.trim();
-      if (c) out.push({ t: "`" + c + "`", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-      return;
-    }
-    if (tag === "A") {
-      let href = el.getAttribute("href") || "";
-      if (/^\s*(javascript|vbscript|data):/i.test(href)) href = "";
-      const raw = el.textContent || "";
-      const inner = joinFrags(collectFrags(el, mode, [])).trim();
-      if (!inner) return;
-      if (el.querySelector("img") && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
-        out.push({ t: "[" + inner + "](" + escUrl(href) + ")", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-        return;
-      }
-      out.push({ t: "[" + inner.replace(/\]/g, "\\]") + "](" + escUrl(href) + ")", lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-      return;
-    }
-    if (tag === "IMG") {
-      const alt = el.getAttribute("alt") || "";
-      const src = el.getAttribute("src") || "";
-      out.push({ t: "![" + alt.replace(/\]/g, "%5D") + "](" + escUrl(src) + ")", lead: false, trail: false });
+    const handler = FRAG_TAGS.get(el.tagName);
+    if (handler) {
+      const frag = handler(el, mode);
+      if (frag) out.push(frag);
       return;
     }
     collectFrags(el, mode, out);
@@ -358,40 +402,39 @@
     flush();
     return blocks;
   }
+  function headingBlock(el, level) {
+    const inner = inlineTrim(el, "br");
+    return inner === "" ? [] : ["#".repeat(level) + " " + inner];
+  }
+  function wrapBlock(s, prefix) {
+    return s === "" ? [] : [(prefix || "") + s];
+  }
+  function preBlock(el) {
+    const body = el.textContent.replace(/^\n|\n$/g, "");
+    const runs = body.match(/`+/g) || [""];
+    const fence = "`".repeat(Math.max(3, Math.max(...runs.map((s) => s.length)) + 1));
+    return [fence + "\n" + body + "\n" + fence];
+  }
+  var BLOCK_EL = /* @__PURE__ */ new Map([
+    ["H1", (el) => headingBlock(el, 1)],
+    ["H2", (el) => headingBlock(el, 2)],
+    ["H3", (el) => headingBlock(el, 3)],
+    ["H4", (el) => headingBlock(el, 4)],
+    ["H5", (el) => headingBlock(el, 5)],
+    ["H6", (el) => headingBlock(el, 6)],
+    ["P", (el) => wrapBlock(inlineTrim(el, "newline"))],
+    ["UL", (el) => wrapBlock(listElToMd(el, 0))],
+    ["OL", (el) => wrapBlock(listElToMd(el, 0))],
+    ["BLOCKQUOTE", (el, ctx) => wrapBlock(quoteElToMd(el, ctx))],
+    ["TABLE", (el, ctx) => wrapBlock(tableToMd(el, ctx))],
+    ["PRE", (el) => preBlock(el)],
+    ["HR", () => ["---"]],
+    ["BR", () => [""]],
+    ["LI", (el) => wrapBlock(inlineTrim(el, "newline"), "- ")]
+  ]);
   function blockOfEl(el, ctx) {
-    const tag = el.tagName;
-    if (tag === "H1" || tag === "H2" || tag === "H3" || tag === "H4" || tag === "H5" || tag === "H6") {
-      const inner = inlineTrim(el, "br");
-      return inner !== "" ? ["#".repeat(+tag[1]) + " " + inner] : [];
-    }
-    if (tag === "P") {
-      const inner = inlineTrim(el, "newline");
-      return inner !== "" ? [inner] : [];
-    }
-    if (tag === "UL" || tag === "OL") {
-      const s = listElToMd(el, 0);
-      return s !== "" ? [s] : [];
-    }
-    if (tag === "BLOCKQUOTE") {
-      const s = quoteElToMd(el, ctx);
-      return s !== "" ? [s] : [];
-    }
-    if (tag === "TABLE") {
-      const s = tableToMd(el, ctx);
-      return s !== "" ? [s] : [];
-    }
-    if (tag === "PRE") {
-      const body = el.textContent.replace(/^\n|\n$/g, "");
-      const runs = body.match(/`+/g) || [""];
-      const fence = "`".repeat(Math.max(3, Math.max(...runs.map((s) => s.length)) + 1));
-      return [fence + "\n" + body + "\n" + fence];
-    }
-    if (tag === "HR") return ["---"];
-    if (tag === "BR") return [""];
-    if (tag === "LI") {
-      const inner = inlineTrim(el, "newline");
-      return inner !== "" ? ["- " + inner] : [];
-    }
+    const handler = BLOCK_EL.get(el.tagName);
+    if (handler) return handler(el, ctx);
     return blockifyContainer(el, ctx).filter((b) => b !== "");
   }
   function listElToMd(listEl, indent) {
@@ -407,70 +450,82 @@
     }
     return lines.filter((l) => l !== null).join("\n");
   }
+  function pushMarkerLine(st, clear) {
+    const head = joinFrags(st.frags).trim();
+    if (head !== "") {
+      st.lines.push(st.prefix + st.marker + head);
+      st.usedMarker = true;
+    }
+    if (clear || head !== "") st.frags.length = 0;
+  }
+  function blockChildToLines(st, child) {
+    pushMarkerLine(st, false);
+    for (const blk of blockOfEl(child, null)) {
+      if (blk === "") continue;
+      const blkLines = blk.split("\n");
+      const first = st.usedMarker ? st.contIndent : st.prefix + st.marker;
+      if (st.usedMarker) st.lines.push("");
+      blkLines.forEach((l, k) => st.lines.push((k === 0 ? first : st.contIndent) + l));
+      st.usedMarker = true;
+      st.blocked = true;
+    }
+  }
+  function nestedListToLines(st, child, indent) {
+    pushMarkerLine(st, true);
+    st.nested = true;
+    const sub = listElToMd(child, indent + st.marker.length);
+    if (sub) sub.split("\n").forEach((l) => st.lines.push(l));
+  }
+  function liTailToLines(st) {
+    const tail = joinFrags(st.frags).trim();
+    if (tail === "") return;
+    const tl = tail.split("\n");
+    if (st.blocked) st.lines.push("");
+    const cont = st.nested || st.blocked ? st.contIndent : st.prefix + st.marker;
+    st.lines.push(cont + tl[0]);
+    for (let i = 1; i < tl.length; i++) st.lines.push(st.contIndent + tl[i]);
+  }
+  function liChildToLines(child, st, indent) {
+    const tag = child.tagName;
+    if (tag === "UL" || tag === "OL") {
+      nestedListToLines(st, child, indent);
+      return;
+    }
+    if (BLOCK_TAGS.has(tag) && tag !== "LI") {
+      blockChildToLines(st, child);
+      return;
+    }
+    fragFor(child, "newline", st.frags);
+  }
   function liToLines(li, indent, isOL, num) {
     const prefix = " ".repeat(indent);
     const marker = isOL ? num + ". " : "- ";
-    const contIndent = prefix + " ".repeat(marker.length);
-    const lines = [];
-    const frags = [];
-    let nested = false;
-    let blocked = false;
-    let usedMarker = false;
+    const st = {
+      prefix,
+      marker,
+      contIndent: prefix + " ".repeat(marker.length),
+      // 续行缩进（CommonMark 列表继续行）
+      lines: [],
+      frags: [],
+      nested: false,
+      // li 内是否出现嵌套列表
+      blocked: false,
+      // li 内是否已输出块级子元素（P/DIV 等——后续 tail 一律续行缩进）
+      usedMarker: false
+      // marker 行已产出（首行文本或首个子块——后续块级内容按续行处理）
+    };
     for (const child of Array.from(li.childNodes)) {
       if (child.nodeType === 3) {
         const raw = child.textContent;
         const t = normWs(raw);
-        if (t !== "") frags.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
+        if (t !== "") st.frags.push({ t, lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
         continue;
       }
       if (child.nodeType !== 1) continue;
-      const tag = child.tagName;
-      if (tag === "UL" || tag === "OL") {
-        const head = joinFrags(frags).trim();
-        if (head !== "") {
-          lines.push(prefix + marker + head);
-          usedMarker = true;
-        }
-        frags.length = 0;
-        nested = true;
-        const sub = listElToMd(child, indent + marker.length);
-        if (sub) sub.split("\n").forEach((l) => lines.push(l));
-      } else if (BLOCK_TAGS.has(tag) && tag !== "LI") {
-        const head = joinFrags(frags).trim();
-        if (head !== "") {
-          lines.push(prefix + marker + head);
-          frags.length = 0;
-          usedMarker = true;
-        }
-        const subBlocks = blockOfEl(child, null);
-        for (let bi = 0; bi < subBlocks.length; bi++) {
-          const blk = subBlocks[bi];
-          if (blk === "") continue;
-          const blkLines = blk.split("\n");
-          if (!usedMarker) {
-            lines.push(prefix + marker + blkLines[0]);
-            for (let k = 1; k < blkLines.length; k++) lines.push(contIndent + blkLines[k]);
-            usedMarker = true;
-          } else {
-            lines.push("");
-            lines.push(contIndent + blkLines[0]);
-            for (let k = 1; k < blkLines.length; k++) lines.push(contIndent + blkLines[k]);
-          }
-          blocked = true;
-        }
-      } else {
-        fragFor(child, "newline", frags);
-      }
+      liChildToLines(child, st, indent);
     }
-    const tail = joinFrags(frags).trim();
-    if (tail !== "") {
-      const tl = tail.split("\n");
-      if (blocked) lines.push("");
-      const cont = nested || blocked ? contIndent : prefix + marker;
-      lines.push(cont + tl[0]);
-      for (let i = 1; i < tl.length; i++) lines.push(contIndent + tl[i]);
-    }
-    return lines;
+    liTailToLines(st);
+    return st.lines;
   }
   function quoteElToMd(quoteEl, ctx) {
     const parts = blockifyContainer(quoteEl, ctx).filter((p) => p !== "");
@@ -481,24 +536,21 @@
     });
     return out.join("\n");
   }
-  function tableToMd(table, ctx) {
-    const rows = [];
-    const trs = table.querySelectorAll(":scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr");
-    trs.forEach((tr) => {
-      const cells = [];
-      tr.querySelectorAll(":scope > th, :scope > td").forEach((c) => {
-        const rs = parseInt(c.getAttribute("rowspan") || "1", 10) || 1;
-        const cs = parseInt(c.getAttribute("colspan") || "1", 10) || 1;
-        if ((rs > 1 || cs > 1) && ctx && ctx.warnings) {
-          const w = "\u8868\u683C\u542B\u5408\u5E76\u5355\u5143\u683C\uFF08rowspan/colspan\uFF09\uFF0C\u5DF2\u6309\u666E\u901A\u5355\u5143\u683C\u5C55\u5E73\uFF08v1 \u4E0D\u652F\u6301\u5408\u5E76\u5355\u5143\u683C\u7ED3\u6784\uFF09";
-          if (!ctx.warnings.includes(w)) ctx.warnings.push(w);
-        }
-        let cell = joinFrags(collectFrags(c, "space", [])).trim();
-        cells.push(cell.replace(/\|/g, "\\|").replace(/\n/g, " "));
-      });
-      if (cells.length) rows.push(cells);
-    });
-    if (rows.length === 0) return "";
+  function warnMerged(ctx) {
+    const w = "\u8868\u683C\u542B\u5408\u5E76\u5355\u5143\u683C\uFF08rowspan/colspan\uFF09\uFF0C\u5DF2\u6309\u666E\u901A\u5355\u5143\u683C\u5C55\u5E73\uFF08v1 \u4E0D\u652F\u6301\u5408\u5E76\u5355\u5143\u683C\u7ED3\u6784\uFF09";
+    if (!ctx.warnings.includes(w)) ctx.warnings.push(w);
+  }
+  function cellToMd(c, ctx) {
+    const rs = parseInt(c.getAttribute("rowspan") || "1", 10) || 1;
+    const cs = parseInt(c.getAttribute("colspan") || "1", 10) || 1;
+    if ((rs > 1 || cs > 1) && ctx && ctx.warnings) warnMerged(ctx);
+    const cell = joinFrags(collectFrags(c, "space", [])).trim();
+    return cell.replace(/\|/g, "\\|").replace(/\n/g, " ");
+  }
+  function rowCells(tr, ctx) {
+    return Array.from(tr.querySelectorAll(":scope > th, :scope > td")).map((c) => cellToMd(c, ctx));
+  }
+  function rowsToMd(rows) {
     const width = Math.max(...rows.map((r) => r.length));
     const norm = rows.map((r) => {
       while (r.length < width) {
@@ -510,6 +562,11 @@
     const sep = "| " + norm[0].map(() => "---").join(" | ") + " |";
     const body = norm.slice(1).map((r) => "| " + r.join(" | ") + " |");
     return [header, sep, ...body].join("\n");
+  }
+  function tableToMd(table, ctx) {
+    const trs = table.querySelectorAll(":scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr");
+    const rows = Array.from(trs).map((tr) => rowCells(tr, ctx)).filter((cells) => cells.length > 0);
+    return rows.length === 0 ? "" : rowsToMd(rows);
   }
   function isPreBlock(b) {
     if (!b.startsWith("```")) return false;
@@ -559,59 +616,51 @@
     for (const c of Array.from(el.children)) if (ommlIs(c, local)) return c;
     return null;
   }
+  function ommlChildren(el, parts, df) {
+    for (const c of Array.from(el.children)) ommlParts(c, parts, df);
+  }
+  function ommlFracTex(el) {
+    const num = ommlChild(el, "num"), den = ommlChild(el, "den");
+    return "\\frac{" + (num ? ommlConcat(num) : "") + "}{" + (den ? ommlConcat(den) : "") + "}";
+  }
+  function ommlScript(el, parts, subName, supName) {
+    const base = ommlChild(el, "e");
+    const sub = subName ? ommlChild(el, subName) : null;
+    const sup = supName ? ommlChild(el, supName) : null;
+    let out = base ? ommlConcat(base) : "";
+    if (subName) out += "_{" + (sub ? ommlConcat(sub) : "") + "}";
+    if (supName) out += "^{" + (sup ? ommlConcat(sup) : "") + "}";
+    parts.push(out);
+  }
+  function ommlRad(el, parts) {
+    const deg = ommlChild(el, "deg"), e = ommlChild(el, "e");
+    const d = deg ? ommlConcat(deg) : "";
+    const baseT = e ? ommlConcat(e) : "";
+    parts.push(d !== "" ? "\\sqrt[" + d + "]{" + baseT + "}" : "\\sqrt{" + baseT + "}");
+  }
+  function ommlDelim(el, parts, df) {
+    const lc = el.getAttribute("m:begChr") || el.getAttribute("begChr") || "(";
+    const rc = el.getAttribute("m:endChr") || el.getAttribute("endChr") || ")";
+    const inner = ommlChild(el, "e");
+    parts.push(lc + (inner ? ommlConcat(inner, df) : "") + rc);
+  }
+  var OMML_HANDLERS = /* @__PURE__ */ new Map([
+    ["t", (el, parts) => parts.push(texText(el.textContent))],
+    ["r", ommlChildren],
+    ["oMath", ommlChildren],
+    ["oMathPara", ommlChildren],
+    ["f", (el, parts) => parts.push(ommlFracTex(el))],
+    ["sSup", (el, parts) => ommlScript(el, parts, null, "sup")],
+    ["sSub", (el, parts) => ommlScript(el, parts, "sub", null)],
+    ["sSubSup", (el, parts) => ommlScript(el, parts, "sub", "sup")],
+    ["rad", ommlRad],
+    ["d", ommlDelim]
+  ]);
   function ommlParts(el, parts, df) {
-    if (ommlIs(el, "t")) {
-      parts.push(texText(el.textContent));
-      return;
-    }
-    if (ommlIs(el, "r")) {
-      for (const c of Array.from(el.children)) {
-        ommlParts(c, parts, df);
-      }
-      return;
-    }
-    if (ommlIs(el, "oMath") || ommlIs(el, "oMathPara")) {
-      for (const c of Array.from(el.children)) {
-        ommlParts(c, parts, df);
-      }
-      return;
-    }
-    if (ommlIs(el, "f")) {
-      const num = ommlChild(el, "num"), den = ommlChild(el, "den");
-      parts.push("\\frac{" + (num ? ommlConcat(num) : "") + "}{" + (den ? ommlConcat(den) : "") + "}");
-      return;
-    }
-    if (ommlIs(el, "sSup")) {
-      const base = ommlChild(el, "e");
-      const sup = ommlChild(el, "sup");
-      parts.push((base ? ommlConcat(base) : "") + "^{" + (sup ? ommlConcat(sup) : "") + "}");
-      return;
-    }
-    if (ommlIs(el, "sSub")) {
-      const base = ommlChild(el, "e");
-      const sub = ommlChild(el, "sub");
-      parts.push((base ? ommlConcat(base) : "") + "_{" + (sub ? ommlConcat(sub) : "") + "}");
-      return;
-    }
-    if (ommlIs(el, "sSubSup")) {
-      const base = ommlChild(el, "e");
-      const sub = ommlChild(el, "sub");
-      const sup = ommlChild(el, "sup");
-      parts.push((base ? ommlConcat(base) : "") + "_{" + (sub ? ommlConcat(sub) : "") + "}^{" + (sup ? ommlConcat(sup) : "") + "}");
-      return;
-    }
-    if (ommlIs(el, "rad")) {
-      const deg = ommlChild(el, "deg"), e = ommlChild(el, "e");
-      const d = deg ? ommlConcat(deg) : "";
-      const baseT = e ? ommlConcat(e) : "";
-      parts.push(d !== "" ? "\\sqrt[" + d + "]{" + baseT + "}" : "\\sqrt{" + baseT + "}");
-      return;
-    }
-    if (ommlIs(el, "d")) {
-      const lc = el.getAttribute("m:begChr") || el.getAttribute("begChr") || "(";
-      const rc = el.getAttribute("m:endChr") || el.getAttribute("endChr") || ")";
-      const inner = ommlChild(el, "e");
-      parts.push(lc + (inner ? ommlConcat(inner, df) : "") + rc);
+    const isOmml = el && el.nodeType === 1 && el.namespaceURI === OMML_NS;
+    const handler = isOmml ? OMML_HANDLERS.get(el.localName) : void 0;
+    if (handler) {
+      handler(el, parts, df);
       return;
     }
     const raw = texText(el.textContent || "").replace(/\s+/g, " ").trim();
@@ -629,46 +678,66 @@
     for (const c of Array.from(node.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df || null);
     return parts.join("");
   }
-  function docxParseForMd(docXml, warnings) {
+  function docxParseDoc(docXml) {
     const doc = new DOMParser().parseFromString(docXml, "application/xml");
     if (!doc.documentElement || doc.getElementsByTagName("parsererror").length) {
       throw new Error("word/document.xml \u89E3\u6790\u5931\u8D25");
     }
-    const imgNames = [];
+    return doc;
+  }
+  function docxImageNames(doc) {
+    const out = [];
     for (const c of Array.from(doc.getElementsByTagNameNS(PIC_NS, "cNvPr"))) {
-      imgNames.push({ name: c.getAttribute("name") || "", descr: c.getAttribute("descr") || "" });
+      out.push({ name: c.getAttribute("name") || "", descr: c.getAttribute("descr") || "" });
     }
+    return out;
+  }
+  function ommlEnclosingPara(om) {
+    for (let p = om.parentNode; p && p.nodeType === 1; p = p.parentNode) {
+      if (ommlIs(p, "oMathPara")) return p;
+      if (p.localName === "p" && (p.namespaceURI === W_NS || p.namespaceURI === null)) return null;
+    }
+    return null;
+  }
+  function ommlMathEntry(o) {
+    const df = { degraded: false };
+    const parts = [];
+    for (const c of Array.from(o.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
+    const latex = parts.join("").trim();
+    const rawText = texText(o.textContent || "").replace(/\s+/g, " ").trim();
+    return { latex, rawText, degraded: df.degraded || latex === "" && rawText !== "" };
+  }
+  function ommlPlaceholderRun(doc, n) {
+    const r = doc.createElementNS(W_NS, "w:r");
+    const t = doc.createElementNS(W_NS, "w:t");
+    t.textContent = "\u27E6MATH" + n + "\u27E7";
+    r.appendChild(t);
+    return r;
+  }
+  function docxMathFragment(doc, maths, list, para) {
+    const frag = doc.createDocumentFragment();
+    let degraded = 0;
+    for (const o of list) {
+      const e = ommlMathEntry(o);
+      if (e.degraded) degraded++;
+      maths.push({ latex: e.latex !== "" ? e.latex : null, block: !!para && list.length === 1, rawText: e.rawText });
+      frag.appendChild(ommlPlaceholderRun(doc, maths.length));
+    }
+    return { frag, degraded };
+  }
+  function docxParseForMd(docXml, warnings) {
+    const doc = docxParseDoc(docXml);
+    const imgNames = docxImageNames(doc);
     const maths = [];
     let degradedCount = 0;
     for (const om of Array.from(doc.getElementsByTagNameNS(OMML_NS, "oMath"))) {
       if (!om.isConnected) continue;
-      let para = null;
-      for (let p = om.parentNode; p && p.nodeType === 1; p = p.parentNode) {
-        if (ommlIs(p, "oMathPara")) {
-          para = p;
-          break;
-        }
-        if (p.localName === "p" && (p.namespaceURI === W_NS || p.namespaceURI === null)) break;
-      }
+      const para = ommlEnclosingPara(om);
       const list = para ? Array.from(para.getElementsByTagNameNS(OMML_NS, "oMath")) : [om];
-      const frag = doc.createDocumentFragment();
-      for (let li = 0; li < list.length; li++) {
-        const o = list[li];
-        const df = { degraded: false };
-        const parts = [];
-        for (const c of Array.from(o.childNodes)) if (c.nodeType === 1) ommlParts(c, parts, df);
-        const latex = parts.join("").trim();
-        const rawText = texText(o.textContent || "").replace(/\s+/g, " ").trim();
-        if (df.degraded || latex === "" && rawText !== "") degradedCount++;
-        maths.push({ latex: latex !== "" ? latex : null, block: !!para && list.length === 1, rawText });
-        const r = doc.createElementNS(W_NS, "w:r");
-        const t = doc.createElementNS(W_NS, "w:t");
-        t.textContent = "\u27E6MATH" + maths.length + "\u27E7";
-        r.appendChild(t);
-        frag.appendChild(r);
-      }
-      if (para) para.parentNode.replaceChild(frag, para);
-      else om.parentNode.replaceChild(frag, om);
+      const built = docxMathFragment(doc, maths, list, para);
+      degradedCount += built.degraded;
+      if (para) para.parentNode.replaceChild(built.frag, para);
+      else om.parentNode.replaceChild(built.frag, om);
     }
     if (degradedCount > 0) {
       warnings.push(degradedCount + " \u4E2A\u590D\u6742\u516C\u5F0F\uFF08\u79EF\u5206/\u77E9\u9635/\u6C42\u548C\u7B49\uFF09\u5DF2\u6309\u7EAF\u6587\u672C\u4FDD\u7559\uFF08LaTeX \u652F\u6301\u8303\u56F4\u89C1 README\uFF09");
@@ -685,6 +754,26 @@
       if (out.indexOf(tok) >= 0) out = out.split(tok).join(rep);
     });
     return out;
+  }
+  async function docxImageElement(image, state, docBase, imgNames, assets) {
+    const ct = image.contentType || "image/png";
+    const metaEntry = imgNames[state.idx] || {};
+    state.idx++;
+    const alt = docxAltFromName(metaEntry.name);
+    const ab = await image.readAsArrayBuffer().catch(() => null);
+    const bytes = ab ? new Uint8Array(ab) : null;
+    if (!bytes || bytes.length === 0) return { src: "", alt: "" };
+    state.seq++;
+    const name = "assets/" + docBase + "-" + state.seq + "." + extForContentType(ct);
+    assets.push({ name, blob: new Blob([bytes], { type: ct }), size: bytes.length, type: ct });
+    return { src: name, alt };
+  }
+  function docxCollectWarnings(result, assets, warnings) {
+    if (result.messages && result.messages.length > 0) {
+      const nonImg = result.messages.filter((m) => !String(m.type || "").includes("image") && !String(m.message || "").includes("image"));
+      if (nonImg.length > 0) warnings.push("\u8F6C\u6362\u5668\u63D0\u793A " + nonImg.length + " \u6761\u6D88\u606F\uFF08\u6837\u5F0F\u8FD1\u4F3C\u6E32\u67D3\uFF09");
+    }
+    if (assets.length > 0) warnings.push(assets.length + " \u5F20\u56FE\u7247\u5DF2\u62BD\u53D6\u4E3A\u9644\u4EF6\uFF0C\u4E0B\u8F7D\u65F6\u968F zip \u4E00\u5E76\u53D6\u51FA");
   }
   async function docxConvert(file, buf) {
     const warnings = [];
@@ -705,29 +794,11 @@
     entries["word/document.xml"] = new TextEncoder().encode(parsed.xml);
     const repacked = F.zipSync(entries);
     const arrayBuffer = repacked.buffer.slice(repacked.byteOffset, repacked.byteOffset + repacked.byteLength);
-    let imgIdx = 0, imgSeq = 0;
+    const state = { idx: 0, seq: 0 };
     const docBase = docxSafeBase(file.name);
-    const result = await window.mammoth.convertToHtml({ arrayBuffer }, {
-      convertImage: window.mammoth.images.imgElement(async (image) => {
-        const ct = image.contentType || "image/png";
-        const metaEntry = parsed.imgNames[imgIdx] || {};
-        imgIdx++;
-        const alt = docxAltFromName(metaEntry.name);
-        let bytes = null;
-        const ab = await image.readAsArrayBuffer().catch(() => null);
-        bytes = ab ? new Uint8Array(ab) : null;
-        if (!bytes || bytes.length === 0) return { src: "", alt: "" };
-        imgSeq++;
-        const name = "assets/" + docBase + "-" + imgSeq + "." + extForContentType(ct);
-        assets.push({ name, blob: new Blob([bytes], { type: ct }), size: bytes.length, type: ct });
-        return { src: name, alt };
-      })
-    });
-    if (result.messages && result.messages.length > 0) {
-      const nonImg = result.messages.filter((m) => !String(m.type || "").includes("image") && !String(m.message || "").includes("image"));
-      if (nonImg.length > 0) warnings.push("\u8F6C\u6362\u5668\u63D0\u793A " + nonImg.length + " \u6761\u6D88\u606F\uFF08\u6837\u5F0F\u8FD1\u4F3C\u6E32\u67D3\uFF09");
-    }
-    if (assets.length > 0) warnings.push(assets.length + " \u5F20\u56FE\u7247\u5DF2\u62BD\u53D6\u4E3A\u9644\u4EF6\uFF0C\u4E0B\u8F7D\u65F6\u968F zip \u4E00\u5E76\u53D6\u51FA");
+    const convertImage = (image) => docxImageElement(image, state, docBase, parsed.imgNames, assets);
+    const result = await window.mammoth.convertToHtml({ arrayBuffer }, { convertImage: window.mammoth.images.imgElement(convertImage) });
+    docxCollectWarnings(result, assets, warnings);
     const md0 = htmlToMarkdown(result.value || "", { warnings });
     const md = docxInjectLatex(md0, parsed.maths);
     return { markdown: md, warnings, assets, backend: "mammoth" };
@@ -737,41 +808,54 @@
   var XLSX_SHEET_LIMIT = 5;
   var XLSX_ROW_LIMIT = 1e3;
   var XLSX_STRINGS_GUARD_BYTES = 4 * 1024 * 1024;
+  function findEocd(buf, n) {
+    for (let i = n - 22; i >= Math.max(0, n - 65557); i--) {
+      if (buf[i] === 80 && buf[i + 1] === 75 && buf[i + 2] === 5 && buf[i + 3] === 6) return i;
+    }
+    return -1;
+  }
+  function findCentralEntry(buf, dv, n, eocd, wantedName) {
+    const count = dv.getUint16(eocd + 10, true);
+    let off = dv.getUint32(eocd + 16, true);
+    for (let k = 0; k < count; k++) {
+      if (off + 46 > n || dv.getUint32(off, true) !== 33639248) return null;
+      const nameLen = dv.getUint16(off + 28, true);
+      const extraLen = dv.getUint16(off + 30, true);
+      const commentLen = dv.getUint16(off + 32, true);
+      const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
+      if (name === wantedName) {
+        return {
+          method: dv.getUint16(off + 10, true),
+          compSize: dv.getUint32(off + 20, true),
+          localOff: dv.getUint32(off + 42, true)
+        };
+      }
+      off += 46 + nameLen + extraLen + commentLen;
+    }
+    return null;
+  }
+  async function inflateEntry(data, compSize, method) {
+    if (method === 0) return { data, compSize };
+    if (typeof DecompressionStream === "undefined") return null;
+    const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    const out = await new Response(stream).arrayBuffer().catch(() => null);
+    return out ? { data: new Uint8Array(out), compSize } : null;
+  }
   async function zipEntry(buf, wantedName) {
     const n = buf.byteLength;
     if (n < 22) return null;
-    for (let i = n - 22; i >= Math.max(0, n - 65557); i--) {
-      if (buf[i] === 80 && buf[i + 1] === 75 && buf[i + 2] === 5 && buf[i + 3] === 6) {
-        const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-        const count = dv.getUint16(i + 10, true);
-        let off = dv.getUint32(i + 16, true);
-        for (let k = 0; k < count; k++) {
-          if (off + 46 > n || dv.getUint32(off, true) !== 33639248) return null;
-          const method = dv.getUint16(off + 10, true);
-          const compSize = dv.getUint32(off + 20, true);
-          const nameLen = dv.getUint16(off + 28, true);
-          const extraLen = dv.getUint16(off + 30, true);
-          const commentLen = dv.getUint16(off + 32, true);
-          const localOff = dv.getUint32(off + 42, true);
-          const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
-          if (name === wantedName) {
-            if (localOff + 30 > n) return null;
-            const ln = dv.getUint16(localOff + 26, true);
-            const le = dv.getUint16(localOff + 28, true);
-            if (localOff + 30 + ln + le + compSize > n) return null;
-            const data = buf.subarray(localOff + 30 + ln + le, localOff + 30 + ln + le + compSize);
-            if (method === 0) return { data, compSize };
-            if (typeof DecompressionStream === "undefined") return null;
-            const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-            const out = await new Response(stream).arrayBuffer().catch(() => null);
-            return out ? { data: new Uint8Array(out), compSize } : null;
-          }
-          off += 46 + nameLen + extraLen + commentLen;
-        }
-        return null;
-      }
-    }
-    return null;
+    const eocd = findEocd(buf, n);
+    if (eocd < 0) return null;
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const entry = findCentralEntry(buf, dv, n, eocd, wantedName);
+    if (!entry) return null;
+    const { method, compSize, localOff } = entry;
+    if (localOff + 30 > n) return null;
+    const ln = dv.getUint16(localOff + 26, true);
+    const le = dv.getUint16(localOff + 28, true);
+    if (localOff + 30 + ln + le + compSize > n) return null;
+    const start = localOff + 30 + ln + le;
+    return inflateEntry(buf.subarray(start, start + compSize), compSize, method);
   }
   function parseSheetTags(wbText) {
     const sheets = [];
@@ -820,69 +904,73 @@
   function decodeXml(s) {
     return String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10)));
   }
+  function parseCellAttrs(attrs) {
+    const tMatch = / t="([^"]*)"/.exec(attrs);
+    const sMatch = / s="([^"]*)"/.exec(attrs);
+    return { t: tMatch ? tMatch[1] : "", s: sMatch ? sMatch[1] : "" };
+  }
+  function findTagStart(s, tag, p, valid) {
+    let i = p;
+    while (true) {
+      const cs = s.indexOf(tag, i);
+      if (cs < 0) return -1;
+      if (valid.includes(s[cs + tag.length])) return cs;
+      i = cs + tag.length + 1;
+    }
+  }
+  function parseCellAt(body, cs) {
+    const ct = body.indexOf(">", cs);
+    if (ct < 0) return null;
+    const attrs = body.slice(cs + 2, ct);
+    const { t, s } = parseCellAttrs(attrs);
+    if (attrs.trimEnd().endsWith("/")) return { cell: { t, s, v: "" }, next: ct + 1 };
+    const ce = body.indexOf("</c>", ct);
+    if (ce < 0) return null;
+    const inner = body.slice(ct + 1, ce);
+    const vm = /<v[^>]*>([^<]*)<\/v>/.exec(inner);
+    const isText = t === "inlineStr" ? extractInlineText(inner) : "";
+    return { cell: { t, s, v: vm ? vm[1] : "", isText }, next: ce + 4 };
+  }
+  function parseRowCells(body, maxS) {
+    const cells = [];
+    let max = maxS;
+    let p = 0;
+    while (true) {
+      const cs = findTagStart(body, "<c", p, " >/");
+      if (cs < 0) break;
+      const parsed = parseCellAt(body, cs);
+      if (!parsed) break;
+      if (parsed.cell.t === "s" && parsed.cell.v !== "") {
+        const si = parseInt(parsed.cell.v, 10);
+        if (!Number.isNaN(si) && si > max) max = si;
+      }
+      cells.push(parsed.cell);
+      p = parsed.next;
+    }
+    return { cells, maxS: max };
+  }
   function scanSheetRows(xml, rowLimit) {
     const rawRows = [];
     let maxS = -1;
     let pos = 0;
-    let more = false;
     while (rawRows.length <= rowLimit) {
-      const rs = xml.indexOf("<row", pos);
+      const rs = findTagStart(xml, "<row", pos, " >/");
       if (rs < 0) break;
-      if (xml[rs + 4] !== " " && xml[rs + 4] !== ">" && xml[rs + 4] !== "/") {
-        pos = rs + 5;
-        continue;
-      }
       const tagEnd = xml.indexOf(">", rs);
       if (tagEnd < 0) break;
-      const openTag = xml.slice(rs, tagEnd + 1);
-      if (openTag.endsWith("/>")) {
+      if (xml.slice(rs, tagEnd + 1).endsWith("/>")) {
         rawRows.push([]);
         pos = tagEnd + 1;
-        continue;
+      } else {
+        const re = xml.indexOf("</row>", tagEnd);
+        if (re < 0) break;
+        const scanned = parseRowCells(xml.slice(tagEnd + 1, re), maxS);
+        maxS = scanned.maxS;
+        rawRows.push(scanned.cells);
+        pos = re + 6;
       }
-      const re = xml.indexOf("</row>", tagEnd);
-      if (re < 0) break;
-      const body = xml.slice(tagEnd + 1, re);
-      const cells = [];
-      let p = 0;
-      while (true) {
-        const cs = body.indexOf("<c", p);
-        if (cs < 0) break;
-        if (body[cs + 2] !== " " && body[cs + 2] !== ">" && body[cs + 2] !== "/") {
-          p = cs + 3;
-          continue;
-        }
-        const ct = body.indexOf(">", cs);
-        if (ct < 0) break;
-        const attrs = body.slice(cs + 2, ct);
-        const selfClose = attrs.trimEnd().endsWith("/");
-        const tMatch = / t="([^"]*)"/.exec(attrs);
-        const sMatch = / s="([^"]*)"/.exec(attrs);
-        const t = tMatch ? tMatch[1] : "";
-        const s = sMatch ? sMatch[1] : "";
-        if (selfClose) {
-          cells.push({ t, s, v: "" });
-          p = ct + 1;
-          continue;
-        }
-        const ce = body.indexOf("</c>", ct);
-        if (ce < 0) break;
-        const inner = body.slice(ct + 1, ce);
-        const vm = /<v[^>]*>([^<]*)<\/v>/.exec(inner);
-        const v = vm ? vm[1] : "";
-        if (t === "s" && v !== "") {
-          const si = parseInt(v, 10);
-          if (!Number.isNaN(si) && si > maxS) maxS = si;
-        }
-        const isText = t === "inlineStr" ? extractInlineText(inner) : "";
-        cells.push({ t, s, v, isText });
-        p = ce + 4;
-      }
-      rawRows.push(cells);
-      pos = re + 6;
     }
-    if (rawRows.length > rowLimit) more = true;
-    return { rawRows: rawRows.slice(0, rowLimit), maxS, more };
+    return { rawRows: rawRows.slice(0, rowLimit), maxS, more: rawRows.length > rowLimit };
   }
   function collectTTexts(s, from, to) {
     let out = "";
@@ -978,34 +1066,44 @@
     }
     return out;
   }
-  function parseStylesDateFormats(stylesXml) {
-    const start = stylesXml.indexOf("<cellXfs");
-    const end = start >= 0 ? stylesXml.indexOf("</cellXfs>", start) : -1;
-    if (start < 0 || end < 0) throw new Error("styles.xml \u7F3A cellXfs\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
-    const cellXfsXml = stylesXml.slice(start, end);
-    const numFmtCodes = /* @__PURE__ */ new Map();
+  function parseNumFmtCodes(stylesXml) {
+    const codes = /* @__PURE__ */ new Map();
     const nfRe = /<numFmt\s[^>]*>/g;
     let nm;
     while (nm = nfRe.exec(stylesXml)) {
       const tag = nm[0];
       const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(tag);
       const fcM = /formatCode\s*=\s*"([^"]*)"/.exec(tag);
-      if (idM && fcM) numFmtCodes.set(parseInt(idM[1], 10), decodeXml(fcM[1]));
+      if (idM && fcM) codes.set(parseInt(idM[1], 10), decodeXml(fcM[1]));
     }
-    const xfIds = [];
+    return codes;
+  }
+  function parseXfIds(cellXfsXml) {
+    const ids = [];
     const xfRe = /<xf\s[^>]*>/g;
     let xm;
     while (xm = xfRe.exec(cellXfsXml)) {
       const idM = /numFmtId\s*=\s*"([^"]*)"/.exec(xm[0]);
-      xfIds.push(idM ? parseInt(idM[1], 10) : 0);
+      ids.push(idM ? parseInt(idM[1], 10) : 0);
     }
-    const isBuiltinDateId = (id) => id >= 14 && id <= 22 || id >= 27 && id <= 36 || id >= 45 && id <= 47 || id >= 50 && id <= 58;
-    const dateFlags = xfIds.map((id) => {
-      if (!id) return false;
-      if (isBuiltinDateId(id)) return true;
-      const code = numFmtCodes.get(id);
-      return typeof code === "string" && /[ymdhs]/i.test(stripBracketed(code));
-    });
+    return ids;
+  }
+  function isBuiltinDateId(id) {
+    return id >= 14 && id <= 22 || id >= 27 && id <= 36 || id >= 45 && id <= 47 || id >= 50 && id <= 58;
+  }
+  function isDateFormat(id, numFmtCodes) {
+    if (!id) return false;
+    if (isBuiltinDateId(id)) return true;
+    const code = numFmtCodes.get(id);
+    return typeof code === "string" && /[ymdhs]/i.test(stripBracketed(code));
+  }
+  function parseStylesDateFormats(stylesXml) {
+    const start = stylesXml.indexOf("<cellXfs");
+    const end = start >= 0 ? stylesXml.indexOf("</cellXfs>", start) : -1;
+    if (start < 0 || end < 0) throw new Error("styles.xml \u7F3A cellXfs\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+    const numFmtCodes = parseNumFmtCodes(stylesXml);
+    const xfIds = parseXfIds(stylesXml.slice(start, end));
+    const dateFlags = xfIds.map((id) => isDateFormat(id, numFmtCodes));
     return {
       isDateStyle(styleIdx) {
         return !!dateFlags[styleIdx];
@@ -1019,26 +1117,31 @@
     if (!styles.isDateStyle(parseInt(c.s, 10))) return decodeXml(c.v);
     return excelSerialToDate(parseFloat(c.v));
   }
+  function boolCellText(v) {
+    if (v === "1") return "true";
+    if (v === "0") return "false";
+    return v;
+  }
+  function cellToString(c, ss, styles) {
+    if (c.t === "s") {
+      const si = parseInt(c.v, 10);
+      if (Number.isNaN(si)) return "";
+      return ss[si] !== void 0 ? ss[si] : "";
+    }
+    if (c.t === "inlineStr") return decodeXml(c.isText);
+    if (c.t === "str") return decodeXml(c.v);
+    if (c.t === "b") return boolCellText(c.v);
+    if (c.t === "d") return isoDateOnly(c.v);
+    return serialDateOrRaw(c, styles);
+  }
+  function rowToTexts(cells, ss, styles) {
+    return cells.map((c) => cellToString(c, ss, styles));
+  }
   function xlsxParseSheet(xml, rowLimit, strings, dateStyles) {
     const styles = dateStyles || NO_DATE_STYLES;
     const { rawRows, maxS, more } = scanSheetRows(xml, rowLimit);
     const ss = maxS >= 0 ? parseSharedStrings(strings || "", maxS) : [];
-    const rows = rawRows.map((cells) => cells.map((c) => {
-      if (c.t === "s") {
-        const si = parseInt(c.v, 10);
-        if (Number.isNaN(si)) return "";
-        return ss[si] !== void 0 ? ss[si] : "";
-      }
-      if (c.t === "inlineStr") return decodeXml(c.isText);
-      if (c.t === "str") return decodeXml(c.v);
-      if (c.t === "b") {
-        if (c.v === "1") return "true";
-        if (c.v === "0") return "false";
-        return c.v;
-      }
-      if (c.t === "d") return isoDateOnly(c.v);
-      return serialDateOrRaw(c, styles);
-    }));
+    const rows = rawRows.map((cells) => rowToTexts(cells, ss, styles));
     return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more };
   }
   function truncationMessage(readCount, totalRows, skipped) {
@@ -1464,50 +1567,65 @@ ${xlsxRowsToMd(kept)}`);
     return collapseCjkSpaces(text);
   }
   var PN = { BT: 31, ET: 32, TF: 37, TM: 42, TD_MOVE: 40, TD_LEAD: 41, NL: 43, SHOW: 44, SHOW_SPACED: 45 };
+  function addGlyph(acc, g, fontSize) {
+    if (!g || typeof g !== "object") return;
+    if (typeof g.unicode === "string") {
+      acc.str += g.unicode;
+      acc.w += (g.width || 0) * fontSize / 1e3;
+    } else if (typeof g.h === "number") {
+      acc.w += g.h;
+    }
+  }
+  function glyphRun(glyphs, fontSize) {
+    const acc = { str: "", w: 0 };
+    for (const g of glyphs) {
+      if (typeof g === "number") {
+        acc.w += g * fontSize / 1e3;
+        continue;
+      }
+      addGlyph(acc, g, fontSize);
+    }
+    return acc;
+  }
+  function showTextRun(st, args, runs) {
+    const { str, w } = glyphRun(args[0] || [], st.fontSize);
+    if (str !== "") runs.push({ str, x: st.cx, y: st.cy, w, fontSize: st.fontSize });
+    st.cx += w;
+  }
+  var TEXT_OPS = {
+    [PN.BT]: (st) => {
+      st.cx = 0;
+      st.cy = 0;
+    },
+    [PN.TF]: (st, args) => {
+      st.fontSize = args[1] || 0;
+    },
+    [PN.TM]: (st, args) => {
+      st.cx = args[4] || 0;
+      st.cy = args[5] || 0;
+    },
+    [PN.TD_MOVE]: (st, args) => {
+      st.cx += args[0] || 0;
+      st.cy += args[1] || 0;
+    },
+    [PN.TD_LEAD]: (st, args) => {
+      st.leading = -(args[1] || 0);
+      st.cx += args[0] || 0;
+      st.cy += args[1] || 0;
+    },
+    [PN.NL]: (st) => {
+      st.cy -= st.leading;
+    },
+    [PN.SHOW]: showTextRun,
+    [PN.SHOW_SPACED]: showTextRun
+  };
   async function pdfPageRuns(page) {
     const opList = await page.getOperatorList();
     const runs = [];
-    let fontSize = 0, cx = 0, cy = 0, leading = 0;
+    const st = { fontSize: 0, cx: 0, cy: 0, leading: 0 };
     for (let i = 0; i < opList.fnArray.length; i++) {
-      const fn = opList.fnArray[i];
-      const args = opList.argsArray[i] || [];
-      if (fn === PN.BT) {
-        cx = 0;
-        cy = 0;
-      } else if (fn === PN.TF) {
-        fontSize = args[1] || 0;
-      } else if (fn === PN.TM) {
-        cx = args[4] || 0;
-        cy = args[5] || 0;
-      } else if (fn === PN.TD_MOVE) {
-        cx += args[0] || 0;
-        cy += args[1] || 0;
-      } else if (fn === PN.TD_LEAD) {
-        leading = -(args[1] || 0);
-        cx += args[0] || 0;
-        cy += args[1] || 0;
-      } else if (fn === PN.NL) {
-        cy -= leading;
-      } else if (fn === PN.SHOW || fn === PN.SHOW_SPACED) {
-        const glyphs = args[0] || [];
-        let str = "", w = 0;
-        for (const g of glyphs) {
-          if (typeof g === "number") {
-            w += g * fontSize / 1e3;
-            continue;
-          }
-          if (g && typeof g === "object") {
-            if (typeof g.unicode === "string") {
-              if (g.unicode !== "") str += g.unicode;
-              w += (g.width || 0) * fontSize / 1e3;
-            } else if (typeof g.h === "number") {
-              w += g.h;
-            }
-          }
-        }
-        if (str !== "") runs.push({ str, x: cx, y: cy, w, fontSize });
-        cx += w;
-      }
+      const op = TEXT_OPS[opList.fnArray[i]];
+      if (op) op(st, opList.argsArray[i] || [], runs);
     }
     return runs;
   }
@@ -1515,8 +1633,17 @@ ${xlsxRowsToMd(kept)}`);
     const c = ch.codePointAt(0);
     return c >= 19968 && c <= 40959 || c >= 12352 && c <= 12543 || c >= 44032 && c <= 55215;
   }
-  function runsToPageText(runs) {
-    if (runs.length === 0) return "";
+  function asciiWordEdge(prev, r, text) {
+    const gap = r.x - (prev.x + prev.w);
+    return gap > 0 && /[A-Za-z0-9]$/.test(text) && /^[A-Za-z0-9]/.test(r.str) && !/ $/.test(text) && !/^ /.test(r.str);
+  }
+  function needsSpace(prev, r, text) {
+    if (isCjkChar(prev.str.slice(-1)) && isCjkChar(r.str.slice(0, 1))) return false;
+    const ruleA = r.x - (prev.x + prev.w) > Math.max(prev.fontSize, r.fontSize) / 3;
+    if (!ruleA && !asciiWordEdge(prev, r, text)) return false;
+    return !/ /.test(text.slice(-1)) && !/^ /.test(r.str);
+  }
+  function groupRunsIntoLines(runs) {
     const lines = [];
     const sorted = [...runs].sort((a, b) => b.y - a.y);
     let cur = [];
@@ -1529,25 +1656,22 @@ ${xlsxRowsToMd(kept)}`);
       cur.push(r);
     }
     if (cur.length > 0) lines.push(cur);
-    const out = [];
-    for (const line of lines) {
-      line.sort((a, b) => a.x - b.x);
-      let text = "";
-      let prev = null;
-      for (const r of line) {
-        if (prev) {
-          const gap = r.x - (prev.x + prev.w);
-          const th = Math.max(prev.fontSize, r.fontSize) / 3;
-          const cjkBoundary = isCjkChar(prev.str.slice(-1)) && isCjkChar(r.str.slice(0, 1));
-          const ruleA = gap > th;
-          const ruleB = gap > 0 && /[A-Za-z0-9]$/.test(text) && /^[A-Za-z0-9]/.test(r.str) && !/ $/.test(text) && !/^ /.test(r.str);
-          if (!cjkBoundary && (ruleA || ruleB) && !/ /.test(text.slice(-1)) && !/^ /.test(r.str)) text += " ";
-        }
-        text += r.str;
-        prev = r;
-      }
-      out.push(text.replace(/ {2,}/g, " ").trimEnd());
+    return lines;
+  }
+  function lineText(line) {
+    line.sort((a, b) => a.x - b.x);
+    let text = "";
+    let prev = null;
+    for (const r of line) {
+      if (prev && needsSpace(prev, r, text)) text += " ";
+      text += r.str;
+      prev = r;
     }
+    return text.replace(/ {2,}/g, " ").trimEnd();
+  }
+  function runsToPageText(runs) {
+    if (runs.length === 0) return "";
+    const out = groupRunsIntoLines(runs).map(lineText);
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
   var PDF_GARBAGE_RE = [/\p{Cs}/u, /\p{Co}/u, /\p{Cc}/u, /\uFFFD/u];
@@ -1563,6 +1687,59 @@ ${xlsxRowsToMd(kept)}`);
       else good++;
     }
     return good + garbage > 0 ? good / (good + garbage) : 0;
+  }
+  async function textContentFallback(page) {
+    const content = await page.getTextContent();
+    const lines = [];
+    let line = "";
+    for (const item of content.items) {
+      if ("str" in item) {
+        line += item.str;
+        if (item.hasEOL) {
+          lines.push(line);
+          line = "";
+        }
+      }
+    }
+    if (line !== "") lines.push(line);
+    return lines.join("\n").trim();
+  }
+  async function pageText(page) {
+    try {
+      return runsToPageText(await pdfPageRuns(page));
+    } catch {
+      return textContentFallback(page);
+    }
+  }
+  function needsOcr(text) {
+    return text.length < 10 || textQualityRatio(text) < 0.4;
+  }
+  async function pageTextWithOcr(page, idx, pageCount, text, warnings) {
+    let ocrText = null;
+    try {
+      ocrText = await ocrPageToText(page, idx, pageCount);
+    } catch {
+      ocrText = null;
+    }
+    if (ocrText) return { text: ocrText, ocr: true };
+    if (text.trim() !== "") {
+      warnings.push(`\u7B2C ${idx} \u9875 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u4FDD\u7559\u539F\u6587\u672C\u5C42\uFF08\u7ED3\u679C\u53EF\u80FD\u4E0D\u53EF\u8BFB\uFF09`);
+      return { text, ocr: false };
+    }
+    warnings.push(`\u7B2C ${idx} \u9875\u65E0\u6587\u672C\u5C42\u4E14 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u8DF3\u8FC7\u8BE5\u9875`);
+    return null;
+  }
+  async function collectPage(page, idx, pageCount, pages, warnings) {
+    const text = await pageText(page);
+    if (!needsOcr(text)) {
+      pages.push({ idx, text });
+      setStatus(`\u8F6C\u6362\u4E2D\uFF1A\u7B2C ${idx}/${pageCount} \u9875`);
+      return false;
+    }
+    const r = await pageTextWithOcr(page, idx, pageCount, text, warnings);
+    if (!r) return false;
+    pages.push({ idx, text: r.text });
+    return r.ocr;
   }
   async function pdfConvert(file, buf) {
     if (!window.pdfjsLib) throw new Error("pdf.js \u5E93\u672A\u52A0\u8F7D");
@@ -1581,45 +1758,7 @@ ${xlsxRowsToMd(kept)}`);
       for (let i = 1; i <= pageCount; i++) {
         const page = await doc.getPage(i);
         try {
-          let text = "";
-          try {
-            text = runsToPageText(await pdfPageRuns(page));
-          } catch {
-            const content = await page.getTextContent();
-            const lines = [];
-            let line = "";
-            for (const item of content.items) {
-              if ("str" in item) {
-                line += item.str;
-                if (item.hasEOL) {
-                  lines.push(line);
-                  line = "";
-                }
-              }
-            }
-            if (line !== "") lines.push(line);
-            text = lines.join("\n").trim();
-          }
-          if (text.length < 10 || textQualityRatio(text) < 0.4) {
-            let ocrText = null;
-            try {
-              ocrText = await ocrPageToText(page, i, pageCount);
-            } catch {
-              ocrText = null;
-            }
-            if (ocrText) {
-              ocrCount++;
-              pages.push({ idx: i, text: ocrText });
-            } else if (text.trim() !== "") {
-              pages.push({ idx: i, text });
-              warnings.push(`\u7B2C ${i} \u9875 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u4FDD\u7559\u539F\u6587\u672C\u5C42\uFF08\u7ED3\u679C\u53EF\u80FD\u4E0D\u53EF\u8BFB\uFF09`);
-            } else {
-              warnings.push(`\u7B2C ${i} \u9875\u65E0\u6587\u672C\u5C42\u4E14 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u8DF3\u8FC7\u8BE5\u9875`);
-            }
-          } else {
-            pages.push({ idx: i, text });
-            setStatus(`\u8F6C\u6362\u4E2D\uFF1A\u7B2C ${i}/${pageCount} \u9875`);
-          }
+          if (await collectPage(page, i, pageCount, pages, warnings)) ocrCount++;
         } finally {
           page.cleanup();
         }
@@ -1644,11 +1783,13 @@ ${p.text}
     const blob = new Blob([buf], { type: file.type || "image/png" });
     const r = await worker.recognize(blob);
     const text = ((r && r.data || {}).text || "").trim();
-    const conf = r && r.data && typeof r.data.confidence === "number" ? Math.round(r.data.confidence) : null;
-    const warnings = [];
-    if (!text) warnings.push("OCR \u672A\u8BC6\u522B\u5230\u6587\u5B57\uFF08\u56FE\u7247\u53EF\u80FD\u8FC7\u5C0F\u6216\u6A21\u7CCA\uFF09");
-    else if (conf !== null && conf < 60) warnings.push(`OCR \u7F6E\u4FE1\u5EA6\u8F83\u4F4E\uFF08${conf}%\uFF09\uFF0C\u7ED3\u679C\u53EF\u80FD\u4E0D\u51C6\u786E`);
-    return { markdown: text, warnings, backend: "tesseract" };
+    const conf = typeof (r && r.data && r.data.confidence) === "number" ? Math.round(r.data.confidence) : null;
+    return { markdown: text, warnings: ocrWarnings(text, conf), backend: "tesseract" };
+  }
+  function ocrWarnings(text, conf) {
+    if (!text) return ["OCR \u672A\u8BC6\u522B\u5230\u6587\u5B57\uFF08\u56FE\u7247\u53EF\u80FD\u8FC7\u5C0F\u6216\u6A21\u7CCA\uFF09"];
+    if (conf !== null && conf < 60) return [`OCR \u7F6E\u4FE1\u5EA6\u8F83\u4F4E\uFF08${conf}%\uFF09\uFF0C\u7ED3\u679C\u53EF\u80FD\u4E0D\u51C6\u786E`];
+    return [];
   }
   async function textConvert(file, buf) {
     const text = decodeText(buf);
@@ -1681,27 +1822,41 @@ ${p.text}
       warnings: []
     };
     const done = (extra) => ({ markdown: extra && extra.markdown || "", meta: { ...meta, elapsedMs: Math.round(performance.now() - t0) }, error: extra && extra.error });
-    if (file.size === 0) return done({ error: "\u6587\u4EF6\u4E3A\u7A7A\uFF0C\u65E0\u6CD5\u8F6C\u6362" });
-    if (file.size > MAX_BYTES) return done({ error: "\u6587\u4EF6\u8FC7\u5927\uFF08\u8D85\u8FC7 50MB\uFF09\uFF0C\u8BF7\u5148\u88C1\u526A" });
+    const guard = guardError(file);
+    if (guard) return done({ error: guard });
     const buf = new Uint8Array(await file.arrayBuffer());
     const s = await sniff(buf);
     meta.type = s.type;
-    if (s.type === "unknown") return done({ error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B" });
-    if (s.type === "pptx") return done({ error: "PPTX \u4E0D\u5728 v1 \u652F\u6301\u8303\u56F4\uFF08\u89C1 README\uFF09\uFF0Cv2 \u518D\u8BAE" });
-    if (s.type === "zip") return done({ error: "\u6682\u4E0D\u652F\u6301\u666E\u901A ZIP \u6587\u4EF6\uFF0C\u8BF7\u89E3\u538B\u540E\u518D\u8F6C\u6362" });
-    if (s.type === "doc") return done({ error: "\u8001\u7248 Office \u4E8C\u8FDB\u5236\u683C\u5F0F\uFF08.doc/.xls/.ppt\uFF09\u6216\u52A0\u5BC6\u6587\u6863\u6682\u4E0D\u652F\u6301\uFF0C\u8BF7\u7528 Word/Excel/WPS \u6253\u5F00\u540E\u53E6\u5B58\u4E3A\u65B0\u683C\u5F0F\uFF08.docx/.xlsx\uFF09\u518D\u8F6C\u6362" });
-    if (!registry[s.type]) return done({ error: "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B" });
+    const unsupported = unsupportedError(s.type);
+    if (unsupported) return done({ error: unsupported });
     try {
-      const res = await registry[s.type](file, buf);
-      meta.backend = res.backend || null;
-      meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
-      meta.truncated = !!res.truncated;
-      if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
-      meta.elapsedMs = Math.round(performance.now() - t0);
-      return { markdown: res.markdown || "", meta, error: void 0 };
+      return await runConverter(s.type, file, buf, meta, t0);
     } catch (e) {
       return done({ error: "\u8F6C\u6362\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF") });
     }
+  }
+  function guardError(file) {
+    if (file.size === 0) return "\u6587\u4EF6\u4E3A\u7A7A\uFF0C\u65E0\u6CD5\u8F6C\u6362";
+    if (file.size > MAX_BYTES) return "\u6587\u4EF6\u8FC7\u5927\uFF08\u8D85\u8FC7 50MB\uFF09\uFF0C\u8BF7\u5148\u88C1\u526A";
+    return null;
+  }
+  function unsupportedError(type) {
+    if (type === "pptx") return "PPTX \u4E0D\u5728 v1 \u652F\u6301\u8303\u56F4\uFF08\u89C1 README\uFF09\uFF0Cv2 \u518D\u8BAE";
+    if (type === "zip") return "\u6682\u4E0D\u652F\u6301\u666E\u901A ZIP \u6587\u4EF6\uFF0C\u8BF7\u89E3\u538B\u540E\u518D\u8F6C\u6362";
+    if (type === "doc") {
+      return "\u8001\u7248 Office \u4E8C\u8FDB\u5236\u683C\u5F0F\uFF08.doc/.xls/.ppt\uFF09\u6216\u52A0\u5BC6\u6587\u6863\u6682\u4E0D\u652F\u6301\uFF0C\u8BF7\u7528 Word/Excel/WPS \u6253\u5F00\u540E\u53E6\u5B58\u4E3A\u65B0\u683C\u5F0F\uFF08.docx/.xlsx\uFF09\u518D\u8F6C\u6362";
+    }
+    if (type === "unknown" || !registry[type]) return "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B";
+    return null;
+  }
+  async function runConverter(type, file, buf, meta, t0) {
+    const res = await registry[type](file, buf);
+    meta.backend = res.backend || null;
+    meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
+    meta.truncated = !!res.truncated;
+    if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
+    meta.elapsedMs = Math.round(performance.now() - t0);
+    return { markdown: res.markdown || "", meta, error: void 0 };
   }
 
   // src/app.js
