@@ -49,63 +49,74 @@ function collectFrags(node, mode, out) {
   return out;
 }
 
+// BR 三态片段（标题字面 <br> / 单元格空格 / 普通换行）——扁平 if 表达（t12：no-nested-conditional）。
+// 第七轮 §2.4：原 {t, vStart, vEnd} 的 vStart/vEnd 是 t12「可见字符」规则残留死字段
+//（joinFrags 现只读 lead/trail，见文件头注释）——清理为纯文本片段。
+function brFrag(mode) {
+  let t;
+  if (mode === 'br') t = '<br>';
+  else if (mode === 'space') t = ' ';
+  else t = '\n';
+  return { t };
+}
+
+// **粗体** / *斜体*：内层递归取文本，lead/trail 以原文空白为准
+function emphasisFrag(el, mode, wrap) {
+  const inner = joinFrags(collectFrags(el, mode, [])).trim();
+  if (inner === '') return null;
+  const raw = el.textContent || '';
+  return { t: wrap + inner + wrap, lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+}
+
+// `code`：按原始 textContent 去首尾空白（不折叠内部空白——与 emphasisFrag 口径不同）
+function codeFrag(el) {
+  const raw = el.textContent || '';
+  const c = raw.trim();
+  return c === '' ? null : { t: '`' + c + '`', lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+}
+
+// <a>：伪协议过滤 + 锚包图片 [![alt](src)](href) + 文本链接（] 转义）
+function linkFrag(el, mode) {
+  let href = el.getAttribute('href') || '';
+  // 纵深防御（审查报告 §1.3）：javascript:/vbscript: 伪协议一律过滤为空（本工具只产出文本，
+  // 防下游渲染器误执行；data: 同理——内联图片 data URI 仅 IMG 分支放行）
+  if (/^\s*(javascript|vbscript|data):/i.test(href)) href = '';
+  const raw = el.textContent || '';
+  const inner = joinFrags(collectFrags(el, mode, [])).trim();
+  if (inner === '') return null;
+  // 锚包图片：<a><img…></a> → [![alt](src)](href)（审查报告 §1.2 建议 #4）
+  if (el.querySelector('img') && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
+    return { t: '[' + inner + '](' + escUrl(href) + ')', lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+  }
+  return { t: '[' + inner.replace(/\]/g, '\\]') + '](' + escUrl(href) + ')', lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+}
+
+// <img>：alt 内 ] 转义 + src URL 转义（审查报告 §1.3；k4b 口径：alt 的 ] 以 %5D 转义——契约正则定版）
+function imgFrag(el) {
+  const alt = el.getAttribute('alt') || '';
+  const src = el.getAttribute('src') || '';
+  return { t: '![' + alt.replace(/\]/g, '%5D') + '](' + escUrl(src) + ')', lead: false, trail: false };
+}
+
+/* 行内标签分派表（tagName → 片段构造器；Map 而非对象字面量——外来标签名如 SVG 的
+ * 'constructor' 命中 Object.prototype 会误取原型方法）。返回 null = 不产出片段。 */
+const FRAG_TAGS = new Map([
+  ['BR', (el, mode) => brFrag(mode)],
+  ['STRONG', (el, mode) => emphasisFrag(el, mode, '**')],
+  ['B', (el, mode) => emphasisFrag(el, mode, '**')],
+  ['EM', (el, mode) => emphasisFrag(el, mode, '*')],
+  ['I', (el, mode) => emphasisFrag(el, mode, '*')],
+  ['CODE', (el) => codeFrag(el)],
+  ['A', (el, mode) => linkFrag(el, mode)],
+  ['IMG', (el) => imgFrag(el)],
+]);
+
 // 单个元素 → 行内片段（含其子节点递归）
 function fragFor(el, mode, out) {
-  const tag = el.tagName;
-  if (tag === 'BR') {
-    // BR 三态（标题字面 <br> / 单元格空格 / 普通换行）——扁平 if 表达（t12：no-nested-conditional）
-    let brT;
-    if (mode === 'br') brT = '<br>';
-    else if (mode === 'space') brT = ' ';
-    else brT = '\n';
-    // 第七轮 §2.4：原 {t, vStart, vEnd} 的 vStart/vEnd 是 t12「可见字符」规则残留死字段
-    //（joinFrags 现只读 lead/trail，见文件头注释）——清理为纯文本片段。
-    out.push({ t: brT });
-    return;
-  }
-  if (tag === 'STRONG' || tag === 'B') {
-    const inner = joinFrags(collectFrags(el, mode, [])).trim();
-    if (inner) {
-      const raw = el.textContent || '';
-      out.push({ t: '**' + inner + '**', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-    }
-    return;
-  }
-  if (tag === 'EM' || tag === 'I') {
-    const inner = joinFrags(collectFrags(el, mode, [])).trim();
-    if (inner) {
-      const raw = el.textContent || '';
-      out.push({ t: '*' + inner + '*', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-    }
-    return;
-  }
-  if (tag === 'CODE') {
-    const raw = el.textContent || '';
-    const c = raw.trim();
-    if (c) out.push({ t: '`' + c + '`', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-    return;
-  }
-  if (tag === 'A') {
-    let href = el.getAttribute('href') || '';
-    // 纵深防御（审查报告 §1.3）：javascript:/vbscript: 伪协议一律过滤为空（本工具只产出文本，
-    // 防下游渲染器误执行；data: 同理——内联图片 data URI 仅 IMG 分支放行）
-    if (/^\s*(javascript|vbscript|data):/i.test(href)) href = '';
-    const raw = el.textContent || '';
-    const inner = joinFrags(collectFrags(el, mode, [])).trim();
-    if (!inner) return;
-    // 锚包图片：<a><img…></a> → [![alt](src)](href)（审查报告 §1.2 建议 #4）
-    if (el.querySelector('img') && /^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(inner)) {
-      out.push({ t: '[' + inner + '](' + escUrl(href) + ')', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-      return;
-    }
-    out.push({ t: '[' + inner.replace(/\]/g, '\\]') + '](' + escUrl(href) + ')', lead: /^\s/.test(raw), trail: /\s$/.test(raw) });
-    return;
-  }
-  if (tag === 'IMG') {
-    const alt = el.getAttribute('alt') || '';
-    const src = el.getAttribute('src') || '';
-    // alt 内 ] 转义 + src URL 转义（审查报告 §1.3；k4b 口径：alt 的 ] 以 %5D 转义——契约正则定版）
-    out.push({ t: '![' + alt.replace(/\]/g, '%5D') + '](' + escUrl(src) + ')', lead: false, trail: false });
+  const handler = FRAG_TAGS.get(el.tagName);
+  if (handler) {
+    const frag = handler(el, mode);
+    if (frag) out.push(frag);
     return;
   }
   // 透明/未知/块级标签出现在行内位置：子节点按行内平铺（与旧 textContent 抽取语义对齐）
