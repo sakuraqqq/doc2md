@@ -357,4 +357,4 @@ for (const f of over)
     `[metrics] OVER  ${f.file}:${f.line} ${f.name} cyc=${f.cyclomatic} cog=${f.cognitive}`
   );
 console.log(`[metrics] 报告已写 ${path.relative(ROOT, outPath)}`);
-if (over.length > 0) process.exitCode = 1; // 超限 → metrics exit 1（度量门禁；CI 未接入 metrics，仅本地门禁）
+if (over.length > 0) process.exitCode = 1; // 超限 → metrics exit 1（CI 硬门禁「超限必须为 0」，2026-09-10 用户拍板）

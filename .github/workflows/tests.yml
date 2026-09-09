@@ -1,10 +1,12 @@
 # tests.yml — doc2md CI 质量门（防屎山 ③ 守门）
 # 模板：cola（可乐工厂效率计算器）tests.yml；按任务书扩展为 checks job：
-#   lint → npm test → pwa-audit → verify:ocr（push/PR 触发）
+#   build-consistency → lint → metrics（超限必须为 0）→ npm test → pwa-audit → verify:ocr（push/PR 触发）
 # 说明：
 #   - npm test（node --test）需要 chromium：install 步骤提供（--with-deps 含系统依赖）
 #   - OCR 相关步骤（verify:ocr / image 契约用例）需要 vendor/tessdata 与 langs/（仓库全量检出）
 #   - Lint 对象 = src/**/*.js + tools/**/*.mjs（见 eslint.config.js 白名单策略）
+#   - metrics 门禁（2026-09-10 用户拍板）：`npm run metrics` 在「超限函数数 > 0」时 exit 1
+#     ——减脂批后全仓超限已清零，故按「必须为 0」硬门禁接入 CI。
 name: tests
 
 on:
@@ -31,6 +33,8 @@ jobs:
         run: npm run build && git diff --exit-code index.html
       - name: "Lint (ESLint: src/ + tools/)"
         run: npm run lint
+      - name: "Code metrics gate (超限函数必须为 0；2026-09-10 用户拍板)"
+        run: npm run metrics
       - name: Contract tests (node --test)
         run: npm test
       - name: PWA audit (static)
