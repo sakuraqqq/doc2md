@@ -376,31 +376,40 @@ function serialDateOrRaw(c, styles) {
   return excelSerialToDate(parseFloat(c.v));
 }
 
+/* t="b" 布尔单元格 → 文本（t8 重构：从 xlsxParseSheet 抽出；1/0 → true/false，其余原样） */
+function boolCellText(v) {
+  if (v === '1') return 'true';
+  if (v === '0') return 'false';
+  return v;
+}
+/* 单元格 → 字符串（t8 重构：从 xlsxParseSheet 抽出）。类型口径与库一致：t="s"→共享字符串；
+ * t="inlineStr"→is/t 文本；t="str"→v 文本；t="b"→true/false；t="d"→ISO 日期（t15：截断到天）；
+ * 数字/日期序列号→命中日期样式的转 YYYY-MM-DD（t15 §2.3），其余原样 */
+function cellToString(c, ss, styles) {
+  if (c.t === 's') {
+    const si = parseInt(c.v, 10);
+    if (Number.isNaN(si)) return '';
+    return ss[si] !== undefined ? ss[si] : '';
+  }
+  if (c.t === 'inlineStr') return decodeXml(c.isText);
+  if (c.t === 'str') return decodeXml(c.v);
+  if (c.t === 'b') return boolCellText(c.v);
+  if (c.t === 'd') return isoDateOnly(c.v);
+  return serialDateOrRaw(c, styles);
+}
+/* 一行原始单元格 → 字符串数组（t8 重构） */
+function rowToTexts(cells, ss, styles) {
+  return cells.map((c) => cellToString(c, ss, styles));
+}
+
 /* t33 自解析单 sheet：流式读取前 ROW_LIMIT 行（扫描到 ROW_LIMIT+1 个即判定截断），行内单元格映射为字符串数组。
- * 类型（与库口径一致）：t="s"→共享字符串；t="inlineStr"→is/t 文本；t="str"→v 文本；t="b"→true/false；
- * t="d"→ISO 日期（t15：按「日期」口径截断到天）；数字/日期序列号→命中日期样式的转 YYYY-MM-DD（t15 §2.3），
- * 其余原样。返回 { rows, scanned, truncated } */
+ * 类型口径见 cellToString。返回 { rows, scanned, truncated } */
 function xlsxParseSheet(xml, rowLimit, strings, dateStyles) {
   const styles = dateStyles || NO_DATE_STYLES;
   const { rawRows, maxS, more } = scanSheetRows(xml, rowLimit);
   // 共享字符串按需解析：maxS 已知后再解（守卫已在外层基于 compSize 判定，此处仅截断索引）
   const ss = maxS >= 0 ? parseSharedStrings(strings || '', maxS) : [];
-  const rows = rawRows.map((cells) => cells.map((c) => {
-    if (c.t === 's') {
-      const si = parseInt(c.v, 10);
-      if (Number.isNaN(si)) return '';
-      return ss[si] !== undefined ? ss[si] : '';
-    }
-    if (c.t === 'inlineStr') return decodeXml(c.isText);
-    if (c.t === 'str') return decodeXml(c.v);
-    if (c.t === 'b') {
-      if (c.v === '1') return 'true';
-      if (c.v === '0') return 'false';
-      return c.v;
-    }
-    if (c.t === 'd') return isoDateOnly(c.v);
-    return serialDateOrRaw(c, styles);
-  }));
+  const rows = rawRows.map((cells) => rowToTexts(cells, ss, styles));
   return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more };
 }
 
