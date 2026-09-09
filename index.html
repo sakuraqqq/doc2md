@@ -1158,6 +1158,18 @@ ${xlsxRowsToMd(kept)}`);
   })();
   var bline_default = BLINE;
 
+  // src/cjk.js
+  var CJK_CLASS = "\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uac00-\\ud7af";
+  var CJK_PUNCT_CLASS = "\uFF0C\u3002\u3001\uFF1B\uFF1A\uFF01\uFF1F\uFF08\uFF09\u300A\u300B\u300C\u300D\u300E\u300F\u3010\u3011\u3008\u3009\xB7\u2014\u2026\uFF5E\\(\\)\\[\\]\\{\\}%+";
+  var SPACE = "[ \\t\\u3000]+";
+  var CJK_OCR_SPACE_RE = new RegExp(
+    `([${CJK_CLASS}])${SPACE}(?=[${CJK_CLASS}${CJK_PUNCT_CLASS}0-9])|([${CJK_PUNCT_CLASS}])${SPACE}(?=[${CJK_CLASS}${CJK_PUNCT_CLASS}])|([0-9])${SPACE}(?=[${CJK_CLASS}])`,
+    "g"
+  );
+  function collapseCjkSpaces(text) {
+    return String(text == null ? "" : text).replace(CJK_OCR_SPACE_RE, "$1$2$3");
+  }
+
   // src/ui.js
   var $ = (sel) => document.querySelector(sel);
   var dropzone = $("#dropzone");
@@ -1449,7 +1461,7 @@ ${xlsxRowsToMd(kept)}`);
     const r = await worker.recognize(blob);
     const text = ((r && r.data || {}).text || "").trim();
     setStatus(`\u7B2C ${idx}/${pageCount} \u9875 OCR \u5B8C\u6210`);
-    return text;
+    return collapseCjkSpaces(text);
   }
   var PN = { BT: 31, ET: 32, TF: 37, TM: 42, TD_MOVE: 40, TD_LEAD: 41, NL: 43, SHOW: 44, SHOW_SPACED: 45 };
   async function pdfPageRuns(page) {
@@ -1728,6 +1740,7 @@ ${p.text}
     htmlToMarkdown,
     decodeText,
     MAX_BYTES,
+    collapseCjkSpaces,
     get embedMaxBytes() {
       return getEmbedMaxBytes();
     },
