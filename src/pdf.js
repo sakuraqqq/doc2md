@@ -106,47 +106,60 @@ function isCjkChar(ch) {
   return (c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3040 && c <= 0x30ff) || (c >= 0xac00 && c <= 0xd7af);
 }
 
-/** runs → 行文本（按 y 分组，组内按 x 排序；组间以换行分隔；空格修复见文件头注释） */
-function runsToPageText(runs) {
-  if (runs.length === 0) return '';
-  // 按 y 分组（PDF 文本空间 y 向上增长——降序 = 页顶→页底）；容差 = run 字号（近似行高）
+/** 规则B（见文件头注释）：run 边界 = 词边——gap>0 且前后文本均 ASCII 词字符、且两侧无既有空格 */
+function asciiWordEdge(prev, r, text) {
+  const gap = r.x - (prev.x + prev.w);
+  return gap > 0 && /[A-Za-z0-9]$/.test(text) && /^[A-Za-z0-9]/.test(r.str) &&
+    !/ $/.test(text) && !/^ /.test(r.str);
+}
+
+/** 行内空格判定（规则 A/B/C）：true = 在 prev 与 r 之间补一个空格。
+ * 规则A：显式字间隙 gap > 字高/3；规则B：见 asciiWordEdge；t30 **CJK 边界抑制（规则C）**：相邻 run
+ * 边界均 CJK（前一 run 末字符 + 后一 run 首字符）→ A/B 都跳过——cmaps 路径 CID 逐字 run 会把中文打散
+ * （`世 界 标 准 化`）；CJK-拉丁边界不受抑制（`质量 chain`/`2023 年` 的合理空格照常按规则判定）。
+ * 前后已有空格（str 自带或上一 run 尾随）时不再补——防「列布局」误判造成双空格。 */
+function needsSpace(prev, r, text) {
+  if (isCjkChar(prev.str.slice(-1)) && isCjkChar(r.str.slice(0, 1))) return false;
+  const ruleA = r.x - (prev.x + prev.w) > Math.max(prev.fontSize, r.fontSize) / 3;
+  if (!ruleA && !asciiWordEdge(prev, r, text)) return false;
+  return !/ /.test(text.slice(-1)) && !/^ /.test(r.str);
+}
+
+/** 按 y 分组（PDF 文本空间 y 向上增长——降序 = 页顶→页底）；容差 = run 字号（近似行高）/2 */
+function groupRunsIntoLines(runs) {
   const lines = [];
   const sorted = [...runs].sort((a, b) => b.y - a.y);
   let cur = [];
   for (const r of sorted) {
     const topY = cur.length > 0 ? cur[cur.length - 1].y : r.y;
-    if (cur.length > 0 && Math.abs(r.y - topY) > (Math.max(r.fontSize, 1)) / 2) {
-      lines.push(cur); cur = [];
+    if (cur.length > 0 && Math.abs(r.y - topY) > Math.max(r.fontSize, 1) / 2) {
+      lines.push(cur);
+      cur = [];
     }
     cur.push(r);
   }
   if (cur.length > 0) lines.push(cur);
-  const out = [];
-  for (const line of lines) {
-    line.sort((a, b) => a.x - b.x);
-    let text = '';
-    let prev = null;
-    for (const r of line) {
-      if (prev) {
-        const gap = r.x - (prev.x + prev.w);
-        const th = Math.max(prev.fontSize, r.fontSize) / 3;
-        // 规则A：显式字间隙 > 字高/3；规则B（见文件头注释）：run 边均 ASCII 词字符且 gap>0（补缺空格）。
-        // 前后已有空格（str 自带或上一 run 尾随）时不再补——防「列布局」误判造成双空格。
-        // t30 **CJK 边界抑制**：相邻 run 边界均 CJK（前一 run 末字符 + 后一 run 首字符）→ 规则 A/B 都跳过——
-        //   cmaps 路径 CID 逐字 run 会把中文打散（`世 界 标 准 化`）；CJK-拉丁边界不受抑制
-        //   （`质量 chain`/`2023 年` 的合理空格照常按规则判定）。
-        const cjkBoundary = isCjkChar(prev.str.slice(-1)) && isCjkChar(r.str.slice(0, 1));
-        const ruleA = gap > th;
-        const ruleB = gap > 0 && /[A-Za-z0-9]$/.test(text) && /^[A-Za-z0-9]/.test(r.str) &&
-          !/ $/.test(text) && !/^ /.test(r.str);
-        if (!cjkBoundary && (ruleA || ruleB) && !/ /.test(text.slice(-1)) && !/^ /.test(r.str)) text += ' ';
-      }
-      text += r.str;
-      prev = r;
-    }
-    // 折叠连续空格（表格列布局的 run 边界 + 空格字形 run 叠加会产生双空格——保留恢复收益、消除噪音）
-    out.push(text.replace(/ {2,}/g, ' ').trimEnd());
+  return lines;
+}
+
+/** 单行 run 序列 → 文本：按 x 升序，逐 run 按 needsSpace 补空格；末了折叠连续空格
+ *  （表格列布局的 run 边界 + 空格字形 run 叠加会产生双空格——保留恢复收益、消除噪音） */
+function lineText(line) {
+  line.sort((a, b) => a.x - b.x);
+  let text = '';
+  let prev = null;
+  for (const r of line) {
+    if (prev && needsSpace(prev, r, text)) text += ' ';
+    text += r.str;
+    prev = r;
   }
+  return text.replace(/ {2,}/g, ' ').trimEnd();
+}
+
+/** runs → 行文本（按 y 分组，组内按 x 排序；组间以换行分隔；空格修复见文件头注释） */
+function runsToPageText(runs) {
+  if (runs.length === 0) return '';
+  const out = groupRunsIntoLines(runs).map(lineText);
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
