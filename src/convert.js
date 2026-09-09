@@ -17,11 +17,15 @@ async function imageConvert(file, buf) {
   const blob = new Blob([buf], { type: file.type || 'image/png' });
   const r = await worker.recognize(blob);
   const text = (((r && r.data) || {}).text || '').trim();
-  const conf = r && r.data && typeof r.data.confidence === 'number' ? Math.round(r.data.confidence) : null;
-  const warnings = [];
-  if (!text) warnings.push('OCR 未识别到文字（图片可能过小或模糊）');
-  else if (conf !== null && conf < 60) warnings.push(`OCR 置信度较低（${conf}%），结果可能不准确`);
-  return { markdown: text, warnings, backend: 'tesseract' };
+  const conf = typeof (r && r.data && r.data.confidence) === 'number' ? Math.round(r.data.confidence) : null;
+  return { markdown: text, warnings: ocrWarnings(text, conf), backend: 'tesseract' };
+}
+
+/** OCR 结果提示（空结果 / 低置信度） */
+function ocrWarnings(text, conf) {
+  if (!text) return ['OCR 未识别到文字（图片可能过小或模糊）'];
+  if (conf !== null && conf < 60) return [`OCR 置信度较低（${conf}%），结果可能不准确`];
+  return [];
 }
 
 /** text 转换器（TXT/HTML 路径；backend builtin / builtin-html；contract §4.1） */
@@ -56,28 +60,45 @@ export async function convert(file) {
     type: null, backend: null, elapsedMs: 0, truncated: false, warnings: [],
   };
   const done = (extra) => ({ markdown: extra && extra.markdown || '', meta: { ...meta, elapsedMs: Math.round(performance.now() - t0) }, error: extra && extra.error });
-  if (file.size === 0) return done({ error: '文件为空，无法转换' });
-  if (file.size > MAX_BYTES) return done({ error: '文件过大（超过 50MB），请先裁剪' });
+  const guard = guardError(file);
+  if (guard) return done({ error: guard });
   const buf = new Uint8Array(await file.arrayBuffer());
   const s = await sniff(buf);
   meta.type = s.type;
-  if (s.type === 'unknown') return done({ error: '无法识别的文件类型' });
-  if (s.type === 'pptx') return done({ error: 'PPTX 不在 v1 支持范围（见 README），v2 再议' });
-  if (s.type === 'zip') return done({ error: '暂不支持普通 ZIP 文件，请解压后再转换' });
-  // t11 §1.6：OLE2 = .doc/.xls/.ppt/加密 OOXML 的公共容器——通用口径（O2 需含「另存为」+「docx」、
-  // O3 需含「另存为」+「.xls」——命名 book.xls 不得误导为 .doc）；用户 2026-09-08 拍板 B+C 批
-  if (s.type === 'doc') return done({ error: '老版 Office 二进制格式（.doc/.xls/.ppt）或加密文档暂不支持，请用 Word/Excel/WPS 打开后另存为新格式（.docx/.xlsx）再转换' });
-  if (!registry[s.type]) return done({ error: '无法识别的文件类型' });
+  const unsupported = unsupportedError(s.type);
+  if (unsupported) return done({ error: unsupported });
   try {
-    const res = await registry[s.type](file, buf);
-    meta.backend = res.backend || null;
-    meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
-    meta.truncated = !!res.truncated; // 契约字段同步（审查报告 §1.5：转换器截断结果落地）
-    if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
-    // 成功路径也要回填耗时（失败路径 done() 已有）——ZCode A 批 ①（C7 断言：成功 meta.elapsedMs > 0）
-    meta.elapsedMs = Math.round(performance.now() - t0);
-    return { markdown: res.markdown || '', meta, error: undefined };
+    return await runConverter(s.type, file, buf, meta, t0);
   } catch (e) {
     return done({ error: '转换失败：' + (e && e.message ? e.message : '未知错误') });
   }
+}
+
+/* 大小护栏（空文件 / >50MB）：返回错误文案或 null */
+function guardError(file) {
+  if (file.size === 0) return '文件为空，无法转换';
+  if (file.size > MAX_BYTES) return '文件过大（超过 50MB），请先裁剪';
+  return null;
+}
+
+/* 类型层不支持（含 unknown/pptx/zip/doc 的友好指引；t11 §1.6 OLE2 通用口径 O2/O3 不得变） */
+function unsupportedError(type) {
+  if (type === 'pptx') return 'PPTX 不在 v1 支持范围（见 README），v2 再议';
+  if (type === 'zip') return '暂不支持普通 ZIP 文件，请解压后再转换';
+  if (type === 'doc') {
+    return '老版 Office 二进制格式（.doc/.xls/.ppt）或加密文档暂不支持，请用 Word/Excel/WPS 打开后另存为新格式（.docx/.xlsx）再转换';
+  }
+  if (type === 'unknown' || !registry[type]) return '无法识别的文件类型';
+  return null;
+}
+
+/* 转换器调用 + meta 同步（成功路径也要回填耗时——ZCode A 批 ① C7 断言 meta.elapsedMs > 0） */
+async function runConverter(type, file, buf, meta, t0) {
+  const res = await registry[type](file, buf);
+  meta.backend = res.backend || null;
+  meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
+  meta.truncated = !!res.truncated; // 契约字段同步（审查报告 §1.5：转换器截断结果落地）
+  if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
+  meta.elapsedMs = Math.round(performance.now() - t0);
+  return { markdown: res.markdown || '', meta, error: undefined };
 }
