@@ -48,51 +48,58 @@ function ommlChild(el, local) {
   return null;
 }
 // 渲染 OMML 元素序列为 LaTeX 片段；df={degraded:boolean} 透传「遇到复杂结构退化」标记
+/* 简单容器（m:r / m:oMath / m:oMathPara）：递归渲染全部子元素 */
+function ommlChildren(el, parts, df) {
+  for (const c of Array.from(el.children)) ommlParts(c, parts, df);
+}
+/* 分式 m:f → \frac{num}{den}（缺 num/den 则空段） */
+function ommlFracTex(el) {
+  const num = ommlChild(el, 'num'), den = ommlChild(el, 'den');
+  return '\\frac{' + (num ? ommlConcat(num) : '') + '}{' + (den ? ommlConcat(den) : '') + '}';
+}
+/* 上/下标（sSup / sSub / sSubSup）：m:e 为基，按名取 m:sub / m:sup（缺则空段）。
+ * 缺 m:e（结构异常/第三方工具）时 base 置空串，**不**退化为整个元素（否则 sup 内容被重复输出——复审 §1.6） */
+function ommlScript(el, parts, subName, supName) {
+  const base = ommlChild(el, 'e');
+  const sub = subName ? ommlChild(el, subName) : null;
+  const sup = supName ? ommlChild(el, supName) : null;
+  let out = base ? ommlConcat(base) : '';
+  if (subName) out += '_{' + (sub ? ommlConcat(sub) : '') + '}';
+  if (supName) out += '^{' + (sup ? ommlConcat(sup) : '') + '}';
+  parts.push(out);
+}
+/* 根式 m:rad：有 m:deg → \sqrt[deg]{e}，否则 \sqrt{e} */
+function ommlRad(el, parts) {
+  const deg = ommlChild(el, 'deg'), e = ommlChild(el, 'e');
+  const d = deg ? ommlConcat(deg) : '';
+  const baseT = e ? ommlConcat(e) : '';
+  parts.push(d !== '' ? '\\sqrt[' + d + ']{' + baseT + '}' : '\\sqrt{' + baseT + '}');
+}
+/* 定界符 m:d（ZCode A 批 ②（L2））：只渲染 m:e 内容（缺 e 则空）——此前 ommlConcat(el) 平铺整个 d，
+ * 嵌套的 m:f 等结构被文本退化拍平（如 (\frac{a}{b}) 变成 (ab)）；df 透传冒泡退化 warning */
+function ommlDelim(el, parts, df) {
+  const lc = el.getAttribute('m:begChr') || el.getAttribute('begChr') || '(';
+  const rc = el.getAttribute('m:endChr') || el.getAttribute('endChr') || ')';
+  const inner = ommlChild(el, 'e');
+  parts.push(lc + (inner ? ommlConcat(inner, df) : '') + rc);
+}
+/* OMML localName → 处理器（t2 重构：表驱动分派；未命中 → 退化/递归兜底） */
+const OMML_HANDLERS = new Map([
+  ['t', (el, parts) => parts.push(texText(el.textContent))],
+  ['r', ommlChildren],
+  ['oMath', ommlChildren],
+  ['oMathPara', ommlChildren],
+  ['f', (el, parts) => parts.push(ommlFracTex(el))],
+  ['sSup', (el, parts) => ommlScript(el, parts, null, 'sup')],
+  ['sSub', (el, parts) => ommlScript(el, parts, 'sub', null)],
+  ['sSubSup', (el, parts) => ommlScript(el, parts, 'sub', 'sup')],
+  ['rad', ommlRad],
+  ['d', ommlDelim],
+]);
 function ommlParts(el, parts, df) {
-  if (ommlIs(el, 't')) { parts.push(texText(el.textContent)); return; }
-  if (ommlIs(el, 'r')) { for (const c of Array.from(el.children)) { ommlParts(c, parts, df); } return; }
-  if (ommlIs(el, 'oMath') || ommlIs(el, 'oMathPara')) { for (const c of Array.from(el.children)) { ommlParts(c, parts, df); } return; }
-  if (ommlIs(el, 'f')) {
-    const num = ommlChild(el, 'num'), den = ommlChild(el, 'den');
-    parts.push('\\frac{' + (num ? ommlConcat(num) : '') + '}{' + (den ? ommlConcat(den) : '') + '}');
-    return;
-  }
-  if (ommlIs(el, 'sSup')) {
-    // 缺 m:e（结构异常/第三方工具）时 base 置空串，**不**退化为整个元素（否则 sup 内容被重复输出——复审 §1.6）
-    const base = ommlChild(el, 'e');
-    const sup = ommlChild(el, 'sup');
-    parts.push((base ? ommlConcat(base) : '') + '^{' + (sup ? ommlConcat(sup) : '') + '}');
-    return;
-  }
-  if (ommlIs(el, 'sSub')) {
-    const base = ommlChild(el, 'e');
-    const sub = ommlChild(el, 'sub');
-    parts.push((base ? ommlConcat(base) : '') + '_{' + (sub ? ommlConcat(sub) : '') + '}');
-    return;
-  }
-  if (ommlIs(el, 'sSubSup')) {
-    const base = ommlChild(el, 'e');
-    const sub = ommlChild(el, 'sub');
-    const sup = ommlChild(el, 'sup');
-    parts.push((base ? ommlConcat(base) : '') + '_{' + (sub ? ommlConcat(sub) : '') + '}^{' + (sup ? ommlConcat(sup) : '') + '}');
-    return;
-  }
-  if (ommlIs(el, 'rad')) {
-    const deg = ommlChild(el, 'deg'), e = ommlChild(el, 'e');
-    const d = deg ? ommlConcat(deg) : '';
-    const baseT = e ? ommlConcat(e) : '';
-    parts.push(d !== '' ? '\\sqrt[' + d + ']{' + baseT + '}' : '\\sqrt{' + baseT + '}');
-    return;
-  }
-  if (ommlIs(el, 'd')) {
-    // ZCode A 批 ②（L2）：定界符内只渲染 m:e 内容（缺 e 则空）——此前 ommlConcat(el) 平铺整个 d，
-    // 嵌套的 m:f 等结构被文本退化拍平（如 (\frac{a}{b}) 变成 (ab)）；df 透传冒泡退化 warning
-    const lc = el.getAttribute('m:begChr') || el.getAttribute('begChr') || '(';
-    const rc = el.getAttribute('m:endChr') || el.getAttribute('endChr') || ')';
-    const inner = ommlChild(el, 'e');
-    parts.push(lc + (inner ? ommlConcat(inner, df) : '') + rc);
-    return;
-  }
+  const isOmml = el && el.nodeType === 1 && el.namespaceURI === OMML_NS;
+  const handler = isOmml ? OMML_HANDLERS.get(el.localName) : undefined;
+  if (handler) { handler(el, parts, df); return; }
   // 复杂结构（nary 积分/求和、m 矩阵、limLow/limUpp、func、eqArr、groupChr、box…）→ v1 退化：保留全部文本
   const raw = texText(el.textContent || '').replace(/\s+/g, ' ').trim();
   if (raw !== '') { parts.push(raw); if (df) { df.degraded = true; } return; }
