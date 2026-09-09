@@ -151,41 +151,47 @@ function blockifyContainer(el, ctx) {
   flush();
   return blocks;
 }
+// 标题块（H1-H6）：# 数量 = 级别；空标题不产出
+function headingBlock(el, level) {
+  const inner = inlineTrim(el, 'br');
+  return inner === '' ? [] : ['#'.repeat(level) + ' ' + inner];
+}
+
+// 非空才产出单块（prefix = 行首前缀，如 LI 的 '- '）
+function wrapBlock(s, prefix) {
+  return s === '' ? [] : [(prefix || '') + s];
+}
+
+// PRE：动态围栏（审查报告 §1.5）——围栏长度 = 内容最长反引号串 + 1（至少 3），内容含 ``` 时不会提前闭合
+function preBlock(el) {
+  const body = el.textContent.replace(/^\n|\n$/g, '');
+  const runs = body.match(/`+/g) || [''];
+  const fence = '`'.repeat(Math.max(3, Math.max(...runs.map((s) => s.length)) + 1));
+  return [fence + '\n' + body + '\n' + fence];
+}
+
+/* 块级标签分派表（tagName → 块字符串数组） */
+const BLOCK_EL = new Map([
+  ['H1', (el) => headingBlock(el, 1)],
+  ['H2', (el) => headingBlock(el, 2)],
+  ['H3', (el) => headingBlock(el, 3)],
+  ['H4', (el) => headingBlock(el, 4)],
+  ['H5', (el) => headingBlock(el, 5)],
+  ['H6', (el) => headingBlock(el, 6)],
+  ['P', (el) => wrapBlock(inlineTrim(el, 'newline'))],
+  ['UL', (el) => wrapBlock(listElToMd(el, 0))],
+  ['OL', (el) => wrapBlock(listElToMd(el, 0))],
+  ['BLOCKQUOTE', (el, ctx) => wrapBlock(quoteElToMd(el, ctx))],
+  ['TABLE', (el, ctx) => wrapBlock(tableToMd(el, ctx))],
+  ['PRE', (el) => preBlock(el)],
+  ['HR', () => ['---']],
+  ['BR', () => ['']],
+  ['LI', (el) => wrapBlock(inlineTrim(el, 'newline'), '- ')],
+]);
+
 function blockOfEl(el, ctx) {
-  const tag = el.tagName;
-  if (tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'H5' || tag === 'H6') {
-    const inner = inlineTrim(el, 'br');
-    return inner !== '' ? ['#'.repeat(+tag[1]) + ' ' + inner] : [];
-  }
-  if (tag === 'P') {
-    const inner = inlineTrim(el, 'newline');
-    return inner !== '' ? [inner] : [];
-  }
-  if (tag === 'UL' || tag === 'OL') {
-    const s = listElToMd(el, 0);
-    return s !== '' ? [s] : [];
-  }
-  if (tag === 'BLOCKQUOTE') {
-    const s = quoteElToMd(el, ctx);
-    return s !== '' ? [s] : [];
-  }
-  if (tag === 'TABLE') {
-    const s = tableToMd(el, ctx);
-    return s !== '' ? [s] : [];
-  }
-  if (tag === 'PRE') {
-    // 动态围栏（审查报告 §1.5）：围栏长度 = 内容最长反引号串 + 1（至少 3），内容含 ``` 时不会提前闭合
-    const body = el.textContent.replace(/^\n|\n$/g, '');
-    const runs = body.match(/`+/g) || [''];
-    const fence = '`'.repeat(Math.max(3, Math.max(...runs.map((s) => s.length)) + 1));
-    return [fence + '\n' + body + '\n' + fence];
-  }
-  if (tag === 'HR') return ['---'];
-  if (tag === 'BR') return [''];
-  if (tag === 'LI') {
-    const inner = inlineTrim(el, 'newline');
-    return inner !== '' ? ['- ' + inner] : [];
-  }
+  const handler = BLOCK_EL.get(el.tagName);
+  if (handler) return handler(el, ctx);
   // DIV/SECTION/…/DL/DT/DD 等容器：子块递归
   return blockifyContainer(el, ctx).filter((b) => b !== '');
 }
