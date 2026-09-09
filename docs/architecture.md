@@ -34,6 +34,7 @@ registry[type](file, buf) ── 转换器实现 ──────────�
 | `bline.js` | B线资源层 | vendor 同源 URL（pdf worker、tesseract worker 入口 + 外域抛错 patch） |
 | `ocr.js` | OCR 资源/WORKER | ocrAssetsWarm（SW 分段缓存就绪检测 + 首载下载量提示）、getOcrWorker（lazy-init 单例） |
 | `pdf.js` | PDF 转换器 | pdfjs 加载、逐页文本层/OCR 判断（单页 <10 字符或质量占比 <40%）、page N/M 进度、单页 OCR 兜底 |
+| `cjk.js` | 中文文本后处理 | collapseCjkSpaces（OCR 词间空格合并：CJK↔CJK/中文标点/数字；CJK↔拉丁保留、不跨行；零依赖纯函数，可 Node 单跑） |
 | `xlsx.js` | XLSX 转换器 | zipEntry（中央目录 + DecompressionStream）、xlsxSheetNames（workbook.xml 自读）、表格格式化、截断口径 |
 | `docx.js` | DOCX 转换器 | fflate 解包/重打包、OMML→LaTeX（占位令牌法）、图片阈值抽取（≤100KB 内嵌/＞→meta.assets）、alt 口径 |
 | `convert.js` | 注册表/统一入口 | registry = { pdf, docx, xlsx, image, text }、convert()（护栏/嗅探调度/meta 同步） |
