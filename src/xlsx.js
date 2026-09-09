@@ -119,68 +119,87 @@ function decodeXml(s) {
     .replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10)));
 }
 
+/* 单元格属性提取（t1 重构：从 scanSheetRows 抽出——t/s 两属性） */
+function parseCellAttrs(attrs) {
+  const tMatch = / t="([^"]*)"/.exec(attrs);
+  const sMatch = / s="([^"]*)"/.exec(attrs);
+  return { t: tMatch ? tMatch[1] : '', s: sMatch ? sMatch[1] : '' };
+}
+
+/* 标签起始位置（t1 重构：前缀守卫——标签名后必须是 valid 中任一字符（如 ' >/'），防 <cols/<col、
+ * <rowBreak/<rowPath 误匹配；-1 = 无更多）。行级与单元格级共用，消除重复守卫逻辑。 */
+function findTagStart(s, tag, p, valid) {
+  let i = p;
+  while (true) {
+    const cs = s.indexOf(tag, i);
+    if (cs < 0) return -1;
+    if (valid.includes(s[cs + tag.length])) return cs;
+    i = cs + tag.length + 1;
+  }
+}
+
+/* 单个 <c> 解析（t1 重构：属性 + <v>/<is> 文本；结构损坏 → null）。自闭合单元格不含 isText 键
+ * （与重构前逐字段一致）；t36（L6）：t="inlineStr" 文本在 <is><t>…</t></is>（多 run 拼接，含 xml:space）。 */
+function parseCellAt(body, cs) {
+  const ct = body.indexOf('>', cs);
+  if (ct < 0) return null;
+  const attrs = body.slice(cs + 2, ct);
+  const { t, s } = parseCellAttrs(attrs);
+  if (attrs.trimEnd().endsWith('/')) return { cell: { t, s, v: '' }, next: ct + 1 };
+  const ce = body.indexOf('</c>', ct);
+  if (ce < 0) return null;
+  const inner = body.slice(ct + 1, ce);
+  const vm = /<v[^>]*>([^<]*)<\/v>/.exec(inner);
+  const isText = t === 'inlineStr' ? extractInlineText(inner) : '';
+  return { cell: { t, s, v: vm ? vm[1] : '', isText }, next: ce + 4 };
+}
+
+/* 一个 <row> 体的单元格序列（t1 重构：由 scanSheetRows 抽出；返回 { cells, maxS }——maxS =
+ * 共享字符串最大索引，仅 t="s" 且 <v> 可解析为数字时更新） */
+function parseRowCells(body, maxS) {
+  const cells = [];
+  let max = maxS;
+  let p = 0;
+  while (true) {
+    const cs = findTagStart(body, '<c', p, ' >/');
+    if (cs < 0) break;
+    const parsed = parseCellAt(body, cs);
+    if (!parsed) break;
+    if (parsed.cell.t === 's' && parsed.cell.v !== '') {
+      const si = parseInt(parsed.cell.v, 10);
+      if (!Number.isNaN(si) && si > max) max = si;
+    }
+    cells.push(parsed.cell);
+    p = parsed.next;
+  }
+  return { cells, maxS: max };
+}
+
 /* 线性扫描 sheet XML 的行（t33 流式）：最多解析 ROW_LIMIT+1 个 <row> 即停——绝不读完整个 sheet。
  * 返回 { rawRows: [{ cells: [{t,s,v}] }], maxS, more }：more = 存在第 ROW_LIMIT+1 行之后的更多行（截断判定） */
 function scanSheetRows(xml, rowLimit) {
   const rawRows = [];
   let maxS = -1;
   let pos = 0;
-  let more = false;
   while (rawRows.length <= rowLimit) {
-    const rs = xml.indexOf('<row', pos);
+    // 前缀守卫（findTagStart）：'<row' 后必须是空白/'>'/'/'（防 <rowBreak/<rowPath 等误匹配）
+    const rs = findTagStart(xml, '<row', pos, ' >/');
     if (rs < 0) break;
-    // 前缀守卫：'<row' 后必须是空白/'>'/'/'（防 <rowBreak/<rowPath 等误匹配）
-    if (xml[rs + 4] !== ' ' && xml[rs + 4] !== '>' && xml[rs + 4] !== '/') { pos = rs + 5; continue; }
     const tagEnd = xml.indexOf('>', rs);
     if (tagEnd < 0) break;
-    const openTag = xml.slice(rs, tagEnd + 1);
-    if (openTag.endsWith('/>')) { // 自闭合空行（如 <row r="N"/>）
+    if (xml.slice(rs, tagEnd + 1).endsWith('/>')) { // 自闭合空行（如 <row r="N"/>）
       rawRows.push([]);
       pos = tagEnd + 1;
-      continue;
+    } else {
+      const re = xml.indexOf('</row>', tagEnd);
+      if (re < 0) break;
+      const scanned = parseRowCells(xml.slice(tagEnd + 1, re), maxS);
+      maxS = scanned.maxS;
+      rawRows.push(scanned.cells);
+      pos = re + 6;
     }
-    const re = xml.indexOf('</row>', tagEnd);
-    if (re < 0) break;
-    const body = xml.slice(tagEnd + 1, re);
-    const cells = [];
-    let p = 0;
-    while (true) {
-      const cs = body.indexOf('<c', p);
-      if (cs < 0) break;
-      // 前缀守卫：'<c' 后必须是空白/'>'/'/'（防 <cols/<col 误匹配）
-      if (body[cs + 2] !== ' ' && body[cs + 2] !== '>' && body[cs + 2] !== '/') { p = cs + 3; continue; }
-      const ct = body.indexOf('>', cs);
-      if (ct < 0) break;
-      const attrs = body.slice(cs + 2, ct);
-      const selfClose = attrs.trimEnd().endsWith('/');
-      const tMatch = / t="([^"]*)"/.exec(attrs);
-      const sMatch = / s="([^"]*)"/.exec(attrs);
-      const t = tMatch ? tMatch[1] : '';
-      const s = sMatch ? sMatch[1] : '';
-      if (selfClose) {
-        cells.push({ t, s, v: '' });
-        p = ct + 1;
-        continue;
-      }
-      const ce = body.indexOf('</c>', ct);
-      if (ce < 0) break;
-      const inner = body.slice(ct + 1, ce);
-      const vm = /<v[^>]*>([^<]*)<\/v>/.exec(inner);
-      const v = vm ? vm[1] : '';
-      if (t === 's' && v !== '') {
-        const si = parseInt(v, 10);
-        if (!Number.isNaN(si) && si > maxS) maxS = si;
-      }
-      // t36（L6）：t="inlineStr" 的文本在 <is><t>…</t></is>（可多个 run <r><t> 拼接，含 xml:space）——不在 <v>
-      const isText = t === 'inlineStr' ? extractInlineText(inner) : '';
-      cells.push({ t, s, v, isText });
-      p = ce + 4;
-    }
-    rawRows.push(cells);
-    pos = re + 6;
   }
-  if (rawRows.length > rowLimit) more = true;
-  return { rawRows: rawRows.slice(0, rowLimit), maxS, more };
+  return { rawRows: rawRows.slice(0, rowLimit), maxS, more: rawRows.length > rowLimit };
 }
 
 /* <t> 文本线性提取（t11 小重构：extractInlineText / parseSharedStrings 同构段共用——t12 indexOf 纪律，
