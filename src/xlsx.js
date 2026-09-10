@@ -139,11 +139,12 @@ function decodeXml(s) {
     .replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10)));
 }
 
-/* 单元格属性提取（t1 重构：从 scanSheetRows 抽出——t/s 两属性） */
+/* 单元格属性提取（t1 重构：从 scanSheetRows 抽出——t/s 两属性；S3-① 增 r = 单元格引用如 "C2"） */
 function parseCellAttrs(attrs) {
   const tMatch = / t="([^"]*)"/.exec(attrs);
   const sMatch = / s="([^"]*)"/.exec(attrs);
-  return { t: tMatch ? tMatch[1] : '', s: sMatch ? sMatch[1] : '' };
+  const rMatch = / r="([^"]*)"/.exec(attrs);
+  return { t: tMatch ? tMatch[1] : '', s: sMatch ? sMatch[1] : '', r: rMatch ? rMatch[1] : '' };
 }
 
 /* 标签起始位置（t1 重构：前缀守卫——标签名后必须是 valid 中任一字符（如 ' >/'），防 <cols/<col、
@@ -159,19 +160,20 @@ function findTagStart(s, tag, p, valid) {
 }
 
 /* 单个 <c> 解析（t1 重构：属性 + <v>/<is> 文本；结构损坏 → null）。自闭合单元格不含 isText 键
- * （与重构前逐字段一致）；t36（L6）：t="inlineStr" 文本在 <is><t>…</t></is>（多 run 拼接，含 xml:space）。 */
+ * （与重构前逐字段一致）；t36（L6）：t="inlineStr" 文本在 <is><t>…</t></is>（多 run 拼接，含 xml:space）。
+ * S3-①：附带 r 列引用（缺省 ''——无引用时调用方按文档序回落）。 */
 function parseCellAt(body, cs) {
   const ct = body.indexOf('>', cs);
   if (ct < 0) return null;
   const attrs = body.slice(cs + 2, ct);
-  const { t, s } = parseCellAttrs(attrs);
-  if (attrs.trimEnd().endsWith('/')) return { cell: { t, s, v: '' }, next: ct + 1 };
+  const { t, s, r } = parseCellAttrs(attrs);
+  if (attrs.trimEnd().endsWith('/')) return { cell: { t, s, r, v: '' }, next: ct + 1 };
   const ce = body.indexOf('</c>', ct);
   if (ce < 0) return null;
   const inner = body.slice(ct + 1, ce);
   const vm = /<v[^>]*>([^<]*)<\/v>/.exec(inner);
   const isText = t === 'inlineStr' ? extractInlineText(inner) : '';
-  return { cell: { t, s, v: vm ? vm[1] : '', isText }, next: ce + 4 };
+  return { cell: { t, s, r, v: vm ? vm[1] : '', isText }, next: ce + 4 };
 }
 
 /* 一个 <row> 体的单元格序列（t1 重构：由 scanSheetRows 抽出；返回 { cells, maxS }——maxS =
@@ -397,9 +399,39 @@ function cellToString(c, ss, styles) {
   if (c.t === 'd') return isoDateOnly(c.v);
   return serialDateOrRaw(c, styles);
 }
-/* 一行原始单元格 → 字符串数组（t8 重构） */
+/* 列引用 → 0 基列号（'C2' → 2、'AA1' → 26）：取前导字母段，遇非字母停。无字母或超 XLSX 列上限
+ * （XFD = 16384 列）→ -1（调用方回落文档序——防 <c r="ZZZZZZ"> 触发巨量补空）。 */
+const XLSX_MAX_COLS = 16384;
+function refLetterValue(ch) {
+  if (ch >= 65 && ch <= 90) return ch - 64; // A-Z → 1..26
+  if (ch >= 97 && ch <= 122) return ch - 96; // a-z → 1..26（部分写入器用小写列标）
+  return 0;
+}
+function colIndexOfRef(ref) {
+  let n = 0;
+  let i = 0;
+  while (i < ref.length) {
+    const v = refLetterValue(ref.charCodeAt(i));
+    if (v === 0) break;
+    n = n * 26 + v;
+    if (n > XLSX_MAX_COLS) return -1;
+    i++;
+  }
+  return i === 0 ? -1 : n - 1;
+}
+
+/* 一行原始单元格 → 字符串数组（t8 重构）。S3-① 拍板（2026-09-10）：单元格列位置由 c@r 决定——
+ * 稀疏行按列号补空（A2/C2 → [A2, '', C2]，不再让 C2 挤到第 2 列）、行内乱序也按列号归位；
+ * 无 r / r 非法（超 XLSX 列上限）时退回文档序顺序追加（既有样例无 r → 行为不变）。 */
 function rowToTexts(cells, ss, styles) {
-  return cells.map((c) => cellToString(c, ss, styles));
+  const out = [];
+  cells.forEach((c) => {
+    const col = colIndexOfRef(c.r || '');
+    const at = col >= 0 ? col : out.length;
+    while (out.length < at) out.push('');
+    out[at] = cellToString(c, ss, styles);
+  });
+  return out;
 }
 
 /* t33 自解析单 sheet：流式读取前 ROW_LIMIT 行（扫描到 ROW_LIMIT+1 个即判定截断），行内单元格映射为字符串数组。
