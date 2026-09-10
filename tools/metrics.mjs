@@ -212,9 +212,11 @@ for (const file of targets) {
   }
 }
 
-/* ---------- jscpd 重复率（jscpd 未成功运行时标 N/A——绝不冒充旧报告） ---------- */
+/* ---------- jscpd 重复率（jscpd 未成功运行时标 N/A——绝不冒充旧报告） ----------
+ * 口径（2026-09-10 用户拍板）：只度量 src/ + tools/ —— **tests/ 排除**（契约测试各组的
+ * 浏览器/服务器样板天然重复，不代表产品代码债；测试脚本的重复待需要时再抽共享夹具）。 */
 let duplication = null;
-const jscpdTargets = [srcDir, toolsDir, path.join(ROOT, 'tests')].filter((p) => fs.existsSync(p));
+const jscpdTargets = [srcDir, toolsDir].filter((p) => fs.existsSync(p));
 const jscpdOut = path.join(ROOT, '.tmp', 'metric-jscpd');
 fs.mkdirSync(jscpdOut, { recursive: true });
 const jscpdReport = path.join(jscpdOut, 'jscpd-report.json');
@@ -275,12 +277,12 @@ lines.push(
 lines.push('> 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。');
 lines.push('');
 if (parseErrors.length) {
-  lines.push('## ⚠️ 解析失败文件');
+  lines.push('## ⚠️ 解析失败文件（度量不可信——metrics 以 exit 1 失败）');
   lines.push('');
   for (const p of parseErrors) lines.push(`- ${p.file}：${p.error}`);
   lines.push('');
 }
-lines.push('## 1. 重复率（jscpd，阈值 <5%）');
+lines.push('## 1. 重复率（jscpd：src/ + tools/；tests/ 不计入；阈值 <5%）');
 lines.push('');
 lines.push(
   `- **重复率：${duplication === null ? '不可用（jscpd 未运行成功或目标目录为空；沙箱内可先手动跑 jscpd 生成报告）' : duplication + '%'}**（目标 <5%）`
@@ -334,7 +336,7 @@ lines.push(
   '- 认知复杂度：**近似** Sonar 口径（控制流 1+嵌套、break/continue +1、逻辑运算符 +1）；阈值 ≤15，与 eslint-plugin-sonarjs `cognitive-complexity` 规则一致——数值与官方可能差 1-2 分，权威判定以 eslint 规则为准。'
 );
 lines.push(
-  '- jscpd：`--min-lines 5 --min-tokens 50 --format javascript`（短重复不告警）；阈值 <5%（任务书）。'
+  '- jscpd：`--min-lines 5 --min-tokens 50 --format javascript`（短重复不告警）；**度量对象 = src/ + tools/（tests/ 不计入，2026-09-10 拍板）**；阈值 <5%（任务书）。'
 );
 lines.push(
   '- 局限性：本报告覆盖 src/ + tools/；index.html 内联 JS（无 src/ 拆分阶段的形态）与 tests/ 不在度量范围（与 eslint 白名单一致）。'
@@ -361,3 +363,8 @@ for (const f of over)
   );
 console.log(`[metrics] 报告已写 ${path.relative(ROOT, outPath)}`);
 if (over.length > 0) process.exitCode = 1; // 超限 → metrics exit 1（CI 硬门禁「超限必须为 0」，2026-09-10 用户拍板）
+if (parseErrors.length > 0) {
+  // 解析失败的文件被跳过度量（函数数不计）→「超限 0」不再可信：按门禁失败处理（2026-09-10）
+  console.log(`[metrics] 解析失败 ${parseErrors.length} 个文件——度量不可信 → exit 1`);
+  process.exitCode = 1;
+}
