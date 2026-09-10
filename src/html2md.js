@@ -320,18 +320,30 @@ function warnMerged(ctx) {
   if (!ctx.warnings.includes(w)) ctx.warnings.push(w);
 }
 
+/* S3-②：跨列/跨行列数（非法值按 1；上限 MAX_COLSPAN——防 colspan="99999" 把单行撑爆内存）。
+ * v1 不支持合并结构：本函数只服务「合并单元格」告警与 colspan 的列占位。 */
+const MAX_COLSPAN = 100;
+function spanOf(el, name) {
+  const n = parseInt(el.getAttribute(name) || '1', 10);
+  return Number.isFinite(n) && n > 1 ? Math.min(n, MAX_COLSPAN) : 1;
+}
+
 // 单元格 → md 文本：合并告警 + 行内 walker（<br>→空格，审查报告 §1.2 建议 #2）+ GFM 转义 |/换行
 function cellToMd(c, ctx) {
-  const rs = parseInt(c.getAttribute('rowspan') || '1', 10) || 1;
-  const cs = parseInt(c.getAttribute('colspan') || '1', 10) || 1;
-  if ((rs > 1 || cs > 1) && ctx && ctx.warnings) warnMerged(ctx);
+  if ((spanOf(c, 'rowspan') > 1 || spanOf(c, 'colspan') > 1) && ctx && ctx.warnings) warnMerged(ctx);
   const cell = joinFrags(collectFrags(c, 'space', [])).trim();
   return cell.replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
 
-// 一行 → 单元格数组（只取直接子级 th/td）
+/* 一行 → 单元格数组（只取直接子级 th/td）。S3-② 拍板（2026-09-10）：colspan = 内容放首列、
+ * 其余补空——GFM 无合并结构，补空可保持「列位置正确、后续列不挤位」（内容不重复膨胀）。 */
 function rowCells(tr, ctx) {
-  return Array.from(tr.querySelectorAll(':scope > th, :scope > td')).map((c) => cellToMd(c, ctx));
+  const out = [];
+  Array.from(tr.querySelectorAll(':scope > th, :scope > td')).forEach((c) => {
+    out.push(cellToMd(c, ctx));
+    for (let i = spanOf(c, 'colspan'); i > 1; i--) out.push('');
+  });
+  return out;
 }
 
 // 行数组 → GFM 表：列数对齐到最大宽度，首行为表头
