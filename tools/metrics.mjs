@@ -212,7 +212,7 @@ for (const file of targets) {
   }
 }
 
-/* ---------- jscpd 重复率（spawn 失败时读取已生成报告） ---------- */
+/* ---------- jscpd 重复率（jscpd 未成功运行时标 N/A——绝不冒充旧报告） ---------- */
 let duplication = null;
 const jscpdTargets = [srcDir, toolsDir, path.join(ROOT, 'tests')].filter((p) => fs.existsSync(p));
 const jscpdOut = path.join(ROOT, '.tmp', 'metric-jscpd');
@@ -238,8 +238,11 @@ const jscpdArgs = [
   jscpdOut,
 ];
 if (jscpdIgnored.length) jscpdArgs.push('--ignore', jscpdIgnored.join(','));
-spawnSync(process.execPath, jscpdArgs, { cwd: ROOT, encoding: 'utf8', shell: false });
-if (fs.existsSync(jscpdReport)) {
+// 先删旧报告：spawn 失败（沙箱内派生被拒等）时不得把上一次的报告当本次结果——假绿比 N/A 危险
+fs.rmSync(jscpdReport, { force: true });
+const jscpdRun = spawnSync(process.execPath, jscpdArgs, { cwd: ROOT, encoding: 'utf8', shell: false });
+const jscpdOk = !jscpdRun.error && jscpdRun.status === 0;
+if (jscpdOk && fs.existsSync(jscpdReport)) {
   try {
     const rep = JSON.parse(fs.readFileSync(jscpdReport, 'utf8'));
     const t = rep.statistics && rep.statistics.total;
