@@ -1,8 +1,19 @@
 // tools/embed-bline.mjs — B线：把 pdf.js / tesseract.js(+core+语言包) / read-excel-file 内联进 index.html
 // 幂等：若 index.html 已含 embed-pdfjs-worker 标记则跳过（重复运行安全）。
-// 运行：node tools/embed-bline.mjs （工作区根）
+// 运行：node tools/embed-bline.mjs --force （工作区根）
 // 内联库头部注释保留「包名 版本 许可 来源」（licenses.md 义务）。
+//
+// ⚠️ 致命护栏（2026-09-10 用户拍板）：T9′ 拆分后 index.html 的库由 **vendor/ 同源分文件**加载，
+//    src/ 是唯一源码真相；本脚本是**历史存档**——一跑就会把 ~16MB 库重新内联进 index.html，
+//    绕过 src/（第四轮审查 §13 已提过）。故默认**拒绝执行**且 exit 1，须显式 `--force` 才动手。
 import fs from 'node:fs';
+
+if (!process.argv.includes('--force')) {
+  console.error('[embed-bline] 已停用（历史存档脚本，默认拒绝执行）。');
+  console.error('  T9′ 拆分后：index.html = src/ 构建产物（npm run build）+ vendor/ 同源分文件加载。');
+  console.error('  若确需重新内联（正常开发流程不应发生），显式运行：node tools/embed-bline.mjs --force');
+  process.exit(1);
+}
 
 const read = (p) => fs.readFileSync(p, 'utf8');
 const readB = (p) => fs.readFileSync(p);
