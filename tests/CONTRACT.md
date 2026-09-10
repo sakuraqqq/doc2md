@@ -313,6 +313,22 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 
 **范围说明（未断言、已知限制）**：① CSS `text-decoration: line-through` 目前不产出 `~~`（待拍板，见规范清单 §3-1）；② OOXML **双删除线 `w:dstrike`** 不产出 `~~`——上游库只读 `w:strike`，属库侧限制（登记为规范清单 **S5**，未断言，避免把库行为锁进本项目契约）。
 
+### 契约组 S — 格式规范符合性 S3：表格列位置（2026-09-10；机制见 `docs/spec-conformance-tests.md`）
+
+口径（用户 2026-09-10 拍板）：① OOXML `<c r="C2">` 的 `r` = 单元格引用，**列位置由 `r` 决定**——稀疏行按列号补空、行内乱序也按列号归位；`r` 缺失或超 XLSX 列上限（16384）回落文档序。② HTML `colspan`（GFM 无合并结构）= **内容放首列、其余补空**；列数上限 `MAX_COLSPAN = 100`；既有「合并单元格」告警保留。实现 = `src/xlsx.js` `parseCellAttrs`/`parseCellAt` 增 `r` + `rowToTexts` 按列号放置（`colIndexOfRef`/`refLetterValue`）；`src/html2md.js` `spanOf` + `rowCells` 补空列。
+
+样例：**无新增入库样例**——XLSX 用例页内 fflate 现造最小包（`[Content_Types].xml` + `_rels/.rels` + `xl/workbook.xml` + `xl/_rels/workbook.xml.rels` + `xl/worksheets/sheet1.xml`，单元格用 `t="inlineStr"`）；HTML 用例为纯函数快照。
+
+| 编号 | 断言 | 标准 | 当前（基线 `3c78ba2` 前，契约先红） |
+|---|---|---|---|
+| S3-1 | XLSX 稀疏行（A2/C2，B2 省略；表头 A1/B1/C1） | markdown 含 `\| A2 \|  \| C2 \|` | 🟢 绿（先红实测 `\| A2 \| C2 \|  \|`——C2 挤到第 2 列） |
+| S3-2 | XLSX 行内乱序（文档序 C2 先、A2 后） | 仍按 `r` 归位 → `\| A2 \|  \| C2 \|` | 🟢 绿（先红实测 `\| C2 \| A2 \|  \|`） |
+| S3-3 | HTML `<td colspan="2">wide</td><td>c</td>` + 同表普通行 | 首行 `\| wide \|  \| c \|`；普通行 `\| x \| y \| z \|` 不受影响 | 🟢 绿（先红实测 `\| wide \| c \|  \|`） |
+| S3-4 | colspan 在表头行：`<th colspan="2">H</th><th>c</th>` | 首行 `\| H \|  \| c \|` + 分隔行 `\| --- \| --- \| --- \|` + warnings 含「合并单元格」 | 🟢 绿（先红实测 `\| H \| c \|  \|`） |
+| S3-5 | colspan 巨值护栏：`colspan="99999"` | 列数封顶 `MAX_COLSPAN = 100`（不产生 N 个空列） | 🟢 绿（先红实测 1 列——完全未展开） |
+
+**范围说明**：① `rowspan` 仍按普通单元格展平（只告警不改结构，v1 口径不变）；② `MAX_COLSPAN`/XLSX 列上限（16384）为护栏值，调整即改口径；③ 仓库 gen 产物样例的 `<c>` 不带 `r` → 回落文档序 = 既有行为，故 S3-1/S3-2 之外无既有快照变动（零回归由全量跑守）。
+
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |
@@ -428,7 +444,9 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
-- **2026-09-10 规范符合性 S2 批（契约组 S 先红后绿；captain 单会话自干，用户「跑 S2」）**：来源 = 规范符合性清单 `docs/spec-conformance-tests.md` 首轮 **S2**（HTML 删除线语义丢失，静默缺陷）。基线 HEAD `d36fede`。契约先红 `435af14`（组 S：S2-1..S2-4 html2md 快照 + S2-5 DOCX 端到端）→ 实现 `1a6c581`（`src/html2md.js` `FRAG_TAGS` 增 `S`/`DEL`/`STRIKE` → `strikeFrag`）→ 产物 `2b2a0eb`（index.html **109,076 B** / SHA `5CC3755E9B611039DA53782532320BBAC7D8A22DC9BE7A8044E162F3039B1C82`）。**实测（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）**：**先红** = **6 tests / 0 pass / 6 fail**（如 S2-1 实际 `'a struck b'` vs 期望 `'a ~~struck~~ b'`）；**后绿** = **159/159 pass / 0 fail（36.2s）**（组 S 6/6 + 既有 153 断言零回归）；`eslint "src/**/*.js"` **0w/0e**；`node tools/metrics.mjs` 超限 **0** / 重复率 4% / exit 0。**范围外（登记待拍板）**：CSS `line-through` 是否支持（约 +5 行）；**S5** = OOXML `w:dstrike` 上游库不读（源码实证 `element.first("w:strike")`，不产出 `<s>`）→ 可 docx 预处理归一（约 3 行）或登记已知限制；S3（XLSX 稀疏列 / HTML `colspan`）、S4（4096 字节编码探测窗口）、S1 补断言锁死仍未做。
+- **2026-09-10 规范符合性 S3 批（契约组 S 增 S3-1..S3-5 先红后绿；captain 单会话自干，用户「跑 S3」+ 两条拍板）**：来源 = 规范符合性清单 **S3**（表格列位置错位，静默缺陷 ×2）。拍板（用户 2026-09-10 当场定案）：XLSX **一律按 `r` 列号归位**（乱序也放对列）；HTML `colspan` = **内容放首列 + 其余补空**。基线 HEAD `5a055da`。契约先红 `3c78ba2`（S3-1 XLSX 稀疏 / S3-2 XLSX 乱序 / S3-3 colspan / S3-4 colspan 表头 + 告警 / S3-5 colspan 巨值封顶；XLSX 用例页内 fflate 现造最小包，不入库样例）→ 实现 `5dd4478`（`src/xlsx.js`：`parseCellAttrs`/`parseCellAt` 增 `r`、`rowToTexts` 按列号放置、新增 `colIndexOfRef`/`refLetterValue`）+ `b9002da`（`src/html2md.js`：`spanOf` + `rowCells` 补空列、`MAX_COLSPAN = 100`）→ 产物 `a58b067`（index.html **110,021 B** / SHA `302AA424A34F641E1E74C646FB0C4B488BEA91C3C217FF3FFD95182573B50B4B`）。**实测（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）**：**先红** = 165 tests / **159 pass / 6 fail**（S3-1 `\| A2 \| C2 \|  \|`、S3-2 `\| C2 \| A2 \|  \|`、S3-3 `\| wide \| c \|  \|`、S3-4 `\| H \| c \|  \|`、S3-5 实际 1 列 vs 期望 100）；**后绿** = **165/165 pass / 0 fail（38.1s）**（组 S S3 **5/5** + S2 5/5 + 既有 155 断言零回归）；`eslint "src/**/*.js"` **0w/0e**；`node tools/metrics.mjs` 文件 16 / 函数 323 / 超限 **0** / exit 0。**顺带修掉假绿（`c28fa5c`）**：`tools/metrics.mjs` 在 jscpd `spawnSync` 失败时会读 `.tmp/` 里的**上一次旧报告** → 沙箱内重复率长期显示 4%（**真值：`d36fede` 基线 8.86% / 当前 9.37%**，实测复现见下）；现改为「运行前删旧报告 + 仅 jscpd 成功（无 error 且 status=0）才读，否则标 N/A」。**待拍板（超范围，未做）**：重复率是否设 CI 硬门禁（真值超 5% 阈值；来源主要是 `tests/` 各组的浏览器样板重复 + `tests/gen-samples.mjs`）；CSS `line-through`（S2 残余）；S5 `w:dstrike`；S4 编码探测窗口；S1 补断言锁死。
+  **重复率取证（本会话实测）**：把 `tests/contract_v1.test.mjs` 换成 `d36fede` 版后跑同一 jscpd 参数 → **604 重复行 / 6821 行 = 8.86%（38 clones）**；当前树 → **646 / 7027 = 9.19~9.37%（40 clones）**——即 S2+S3 两组测试新增只贡献 **+0.3~0.5 个点**，而 `AGENTS.md` 记的「重复率 4%」是 metrics 读旧报告的假值。
+- **2026-09-10 规范符合性 S2 批（契约组 S 先红后绿；captain 单会话自干，用户「跑 S2」）**：来源 = 规范符合性清单 `docs/spec-conformance-tests.md` 首轮 **S2**（HTML 删除线语义丢失，静默缺陷）。基线 HEAD `d36fede`。契约先红 `435af14`（组 S：S2-1..S2-4 html2md 快照 + S2-5 DOCX 端到端）→ 实现 `1a6c581`（`src/html2md.js` `FRAG_TAGS` 增 `S`/`DEL`/`STRIKE` → `strikeFrag`）→ 产物 `2b2a0eb`（index.html **109,076 B** / SHA `5CC3755E9B611039DA53782532320BBAC7D8A22DC9BE7A8044E162F3039B1C82`）。**实测（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）**：**先红** = **6 tests / 0 pass / 6 fail**（如 S2-1 实际 `'a struck b'` vs 期望 `'a ~~struck~~ b'`）；**后绿** = **159/159 pass / 0 fail（36.2s）**（组 S 6/6 + 既有 153 断言零回归）；`eslint "src/**/*.js"` **0w/0e**；`node tools/metrics.mjs` 超限 **0** / 重复率 4%（**该 4% 为假绿——见上条 S3 批**）/ exit 0。**范围外（登记待拍板）**：CSS `line-through` 是否支持（约 +5 行）；**S5** = OOXML `w:dstrike` 上游库不读（源码实证 `element.first("w:strike")`，不产出 `<s>`）→ 可 docx 预处理归一（约 3 行）或登记已知限制；S3（XLSX 稀疏列 / HTML `colspan`）、S4（4096 字节编码探测窗口）、S1 补断言锁死仍未做。
 - **2026-09-10 公开仓库合规清扫（用户拍板；口径变更）**：① **`real-cid-paper.pdf`（第三方期刊论文）移出公开仓库** → 本地 `.私档/`；测试解析顺序 `tests/data/` → `.私档/`，皆无则 **B5/C2 整组 skip + 提示**（CI/干净检出即此情形，不再是红）；字节锁由 manifest 改为**测试内常量**（511,508 B / SHA `703636DD…`）；`tests/data/manifest.json` 重生成后不再登记该样例。② `docs/图片导出方案-调研-20260907.md`（含第三方逐字引用）移入 `.私档/`，CONTRACT 两处引用改为「本地私有调研文档」。③ 新增 `docs/spec-conformance-tests.md`（规范符合性机制，S1-S4），公开侧零第三方编号/链接。④ 未推历史已改写（8 个提交 → 3 个干净提交），含第三方文本的中间版本从未推送。
 - **2026-09-10 减脂批（AgentTeams `doc2md-slim`；22 提交 / 19 个函数出 OVER 清单）**：目标 metrics 超限 23 → ≤15，**实达 0**。纪律：每函数一提交（每提交只动 1 个文件）、等价性台先行（快照 blob 经 `git hash-object` 校验 = 基线 blob）、**`git log b9a8388..HEAD -- tests/` 为空**（断言/样例零改动）。**等价性**：实现方 5 台 + qa-dev 独立台（逐提交 2912 点 / Node 1291 / 真实 Chromium 338）全 **0 差异**（含负对照可检出）。**权威跑（用户终端执行）**：`npm run build` → index.html **108,849 B / SHA `C955D7E67249AB28CFD64B1D7F48EF8A308CE2C111D08C2F60A3940D963CCB8E`**（提交 `1a14b08`，产物已核验含 `FRAG_TAGS`/`pushMarkerLine`/`OMML_HANDLERS`/`findEocd` 等新结构）→ `npm test` **153/153 pass / 0 fail（33.7s）** + `pwa-audit` **48/48** + `verify:ocr` **93% PASS**；`node tools/metrics.mjs` 超限 **0** / 重复率 4% / exit 0；`eslint "src/**/*.js"` **0 error / 0 warning**（批前 26w）。**待拍板**：专项减脂批的「单次 ≤50 行」按函数体量放宽（6 处超，见 DEV-NOTES）；metrics 接 CI 硬门禁（现可设「超限 = 0」）；`AGENTS.md` 基线数字修正（原写 lint 37w / metrics 26，实测 src 0w / metrics 0）。
 
