@@ -769,4 +769,35 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - S3 表格列位置错位（XLSX 稀疏 `c@r` 补空位 / HTML `colspan` 语义）、S4 编码探测窗口 4096 B、S1 补断言锁死。
 
 
+## 2026-09-10 · 规范符合性 S3 批（表格列位置：XLSX `c@r` 归位 + HTML `colspan` 展开）+ metrics 假绿修复
+
+### 拍板（用户 2026-09-10，两条当场定案）
+1. **XLSX 稀疏列**：**一律按 `r` 列号归位**（行内乱序也放对列）；`r` 缺失/非法才回落文档序。
+2. **HTML `colspan`**：**内容放首列、其余补空**（GFM 无合并结构；不重复膨胀、后续列不挤位）。
+
+### 做了什么
+- **契约先红（`3c78ba2`）**：组 S 增 **S3-1..S3-5**（XLSX 稀疏 / XLSX 乱序 / colspan / colspan 表头一致性 + 告警 / colspan 巨值封顶）。XLSX 用例**页内 fflate 现造最小包**（`[Content_Types].xml` + `_rels/.rels` + `xl/workbook.xml` + `xl/_rels/workbook.xml.rels` + `xl/worksheets/sheet1.xml`，单元格 `t="inlineStr"`），**不入库新样例**。
+- **S3-① 实现（`5dd4478`）**：`src/xlsx.js` `parseCellAttrs`/`parseCellAt` 增 `r`；`rowToTexts` 改为按列号放置（缺列补空、乱序归位、无 `r` 或超列上限回落文档序）；新增 `colIndexOfRef` / `refLetterValue`（XLSX 列上限 16384 = XFD，超限按非法处理——防 `<c r="ZZZZZZ">` 触发巨量补空）。
+- **S3-② 实现（`b9002da`）**：`src/html2md.js` 新增 `spanOf(el, name)`（rowspan/colspan 解析，非法值按 1，上限 `MAX_COLSPAN = 100`）；`rowCells` 按 colspan 追加空列；`cellToMd` 改用 `spanOf` 判定「合并单元格」告警（文案不变）。
+- **产物（`a58b067`）**：index.html **110,021 B / SHA `302AA424A34F641E1E74C646FB0C4B488BEA91C3C217FF3FFD95182573B50B4B`**。
+- **顺带修假绿（`c28fa5c`）**：`tools/metrics.mjs` 的重复率口径（见「坑」1）。
+
+### 实测（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）
+- **先红**：`npm test` → 165 tests / **159 pass / 6 fail**（S3-1 `| A2 | C2 |  |`、S3-2 `| C2 | A2 |  |`、S3-3 `| wide | c |  |`、S3-4 `| H | c |  |`、S3-5 实际 1 列 vs 期望 100）。
+- **后绿**：`npm test` → **165/165 pass / 0 fail（38.1s）**（组 S S3 5/5 + S2 5/5 + 既有 155 零回归）。
+- 静态门禁：`eslint "src/**/*.js"` **0w/0e**；`node tools/metrics.mjs` 文件 16 / 函数 323 / **超限 0** / exit 0；`docs/CODE-METRICS.md` 跑完还原为 HEAD 版本。
+- **lint 一次先红**：首版 `colIndexOfRef` 用嵌套三元（`A-Z ? : a-z ? : 0`）→ `sonarjs/no-nested-conditional` 1 error → 拆出 `refLetterValue`（纯重构，行为不变），复跑 0w/0e。
+
+### 坑（本批新踩，第 1 条最贵）
+1. **度量工具「读旧值」= 假绿**：`tools/metrics.mjs` 里 `spawnSync(jscpd)` 的返回值**从未被检查**，随后只要 `.tmp/metric-jscpd/jscpd-report.json` 存在就解析它 → 沙箱内 node 派生被拒、jscpd 根本没跑时，重复率**一直显示上一次的旧报告**。本会话实测：升级前显示「4%」（`AGENTS.md` 也照抄了这个假值），真值是 **8.86%（`d36fede` 基线）/ 9.37%（当前）**。修法 = 运行前 `fs.rmSync(report)` + 仅当 `!run.error && run.status === 0` 才读，否则标 **N/A**。教训：**度量/门禁脚本里任何「回退到已有产物」的分支都要先想：这份产物是不是上一次的？** 假绿比 N/A 危险得多。
+2. **重复率取证要固定「测试文件版本」再比**：第一版对比误用 `git archive HEAD`（HEAD 已含 S3 先红测试）→ 等于量了同一棵树（9.19% vs 9.37% 白跑）。正确基线 = S2 之前的 `d36fede` 版测试文件。**对比实验的「对照组」必须验证真的不同**（本次靠行数/SHA 才发现）。
+3. **pwsh 里 `git archive` 漏 `safe.directory` 环境变量** → `fatal: detected dubious ownership`，随后 `Expand-Archive` 报「Central Directory corrupt.」（读到半成品 zip）——git 命令一律带 `$env:GIT_CONFIG_*` 三件套（本会话已固化）。
+4. **管道禁令再次生效**：`git ls-files ... | Select-Object -First 40` → `Program 'git.exe' failed to run: Access is denied`（命令整体未执行）。pwsh 里一律不接管道。
+
+### 下一步（登记，未做）
+- **拍板点**：重复率是否设 CI 硬门禁（真值 8.9–9.4% 超 5% 阈值；主要来源 = `tests/` 各组浏览器样板重复 22 处 + `tests/gen-samples.mjs`）；若要压下来，建议先抽 `withPage()` 共享夹具（测试脚本结构改动，断言语义不动）。
+- S4 编码探测窗口、S5 `w:dstrike`、S2 残余 CSS `line-through`、S1 补断言锁死。
+
+
+
 
