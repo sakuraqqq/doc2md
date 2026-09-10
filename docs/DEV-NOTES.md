@@ -795,8 +795,44 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 4. **管道禁令再次生效**：`git ls-files ... | Select-Object -First 40` → `Program 'git.exe' failed to run: Access is denied`（命令整体未执行）。pwsh 里一律不接管道。
 
 ### 下一步（登记，未做）
-- **拍板点**：重复率是否设 CI 硬门禁（真值 8.9–9.4% 超 5% 阈值；主要来源 = `tests/` 各组浏览器样板重复 22 处 + `tests/gen-samples.mjs`）；若要压下来，建议先抽 `withPage()` 共享夹具（测试脚本结构改动，断言语义不动）。
+- ~~拍板点：重复率是否设 CI 硬门禁~~ → **同日定案**：口径改为只度量 src+tools，见下节。
 - S4 编码探测窗口、S5 `w:dstrike`、S2 残余 CSS `line-through`、S1 补断言锁死。
+
+
+## 2026-09-10 · metrics 口径定案（重复率只看 src+tools）+ 「假结果」全工具审计
+
+### 拍板（用户 2026-09-10）
+- **重复率口径 = 只度量 `src/` + `tools/`，`tests/` 排除**（测试各组浏览器样板天然重复，不代表产品债）；**测试文件里的重复先不动**，以后需要再抽共享夹具。
+
+### 改了什么
+- `tools/metrics.mjs`：`jscpdTargets` 去掉 `tests/`（注释写清口径与理由）+ 报告标题/方法学行同步标注「src/ + tools/，tests/ 不计入」。
+- **同批修掉第二个假结果通道**：espree 解析失败的文件原先只是「列进报告」→ 被跳过度量（函数数不计）却仍报「超限 0」⇒ 现改为 **`parseErrors.length > 0` 即 exit 1**（度量不可信 = 门禁失败）。
+
+### 实测
+- 口径变更后（升权跑真实 jscpd）：**重复率 0.6%**（阈值 <5%，✅ 达标）；文件 16 / 函数 323 / **超限 0** / exit 0。
+- 沙箱内（jscpd 派生被拒）：`重复率 N/A` + exit 0 —— 不再冒充旧值。
+- `eslint "tools/**/*.mjs"`：0 error / 2 warning（两条均来自 gitignored 私有脚本，CI 不计）。
+
+### 「沙箱限制 → 假结果」审计（逐点核查，只报告不改的另列）
+| 检查点 | 结论 |
+|---|---|
+| `tools/metrics.mjs` jscpd | ❌ **曾假绿**（spawn 失败读旧报告）→ ✅ 已修（删旧报告 + 仅成功才读 + 否则 N/A） |
+| `tools/metrics.mjs` 解析失败 | ⚠️ **曾静默降级**（文件跳过度量仍报「超限 0」）→ ✅ 已修（exit 1） |
+| `tools/build.mjs` | ✅ 诚实：bundle 自检 throw、模板标记缺失 throw、写文件失败即抛（非 0 退出） |
+| `tools/verify-ocr.mjs` | ✅ 令牌未命中 → `process.exit(1)`；worker/模型缺失会直接抛 |
+| `tests/pwa-audit.mjs` | ✅ 诚实：图标缺失**计入 fail**（`ok(buf && …)`）而非跳过；`readBuf` 缺失直接抛；`exit(fail ? 1 : 0)` |
+| `tests/contract_v1.test.mjs` | ✅ 诚实：所有 `return;` 都紧跟 `assert.fail(...)`（浏览器不可用 = 红，不跳过）；所有 `existsSync` 都在 `assert.ok` 里；**唯一 skip = B5/C2 第三方样例**（用户拍板，带提示文案） |
+| 浏览器探测 `launchBrowser` | ✅ 诚实：chromium → msedge → chrome → 常见路径，全失败则 `assert.fail`（契约如实红） |
+| `.github/workflows/tests.yml` | ✅ 无 `|| true` / `continue-on-error`；含 `npm run build && git diff --exit-code index.html`（产物一致性硬检查） |
+| `.github/workflows/deploy-pages.yml` | ✅ `cp` 缺文件即失败；⚠️ 见下「未改项 ③」 |
+| `tests/lib/server.mjs` | ✅ 缺文件 404（测试随之红），不伪造内容 |
+| `tools/embed-bline.mjs` | ⚠️ 见下「未改项 ①」 |
+
+### 未改项（待拍板，只登记）
+1. **`tools/embed-bline.mjs` 仍是个活雷**：README 已记「T9′ 拆分后仅存档」，但它没有任何护栏——一旦运行就会把 ~16MB vendor 库重新内联进 `index.html`，绕过「src/ 为唯一源码真相」（第四轮审查 §13 已提过）。建议：加致命护栏（默认拒绝，须显式 `--force`）或移入 `.私档/`（同 `patches/router-bootstrap.mjs` 先例）。
+2. **陈旧产物陷阱（本地）**：`npm test` 断的是**已构建的 `index.html`**——只改 `src/` 忘了 `npm run build` 时，本地测试会对着旧产物全绿（减脂批踩过一次）。CI 有 `build && git diff --exit-code` 拦，本地没有。建议加一条本地检查或测试内提示（属新增断言 → 待拍板）。
+3. **部署白名单无 smoke**：`deploy-pages.yml` 用 `cp` 组装站点，**新增必需顶层文件时会静默漏发**（部署成功但站点缺资源）。建议部署前加「index.html 引用的同源资源都存在」检查。
+
 
 
 
