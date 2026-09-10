@@ -75,6 +75,13 @@ function codeFrag(el) {
   return c === '' ? null : { t: '`' + c + '`', lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
 }
 
+// ~~删除线~~：HTML `<s>`（不再准确）/`<del>`（删除标记）/`<strike>`（历史别名）语义 = 删除；
+// GFM 用 `~~…~~` 表示（S2 规范符合性，2026-09-10 拍板）。DOCX 的 `w:strike` 经 mammoth 输出 `<s>`，
+// 走同一分支。空内容不产出片段（与 emphasisFrag 同口径）。
+function strikeFrag(el, mode) {
+  return emphasisFrag(el, mode, '~~');
+}
+
 // <a>：伪协议过滤 + 锚包图片 [![alt](src)](href) + 文本链接（] 转义）
 function linkFrag(el, mode) {
   let href = el.getAttribute('href') || '';
@@ -107,6 +114,9 @@ const FRAG_TAGS = new Map([
   ['EM', (el, mode) => emphasisFrag(el, mode, '*')],
   ['I', (el, mode) => emphasisFrag(el, mode, '*')],
   ['CODE', (el) => codeFrag(el)],
+  ['S', (el, mode) => strikeFrag(el, mode)],
+  ['DEL', (el, mode) => strikeFrag(el, mode)],
+  ['STRIKE', (el, mode) => strikeFrag(el, mode)],
   ['A', (el, mode) => linkFrag(el, mode)],
   ['IMG', (el) => imgFrag(el)],
 ]);
