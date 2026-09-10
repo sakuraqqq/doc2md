@@ -546,15 +546,23 @@
     const w = "\u8868\u683C\u542B\u5408\u5E76\u5355\u5143\u683C\uFF08rowspan/colspan\uFF09\uFF0C\u5DF2\u6309\u666E\u901A\u5355\u5143\u683C\u5C55\u5E73\uFF08v1 \u4E0D\u652F\u6301\u5408\u5E76\u5355\u5143\u683C\u7ED3\u6784\uFF09";
     if (!ctx.warnings.includes(w)) ctx.warnings.push(w);
   }
+  var MAX_COLSPAN = 100;
+  function spanOf(el, name) {
+    const n = parseInt(el.getAttribute(name) || "1", 10);
+    return Number.isFinite(n) && n > 1 ? Math.min(n, MAX_COLSPAN) : 1;
+  }
   function cellToMd(c, ctx) {
-    const rs = parseInt(c.getAttribute("rowspan") || "1", 10) || 1;
-    const cs = parseInt(c.getAttribute("colspan") || "1", 10) || 1;
-    if ((rs > 1 || cs > 1) && ctx && ctx.warnings) warnMerged(ctx);
+    if ((spanOf(c, "rowspan") > 1 || spanOf(c, "colspan") > 1) && ctx && ctx.warnings) warnMerged(ctx);
     const cell = joinFrags(collectFrags(c, "space", [])).trim();
     return cell.replace(/\|/g, "\\|").replace(/\n/g, " ");
   }
   function rowCells(tr, ctx) {
-    return Array.from(tr.querySelectorAll(":scope > th, :scope > td")).map((c) => cellToMd(c, ctx));
+    const out = [];
+    Array.from(tr.querySelectorAll(":scope > th, :scope > td")).forEach((c) => {
+      out.push(cellToMd(c, ctx));
+      for (let i = spanOf(c, "colspan"); i > 1; i--) out.push("");
+    });
+    return out;
   }
   function rowsToMd(rows) {
     const width = Math.max(...rows.map((r) => r.length));
@@ -913,7 +921,8 @@
   function parseCellAttrs(attrs) {
     const tMatch = / t="([^"]*)"/.exec(attrs);
     const sMatch = / s="([^"]*)"/.exec(attrs);
-    return { t: tMatch ? tMatch[1] : "", s: sMatch ? sMatch[1] : "" };
+    const rMatch = / r="([^"]*)"/.exec(attrs);
+    return { t: tMatch ? tMatch[1] : "", s: sMatch ? sMatch[1] : "", r: rMatch ? rMatch[1] : "" };
   }
   function findTagStart(s, tag, p, valid) {
     let i = p;
@@ -928,14 +937,14 @@
     const ct = body.indexOf(">", cs);
     if (ct < 0) return null;
     const attrs = body.slice(cs + 2, ct);
-    const { t, s } = parseCellAttrs(attrs);
-    if (attrs.trimEnd().endsWith("/")) return { cell: { t, s, v: "" }, next: ct + 1 };
+    const { t, s, r } = parseCellAttrs(attrs);
+    if (attrs.trimEnd().endsWith("/")) return { cell: { t, s, r, v: "" }, next: ct + 1 };
     const ce = body.indexOf("</c>", ct);
     if (ce < 0) return null;
     const inner = body.slice(ct + 1, ce);
     const vm = /<v[^>]*>([^<]*)<\/v>/.exec(inner);
     const isText = t === "inlineStr" ? extractInlineText(inner) : "";
-    return { cell: { t, s, v: vm ? vm[1] : "", isText }, next: ce + 4 };
+    return { cell: { t, s, r, v: vm ? vm[1] : "", isText }, next: ce + 4 };
   }
   function parseRowCells(body, maxS) {
     const cells = [];
@@ -1140,8 +1149,33 @@
     if (c.t === "d") return isoDateOnly(c.v);
     return serialDateOrRaw(c, styles);
   }
+  var XLSX_MAX_COLS = 16384;
+  function refLetterValue(ch) {
+    if (ch >= 65 && ch <= 90) return ch - 64;
+    if (ch >= 97 && ch <= 122) return ch - 96;
+    return 0;
+  }
+  function colIndexOfRef(ref) {
+    let n = 0;
+    let i = 0;
+    while (i < ref.length) {
+      const v = refLetterValue(ref.charCodeAt(i));
+      if (v === 0) break;
+      n = n * 26 + v;
+      if (n > XLSX_MAX_COLS) return -1;
+      i++;
+    }
+    return i === 0 ? -1 : n - 1;
+  }
   function rowToTexts(cells, ss, styles) {
-    return cells.map((c) => cellToString(c, ss, styles));
+    const out = [];
+    cells.forEach((c) => {
+      const col = colIndexOfRef(c.r || "");
+      const at = col >= 0 ? col : out.length;
+      while (out.length < at) out.push("");
+      out[at] = cellToString(c, ss, styles);
+    });
+    return out;
   }
   function xlsxParseSheet(xml, rowLimit, strings, dateStyles) {
     const styles = dateStyles || NO_DATE_STYLES;
