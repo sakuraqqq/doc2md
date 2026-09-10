@@ -338,6 +338,9 @@
     const c = raw.trim();
     return c === "" ? null : { t: "`" + c + "`", lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
   }
+  function strikeFrag(el, mode) {
+    return emphasisFrag(el, mode, "~~");
+  }
   function linkFrag(el, mode) {
     let href = el.getAttribute("href") || "";
     if (/^\s*(javascript|vbscript|data):/i.test(href)) href = "";
@@ -361,6 +364,9 @@
     ["EM", (el, mode) => emphasisFrag(el, mode, "*")],
     ["I", (el, mode) => emphasisFrag(el, mode, "*")],
     ["CODE", (el) => codeFrag(el)],
+    ["S", (el, mode) => strikeFrag(el, mode)],
+    ["DEL", (el, mode) => strikeFrag(el, mode)],
+    ["STRIKE", (el, mode) => strikeFrag(el, mode)],
     ["A", (el, mode) => linkFrag(el, mode)],
     ["IMG", (el) => imgFrag(el)]
   ]);
