@@ -2524,3 +2524,136 @@ test('契约组 S：S2 删除线语义（HTML <s>/<del>/<strike> + DOCX w:strike
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 S — S3 表格列位置（格式规范符合性清单 S3；2026-09-10 契约先红）
+// 规范依据：① OOXML SpreadsheetML：`<c r="C2">` 的 `r` = 单元格引用（列字母 + 行号）——
+//   单元格的列位置由 `r` 决定，稀疏行缺列即空列；② HTML 表格模型：`colspan` 表示跨列。
+// 期望（用户 2026-09-10 拍板）：① 一律按 `r` 列号归位（乱序也放对列），`r` 缺失才退回文档序；
+//   ② colspan = 内容放首列、其余补空（GFM 无合并结构），并保持既有「合并单元格」告警；
+//   ③ colspan 巨值有上限（防单行撑爆内存）。
+// 断言：
+//   S3-1 XLSX 稀疏行（A2/C2，B2 省略）→ `| A2 |  | C2 |`
+//   S3-2 XLSX 乱序单元格（文档序 C2 先、A2 后）→ 仍按 r 归位
+//   S3-3 HTML colspan → 内容放首列 + 其余补空
+//   S3-4 colspan 在表头行：列数与数据行一致（分隔行同宽）+ 合并告警仍在
+//   S3-5 colspan 巨值护栏：列数封顶（不产生 N 个空列）
+// 说明：XLSX 用例页内用 fflate 现造最小包（不入库新样例）；gen 产物样例单元格无 `r`
+//   → 回落文档序，既有快照不应变动（零回归由全量跑守）。
+// ---------------------------------------------------------------------------
+const COLSPAN_CAP = 100; // 与 src/html2md.js 的 colspan 上限同口径（S3-5）
+function minimalXlsx(sheetRows) {
+  const ct =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>';
+  const rels =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  const wb =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S1" sheetId="1" r:id="rId1"/></sheets></workbook>';
+  const wbRels =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>';
+  const sheet =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+    sheetRows +
+    '</sheetData></worksheet>';
+  return { ct, rels, wb, wbRels, sheet };
+}
+// 行构造：cells = [[ref, text], …]（ref 为 null = 无 r 属性）
+function xlsxRow(n, cells) {
+  const cs = cells.map(([ref, text]) => `<c${ref ? ` r="${ref}"` : ''} t="inlineStr"><is><t>${text}</t></is></c>`).join('');
+  return `<row r="${n}">${cs}</row>`;
+}
+test('契约组 S：S3 表格列位置（XLSX c@r 补位/乱序归位 + HTML colspan 展开）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message);
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const convertXlsx = (sheetRows) => {
+        const parts = minimalXlsx(sheetRows);
+        return page.evaluate((p) => {
+          const F = window.fflate;
+          const zip = F.zipSync({
+            '[Content_Types].xml': F.strToU8(p.ct),
+            '_rels/.rels': F.strToU8(p.rels),
+            'xl/workbook.xml': F.strToU8(p.wb),
+            'xl/_rels/workbook.xml.rels': F.strToU8(p.wbRels),
+            'xl/worksheets/sheet1.xml': F.strToU8(p.sheet),
+          });
+          return window.__doc2md
+            .convert(new File([zip], 'span.xlsx'))
+            .then((res) => (res.error ? 'ERROR:' + res.error : res.markdown));
+        }, parts);
+      };
+
+      await t.test('S3-1 XLSX 稀疏行按 c@r 归位（A2/C2，B2 省略）→ 列位置正确', async () => {
+        const md = await convertXlsx(
+          xlsxRow(1, [['A1', 'H1'], ['B1', 'H2'], ['C1', 'H3']]) + xlsxRow(2, [['A2', 'A2'], ['C2', 'C2']])
+        );
+        assert.ok(md.includes('| A2 |  | C2 |'), `稀疏行未按列号补位（C2 落错列）：${JSON.stringify(md)}`);
+      });
+
+      await t.test('S3-2 XLSX 行内乱序也按 c@r 归位（文档序 C2 先、A2 后）', async () => {
+        const md = await convertXlsx(
+          xlsxRow(1, [['A1', 'H1'], ['B1', 'H2'], ['C1', 'H3']]) + xlsxRow(2, [['C2', 'C2'], ['A2', 'A2']])
+        );
+        assert.ok(md.includes('| A2 |  | C2 |'), `乱序单元格未按列号归位：${JSON.stringify(md)}`);
+      });
+
+      await t.test('S3-3 HTML colspan → 内容放首列 + 其余补空', async () => {
+        const md = await page.evaluate(() =>
+          window.__doc2md.htmlToMarkdown(
+            '<table><tr><td colspan="2">wide</td><td>c</td></tr><tr><td>x</td><td>y</td><td>z</td></tr></table>',
+            { warnings: [] }
+          )
+        );
+        assert.ok(md.includes('| wide |  | c |'), `colspan 未展开（后续列挤位）：${JSON.stringify(md)}`);
+        assert.ok(md.includes('| x | y | z |'), `同表普通行受影响：${JSON.stringify(md)}`);
+      });
+
+      await t.test('S3-4 colspan 表头行：列数与数据行一致 + 合并告警仍在', async () => {
+        const res = await page.evaluate(() => {
+          const ctx = { warnings: [] };
+          const md = window.__doc2md.htmlToMarkdown(
+            '<table><tr><th colspan="2">H</th><th>c</th></tr><tr><td>x</td><td>y</td><td>z</td></tr></table>',
+            ctx
+          );
+          return { md, warnings: ctx.warnings };
+        });
+        const lines = res.md.split('\n');
+        assert.ok(lines[0] === '| H |  | c |', `表头 colspan 未展开：${JSON.stringify(lines[0])}`);
+        assert.ok(lines[1] === '| --- | --- | --- |', `分隔行列数与表头不一致：${JSON.stringify(lines[1])}`);
+        assert.ok(res.warnings.some((w) => w.includes('合并单元格')), `合并单元格告警丢失：${JSON.stringify(res.warnings)}`);
+      });
+
+      await t.test('S3-5 colspan 巨值护栏：列数封顶（不产生 N 个空列）', async () => {
+        const cells =
+          (await page.evaluate(() =>
+            window.__doc2md
+              .htmlToMarkdown('<table><tr><td colspan="99999">wide</td></tr></table>', { warnings: [] })
+              .split('\n')[0]
+              .split('|').length
+          )) - 2;
+        assert.equal(cells, COLSPAN_CAP, `colspan 巨值未封顶到 ${COLSPAN_CAP} 列（实际 ${cells} 列）`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
