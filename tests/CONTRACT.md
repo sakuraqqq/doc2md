@@ -297,6 +297,22 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 
 **真实样例指标（本地核验，不入库）**：OCR 页 CJK 前置空格率 **72–82% → 1.4–4.9%**；文字层页 **0–1.5% 前后不变**（证「只动 OCR」）。
 
+### 契约组 S — 格式规范符合性 S2：删除线语义（2026-09-10；机制见 `docs/spec-conformance-tests.md`）
+
+口径：HTML `<s>` / `<del>` / `<strike>` 与 OOXML `w:strike` 均表示**删除语义**，GFM 删除线扩展写作 `~~内层~~`；**方向与优先级无关**（嵌套在 `**…**` 内外由既有 `FRAG_TAGS` 片段机制决定，`STRONG+STRIKE` 输出 `**~~both~~**`）。实现 = `src/html2md.js` `FRAG_TAGS` 增 `S`/`DEL`/`STRIKE` → `strikeFrag`（复用 `emphasisFrag` 包 `~~`，空内容不产出片段）。
+
+样例：**无新增入库样例**——S2-1..S2-4 为纯函数快照；S2-5 页内 fflate 现造最小 docx（`[Content_Types].xml` + `_rels/.rels` + `word/document.xml`），不入库。
+
+| 编号 | 断言 | 标准 | 当前（基线 `d36fede`，契约先红） |
+|---|---|---|---|
+| S2-1 | `<p>a <s>struck</s> b</p>` | `a ~~struck~~ b` | 🟢 绿（先红实测 `a struck b`） |
+| S2-2 | `<p><del>已删除</del> 保留</p>` | `~~已删除~~ 保留` | 🟢 绿（先红实测 `已删除 保留`） |
+| S2-3 | `<p><strike>old</strike></p>` | `~~old~~` | 🟢 绿（先红实测 `old`） |
+| S2-4 | `<p><strong><s>both</s></strong></p>`（嵌套优先级） | `**~~both~~**` | 🟢 绿（先红实测 `**both**`） |
+| S2-5 | DOCX `w:strike` 端到端：页内造 docx → `convert()` | 含 `~~strike~~`；普通段落 `plain` 保留且**不**被误标 `~~` | 🟢 绿（先红实测 `strike` 无 `~~`） |
+
+**范围说明（未断言、已知限制）**：① CSS `text-decoration: line-through` 目前不产出 `~~`（待拍板，见规范清单 §3-1）；② OOXML **双删除线 `w:dstrike`** 不产出 `~~`——上游库只读 `w:strike`，属库侧限制（登记为规范清单 **S5**，未断言，避免把库行为锁进本项目契约）。
+
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |
@@ -412,6 +428,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-10 规范符合性 S2 批（契约组 S 先红后绿；captain 单会话自干，用户「跑 S2」）**：来源 = 规范符合性清单 `docs/spec-conformance-tests.md` 首轮 **S2**（HTML 删除线语义丢失，静默缺陷）。基线 HEAD `d36fede`。契约先红 `435af14`（组 S：S2-1..S2-4 html2md 快照 + S2-5 DOCX 端到端）→ 实现 `1a6c581`（`src/html2md.js` `FRAG_TAGS` 增 `S`/`DEL`/`STRIKE` → `strikeFrag`）→ 产物 `2b2a0eb`（index.html **109,076 B** / SHA `5CC3755E9B611039DA53782532320BBAC7D8A22DC9BE7A8044E162F3039B1C82`）。**实测（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）**：**先红** = **6 tests / 0 pass / 6 fail**（如 S2-1 实际 `'a struck b'` vs 期望 `'a ~~struck~~ b'`）；**后绿** = **159/159 pass / 0 fail（36.2s）**（组 S 6/6 + 既有 153 断言零回归）；`eslint "src/**/*.js"` **0w/0e**；`node tools/metrics.mjs` 超限 **0** / 重复率 4% / exit 0。**范围外（登记待拍板）**：CSS `line-through` 是否支持（约 +5 行）；**S5** = OOXML `w:dstrike` 上游库不读（源码实证 `element.first("w:strike")`，不产出 `<s>`）→ 可 docx 预处理归一（约 3 行）或登记已知限制；S3（XLSX 稀疏列 / HTML `colspan`）、S4（4096 字节编码探测窗口）、S1 补断言锁死仍未做。
 - **2026-09-10 公开仓库合规清扫（用户拍板；口径变更）**：① **`real-cid-paper.pdf`（第三方期刊论文）移出公开仓库** → 本地 `.私档/`；测试解析顺序 `tests/data/` → `.私档/`，皆无则 **B5/C2 整组 skip + 提示**（CI/干净检出即此情形，不再是红）；字节锁由 manifest 改为**测试内常量**（511,508 B / SHA `703636DD…`）；`tests/data/manifest.json` 重生成后不再登记该样例。② `docs/图片导出方案-调研-20260907.md`（含第三方逐字引用）移入 `.私档/`，CONTRACT 两处引用改为「本地私有调研文档」。③ 新增 `docs/spec-conformance-tests.md`（规范符合性机制，S1-S4），公开侧零第三方编号/链接。④ 未推历史已改写（8 个提交 → 3 个干净提交），含第三方文本的中间版本从未推送。
 - **2026-09-10 减脂批（AgentTeams `doc2md-slim`；22 提交 / 19 个函数出 OVER 清单）**：目标 metrics 超限 23 → ≤15，**实达 0**。纪律：每函数一提交（每提交只动 1 个文件）、等价性台先行（快照 blob 经 `git hash-object` 校验 = 基线 blob）、**`git log b9a8388..HEAD -- tests/` 为空**（断言/样例零改动）。**等价性**：实现方 5 台 + qa-dev 独立台（逐提交 2912 点 / Node 1291 / 真实 Chromium 338）全 **0 差异**（含负对照可检出）。**权威跑（用户终端执行）**：`npm run build` → index.html **108,849 B / SHA `C955D7E67249AB28CFD64B1D7F48EF8A308CE2C111D08C2F60A3940D963CCB8E`**（提交 `1a14b08`，产物已核验含 `FRAG_TAGS`/`pushMarkerLine`/`OMML_HANDLERS`/`findEocd` 等新结构）→ `npm test` **153/153 pass / 0 fail（33.7s）** + `pwa-audit` **48/48** + `verify:ocr` **93% PASS**；`node tools/metrics.mjs` 超限 **0** / 重复率 4% / exit 0；`eslint "src/**/*.js"` **0 error / 0 warning**（批前 26w）。**待拍板**：专项减脂批的「单次 ≤50 行」按函数体量放宽（6 处超，见 DEV-NOTES）；metrics 接 CI 硬门禁（现可设「超限 = 0」）；`AGENTS.md` 基线数字修正（原写 lint 37w / metrics 26，实测 src 0w / metrics 0）。
 

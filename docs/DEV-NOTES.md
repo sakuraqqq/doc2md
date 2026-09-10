@@ -727,3 +727,46 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 - **口径澄清（2026-09-10 用户拍板「认」）**：专项减脂批中「单次 ≤50 行」按函数体量放宽（本批 6 处超：`zipEntry` 55+、`fragFor` 121、`liToLines` 118、`pdfConvert` 105、`ommlParts` 51+、`docxParseForMd` 57+），**代价是必须配等价性台**（快照 blob 经 `git hash-object` 校验 = 基线 blob，且负对照能报差异）；顺手重构仍守 ≤50 行。
 
 
+## 2026-09-10 · 公开仓库合规清扫（第三方文本出仓；用户拍板「公开侧 C + 内部侧 B」）
+
+### 背景
+上游 issue 反哺测试的思路落地时，用户提出**版权疑点**：把上游项目的 issue 原文/编号/链接写进公开仓库，可能超出合理使用边界。拍板口径：**公开侧走 C（只重述成规范条款缺陷，零第三方编号/链接）；内部侧走 B（上游关联台账留本地 `.私档/`，不入库）**；机制照跑。
+
+### 做了什么
+- **第三方论文出仓**：`tests/data/real-cid-paper.pdf`（511,508 B）→ 本地 `.私档/`；测试解析顺序改为 `tests/data/` → `.私档/`，**皆无则 B5/C2 整组 `skip` + 提示**（CI/干净检出即此情形，不再是红）；字节锁从 manifest 改为**测试内常量** `CID_PAPER_LOCK = { bytes: 511508, sha256: '703636DD…' }`；`tests/data/manifest.json` 重生成后不再登记该样例。
+- **调研文档出仓**：`docs/图片导出方案-调研-20260907.md`（含第三方逐字引用）→ `.私档/`；CONTRACT 两处引用改为「本地私有调研文档（不入库）」。**上游台账** `upstream-issue-map.md` 同步移入 `.私档/`。
+- **新增公开文档** `docs/spec-conformance-tests.md`：把「上游 issue 对照」重述为**格式规范符合性机制**（候选汇总 → 定位规范条款 → 产品级实测 → 登记 → 排期），首轮 S1–S4 **零第三方编号/链接**。`docs/upstream-markitdown-checklist.md` 保留并加一句「本清单不包含第三方原文」。
+- **历史改写**：本地未推的 8 个提交 → **3 个干净提交**（用户拍板「接受现状」——已推历史（≤ `bd493cc`）不动、不 force push）；`docs/licenses.md` 补夹具来源行（`real-tables.docx` ← mammoth BSD-2；`real-schema/real-date` ← read-excel-file MIT）；`real-cid-paper` 记「未获授权、不再分发」。
+- **CI 硬门禁**：`.github/workflows/tests.yml` 新增 `npm run metrics` 步骤（超限 ≠ 0 即失败）。
+
+### 坑
+1. **`git mv <tracked> .私档/…` 会把目标路径写进索引**——`.私档/` 虽 gitignore，但 `git mv` 显式加入索引后仍会被提交。修法：`git rm --cached <新路径>`，仓库侧只留删除。
+2. **`git add <已不存在的路径>` 会让整条 add 中止** → 只提交到删除、漏掉同批其他文件。修法：`git reset --soft HEAD~1` → `git restore --staged` → 重新 add → `commit --amend`。
+3. **版权口径要写进测试注释**：B5/C2 的 skip 分支必须显式说明「样例未入库」，否则后来者会把 skip 误当环境问题去「修」。
+
+
+## 2026-09-10 · 规范符合性 S2 批（HTML/OOXML 删除线 → `~~`）
+
+### 背景
+规范符合性首轮扫查（`docs/spec-conformance-tests.md`）发现 **S2 = 静默缺陷**：HTML `<s>/<del>/<strike>` 与 DOCX `w:strike` 全部**丢掉删除线语义**（不报错、无 warning，用户拿到的是「没有删除线」的正文）。用户指令「跑 S2」→ 先红后绿。
+
+### 做了什么
+- **契约先红（`435af14`）**：新增**契约组 S**——S2-1..S2-4 `htmlToMarkdown` 精确快照 + **S2-5 DOCX 端到端**（页内 fflate 现造最小 docx：`[Content_Types].xml` + `_rels/.rels` + `word/document.xml`，不入库样例）。先红实测 **6 tests / 0 pass / 6 fail**。
+- **实现（`1a6c581`）**：`src/html2md.js` `FRAG_TAGS` 增 `S`/`DEL`/`STRIKE` 三个标签 → 共用既有 `strikeFrag(el, mode)` = `emphasisFrag(el, mode, '~~')`。**一处改动覆盖两类输入**：mammoth 把 OOXML `w:strike` 映射成 `<s>`（源码实证 `findHtmlPathForRunProperty("strikethrough","s")`），与 HTML 路径同一分支。
+- **产物（`2b2a0eb`）**：`npm run build` → index.html **109,076 B / SHA `5CC3755E9B611039DA53782532320BBAC7D8A22DC9BE7A8044E162F3039B1C82`**。
+
+### 实测（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）
+- **先红**：`npm test` → **6 / 0 pass / 6 fail**（例：S2-1 实际 `'a struck b'` vs 期望 `'a ~~struck~~ b'`）。
+- **后绿**：`npm test` → **159/159 pass / 0 fail（36.2s）**（组 S **6/6** + 既有 153 断言零回归）。
+- 静态门禁：`node --check` 两文件 OK；`eslint "src/**/*.js"` **0w/0e**；`node tools/metrics.mjs` 文件 16 / 函数 320 / **超限 0** / 重复率 4% / exit 0（`docs/CODE-METRICS.md` 跑完还原为 HEAD 版本）。
+
+### 坑与范围
+- **`w:dstrike`（双删除线）上游库不读**：源码实证只找 `element.first("w:strike")` → 我们这层拿不到标记。**故意不写断言**——把上游库行为锁进本项目契约会把「库的限制」变成「我们的规格」。登记为规范清单 **S5 待拍板**（docx 预处理归一 ≈3 行 / 或登记已知限制）。
+- **CSS `text-decoration: line-through`** 仍不产出 `~~`（HTML 输入常见）→ 属 S2 残余，待拍板（≈+5 行）。
+- 组 S 的「先红」价值：S2-1..S2-4 是**纯函数快照**、S2-5 是**端到端**——后者能同时守住「DOCX 路径真的接通」而不只是「纯函数会包 `~~`」。
+
+### 下一步（同批登记，未做）
+- S3 表格列位置错位（XLSX 稀疏 `c@r` 补空位 / HTML `colspan` 语义）、S4 编码探测窗口 4096 B、S1 补断言锁死。
+
+
+

@@ -1,8 +1,8 @@
 # docs/spec-conformance-tests.md — 格式规范符合性测试清单（机制 + 对照表）
 
-> 缘起（2026-09-10）：一次「外部视角」扫查发现三处**静默的规范符合性缺陷**（删除线丢失 / 表格列错位 / 编码探测窗口）。
+> 缘起（2026-09-10）：一次「外部视角」扫查发现若干**静默的规范符合性缺陷**（删除线丢失 / 表格列错位 / 编码探测窗口）。
 > 本文把这类扫查固定成机制：**候选汇总 → 定位规范条款 → 产品级实测 → 登记 → 排期**。
-> **纪律**：本文只写**规范条款 + 我们的实测行为**——不引任何第三方文本、编号或链接；外部线索的台账留在工作区外（本地，不入公开仓库）。
+> **纪律**：本文只写**规范条款 + 我们的实测行为**——不引任何第三方文本、编号或链接；外部线索的台账留在本地 `.私档/`（gitignore，永不入公开仓库）。
 
 ## 1. 机制（每轮五步）
 
@@ -19,28 +19,38 @@
 | # | 规范条款（要求） | 期望行为 | 实测 | 判定 |
 |---|---|---|---|---|
 | S1 | HTML 表格模型 / GFM 表格：各行单元格数可不等，渲染按列对齐 | 列数对齐到最大宽度、短行补空，**不截断** | `xlsxRowsToMd` / `rowsToMd` 均按 `Math.max` 列宽对齐 | ✅ 符合 → **补断言锁死**（防回归） |
-| S2 | HTML `<s>` / `<del>` / `<strike>` 语义 = 删除；GFM 删除线扩展 = `~~…~~`；OOXML `w:strike` 语义同 | 输出 `~~内层~~` | `<s>`→`a struck b`、`<del>`→`a deleted b`、`<strike>`→`a old b`、CSS `text-decoration: line-through`→`a css b`（**均无 `~~`**）；DOCX `w:strike`（mammoth 输出 `<s>`）同样丢 | ❌ **不符**（待修） |
+| S2 | HTML `<s>` / `<del>` / `<strike>` 语义 = 删除；GFM 删除线扩展 = `~~…~~`；OOXML `w:strike` 语义同 | 输出 `~~内层~~` | 修前：`<s>`→`a struck b`、`<del>`→`a deleted b`、`<strike>`→`a old b`、CSS `text-decoration: line-through`→`a css b`（**均无 `~~`**）；**修后（2026-09-10）**：4 条纯函数快照全中，DOCX `w:strike` 端到端产出 `~~strike~~` | ✅ **已修**（组 S 先红 6/6 失败 → 后绿 6/6 通过；`435af14` 先红 / `1a6c581` 实现 / `2b2a0eb` 产物） |
 | S3 | OOXML：`<c r="C2">` 的 `r` 属性 = 单元格引用（列字母 + 行号）；HTML：`colspan` 表示跨列 | 稀疏行按列号补空位；`colspan` 展开 | ① 稀疏行（A2/C2，B2 省略）→ `\| A2 \| C2 \|  \|`（**C2 落到第 2 列**）；② `<td colspan="2">` → `\| wide \| c \|  \|`（**c 挤到第 2 列**） | ❌ **不符 ×2**（待修） |
 | S4 | WHATWG Encoding：字符编码探测不应只依赖文件开头若干字节 | 长文件不因前 4KB 是 ASCII 而整篇误判 | `decodeText` 只取前 **4096 字节**做 `<meta charset>` 扫描与 U+FFFD 计数 | ⚠️ **待验证**（构造样例） |
+| S5 | OOXML 双删除线 `w:dstrike`（`<w:dstrike/>`）语义同单删除线 = 删除 | 输出 `~~内层~~`（与 S2 同） | **上游库限制**：mammoth 只读 `w:strike`（源码实证 `element.first("w:strike")`），`w:dstrike` 不产出 `<s>` → 这层拿不到标记 | ⏸ **待拍板**：docx 预处理把 `w:dstrike` 归一为 `w:strike`（约 3 行），或登记为已知限制（S5 = S2 修复时顺带发现） |
 
-**首轮小结**：S2/S3 为**静默**缺陷（不报错、无 warning）——优先级最高；S1 已符合，只需补断言；S4 待验证。
+**首轮小结**：S2/S3 为**静默**缺陷（不报错、无 warning）——优先级最高；**S2 已修（2026-09-10）**；S1 已符合，只需补断言；S3 待修；S4 待验证；S5 待拍板（S5 为修 S2 时的顺带发现）。
+
+### 2.1 修复记录（S2，2026-09-10）
+
+- **规范依据**：HTML `<s>` / `<del>` / `<strike>` = 删除语义；GFM 删除线扩展 = `~~…~~`；OOXML `w:strike` 同义。
+- **契约先红**（`435af14`）：新增**契约组 S**（S2-1..S2-4 html2md 快照 + S2-5 DOCX 端到端，页内 fflate 造最小 docx）→ 先红实测 **6/6 失败**（`a struck b` vs 期望 `a ~~struck~~ b` 等）。
+- **实现**（`1a6c581`）：`src/html2md.js` `FRAG_TAGS` 增 `S`/`DEL`/`STRIKE` → `strikeFrag`（复用 `emphasisFrag` 包 `~~`，空内容不产出片段）。
+- **后绿**：组 S **6/6 通过**；全量契约 **159/159 pass / 0 fail**（36.2s，零回归）；产物 `2b2a0eb`（index.html 109,076 B / SHA `5CC3755E…`）。
+- **DOCX 路径同源**：mammoth 把 `w:strike` 映射为 `<s>`（源码实证），与 HTML 走同一分支 → 一处修复覆盖两类输入。
 
 ## 3. 待拍板点（首轮）
 
-1. **删除线范围**：只做 `<s>/<del>/<strike>`（→ `~~`）？还是连 CSS `text-decoration: line-through` 一起支持（HTML 输入常见，约 +5 行解析）？
+1. **删除线范围（S2 已修，剩 CSS 分支）**：`<s>/<del>/<strike>` → `~~` 已实现（`1a6c581`）。CSS `text-decoration: line-through` 是否一起支持（HTML 输入常见，约 +5 行解析）——**仍待拍板**。
 2. **XLSX 稀疏列**：按 `r="C2"` 列号补空位；`r` 缺失时退回文档序。是否同时处理「行内单元格乱序」（部分写入器不保证顺序）？
 3. **colspan 语义**：GFM 无 colspan —— ① 内容放首列、其余补空（推荐）② 内容重复到每列。定案后写入 `tests/CONTRACT.md`。
 4. **编码窗口**：是否把探测窗口从 4096 字节放宽（整文件扫 `<meta>` / 全文 U+FFFD 计数）？代价是大文件性能；也可只做「构造样例验证 + 结论登记」。
+5. **双删除线 `w:dstrike`（S5）**：① docx 预处理把 `<w:dstrike/>` 归一为 `<w:strike/>`（约 3 行，改动小但需一处等价性台：仅此一处替换、不动其他 XML）② 登记为已知限制（README / 规范清单留档），不改代码。**默认倾向 ①**（用户实际文档里双删除线极少，但仍属「静默丢语义」）。
 
 ## 4. 复现（无第三方引用）
 
 ```js
-// S2 删除线（宿主浏览器 file:// 直开 index.html 后执行）
+// S2 删除线（宿主浏览器 file:// 直开 index.html 后执行）——已修，以下 4 条均应产出 ~~内层~~
 const h = (s) => window.__doc2md.htmlToMarkdown(s, { warnings: [] });
-h('<p>a <s>struck</s> b</p>');   // 期望 ~~struck~~；实测 "a struck b"
+h('<p>a <s>struck</s> b</p>');   // 修前 "a struck b"（无删除线）；修后 "a ~~struck~~ b"
 h('<p>a <del>deleted</del> b</p>');
 h('<p>a <strike>old</strike> b</p>');
-h('<p>a <span style="text-decoration: line-through">css</span> b</p>');
+h('<p>a <span style="text-decoration: line-through">css</span> b</p>');  // ← 仍无 ~~（S2 残余，待拍板）
 // S3-② colspan
 h('<table><tr><td colspan="2">wide</td><td>c</td></tr></table>');  // 期望 | wide |  | c |
 ```
@@ -54,4 +64,5 @@ h('<table><tr><td colspan="2">wide</td><td>c</td></tr></table>');  // 期望 | w
 ## 5. 变更记录
 
 - 2026-09-10 建立：首轮 4 条（S1 符合 / S2·S3 不符 / S4 待验证）。
-- 2026-09-10 口径调整（用户拍板「公开侧 C + 内部侧 B」）：**公开侧只写规范条款**——原「上游 issue 对照」表述与编号/链接全部移出公开仓库，文件名与内容同步改为规范符合性；外部线索台账留在本地（工作区外）。
+- 2026-09-10 口径调整（用户拍板「公开侧 C + 内部侧 B」）：**公开侧只写规范条款**——原「上游 issue 对照」表述与编号/链接全部移出公开仓库，文件名与内容同步改为规范符合性；外部线索台账留在本地 `.私档/`（gitignore）。
+- 2026-09-10 S2 闭环：新增 §2.1 修复记录；S2 判定 ❌→✅；顺带登记 S5（`w:dstrike` 上游库不读，待拍板）；§3 拍板点 1 收窄为「CSS `line-through` 是否支持」。
