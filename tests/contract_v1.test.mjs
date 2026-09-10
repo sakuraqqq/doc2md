@@ -2451,3 +2451,76 @@ test('契约组 R：OCR 中文空格合并（collapseCjkSpaces）—— 契约�
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 S — S2 删除线语义（格式规范符合性清单 S2；2026-09-10 契约先红）
+// 规范依据：HTML `<s>`（不再准确/相关）/`<del>`（删除标记）/`<strike>`（历史别名）语义 = 删除；
+//   GFM 删除线扩展语法 = `~~…~~`；OOXML `w:strike` 语义同（mammoth 输出 `<s>` → 走同一分支）。
+// 期望：这些结构在 markdown 中保留为 `~~内层~~`；当前实现只留纯文本（= 静默格式丢失）。
+// 断言：
+//   S2-1..S2-4 html2md 精确快照（`<s>` / `<del>` / `<strike>` / 嵌套 `<strong><s>`）
+//   S2-5 DOCX 端到端：页内 fflate 造含 `w:strike` 的最小 docx → convert → 含 `~~strike~~`
+// 说明：`w:dstrike`（双删除线）本版 mammoth 不读取（源码实证 `element.first("w:strike")`）——
+//   属**上游库限制**，登记为 S5 候选，不在本组断言（不得用断言冻结未修行为）。
+// ---------------------------------------------------------------------------
+const STRIKE_SNAPSHOTS = [
+  { id: 'S2-1', name: '<s> → ~~…~~', html: '<p>a <s>struck</s> b</p>', expected: 'a ~~struck~~ b' },
+  { id: 'S2-2', name: '<del> → ~~…~~', html: '<p><del>已删除</del> 保留</p>', expected: '~~已删除~~ 保留' },
+  { id: 'S2-3', name: '<strike> → ~~…~~', html: '<p><strike>old</strike></p>', expected: '~~old~~' },
+  { id: 'S2-4', name: '嵌套 <strong><s> → **~~…~~**', html: '<p><strong><s>both</s></strong></p>', expected: '**~~both~~**' },
+];
+test('契约组 S：S2 删除线语义（HTML <s>/<del>/<strike> + DOCX w:strike → ~~）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      for (const s of STRIKE_SNAPSHOTS) {
+        await t.test(`${s.id} ${s.name}`, async () => {
+          const actual = await page.evaluate((html) => window.__doc2md.htmlToMarkdown(html), s.html);
+          assert.equal(actual, s.expected, `快照 ${s.id}（${s.name}）输出与契约快照不符：${JSON.stringify(actual)}`);
+        });
+      }
+      await t.test('S2-5 DOCX w:strike 端到端（页内 fflate 造最小 docx）→ 含 ~~strike~~ 且普通段不误标', async () => {
+        const md = await page.evaluate(async () => {
+          const F = window.fflate;
+          const CT =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>';
+          const RELS =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>';
+          const DOC =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:rPr><w:strike/></w:rPr><w:t>strike</w:t></w:r></w:p><w:p><w:r><w:t>plain</w:t></w:r></w:p></w:body></w:document>';
+          const zip = F.zipSync({
+            '[Content_Types].xml': F.strToU8(CT),
+            '_rels/.rels': F.strToU8(RELS),
+            'word/document.xml': F.strToU8(DOC),
+          });
+          const res = await window.__doc2md.convert(new File([zip], 'strike.docx'));
+          return res.error ? 'ERROR:' + res.error : res.markdown;
+        });
+        assert.ok(md.includes('~~strike~~'), `DOCX w:strike 未产出 ~~strike~~：${JSON.stringify(md)}`);
+        assert.ok(md.includes('plain'), `普通段落丢失：${JSON.stringify(md)}`);
+        assert.ok(!md.includes('~~plain~~'), `非删除线段落被误标删除线：${JSON.stringify(md)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
