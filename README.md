@@ -66,7 +66,7 @@ doc2md/
 ├── vendor/                 # 库同源分文件（mammoth/pdf.js/tesseract/core/read-excel-file；构建件+审查用）
 ├── langs/                  # OCR 语言包（eng/chi_sim，同源懒加载；SW v4 运行时缓存——首次 OCR 后入缓存）
 ├── tools/
-│   ├── embed-bline.mjs     # 单文件组装（历史：B线资源嵌入；DD-7——T9′ 拆分后仅存档）
+│   ├── embed-bline.mjs     # 单文件组装（历史：B线资源嵌入；DD-7——T9′ 拆分后仅存档，默认拒绝执行，须 --force）
 │   ├── gen-icons.mjs       # PWA 图标生成（零依赖）
 │   ├── gen-sample-image.ps1# 契约样例图片生成（Windows GDI+，固定资产）
 │   └── verify-ocr.mjs      # 离线 OCR 实证（npm run verify:ocr）

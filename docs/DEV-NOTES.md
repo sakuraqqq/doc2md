@@ -828,10 +828,10 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 | `tests/lib/server.mjs` | ✅ 缺文件 404（测试随之红），不伪造内容 |
 | `tools/embed-bline.mjs` | ⚠️ 见下「未改项 ①」 |
 
-### 未改项（待拍板，只登记）
-1. **`tools/embed-bline.mjs` 仍是个活雷**：README 已记「T9′ 拆分后仅存档」，但它没有任何护栏——一旦运行就会把 ~16MB vendor 库重新内联进 `index.html`，绕过「src/ 为唯一源码真相」（第四轮审查 §13 已提过）。建议：加致命护栏（默认拒绝，须显式 `--force`）或移入 `.私档/`（同 `patches/router-bootstrap.mjs` 先例）。
-2. **陈旧产物陷阱（本地）**：`npm test` 断的是**已构建的 `index.html`**——只改 `src/` 忘了 `npm run build` 时，本地测试会对着旧产物全绿（减脂批踩过一次）。CI 有 `build && git diff --exit-code` 拦，本地没有。建议加一条本地检查或测试内提示（属新增断言 → 待拍板）。
-3. **部署白名单无 smoke**：`deploy-pages.yml` 用 `cp` 组装站点，**新增必需顶层文件时会静默漏发**（部署成功但站点缺资源）。建议部署前加「index.html 引用的同源资源都存在」检查。
+### 未改项（后续处置，2026-09-10 用户拍板）
+1. ~~`tools/embed-bline.mjs` 仍是个活雷~~ ✅ **已修（同批）**：加**致命护栏**——默认拒绝执行并 `exit 1`，须显式 `node tools/embed-bline.mjs --force` 才动手（实测 `run=1` 拒绝 + `index.html` 零改动 + lint 干净）；顶部注释与 README 同步标注「历史存档 / 默认拒绝」。理由：它会把 ~16MB vendor 库重新内联进 `index.html`，绕过「src/ 为唯一源码真相」。
+2. **陈旧产物陷阱（本地）** → **转 v0.1.3 backlog**（用户拍板「v0.1.3 再看」）：`npm test` 断的是**已构建的 `index.html`**——只改 `src/` 忘了 `npm run build` 时，本地测试会对着旧产物全绿（减脂批踩过一次）。CI 有 `build && git diff --exit-code` 拦，本地没有。
+3. **部署白名单无 smoke** → **转 v0.1.3 backlog**：`deploy-pages.yml` 用 `cp` 组装站点，**新增必需顶层文件时会静默漏发**（部署成功但站点缺资源）。
 
 
 

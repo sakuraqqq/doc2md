@@ -69,16 +69,21 @@
 5. **S1 表格列数对齐**——我们按最大列宽对齐（符合规范）→ 补断言锁死防回归
 6. **S2 残余（待拍板）**：CSS `text-decoration: line-through` 是否一并支持（≈+5 行）
 7. ~~重复率口径（待拍板）~~ ✅ **已闭环（2026-09-10 用户拍板）**：口径改为**只度量 `src/` + `tools/`（`tests/` 排除）**→ 实测 **0.6%**（前口径含 tests：8.86% → 9.37%）；`tools/metrics.mjs` 的**假绿已修**（jscpd 运行前删旧报告、仅成功才读、否则 N/A；espree 解析失败 → exit 1）
-8. **工具/流程「假结果」审计发现（2026-09-10，只报告未改，待拍板）**：
-   - ① `tools/embed-bline.mjs`（README 记「T9′ 拆分后仅存档」）**仍可把 ~16MB vendor 库重新内联进 index.html** 且无护栏——第四轮审查 §13 已提过；建议加致命护栏或移入 `.私档/`（同 `patches/router-bootstrap.mjs` 先例）
-   - ② `npm test` 跑的是**已构建的 index.html**：只改 `src/` 忘了 build 时，本地测试会对着**旧产物**全绿（CI 有 `build && git diff --exit-code index.html` 拦，本地无）——建议加一条「产物与 src 一致」的本地检查或提示
-   - ③ `deploy-pages.yml` 站点白名单用 `cp`，缺文件会失败（诚实），但**新增必需顶层文件时会静默漏发**——建议部署前加「index.html 引用的同源资源都存在」smoke 检查
+8. ~~工具/流程「假结果」审计发现~~（2026-09-10；① 已闭环，②③ 转 v0.1.3 见下 E）：
+   - ① ~~`tools/embed-bline.mjs` 无护栏~~ ✅ **已闭环（2026-09-10 用户拍板「加 --force 护栏」）**：默认拒绝执行并 exit 1，须显式 `node tools/embed-bline.mjs --force` 才可重新内联（实测 `run=1` 拒绝、`index.html` 零改动、lint 干净）；README 同步标注
+   - ② `npm test` 跑的是**已构建的 index.html**：只改 `src/` 忘了 build 时，本地测试会对着**旧产物**全绿（CI 有 `build && git diff --exit-code index.html` 拦，本地无）→ **v0.1.3 再看**
+   - ③ `deploy-pages.yml` 站点白名单用 `cp`，缺文件会失败（诚实），但**新增必需顶层文件时会静默漏发**→ **v0.1.3 再看**
 
 **B. v0.1.2 剩余功能**：PDF 图纸页保图（27 页机械指导书实测触发）｜~~预览 1MB 截断~~ ✅ 已闭环（§8.1 批）
 
 **C. 发版**：~~v0.1.2~~ ✅ 已发布（`f5aed38` / tag / Release / Pages #35；观察期 09-09 起）｜**v0.1.3 首提交准备** ✅ 已落地（`03e3a03`）——v0.1.3 本体待 backlog 收敛（第七轮 §2.1/§2.3 + 第六轮 5 项 + PDF 图纸页保图）
 
 **D. 毕设线（另一条线，非本线）**：视觉检测方向（YOLO26，老师已确认「可以」）；构想 v2 / 环境清单未产出，用户未催
+
+**E. v0.1.3 候选（用户 2026-09-10 拍板「记进 backlog，v0.1.3 再看」）**
+1. **本地陈旧产物陷阱**：`npm test` 断的是已构建的 `index.html` —— 只改 `src/` 忘 `npm run build` 时本地全绿（CI 有 `build && git diff --exit-code index.html` 拦，本地无）。候选做法：测试内加「产物与 src 一致」检查（新增断言，需拍板）或仅加提示。
+2. **部署白名单 smoke**：`deploy-pages.yml` 用 `cp` 组装 `_site`，新增必需顶层文件时会静默漏发（部署成功但站点缺资源）。候选做法：部署前校验「index.html 引用的同源资源都存在」。
+3. **测试脚本重复**：口径已定（重复率只看 src+tools），若日后要压 tests 的重复 → 抽 `withPage()` 共享夹具（只动结构、不动断言）。
 
 ## 4. 工作方式（省 token 模式，用户 2026-09-08 拍板）
 
