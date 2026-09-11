@@ -849,6 +849,24 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 
 **新坑 ②：pwsh 向原生程序传参不可靠（两个变体，各炸一次）** —— ① 引号被剥：`node -e 'const fs=require("fs")…'` 到 node 手里成了 `require(fs)`（`Cannot access 'fs' before initialization`）；② 竖线被吃：`git log --format='%an|%ae'` 的 `|` 被当管道 → `$x = git …` 捕获为空 → **连续两次 commit 以空身份失败**。**防再犯**：需要引号的 JS 别走 `node -e`（改 .NET/PS 原生写法或落脚本文件）；git `--format` 里禁用 `|`；身份/常量写死，不动态捕获。
 
+## 2026-09-11 全门禁复跑（用户「做 B」）+ eng.traineddata 处置
+
+**目的**：把门禁数字从「上一次会话的记录」升级为**本会话实测**（一次升权串跑）。
+
+| 门禁 | 本会话实测 | 结论 |
+|---|---|---|
+| `eslint "src/**/*.js"` | exit 0（无输出） | ✅ 0 error / 0 warning |
+| `node tools/metrics.mjs` | 文件 16 / 函数 323 / 超限 0 / 重复率 0.6% | ✅ 与 09-10 定案一致 |
+| `npm run build` + `git diff --exit-code index.html` | build ok（109,107 chars / bundle 71,716 chars）；diff exit **0** | ✅ **产物与 src 一致**（无「陈旧产物陷阱」） |
+| `npm test` | **165 tests / 165 pass / 0 fail（45,647 ms）** | ✅ 零回归（浏览器回退系统 Edge；日志里 `playwright chromium 失败` 是正常回退） |
+| `node tests/pwa-audit.mjs` | **48/48** | ✅ |
+| `npm run verify:ocr` | worker 417 ms、输出 `HELLO DOC2MD 2026`、confidence **93**、三令牌全中 | ✅ PASS |
+| 产物指纹 | index.html **110,021 B / `302AA424…B50B4B`** | ✅ 与提交产物逐字节一致 |
+
+**eng.traineddata 处置（用户拍板：先 gitignore → 跑 OCR → 通过再删）**：① 写进 `.gitignore` 第 45 行（带原因注释）→ ② 跑 `verify:ocr` → ③ **脚本自己已清掉**（`Test-Path eng.traineddata` = False），**无需手动删**。`.gitignore` 原有的一处未提交改动（用户自加 `tools/_pdf-pages.mjs`）一并提交（`ef6bdba`）。
+
+**新坑 ③（补全根因）：pwsh 里原生命令的输出既不能进变量、也不能接管道** —— `git ls-files --cached | Measure-Object -Line` → `程序"git.exe"无法运行: Access is denied`（**沙箱禁命名管道**）；`$x = git rev-list --count HEAD` → `$x` 为空。**这解释了坑 ② 的两个变体**（PS 把原生命令当管道处理）。**防再犯**：原生命令**只用 statement 级直接输出**；要计数/过滤就换 .NET/PS 原生写法，或让命令自己算（如 `git rev-list --count HEAD` 直接打印）。
+
 
 
 
