@@ -98,7 +98,8 @@ function tryDecode(buf, enc) {
  *   全篇容错解码后做**全量**计数——fffd = U+FFFD 数、nonAscii = code unit > 0x7F 数；
  *   仅当 fffd >= 2 且 nonAscii > 0 且 fffd * 10 >= nonAscii 才考虑 gb18030 回退
  *   （GBK 文本 fffd/nonAscii ≈ 1；「大体合法 UTF-8 + 少量损坏」该比值 ≈ 0 → 不误翻；纯 ASCII 天然不触发），
- *   回退时保留 t11 的「gb18030 侧 FFFD 更少才采用」次级保险（F7 边界不变）。
+ *   回退时次级保险**放宽**为「gb18030 侧 FFFD 严格更少才采用」（t11 原语义为「数到 2 个即视为更少」；
+ *   放宽后 GBK + 坏字节场景亦判定正确，F7 边界不变）。
  *   性能：本路径单遍 O(n) 计数；全篇 loose 解码已在 decodeText 完成，无重复整篇解码。 */
 const FFFD_MIN = 2; // 既有阈值语义：≥2 个 U+FFFD 才考虑回退
 const FFFD_RATIO = 10; // fffd * 10 >= nonAscii ⇔ fffd / nonAscii >= 1/10
