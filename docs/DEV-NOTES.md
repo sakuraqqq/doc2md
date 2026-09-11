@@ -897,6 +897,24 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 5. **「read/grep 缓存过期」在 captain 侧未复现**：conv-dev 报告 `grep index.html normalizeDstrikeXml` 0 命中（实际 :772 有）；我用 grep 工具与 `Select-String` 同时读，**均 2 命中（772 / 779）** → 记为未复现观察，不作结论。
 6. **文档批改工具坑（本批踩到）**：`read` 的 `limit` 上限 **2000**，且**整读大文件（195 KB 的 CONTRACT.md）会被输出上限截断** → 批量改文档时 `old_string` 必须取自**窄窗读**（按行号小窗）或直接交给 `edit` 的唯一性校验；另：**插入行会让后续固定行号全部位移**，改多处要靠内容/前缀定位，不要用先前记下的行号。
 
+## 2026-09-11/12 S4+S5 收口批（AgentTeams `doc2md-s4s5` 续跑；用户拍板「修完再发」）
+
+**触发**：首轮交叉审查 3 条 finding（S4-R1 全文 ≥2 处零散 U+FFFD → 整篇 gb18030 mojibake，13,010 B 已复现且旧实现只在头 4KB 触发；S5-R1 同前缀混排漏改；S5-R2 属性值含 `>` 漏改）→ 用户选 A「修完再发」。
+**提交链**：`6a891a2`（t8 先红断言 +76/−0）→ `217459f`（t9 S4 结构判据门 A′，`src/sniff.js` +34/−18）→ `bad086a`（t10 S5 单正则交替，`src/docx.js` +32/−16）→ `f54d7a6`（产物 112,194 B / `23460575…8C8`）。
+
+**官方两相（captain 升权）**：先红（`git checkout 6a891a2 -- src/` + 重建，产物 111,449 B）组 S 过滤跑 **26 tests / 21 pass / fail 5**（S4-5、S5-4、S5-5 + 2 组壳；守护全绿）→ 后绿（实现态重建）**179/179 pass / 0 fail（46.0s）**；CI 等价复核 `git diff --exit-code index.html` = 0；断言 blob 全程 `1e024aa3…`。
+**独立验收（t11/qa-dev，PASS）**：双产物 pin（修复态/收口前）+ `QA_INDEX_OVERRIDE` 回放 → 换数据 12/12 绿、**负对照 5 处红**、`pwa-audit` 48/0。
+**交叉审查**：t12（审 S4）pass —— 14 例对抗构造与独立重写参考实现 **14/14 一致**；t13（审 S5，专职 `reviewer`）pass —— 59 例对抗台 58/59 + 真产物页内 19/19，快路径 identity、每 convert 恰 1 unzip + 1 zip。
+
+**未修 finding（全 low，登记为已知边界）**：C4/C10/C13 小 nonAscii 基数下门放行（t9 前后行为一致，非本批引入）；T13-L1 注释/CDATA 内未闭合 dstrike 跨边界配对（自 S5 既有，新旧输出逐字节相同）；T13-L2 非法嵌套内层漏改；T13-L3 畸形输入配对分支 O(n²)（2k 未闭合 73 ms）。
+
+**流程发现（重要，下一批沿用）**：
+1. **成员会话被挂死子进程吊住时 `interrupt_agent` 无效** —— conv-dev 卡 40+ 分钟，两次 interrupt 均受理但不进回合；定位到它 00:09:13 启动的一个 `node`（**1 线程 / 9 句柄 / CPU 恒 0**），`Stop-Process -Id <pid> -Force` 后**秒解**（子代理 running → idle）。**识别「哪个进程是 DSH 本体」不能凭 CPU**（跑飞的残留与本体都高 CPU），要靠**启动时间 vs 会话运行时长**（本体是长生命周期进程）。
+2. **并发取证必须 pin revision** —— captain 的两相 `git checkout -- src/` 会短暂改写共享工作树，审查方同一命令一度测到旧实现行为；qa-dev 改用 `git archive <sha>` 快照后自洽。
+3. **自审冲突须改派** —— 实现方接管某任务后不得再承接该任务审查（core-dev 接管 t10 后主动拒绝 t13 = 正确处置）；改派给未参与实现的成员，或增补专职审查员（本批新增 `reviewer`）。
+4. **沙箱拒绝是静默的** —— `Get-CimInstance Win32_Process` / `Get-NetTCPConnection` / `tasklist` / `wmic` 在本沙箱**全部拒绝访问或返回空**（连 DSH 自身进程都查不到）；进程排查只能用 `Get-Process`（Id/StartTime/CPU/Threads/Handles）。**「查不到」不等于「不存在」**（我一度据此误判，后经 Get-Process 复核纠正）。
+5. **CI 中途必红是设计** —— `tests.yml` 第一步 `npm run build && git diff --exit-code index.html`：提交了 src 却没提交重建产物即 exit 1（本批踩到一次）。中途别 push，或预期红。
+
 
 
 
