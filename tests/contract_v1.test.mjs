@@ -2683,6 +2683,48 @@ function s4WindowBytes() {
   return Array.from(all);
 }
 const S4_UTF8_TEXT = 'DOC2MD-S4 合法 UTF-8 全篇保真\n' + '中文测试内容，含全角标点。'.repeat(900) + '\nEND';
+
+// ---------------------------------------------------------------------------
+// S4-5..S4-7（收口批 2026-09-11；口径 A′ 结构判据门：fffd ≥ 2 且 nonAscii > 0 且 fffd×10 ≥ nonAscii
+//   才进入 gb18030 回退，否则保持 UTF-8）。输入全部页内现造（不入库样例）。
+//   S4-6/S4-7 为守护：防结构门误伤真 GBK（S4-6）、防无 floor 的过度收紧（S4-7）。
+// ---------------------------------------------------------------------------
+const S4_A2_BYTES = 13010; // S4-5 用例总长
+/* 完整字符填充到 n 字节（除注入点外全篇合法 UTF-8；余量用 ASCII 空格补齐） */
+function s4PadUtf8(text, n) {
+  const unit = new TextEncoder().encode(text);
+  const out = [];
+  while (out.length + unit.length <= n) for (const b of unit) out.push(b);
+  while (out.length < n) out.push(0x20);
+  return out;
+}
+/* S4-5：13,010 B「大体合法 UTF-8 + 2 处多字节截断（≈2 KB / ≈11 KB 各 1 处）」
+ *   截断 = 3 字节汉字的前 2 字节（E4 B8 / E9 9A）→ 各 1 个 U+FFFD；该输入 gb18030 侧 0 个 FFFD
+ *   → 「全篇 FFFD ≥ 2 即回退」会整篇重解成 mojibake（如实红）；结构判据门应拒绝回退（保持 UTF-8）。 */
+function s4DamagedUtf8() {
+  const filler = 'S4-5 大体合法 UTF-8 你好世界 ABCD-0123 ';
+  const a = s4PadUtf8(filler, 2048);
+  const dmg1 = [0xe4, 0xb8];
+  const b = s4PadUtf8(filler, 11264 - (a.length + dmg1.length));
+  const dmg2 = [0xe9, 0x9a];
+  const c = s4PadUtf8(filler, S4_A2_BYTES - (a.length + dmg1.length + b.length + dmg2.length));
+  return [...a, ...dmg1, ...b, ...dmg2, ...c];
+}
+/* S4-6 守护：8192 B 纯 ASCII 头 + 80,000 B GBK 正文（'中文测试'×10000 = D6D0CEC4B2E2CAD4） */
+function s4AsciiHeadGbkBody() {
+  const out = new Uint8Array(8192 + 80000).fill(0x41);
+  for (let i = 0; i < 10000; i++) out.set(Uint8Array.from(GBK_ZHONGWEN), 8192 + i * 8);
+  return Array.from(out);
+}
+/* S4-7 守护：纯 ASCII + 单字节损坏 0xB0（gb18030 下 0xB0 会与后继 'B' 组成 2 字节序列 → 可判别是否误回退） */
+function s4AsciiOneByteDamage() {
+  const out = [...new Array(6000).fill(0x41), 0xb0];
+  for (const ch of 'BCDEF') out.push(ch.charCodeAt(0));
+  for (let i = 0; i < 1000; i++) out.push(0x47);
+  return out;
+}
+const S4_7_EXPECTED = 'A'.repeat(6000) + '\uFFFD' + 'BCDEF' + 'G'.repeat(1000);
+const countFffdChars = (s) => s.split('\uFFFD').length - 1;
 test('契约组 S：S4 编码判定窗口（全篇判定——头部 ASCII + 正文 GBK 不误判）—— 契约先红', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
   let chromium;
@@ -2750,6 +2792,26 @@ test('契约组 S：S4 编码判定窗口（全篇判定——头部 ASCII + 正
           `合法 UTF-8 仍对 gb18030 做了解码（违反零额外成本快检）：${JSON.stringify(probe.seen)}`
         );
         assert.equal(probe.out, S4_UTF8_TEXT, '合法 UTF-8 未逐字符保真');
+      });
+      await t.test('S4-5 大体合法 UTF-8 + 2 处多字节截断（13010 B）→ 保持 UTF-8（不得整篇 gb18030 重解）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4DamagedUtf8());
+        const around = JSON.stringify(actual.slice(1500, 1540));
+        assert.ok(actual.includes('你好世界'), `少量损坏被整篇判为 gb18030（可读中文子串丢失，结构判据门未生效）：${around}`);
+        assert.ok(!actual.includes('浣犲ソ'), `输出含 gb18030 mojibake 签名「浣犲ソ」（应保持 UTF-8）：${around}`);
+        const fffd = countFffdChars(actual);
+        assert.ok(fffd <= 4, `U+FFFD 计数超预期（${fffd} > 4；仅 2 处截断）：${around}`);
+      });
+
+      await t.test('S4-6 守护：8192 B ASCII 头 + 80000 B GBK 正文 → 仍回退 gb18030（含中文、无 U+FFFD）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4AsciiHeadGbkBody());
+        const boundary = JSON.stringify(actual.slice(8186, 8200));
+        assert.ok(actual.includes('中文测试'), `真 GBK 正文被结构门误伤（未回退）：${boundary}`);
+        assert.ok(!actual.includes('\uFFFD'), `输出含替换字符 U+FFFD（真 GBK 未回退）：${boundary}`);
+      });
+
+      await t.test('S4-7 守护 floor：纯 ASCII + 单字节损坏 → 不触发 gb18030 回退（其余内容完好）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4AsciiOneByteDamage());
+        assert.equal(actual, S4_7_EXPECTED, '单字节损坏被整篇重解（0xB0 在 gb18030 下会与后继组成 2 字节序列）');
       });
     } finally {
       await browser.close();
@@ -2856,6 +2918,20 @@ test('契约组 S：S5 OOXML 双删除线 w:dstrike 归一（→ ~~；w:val fals
         assert.ok(res.markdown.includes('~~single~~'), `单删除线回归：${JSON.stringify(res.markdown)}`);
         assert.ok(res.markdown.includes('~~double~~'), `双删除线未归一：${JSON.stringify(res.markdown)}`);
         assert.ok(!res.markdown.includes('~~plain~~'), `普通段被误标删除线：${JSON.stringify(res.markdown)}`);
+      });
+      await t.test('S5-4 同前缀混排：自闭合在前 + 配对在后（同段）→ 两处都归一', async () => {
+        const res = await convertDocx(
+          s5Document([[s5Run('<w:dstrike/>', 'self'), s5Run('', ' - '), s5Run('<w:dstrike>x</w:dstrike>', 'pair')]])
+        );
+        assert.equal(res.error, null, `convert 返回错误：${res.error}`);
+        assert.ok(res.markdown.includes('~~self~~'), `自闭合形态未归一：${JSON.stringify(res.markdown)}`);
+        assert.ok(res.markdown.includes('~~pair~~'), `配对形态被前一个自闭合标签吞掉（静默漏改）：${JSON.stringify(res.markdown)}`);
+      });
+
+      await t.test('S5-5 属性值含 > 的自闭合 dstrike（合法 XML）→ 仍归一为 w:strike', async () => {
+        const res = await convertDocx(s5Document([[s5Run('<w:dstrike w:x="a>b"/>', 'gt')]]));
+        assert.equal(res.error, null, `convert 返回错误：${res.error}`);
+        assert.ok(res.markdown.includes('~~gt~~'), `属性值含 > 时静默漏改（正则在引号内提前截断）：${JSON.stringify(res.markdown)}`);
       });
     } finally {
       await browser.close();
