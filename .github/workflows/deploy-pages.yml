@@ -34,6 +34,10 @@ jobs:
           mkdir _site
           cp index.html manifest.json sw.js .nojekyll _site/
           cp -r vendor langs icons _site/
+      # 2026-09-12 纳入（v0.1.3）：白名单 cp 的代价是「新增必需顶层文件会静默漏发」——
+      # 部署前按「引用即必需」核对 index.html / sw.js 的同源引用与必需顶层文件/目录。
+      - name: 站点白名单 smoke（引用即必需）
+        run: node tools/deploy-smoke.mjs _site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
