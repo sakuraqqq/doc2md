@@ -833,6 +833,22 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 2. **陈旧产物陷阱（本地）** → **转 v0.1.3 backlog**（用户拍板「v0.1.3 再看」）：`npm test` 断的是**已构建的 `index.html`**——只改 `src/` 忘了 `npm run build` 时，本地测试会对着旧产物全绿（减脂批踩过一次）。CI 有 `build && git diff --exit-code` 拦，本地没有。
 3. **部署白名单无 smoke** → **转 v0.1.3 backlog**：`deploy-pages.yml` 用 `cp` 组装站点，**新增必需顶层文件时会静默漏发**（部署成功但站点缺资源）。
 
+## 2026-09-11 文档漂移批（权威源 / 数字回填 / 度量覆盖）
+
+**背景**：会话级交接（`.私档/`）与 `docs/HANDOFF-主开发线.md` 状态不一致——基线仍写 `a58b067`、重复率仍写 9.37%、还写「本地领先远端待 push」。本轮把**活文档**一次性对齐到磁盘实测。
+
+**判定规则**：活文档（HANDOFF-主开发线 / architecture / RELEASE-CHECKLIST / CODE-METRICS）**必改**；各轮审查报告、DEV-NOTES 批次记录、RELEASE.md 发布记录属**时点快照，不改**（改了反而破坏历史）。
+
+| 文件 | 旧 → 新 | 提交 |
+|---|---|---|
+| `docs/HANDOFF-主开发线.md` | 基线 `a58b067`→**`8301a71`**；删「待 push」（实测 `origin/main`==HEAD 0/0）；重复率 9.37%→**0.6%**（口径 src+tools）；§2 补「metrics 口径+隐患处置」批行；§8 第六轮剩余 5→3 项；**新增权威源声明**（本文件 = 状态唯一权威源，会话级交接收尾须回灌） | `3521405` |
+| `docs/CODE-METRICS.md` | **生成物**（`npm run metrics` 覆盖）：2026-09-09 版 4% / 316 函数 → 升权真跑 jscpd → 2026-09-11 版 **0.6% / 323 函数 / 超限 0 / exit 0** | `2fc0191` |
+| `docs/architecture.md` + `docs/RELEASE-CHECKLIST.md` | index.html `102KB / 104,064 B` → **110,021 B**，并注明**拆分口径**（esbuild bundle 72,001 B + 模板内联 fflate 30,163 B + 内联 CSS 4,862 B + HTML 骨架 2,995 B，逐字节吻合） | `5aa841f` |
+
+**新坑 ①：本环境没有 git 全局身份** —— 裸 `git commit` 报 `Author identity unknown` → `fatal: empty ident name`；`.git/config` 无 `[user]` 段。**防再犯**：提交一律 `-c user.name=sakuraqqq -c user.email=sakuraqqq@users.noreply.github.com` 局部覆盖（HANDOFF §5「全局已设」条目已同步更正）。
+
+**新坑 ②：pwsh 向原生程序传参不可靠（两个变体，各炸一次）** —— ① 引号被剥：`node -e 'const fs=require("fs")…'` 到 node 手里成了 `require(fs)`（`Cannot access 'fs' before initialization`）；② 竖线被吃：`git log --format='%an|%ae'` 的 `|` 被当管道 → `$x = git …` 捕获为空 → **连续两次 commit 以空身份失败**。**防再犯**：需要引号的 JS 别走 `node -e`（改 .NET/PS 原生写法或落脚本文件）；git `--format` 里禁用 `|`；身份/常量写死，不动态捕获。
+
 
 
 
