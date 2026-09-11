@@ -12,7 +12,9 @@
 | README 终稿（中英 + 功能 + 口径 + 截图 + 测试 + 许可 + 发展） | ✅ 就绪 | `README.md`；截图 ✅ `assets/screenshot.png`；演示 GIF **已拍板不做**（拖放/上传为直觉操作，2026-09-04） |
 | GitHub Pages workflow | ✅ 就绪 | `.github/workflows/deploy-pages.yml`（照 cola `deploy-pages.yml` 同款；纯静态零构建；Workflow 跑在 checkout 干净树上，`.gitignore` 已排除 node_modules/.tmp/.npm-cache，不会上传 Pages） |
 | `.nojekyll` | ✅ 就绪 | 根目录（Pages 免 Jekyll 处理） |
-| 契约测试 | ⬜ 用户机复跑 | `npm test`：B 组全绿 + DD-11/DD-12 修复后 C/M 组预期全绿（用户机 29/31 → M 组修复后预期 31/31；宿主浏览器独立验收 C1-C6/M 已全通） |
+| 契约测试 | ✅ **180/180**（2026-09-12 实跑） | `npm test`：全量 **180 tests / pass 180 / fail 0**（含新组 T 产物一致性）；B/C/M 组真实浏览器/手机视口断言全绿 |
+| 产物一致性（本地防线，v0.1.3 纳入） | ✅ 新增 | 契约组 **T**：现场重建产物并比对字节，不一致即 FAIL（治「只改 src 忘 `npm run build` → 本地对着旧产物假绿」）；CI 另有 build-consistency 步骤 |
+| 部署白名单 smoke（v0.1.3 纳入） | ✅ 新增 | `node tools/deploy-smoke.mjs _site`：按「引用即必需」核对 index.html / sw.js 同源引用 + 必需顶层文件/目录（治 cp 白名单静默漏发）；实测正例 PASS、负例 exit 1 |
 | PWA 静态验收 | ✅ 48/48 | `node tests/pwa-audit.mjs`（manifest/SW/图标/触控/对比度 WCAG AA） |
 | 离线 OCR 实证 | ✅ PASS | `npm run verify:ocr`（置信度 93%，HELLO/DOC2MD/2026 全命中） |
 | OCR 语言包（T8′ 懒加载） | ✅ 就绪 | **`langs/` 目录必须随 index.html 发布**（eng/chi_sim.traineddata，同源懒加载，DD-14；**缺它则 OCR 功能失效**——上次 16.4MB 单文件已不含语言包） |
@@ -62,7 +64,7 @@ git push --dry-run origin v0.1.1
 
 ## 4. npm pack 类核对（本项目无 npm 包，等价清单）
 
-- 交付物 = **静态站**（index.html **110,021 B（110KB）**——拆分口径（2026-09-11 实测）= esbuild 应用逻辑 bundle **72,001 B**（`src/app.js` IIFE）+ 模板内联 fflate **30,163 B** + 内联 CSS **4,862 B** + HTML 骨架/静态文案 **2,995 B**（逐段相加 = 文件总字节，详见 `docs/architecture.md` §4.5）+ **vendor/（8 个库分文件）+ langs/（OCR 语言包）** + manifest.json + sw.js + icons/——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
+- 交付物 = **静态站**（index.html **112,194 B（110KB）**——拆分口径（2026-09-12 实测）= esbuild 应用逻辑 bundle **74,174 B**（`src/app.js` IIFE）+ 模板内联 fflate **30,163 B** + 内联 CSS **4,862 B** + HTML 骨架/静态文案 **2,995 B**（逐段相加 = 文件总字节，详见 `docs/architecture.md` §4.5）+ **vendor/（8 个库分文件）+ langs/（OCR 语言包）** + manifest.json + sw.js + icons/——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
 - 等价核对：Pages 部署目录清单（工作流上传根目录；部署后核对 index.html/manifest/sw/icons/vendor/*/langs/* 齐）、发布记录留存：版本 + 测试结果 + 各产物 SIZE + SHA256（见下方记录区）。
 - 若未来发布 npm 包：`npm pack --dry-run --json`（**必须 --json**，plain 输出看不见清单）核对 LICENSE/产物/源码/入口都在清单。
 
