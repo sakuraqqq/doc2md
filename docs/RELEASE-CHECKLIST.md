@@ -71,6 +71,7 @@ git push --dry-run origin v0.1.1
 ## 5. 观察期
 
 - **≥3 天**：验证 Pages 在线可玩、手机浏览器可用（阶段 3 验收 #19）。
+- **v0.1.3（2026-09-12 发布）**：观察期 **09-12 起 ≥3 天 → 09-15 复盘**；重点观察 ① Pages 上 `deploy-pages` 的**白名单 smoke 步骤**是否存活（新增防线）② OCR/PDF 在线上 http 环境的可用性 ③ 契约组 T 在 CI 的行为（本地/受限环境的 spawn 前置已在 CONTRACT §7 记录）。
 - 汇总反馈 → 拍板 v2 范围（音频/EPUB/批量/OCR 增强）与 Capacitor（可行性记录见 `docs/architecture.md` §8.4，未安装依赖）。
 
 ## 6. ⚠️ 已知不一致（发布前请拍板）
