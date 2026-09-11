@@ -100,7 +100,7 @@
 |---|---|
 | git log | `git --no-pager log --oneline -N`（PowerShell 下分页器报 `'nutc': unknown terminal type.`） |
 | git 其它命令 | **不加管道/重定向**：`git … \| Select-Object` / `2>&1` / `\| Out-String` → `Program 'git.exe' failed to run: Access is denied`（沙箱禁命名管道，**命令根本没执行**——易误判为 commit 失败）；`-c safe.directory='*'` 在 pwsh 下引号被吞 → 用同进程三件套 `$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*`（§8.1 批实测固化） |
-| 提交身份 | 全局已设 `sakuraqqq` / `sakuraqqq@users.noreply.github.com`（noreply，防邮箱泄露） |
+| 提交身份 | **本环境无全局身份**（`.git/config` 无 `[user]`；裸 `git commit` 报 `Author identity unknown` → `fatal: empty ident name`）——一律 `-c user.name=sakuraqqq -c user.email=sakuraqqq@users.noreply.github.com` **局部覆盖**（noreply，防邮箱泄露） |
 | build / test | **用户终端**跑（沙箱禁 esbuild spawn / node --test / 浏览器 spawn）；经用户批准的一次性升权可在会话内实跑（§8.1 批已实证：`npm run build` + `npm test` 145/145） |
 | 发布动作 | `git push` / `tag` / `gh release` **用户执行**（AI 只到 dry-run） |
 | 工作树 | `.私档/`（私人文档）· `docs/copyright/` `tools/gen-copyright.mjs` `.script-archive/`（软著材料）——均 gitignore，**禁止 add** |
