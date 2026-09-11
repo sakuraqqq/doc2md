@@ -915,6 +915,17 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 4. **沙箱拒绝是静默的** —— `Get-CimInstance Win32_Process` / `Get-NetTCPConnection` / `tasklist` / `wmic` 在本沙箱**全部拒绝访问或返回空**（连 DSH 自身进程都查不到）；进程排查只能用 `Get-Process`（Id/StartTime/CPU/Threads/Handles）。**「查不到」不等于「不存在」**（我一度据此误判，后经 Get-Process 复核纠正）。
 5. **CI 中途必红是设计** —— `tests.yml` 第一步 `npm run build && git diff --exit-code index.html`：提交了 src 却没提交重建产物即 exit 1（本批踩到一次）。中途别 push，或预期红。
 
+## 2026-09-12 v0.1.3 发布准备批（版本号 + 两条防线 + 全门禁复跑）
+
+**范围（用户拍板「按建议纳入」）**：v0.1.3 backlog E 节 ① 本地陈旧产物陷阱、② 部署白名单 smoke 纳入；③ tests 重复不做。
+**提交链**：`7cd6478`（sniff 注释与代码对齐）→ `8d1ea57`（版本号 v0.1.3：template footer + package.json + package-lock）→ `8664a98`（产物 112,194 B / `96452DA0…4C54`）→ `ac27551`（metrics 刷新）→ `5317c60`（**契约组 T** 产物一致性）→ `5683b05`（**部署 smoke**：tools/deploy-smoke.mjs + deploy-pages.yml 接线）。
+**① 契约组 T**：现场跑 `tools/build.mjs` 重建产物 → 比对 sha256；不一致即 FAIL（error message 直接给「请跑 npm run build 并提交产物」）。**先红实测**：手工污染 index.html → FAIL（hash 差异可见）；恢复后 PASS。位置放在契约组 A **之前**（先于其它组执行，避免其它组对着陈旧产物断言）。代价：需能 spawn esbuild（与 C/M 组需浏览器同级前置）。
+**② 部署白名单 smoke**：`tools/deploy-smoke.mjs [siteDir=_site]` 按「引用即必需」核对——index.html 的 script/img/link 同源引用 + sw.js 里 `'./x'` 形式的登记资源 + 必需顶层文件（manifest.json/.nojekyll/sw.js）与目录（vendor/langs/icons）。**实测**：真实组装 `_site` → PASS（15 引用全解析）；删掉 `vendor/mammoth.browser.min.js` → exit 1 并精确列出该文件。接线在 `deploy-pages.yml` 组装步骤之后、上传之前。
+**发布前全门禁（本会话升权实跑）**：build exit 0（`112,194 B / 96452DA0…4C54`）· lint src 0/0 · metrics **17 文件 / 330 函数 / 超限 0 / 重复率 0.5%** · 契约 **180/180 pass / 0 fail（39.9s）** · pwa **48/48** · OCR **PASS（93%）**。
+**一处本地-only 现象（CI 不受影响）**：`npm run lint`（含 `tools/**/*.mjs`）在本机报 **1 error + 2 warning** —— error = `tools/_pdf-pages.mjs:17`（sonarjs/super-linear-regex），warning = `_verify-clean.mjs:10` / `gen-copyright.mjs:86`（complexity 11）。三者**均为 gitignored 私有脚本**，CI 检出中不存在 → CI lint 通过（与 AGENTS.md「tools/ 告警不入库、CI 不计」一致）；本地如需 lint 全绿，可修私有脚本正则或给 eslint 加 `tools/_*.mjs` ignores。
+**数字回填**：`docs/architecture.md` §4.5 与 `docs/RELEASE-CHECKLIST.md` §4 的体积拆分按 2026-09-12 实测重写（bundle **74,174 B** + fflate **30,163 B** + CSS **4,862 B** + 骨架 **2,995 B** = **112,194 B**）。
+**踩坑**：pwsh 里 `foreach ($x in [regex]'…'.Matches($s))` 这种「内联 cast + 方法调用」会被静默解析失败（返回空集，不报错）——正则必须先赋变量（`$rx = [regex]'…'`）再 `.Matches()`；本次因此把 `undefined` 写进了文档，回读时才发现（**改文档后必须回读校验**）。
+
 
 
 
