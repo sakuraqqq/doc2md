@@ -156,7 +156,9 @@
     const strictUtf8 = tryUtf8Strict(buf);
     if (strictUtf8 !== null) return strictUtf8;
     const looseTxt = new TextDecoder("utf-8").decode(buf);
-    for (const enc of charsetLabels(looseTxt)) {
+    const probeN = Math.min(buf.byteLength, 4096);
+    const headTxt = probeN === buf.byteLength ? looseTxt : new TextDecoder("utf-8").decode(buf.subarray(0, probeN));
+    for (const enc of charsetLabels(headTxt)) {
       const decoded = tryDecode(buf, enc);
       if (decoded !== null) return decoded;
     }
@@ -225,19 +227,30 @@
       return null;
     }
   }
+  var FFFD_MIN = 2;
+  var FFFD_RATIO = 10;
   function gb18030Fallback(buf, looseTxt) {
-    if (countFffd(looseTxt, 2) >= 2) {
-      try {
-        const g = new TextDecoder("gb18030").decode(buf);
-        if (countFffd(g, 2) < 2) return g;
-      } catch {
+    const fffd = countFffd(looseTxt);
+    if (fffd >= FFFD_MIN) {
+      const nonAscii = countNonAscii(looseTxt);
+      if (nonAscii > 0 && fffd * FFFD_RATIO >= nonAscii) {
+        try {
+          const g = new TextDecoder("gb18030").decode(buf);
+          if (countFffd(g) < fffd) return g;
+        } catch {
+        }
       }
     }
     return looseTxt;
   }
-  function countFffd(s, cap) {
+  function countFffd(s) {
     let n = 0;
-    for (let i = 0; i < s.length && n < cap; i++) if (s[i] === "\uFFFD") n++;
+    for (let i = 0; i < s.length; i++) if (s[i] === "\uFFFD") n++;
+    return n;
+  }
+  function countNonAscii(s) {
+    let n = 0;
+    for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) > 127) n++;
     return n;
   }
   function normWs(s) {
@@ -751,29 +764,37 @@
   function dstrikeIsOff(val) {
     return DSTRIKE_OFF.has(String(val === null || val === void 0 ? "" : val).trim().toLowerCase());
   }
+  var DSTRIKE_VAL_RE = /(?:^|\s)(?:[\w.-]+:)?val\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
   function dstrikeAttrPlan(attrs) {
-    const m = /(?:^|\s)(?:[\w.-]+:)?val\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attrs);
-    if (!m) return { off: false, keep: attrs };
+    DSTRIKE_VAL_RE.lastIndex = 0;
+    let m = DSTRIKE_VAL_RE.exec(attrs);
+    while (m !== null && insideQuotes(attrs, m.index)) m = DSTRIKE_VAL_RE.exec(attrs);
+    if (m === null) return { off: false, keep: attrs };
     const v = m[1] === void 0 ? m[2] : m[1];
     const rest = attrs.slice(0, m.index) + attrs.slice(m.index + m[0].length);
     return { off: dstrikeIsOff(v), keep: rest.trim() === "" ? "" : rest };
   }
-  function dstrikePair(m, pfx, attrs, inner) {
-    if (attrs.endsWith("/")) return m;
-    const plan = dstrikeAttrPlan(attrs);
-    if (plan.off) return m;
-    return "<" + pfx + ":strike" + plan.keep + ">" + inner + "</" + pfx + ":strike>";
+  function insideQuotes(s, idx) {
+    let d = 0;
+    let q = 0;
+    for (let i = 0; i < idx; i++) {
+      if (s[i] === '"') d++;
+      else if (s[i] === "'") q++;
+    }
+    return d % 2 === 1 || q % 2 === 1;
   }
-  function dstrikeSelf(m, pfx, attrs) {
+  var DSTRIKE_TAG = /<([\w.-]+):dstrike\b((?:"[^"]*"|'[^']*'|[^>"'])*?)(?:\/>|>([\s\S]*?)<\/\1:dstrike>)/g;
+  function dstrikeReplace(m, pfx, attrs, inner) {
     const plan = dstrikeAttrPlan(attrs);
     if (plan.off) return m;
-    return "<" + pfx + ":strike" + plan.keep + "/>";
+    if (inner === void 0) return "<" + pfx + ":strike" + plan.keep + "/>";
+    return "<" + pfx + ":strike" + plan.keep + ">" + inner + "</" + pfx + ":strike>";
   }
   function normalizeDstrikeXml(xml) {
     const s = String(xml);
     if (s.indexOf("dstrike") < 0) return s;
-    const paired = s.replace(/<([\w.-]+):dstrike\b([^>]*?)>([\s\S]*?)<\/\1:dstrike>/g, dstrikePair);
-    return paired.replace(/<([\w.-]+):dstrike\b([^>]*?)\/>/g, dstrikeSelf);
+    DSTRIKE_TAG.lastIndex = 0;
+    return s.replace(DSTRIKE_TAG, dstrikeReplace);
   }
   function docxParseForMd(docXml, warnings) {
     const doc = docxParseDoc(normalizeDstrikeXml(docXml));
