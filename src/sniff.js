@@ -2,6 +2,7 @@
  * 原位置：index.html「工具」+「类型嗅探」段（单元：startsWith/headAscii/decodeText/normWs/sniff）
  * 决策史：BOM 优先（审查报告 §1.3 建议 #3）、GBK/GB18030 兜底（审查报告 §1.4）、
  *        PDF 前 1024 搜 %PDF 兜底（architecture §3）、二进制启发式 >30% → unknown(binary)
+ *        编码判定全篇化（S4 口径 A：UTF-8 fatal 快检 + 全篇 U+FFFD 计数；2026-09-11 拍板）
  */
 
 /* ---------- 工具 ---------- */
@@ -20,13 +21,18 @@ export function headAscii(buf) {
 export function decodeText(buf) {
   const bom = decodeBom(buf);
   if (bom !== null) return bom;
-  const probeN = Math.min(buf.byteLength, 4096);
-  const headTxt = new TextDecoder('utf-8').decode(buf.subarray(0, probeN)); // 容错解码（不抛）
-  for (const enc of charsetLabels(headTxt)) {
+  const strictUtf8 = tryUtf8Strict(buf); // 全篇 UTF-8 fatal 快检：合法即返回（零额外成本快径，S4 口径 A）
+  if (strictUtf8 !== null) return strictUtf8;
+  const looseTxt = new TextDecoder('utf-8').decode(buf); // 全篇容错解码（仅非法 UTF-8 才走到这里）
+  for (const enc of charsetLabels(looseTxt)) {
     const decoded = tryDecode(buf, enc);
     if (decoded !== null) return decoded;
   }
-  return gb18030Fallback(buf, headTxt);
+  return gb18030Fallback(buf, looseTxt);
+}
+/* 全篇 UTF-8 fatal 快检（S4 口径 A）：合法返回解码串；非法/环境不支持 fatal → null（继续后续判定） */
+function tryUtf8Strict(buf) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { return null; }
 }
 
 /* BOM 分支（UTF-8 / UTF-16LE / UTF-16BE）：命中返回解码串，否则 null */
@@ -86,18 +92,19 @@ function tryDecode(buf, enc) {
 }
 
 /* ③ 启发式回退（t11 §1.4 修订——旧「任意 1 个 U+FFFD 即整篇回退 gb18030」把 UTF-8 尾部截断 1 字节的
- *   文件整篇重解成 mojibake——F7）：UTF-8 容错解码出现 **≥2 个** U+FFFD 且 gb18030 解码替换符更少
- *   → 回退 gb18030（GBK 短文本任一汉字在 UTF-8 下产生 ≥2 个 FFFD——每个坏字节一个 → F6 不回归；
- *   正常 UTF-8 仅损坏 1 字符时 1 个 FFFD → 保持 UTF-8，只损坏尾部 1 字符） */
-function gb18030Fallback(buf, headTxt) {
-  if (countFffd(headTxt, 2) >= 2) {
+ *   文件整篇重解成 mojibake——F7；S4 修订：计数基准由「前 4096 B 采样」改为**全篇**容错解码文本）：
+ *   UTF-8 容错解码出现 **≥2 个** U+FFFD 且 gb18030 解码替换符更少 → 回退 gb18030（GBK 短文本任一
+ *   汉字在 UTF-8 下产生 ≥2 个 FFFD——每个坏字节一个 → F6 不回归；正常 UTF-8 仅损坏 1 字符时 1 个
+ *   FFFD → 保持 UTF-8，只损坏尾部 1 字符） */
+function gb18030Fallback(buf, looseTxt) {
+  if (countFffd(looseTxt, 2) >= 2) {
     try {
       const g = new TextDecoder('gb18030').decode(buf);
       // 提前退出：只数到 utf8 的 FFFD 数即可判定「更少」
       if (countFffd(g, 2) < 2) return g;
     } catch { /* 极端环境不支持该 label：保持原行为 */ }
   }
-  return new TextDecoder('utf-8', { fatal: false }).decode(buf);
+  return looseTxt; // 等价于再解一次 UTF-8 容错（复用全篇结果，省一次全篇解码）
 }
 /* U+FFFD 计数（t11 §1.4 辅助：cap 提前退出——只关心「是否 ≥ cap」） */
 function countFffd(s, cap) {
