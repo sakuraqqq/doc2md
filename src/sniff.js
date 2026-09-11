@@ -2,7 +2,7 @@
  * 原位置：index.html「工具」+「类型嗅探」段（单元：startsWith/headAscii/decodeText/normWs/sniff）
  * 决策史：BOM 优先（审查报告 §1.3 建议 #3）、GBK/GB18030 兜底（审查报告 §1.4）、
  *        PDF 前 1024 搜 %PDF 兜底（architecture §3）、二进制启发式 >30% → unknown(binary)
- *        编码判定全篇化（S4 口径 A：UTF-8 fatal 快检 + 全篇 U+FFFD 计数；2026-09-11 拍板）
+ *        编码判定全篇化（S4 口径 A/A′：UTF-8 fatal 快检 + 全篇 fffd/nonAscii 判据门；2026-09-11 拍板）
  */
 
 /* ---------- 工具 ---------- */
@@ -21,10 +21,13 @@ export function headAscii(buf) {
 export function decodeText(buf) {
   const bom = decodeBom(buf);
   if (bom !== null) return bom;
-  const strictUtf8 = tryUtf8Strict(buf); // 全篇 UTF-8 fatal 快检：合法即返回（零额外成本快径，S4 口径 A）
+  const strictUtf8 = tryUtf8Strict(buf); // 全篇 UTF-8 fatal 快检：合法即返回（零额外成本快径，S4 口径 A′）
   if (strictUtf8 !== null) return strictUtf8;
   const looseTxt = new TextDecoder('utf-8').decode(buf); // 全篇容错解码（仅非法 UTF-8 才走到这里）
-  for (const enc of charsetLabels(looseTxt)) {
+  // meta 扫描窗口语义不变（仍只在前 4096 B 找 meta；小文件直接复用全篇结果，避免重复解码）
+  const probeN = Math.min(buf.byteLength, 4096);
+  const headTxt = probeN === buf.byteLength ? looseTxt : new TextDecoder('utf-8').decode(buf.subarray(0, probeN));
+  for (const enc of charsetLabels(headTxt)) {
     const decoded = tryDecode(buf, enc);
     if (decoded !== null) return decoded;
   }
@@ -91,27 +94,40 @@ function tryDecode(buf, enc) {
   try { return new TextDecoder(enc).decode(buf); } catch { return null; }
 }
 
-/* ③ 启发式回退（t11 §1.4 修订——旧「任意 1 个 U+FFFD 即整篇回退 gb18030」把 UTF-8 尾部截断 1 字节的
- *   文件整篇重解成 mojibake——F7；S4 修订：计数基准由「前 4096 B 采样」改为**全篇**容错解码文本）：
- *   UTF-8 容错解码出现 **≥2 个** U+FFFD 且 gb18030 解码替换符更少 → 回退 gb18030（GBK 短文本任一
- *   汉字在 UTF-8 下产生 ≥2 个 FFFD——每个坏字节一个 → F6 不回归；正常 UTF-8 仅损坏 1 字符时 1 个
- *   FFFD → 保持 UTF-8，只损坏尾部 1 字符） */
+/* ③ 启发式回退（S4 口径 A′ 结构判据门）：
+ *   全篇容错解码后做**全量**计数——fffd = U+FFFD 数、nonAscii = code unit > 0x7F 数；
+ *   仅当 fffd >= 2 且 nonAscii > 0 且 fffd * 10 >= nonAscii 才考虑 gb18030 回退
+ *   （GBK 文本 fffd/nonAscii ≈ 1；「大体合法 UTF-8 + 少量损坏」该比值 ≈ 0 → 不误翻；纯 ASCII 天然不触发），
+ *   回退时保留 t11 的「gb18030 侧 FFFD 更少才采用」次级保险（F7 边界不变）。
+ *   性能：本路径单遍 O(n) 计数；全篇 loose 解码已在 decodeText 完成，无重复整篇解码。 */
+const FFFD_MIN = 2; // 既有阈值语义：≥2 个 U+FFFD 才考虑回退
+const FFFD_RATIO = 10; // fffd * 10 >= nonAscii ⇔ fffd / nonAscii >= 1/10
 function gb18030Fallback(buf, looseTxt) {
-  if (countFffd(looseTxt, 2) >= 2) {
-    try {
-      const g = new TextDecoder('gb18030').decode(buf);
-      // 提前退出：只数到 utf8 的 FFFD 数即可判定「更少」
-      if (countFffd(g, 2) < 2) return g;
-    } catch { /* 极端环境不支持该 label：保持原行为 */ }
+  const fffd = countFffd(looseTxt);
+  if (fffd >= FFFD_MIN) {
+    const nonAscii = countNonAscii(looseTxt);
+    if (nonAscii > 0 && fffd * FFFD_RATIO >= nonAscii) {
+      try {
+        const g = new TextDecoder('gb18030').decode(buf);
+        if (countFffd(g) < fffd) return g; // 次级保险：gb18030 侧 FFFD 更少才采用
+      } catch { /* 极端环境不支持该 label：保持原行为 */ }
+    }
   }
-  return looseTxt; // 等价于再解一次 UTF-8 容错（复用全篇结果，省一次全篇解码）
+  return looseTxt; // 保持 UTF-8（等价于再解一次容错解码，复用全篇结果）
 }
-/* U+FFFD 计数（t11 §1.4 辅助：cap 提前退出——只关心「是否 ≥ cap」） */
-function countFffd(s, cap) {
+/* U+FFFD 全量计数（结构判据门需要全量，不再提前退出） */
+function countFffd(s) {
   let n = 0;
-  for (let i = 0; i < s.length && n < cap; i++) if (s[i] === '\uFFFD') n++;
+  for (let i = 0; i < s.length; i++) if (s[i] === '\uFFFD') n++;
   return n;
 }
+/* code unit > 0x7F 全量计数（结构判据门分母） */
+function countNonAscii(s) {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) > 0x7f) n++;
+  return n;
+}
+// 行内空白归一（html2md 域共用；行内拼接规则的文本节点处理由 html2md.js 使用）
 // 行内空白归一（html2md 域共用；行内拼接规则的文本节点处理由 html2md.js 使用）
 export function normWs(s) { return s.replace(/\s+/g, ' '); }
 
