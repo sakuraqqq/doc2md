@@ -311,7 +311,7 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | S2-4 | `<p><strong><s>both</s></strong></p>`（嵌套优先级） | `**~~both~~**` | 🟢 绿（先红实测 `**both**`） |
 | S2-5 | DOCX `w:strike` 端到端：页内造 docx → `convert()` | 含 `~~strike~~`；普通段落 `plain` 保留且**不**被误标 `~~` | 🟢 绿（先红实测 `strike` 无 `~~`） |
 
-**范围说明（未断言、已知限制）**：① CSS `text-decoration: line-through` 目前不产出 `~~`（待拍板，见规范清单 §3-1）；② OOXML **双删除线 `w:dstrike`** 不产出 `~~`——上游库只读 `w:strike`，属库侧限制（登记为规范清单 **S5**，未断言，避免把库行为锁进本项目契约）。
+**范围说明（未断言、已知限制）**：① CSS `text-decoration: line-through` 目前不产出 `~~`（待拍板，见规范清单 §3-1）；② OOXML **双删除线 `w:dstrike`** 不产出 `~~`——上游库只读 `w:strike`，属库侧限制（规范清单 **S5**）——**2026-09-11 起 S5 已定稿为独立断言组**，见下方「格式规范符合性 S5」小节。
 
 ### 契约组 S — 格式规范符合性 S3：表格列位置（2026-09-10；机制见 `docs/spec-conformance-tests.md`）
 
@@ -328,6 +328,33 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | S3-5 | colspan 巨值护栏：`colspan="99999"` | 列数封顶 `MAX_COLSPAN = 100`（不产生 N 个空列） | 🟢 绿（先红实测 1 列——完全未展开） |
 
 **范围说明**：① `rowspan` 仍按普通单元格展平（只告警不改结构，v1 口径不变）；② `MAX_COLSPAN`/XLSX 列上限（16384）为护栏值，调整即改口径；③ 仓库 gen 产物样例的 `<c>` 不带 `r` → 回落文档序 = 既有行为，故 S3-1/S3-2 之外无既有快照变动（零回归由全量跑守）。
+
+### 契约组 S — 格式规范符合性 S4：编码判定窗口（2026-09-11；机制见 `docs/spec-conformance-tests.md`）
+
+口径（用户 2026-09-11 拍板，口径 A **全篇判定**）：`decodeText` 的编码判定改为全篇——UTF-8 fatal 快检先行（合法即返回，零额外成本），非法才做全篇 U+FFFD 计数；「≥2 个 U+FFFD 才考虑回退」的既有阈值语义与「gb18030 替换符更少」比较不变（F 组 F1–F7 语义不动）。实现 = `src/sniff.js` `decodeText`。
+
+样例：**无新增入库样例**——字节串页内现造（≥4096 B 纯 ASCII 头部 + GBK 正文），不入库。
+
+| 编号 | 断言 | 标准 | 当前（基线 `f387e2f`，契约先红） |
+|---|---|---|---|
+| S4-1 | `decodeText`（5000 B 纯 ASCII 头部 + GBK「中文测试」正文） | 含「中文测试」且**无 U+FFFD** | 🔴 红（先红实测：6 个 U+FFFD、尾部 `AAAAA���Ĳ���`、含「中文测试」判定 false——旧实现只采样前 4096 B） |
+| S4-2 | 同一字节串经 `convert(.txt)` 全链路 | markdown 含「中文测试」且无 U+FFFD | 🔴 红（先红实测与 S4-1 同：含「中文测试」判定 false、尾部乱码） |
+| S4-3 | 守护：无 BOM 合法 UTF-8 长文本（>4096 B） | 输出与原文**逐字符相等** | 🟢 绿（先红实测 11728/11728 字符逐字符相等） |
+| S4-4 | 守护：合法 UTF-8 走快检（TextDecoder.decode 探针） | 不得出现 `gb18030` 解码调用 | 🟢 绿（先红实测 decodeCalls=`["utf-8","utf-8"]`，无 gb18030） |
+
+### 契约组 S — 格式规范符合性 S5：OOXML 双删除线 `w:dstrike`（2026-09-11；机制见 `docs/spec-conformance-tests.md`）
+
+口径（用户 2026-09-11 拍板）：docx 预处理把自闭合 `w:dstrike`（无 `w:val` 或 `w:val` 非 false/0/off）归一为 `w:strike`；`w:val="false"/"0"/"off"` 的 dstrike 语义 = 关闭，必须原样保留（不得产出 `~~`）；原始字节不含 `w:dstrike` 时零额外解包/改写。实现 = `src/docx.js`（复用既有 fflate 解包→改写→重打包流水线）。
+
+样例：**无新增入库样例**——页内 fflate 现造最小 docx（与 S2-5/S3 同款手法）。
+
+| 编号 | 断言 | 标准 | 当前（基线 `f387e2f`，契约先红） |
+|---|---|---|---|
+| S5-1 | 自闭合 `<w:dstrike/>` 段落 + 普通段 | 含 `~~dstrike~~`；普通段保留且不误标 | 🔴 红（先红实测输出 `dstrike` + `plain`——上游 mammoth 只读 `w:strike`） |
+| S5-2 | 负对照 `<w:dstrike w:val="false"/>` / `"0"` / `"off"` 三段 | 文本保留且**全程无 `~~`** | 🟢 绿（先红实测 `nostrike-false/zero/off` 三段保留、无 `~~`） |
+| S5-3 | 混合 `w:strike` + `w:dstrike` + 普通段 | 各自产出 `~~single~~`/`~~double~~`；普通段不误标 | 🔴 红（先红实测 `~~single~~` + 裸 `double` + `plain`） |
+
+**范围说明**：① `w:dstrike` 归一在 docx 预处理层实现（不改上游 mammoth）；② 快路径（原始字节不含 `w:dstrike` 时零额外解包/改写）属性能约束，由实现侧等价性台 + 独立验收核验，不写成断言（避免冻结实现细节）；③ 正对照（`w:strike` → `~~strike~~`）沿用 S2-5，不重复断言。
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
@@ -444,6 +471,10 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-11 规范符合性 S4+S5 批（契约组 S 续号 S4-1..S4-4 / S5-1..S5-3 先红；AgentTeams `doc2md-s4s5` core-dev 断言定稿）**：来源 = 规范符合性清单 **S4**（编码探测窗口：`decodeText` 只采样前 4096 B →「头部纯 ASCII + 正文 GBK」的长文件整篇误判）+ **S5**（OOXML `w:dstrike`：上游 mammoth 只读 `w:strike` → 双删除线静默丢语义）。拍板（用户 2026-09-11）：S4 = **口径 A 全篇判定**（UTF-8 fatal 快检 + 全篇 U+FFFD 计数；「≥2 个 U+FFFD 才考虑回退」阈值与「谁更少」比较不变，F 组 F1–F7 语义不动）；S5 = docx 预处理把自闭合 `w:dstrike`（无 `w:val` 或非 false/0/off）归一为 `w:strike`，`w:val=false/0/off` 原样保留，原始字节不含 `w:dstrike` 时零额外解包/改写。基线 HEAD `f387e2f`（工作树干净）。
+  **断言定稿（本提交）**：`tests/contract_v1.test.mjs` 组 S 续号 S4-1..S4-4（S4-1 纯函数 / S4-2 convert 全链路窗口用例；S4-3 合法 UTF-8 保真 / S4-4 零额外成本守护）+ S5-1..S5-3（归一 / 负对照 / 混合）；S2 组范围说明同步更新（S5 不再是「未断言」）。**先红提交 hash 由 captain 集成批次回填**（本记录与断言同提交，无法自引）。
+  **先红证据（如实登记；本会话为受约束沙箱，跑不了真 `npm test`）**：① `npm test`（= `node --test`）→ **1 test / 0 pass / 1 fail**，失败原因 `spawn EPERM`（沙箱禁子进程；本会话审批被策略禁用，无法升权）——**非断言级证据**；② `npm run test:direct`（= `node tests/contract_v1.test.mjs`，同进程）→ **79 tests / 39 pass / 40 fail**：全部浏览器组（含新增 S4/S5 两组）以「无可用浏览器：… spawn EPERM」基建红——**非断言级证据**；③ **断言级先红改走会话浏览器取证**（Chrome 隔离窗口加载本地静态服务的当前产物 `index.html`，跑与断言**同输入/同判定表达式**的 8 条）：S4-1 ❌（6 个 U+FFFD、尾部 `AAAAA���Ĳ���`、含「中文测试」判定 false）、S4-2 ❌（同 S4-1）、S4-3 ✅（11728/11728 字符逐字符相等）、S4-4 ✅（decodeCalls=`["utf-8","utf-8"]`，无 gb18030）、S5 正对照 ✅（`w:strike` → `~~strike~~` + 普通段 plain）、S5-1 ❌（`dstrike` + `plain`，双删除线静默丢语义）、S5-2 ✅（`nostrike-false/zero/off` 保留、无 `~~`）、S5-3 ❌（`~~single~~` + 裸 `double` + `plain`）。
+  **待办（captain 集成批）**：产物级组红绿以可启动浏览器会话的 `npm test` 为准（本会话 esbuild/浏览器均 `spawn EPERM`）；实现提交后产物须 `npm run build` 重建；先红/实现提交 hash 回填本条目。
 - **2026-09-10 规范符合性 S3 批（契约组 S 增 S3-1..S3-5 先红后绿；captain 单会话自干，用户「跑 S3」+ 两条拍板）**：来源 = 规范符合性清单 **S3**（表格列位置错位，静默缺陷 ×2）。拍板（用户 2026-09-10 当场定案）：XLSX **一律按 `r` 列号归位**（乱序也放对列）；HTML `colspan` = **内容放首列 + 其余补空**。基线 HEAD `5a055da`。契约先红 `3c78ba2`（S3-1 XLSX 稀疏 / S3-2 XLSX 乱序 / S3-3 colspan / S3-4 colspan 表头 + 告警 / S3-5 colspan 巨值封顶；XLSX 用例页内 fflate 现造最小包，不入库样例）→ 实现 `5dd4478`（`src/xlsx.js`：`parseCellAttrs`/`parseCellAt` 增 `r`、`rowToTexts` 按列号放置、新增 `colIndexOfRef`/`refLetterValue`）+ `b9002da`（`src/html2md.js`：`spanOf` + `rowCells` 补空列、`MAX_COLSPAN = 100`）→ 产物 `a58b067`（index.html **110,021 B** / SHA `302AA424A34F641E1E74C646FB0C4B488BEA91C3C217FF3FFD95182573B50B4B`）。**实测（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）**：**先红** = 165 tests / **159 pass / 6 fail**（S3-1 `\| A2 \| C2 \|  \|`、S3-2 `\| C2 \| A2 \|  \|`、S3-3 `\| wide \| c \|  \|`、S3-4 `\| H \| c \|  \|`、S3-5 实际 1 列 vs 期望 100）；**后绿** = **165/165 pass / 0 fail（38.1s）**（组 S S3 **5/5** + S2 5/5 + 既有 155 断言零回归）；`eslint "src/**/*.js"` **0w/0e**；`node tools/metrics.mjs` 文件 16 / 函数 323 / 超限 **0** / exit 0。**顺带修掉假绿（`c28fa5c`）**：`tools/metrics.mjs` 在 jscpd `spawnSync` 失败时会读 `.tmp/` 里的**上一次旧报告** → 沙箱内重复率长期显示 4%（**真值：`d36fede` 基线 8.86% / 当前 9.37%**，实测复现见下）；现改为「运行前删旧报告 + 仅 jscpd 成功（无 error 且 status=0）才读，否则标 N/A」。**待拍板（超范围，未做）**：重复率是否设 CI 硬门禁（真值超 5% 阈值；来源主要是 `tests/` 各组的浏览器样板重复 + `tests/gen-samples.mjs`）；CSS `line-through`（S2 残余）；S5 `w:dstrike`；S4 编码探测窗口；S1 补断言锁死。
   **重复率取证（本会话实测）**：把 `tests/contract_v1.test.mjs` 换成 `d36fede` 版后跑同一 jscpd 参数 → **604 重复行 / 6821 行 = 8.86%（38 clones）**；当前树 → **646 / 7027 = 9.19~9.37%（40 clones）**——即 S2+S3 两组测试新增只贡献 **+0.3~0.5 个点**，而 `AGENTS.md` 记的「重复率 4%」是 metrics 读旧报告的假值。
 - **2026-09-10 规范符合性 S2 批（契约组 S 先红后绿；captain 单会话自干，用户「跑 S2」）**：来源 = 规范符合性清单 `docs/spec-conformance-tests.md` 首轮 **S2**（HTML 删除线语义丢失，静默缺陷）。基线 HEAD `d36fede`。契约先红 `435af14`（组 S：S2-1..S2-4 html2md 快照 + S2-5 DOCX 端到端）→ 实现 `1a6c581`（`src/html2md.js` `FRAG_TAGS` 增 `S`/`DEL`/`STRIKE` → `strikeFrag`）→ 产物 `2b2a0eb`（index.html **109,076 B** / SHA `5CC3755E9B611039DA53782532320BBAC7D8A22DC9BE7A8044E162F3039B1C82`）。**实测（本会话实跑；Windows / Node 24.18.1 + 系统 Edge 回退）**：**先红** = **6 tests / 0 pass / 6 fail**（如 S2-1 实际 `'a struck b'` vs 期望 `'a ~~struck~~ b'`）；**后绿** = **159/159 pass / 0 fail（36.2s）**（组 S 6/6 + 既有 153 断言零回归）；`eslint "src/**/*.js"` **0w/0e**；`node tools/metrics.mjs` 超限 **0** / 重复率 4%（**该 4% 为假绿——见上条 S3 批**）/ exit 0。**范围外（登记待拍板）**：CSS `line-through` 是否支持（约 +5 行）；**S5** = OOXML `w:dstrike` 上游库不读（源码实证 `element.first("w:strike")`，不产出 `<s>`）→ 可 docx 预处理归一（约 3 行）或登记已知限制；S3（XLSX 稀疏列 / HTML `colspan`）、S4（4096 字节编码探测窗口）、S1 补断言锁死仍未做。

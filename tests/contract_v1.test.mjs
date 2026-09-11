@@ -2461,7 +2461,8 @@ test('契约组 R：OCR 中文空格合并（collapseCjkSpaces）—— 契约�
 //   S2-1..S2-4 html2md 精确快照（`<s>` / `<del>` / `<strike>` / 嵌套 `<strong><s>`）
 //   S2-5 DOCX 端到端：页内 fflate 造含 `w:strike` 的最小 docx → convert → 含 `~~strike~~`
 // 说明：`w:dstrike`（双删除线）本版 mammoth 不读取（源码实证 `element.first("w:strike")`）——
-//   属**上游库限制**，登记为 S5 候选，不在本组断言（不得用断言冻结未修行为）。
+//   属**上游库限制**，不在本组断言；2026-09-11 起 S5 已定稿为独立断言组（见文件末「格式规范
+//   符合性 S5：OOXML 双删除线」——docx 预处理归一），本组不重复其断言。
 // ---------------------------------------------------------------------------
 const STRIKE_SNAPSHOTS = [
   { id: 'S2-1', name: '<s> → ~~…~~', html: '<p>a <s>struck</s> b</p>', expected: 'a ~~struck~~ b' },
@@ -2649,6 +2650,212 @@ test('契约组 S：S3 表格列位置（XLSX c@r 补位/乱序归位 + HTML col
               .split('|').length
           )) - 2;
         assert.equal(cells, COLSPAN_CAP, `colspan 巨值未封顶到 ${COLSPAN_CAP} 列（实际 ${cells} 列）`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 S — 格式规范符合性 S4：编码判定窗口（规范清单 S4；2026-09-11 契约先红）
+// 规范依据：WHATWG Encoding 的编码探测启发式不应只依赖文件开头若干字节——「长文件不因前 4KB
+//   是 ASCII 而整篇误判」。上游缺陷：decodeText 只取前 4096 字节做 U+FFFD 计数，正文落在窗口外
+//   的 GBK 字节按 UTF-8 容错解码 → 「转换成功」但正文整片乱码。
+// 口径（用户 2026-09-11 拍板，口径 A **全篇判定**）：编码判定改为全篇——UTF-8 fatal 快检先行
+//   （合法即返回，零额外成本），非法才做全篇 U+FFFD 计数；「≥2 个 U+FFFD 才考虑回退」的既有阈值
+//   语义与「gb18030 替换符更少」比较不变（F 组 F1–F7 语义不动）。
+// 断言：
+//   S4-1 纯函数：头部 ≥4096 B 纯 ASCII + 正文 GBK「中文测试」→ 输出含「中文测试」且无 U+FFFD
+//   S4-2 全链路：同一字节串经 convert(.txt) → markdown 含「中文测试」且无 U+FFFD
+//   S4-3 守护（合法 UTF-8 保真）：无 BOM 合法 UTF-8 长文本（>4096 B）→ 输出与原文逐字符相等
+//   S4-4 守护（零额外成本）：合法 UTF-8 不得对 gb18030 解码器发起 decode 调用（TextDecoder
+//     解码调用探针；探针必须捕获到调用，否则判探针失效——防假绿）
+// 样例：**无新增入库样例**——字节串页内现造（ASCII 头部 + GBK 正文），不入库。
+// ---------------------------------------------------------------------------
+const S4_HEAD_BYTES = 5000; // 头部 ASCII 长度（> 4096 = 旧探测窗口；GBK 正文必须整片落在窗口之外）
+function s4WindowBytes() {
+  // 头部 = 纯 ASCII 'A'（无 <meta>、无 U+FFFD）；正文 = '中文测试' 的 GBK 字节（复用 F 组常量）
+  const all = new Uint8Array(S4_HEAD_BYTES + GBK_ZHONGWEN.length).fill(0x41);
+  all.set(Uint8Array.from(GBK_ZHONGWEN), S4_HEAD_BYTES);
+  return Array.from(all);
+}
+const S4_UTF8_TEXT = 'DOC2MD-S4 合法 UTF-8 全篇保真\n' + '中文测试内容，含全角标点。'.repeat(900) + '\nEND';
+test('契约组 S：S4 编码判定窗口（全篇判定——头部 ASCII + 正文 GBK 不误判）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      await t.test('S4-1 decodeText 纯函数：头部 5000 B ASCII + 正文 GBK → 含「中文测试」且无 U+FFFD', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4WindowBytes());
+        assert.ok(actual.includes('中文测试'), `窗口外 GBK 正文未正确解码（旧实现只采样前 4096 B）：${JSON.stringify(actual.slice(-24))}`);
+        assert.ok(!actual.includes('\uFFFD'), `输出含替换字符 U+FFFD：${JSON.stringify(actual.slice(-24))}`);
+      });
+
+      await t.test('S4-2 convert 全链路：同一字节串（.txt）→ markdown 含「中文测试」且无 U+FFFD', async () => {
+        const res = await page.evaluate(
+          (bytes) => window.__doc2md.convert(new File([new Uint8Array(bytes)], 's4-window.txt')),
+          s4WindowBytes()
+        );
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
+        const md = res.markdown || '';
+        assert.ok(md.includes('中文测试'), `全链路输出未含「中文测试」：${JSON.stringify(md.slice(-24))}`);
+        assert.ok(!md.includes('\uFFFD'), `全链路输出含替换字符 U+FFFD：${JSON.stringify(md.slice(-24))}`);
+      });
+
+      await t.test('S4-3 守护：无 BOM 合法 UTF-8 长文本（>4096 B）逐字符保真', async () => {
+        const actual = await page.evaluate((text) => window.__doc2md.decodeText(new TextEncoder().encode(text)), S4_UTF8_TEXT);
+        assert.equal(actual, S4_UTF8_TEXT, '合法 UTF-8 未逐字符保真（全篇判定误判成 gb18030？）');
+      });
+
+      await t.test('S4-4 守护：合法 UTF-8 走快检——不得对 gb18030 解码器发起 decode 调用', async () => {
+        const probe = await page.evaluate((text) => {
+          const proto = window.TextDecoder.prototype;
+          const origDecode = proto.decode;
+          const seen = [];
+          proto.decode = function (...args) {
+            seen.push(String(this.encoding));
+            return origDecode.apply(this, args);
+          };
+          let out = '';
+          try {
+            out = window.__doc2md.decodeText(new TextEncoder().encode(text));
+          } finally {
+            proto.decode = origDecode;
+          }
+          return { out, seen };
+        }, S4_UTF8_TEXT);
+        assert.ok(probe.seen.length > 0, '探针未捕获到任何 TextDecoder.decode 调用——探针失效（防假绿）');
+        assert.ok(
+          !probe.seen.some((enc) => enc.toLowerCase().startsWith('gb18030')),
+          `合法 UTF-8 仍对 gb18030 做了解码（违反零额外成本快检）：${JSON.stringify(probe.seen)}`
+        );
+        assert.equal(probe.out, S4_UTF8_TEXT, '合法 UTF-8 未逐字符保真');
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 S — 格式规范符合性 S5：OOXML 双删除线 w:dstrike（规范清单 S5；2026-09-11 契约先红）
+// 规范依据：OOXML `w:dstrike`（double strike-through）与 `w:strike` 同属删除语义；ST_OnOff 开关
+//   （省略/true/1/on = 生效，false/0/off = 关闭）。GFM 无「双」区分 → 与 S2 同口径输出 `~~内层~~`。
+// 上游缺陷：mammoth 只读 `w:strike`（源码实证 `element.first("w:strike")`）→ `w:dstrike` 静默丢语义。
+// 口径（用户 2026-09-11 拍板）：docx 预处理把自闭合 `w:dstrike`（无 w:val 或 w:val 非 false/0/off）
+//   归一为 `w:strike`；`w:val="false"/"0"/"off"` 的 dstrike 语义 = 关闭，必须原样保留（不得产出 `~~`）；
+//   原始字节不含 `w:dstrike` 时不得做任何额外解包/改写（快路径）。
+// 断言：
+//   S5-1 端到端：页内 fflate 造含自闭合 `<w:dstrike/>` 的最小 docx → convert → 含 `~~dstrike~~`；
+//     普通段 `plain` 保留且不被误标
+//   S5-2 负对照：`<w:dstrike w:val="false|0|off"/>` → 文本保留且全程不产出 `~~`
+//   S5-3 混合：同文档 `w:strike`（单）与 `w:dstrike`（双）各自产出 `~~`，普通段不误标
+// 样例：**无新增入库样例**——页内 fflate 现造最小包（[Content_Types].xml + _rels/.rels +
+//   word/document.xml），与 S2-5/S3 同款手法。
+// ---------------------------------------------------------------------------
+const S5_W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+function s5Run(rpr, text) {
+  return `<w:r>${rpr ? `<w:rPr>${rpr}</w:rPr>` : ''}<w:t xml:space="preserve">${text}</w:t></w:r>`;
+}
+function s5Document(paragraphs) {
+  const body = paragraphs.map((runs) => `<w:p>${runs.join('')}</w:p>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${S5_W_NS}><w:body>${body}</w:body></w:document>`;
+}
+test('契约组 S：S5 OOXML 双删除线 w:dstrike 归一（→ ~~；w:val false/0/off 不误标）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      // 页内 fflate 现造最小 docx（与 S2-5 同款夹具；CT/RELS 必须在页面函数内自带——evaluate 无闭包）
+      const convertDocx = (docXml) =>
+        page.evaluate((doc) => {
+          const F = window.fflate;
+          const CT =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>';
+          const RELS =
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>';
+          const zip = F.zipSync({
+            '[Content_Types].xml': F.strToU8(CT),
+            '_rels/.rels': F.strToU8(RELS),
+            'word/document.xml': F.strToU8(doc),
+          });
+          return window.__doc2md
+            .convert(new File([zip], 's5.docx'))
+            .then((res) => ({ error: res.error || null, markdown: res.markdown || '' }));
+        }, docXml);
+
+      await t.test('S5-1 自闭合 w:dstrike → ~~dstrike~~，普通段不误标', async () => {
+        const res = await convertDocx(s5Document([[s5Run('<w:dstrike/>', 'dstrike')], [s5Run('', 'plain')]]));
+        assert.equal(res.error, null, `convert 返回错误：${res.error}`);
+        assert.ok(res.markdown.includes('~~dstrike~~'), `双删除线未归一（静默丢语义）：${JSON.stringify(res.markdown)}`);
+        assert.ok(res.markdown.includes('plain'), `普通段落丢失：${JSON.stringify(res.markdown)}`);
+        assert.ok(!res.markdown.includes('~~plain~~'), `普通段被误标删除线：${JSON.stringify(res.markdown)}`);
+      });
+
+      await t.test('S5-2 负对照 w:val=false/0/off → 不产出 ~~（语义为关闭）', async () => {
+        const res = await convertDocx(
+          s5Document([
+            [s5Run('<w:dstrike w:val="false"/>', 'nostrike-false')],
+            [s5Run('<w:dstrike w:val="0"/>', 'nostrike-zero')],
+            [s5Run('<w:dstrike w:val="off"/>', 'nostrike-off')],
+          ])
+        );
+        assert.equal(res.error, null, `convert 返回错误：${res.error}`);
+        assert.ok(
+          res.markdown.includes('nostrike-false') &&
+            res.markdown.includes('nostrike-zero') &&
+            res.markdown.includes('nostrike-off'),
+          `文本丢失：${JSON.stringify(res.markdown)}`
+        );
+        assert.ok(!res.markdown.includes('~~'), `w:val 关闭值被误标删除线：${JSON.stringify(res.markdown)}`);
+      });
+
+      await t.test('S5-3 混合：w:strike 与 w:dstrike 各自产出 ~~，普通段不误标', async () => {
+        const res = await convertDocx(
+          s5Document([[s5Run('<w:strike/>', 'single')], [s5Run('<w:dstrike/>', 'double')], [s5Run('', 'plain')]])
+        );
+        assert.equal(res.error, null, `convert 返回错误：${res.error}`);
+        assert.ok(res.markdown.includes('~~single~~'), `单删除线回归：${JSON.stringify(res.markdown)}`);
+        assert.ok(res.markdown.includes('~~double~~'), `双删除线未归一：${JSON.stringify(res.markdown)}`);
+        assert.ok(!res.markdown.includes('~~plain~~'), `普通段被误标删除线：${JSON.stringify(res.markdown)}`);
       });
     } finally {
       await browser.close();
