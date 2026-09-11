@@ -4,6 +4,8 @@
  *  - P1（t6；t2 修订：2026-09-07 方案 A 用户拍板——阈值 0 全抽取、废止 ≤100KB 内嵌分支，见 tests/CONTRACT.md 契约组 I）：
  *    图片全量抽取（→ meta.assets）+ alt 口径（Word 图片名去扩展名，禁 AI 描述）
  *    + OMML 公式 → LaTeX（占位令牌法保证顺序；fflate 内联解包+重打包，全本地零外发）。
+ *  - S5（2026-09-11 契约组 S，t4）：`w:dstrike` → `w:strike` 归一（mammoth 源码实证：删除线只读 `w:strike`，
+ *    `dstrike` 出现 0 次=整段静默丢弃）；`w:val=false/0/off` 语义为「关」→ **原样保留**，其余归一为不带 `w:val` 的 `w:strike`。
  *  - 复杂结构（m:nary 积分/求和、m:m 矩阵、m:limLow/limUpp/func/eqArr/groupChr/box 等）v1 退化 =
  *    提取全部文本按纯文本保留 + warning（README 注明支持范围）。
  */
@@ -167,8 +169,29 @@ function docxMathFragment(doc, maths, list, para) {
   }
   return { frag, degraded };
 }
+/* w:dstrike（双删除线）→ w:strike 归一（S5）。依据 = vendor mammoth 源码实证：
+ *   删除线只读 `w:strike`（readBooleanElement：val !== "false" && val !== "0"），`dstrike` 出现 0 次 → 整段丢弃。
+ *   归一规则：w:val=false/0/off = 「关」→ 原样保留 dstrike（mammoth 不读它，恒不产出删除线）；
+ *   自闭合或真值变体 → 换成 w:strike 且**丢弃 w:val**（无属性即「开」；把 "off"/"1"/"true" 带去会被
+ *   readBooleanElement 误判为开——它只认 false/0）。其余属性原样搬运。 */
+const DSTRIKE_OFF = new Set(['false', '0', 'off']);
+function dstrikeIsOff(el) {
+  return DSTRIKE_OFF.has((el.getAttribute('w:val') || '').trim().toLowerCase());
+}
+function docxNormalizeDstrike(doc) {
+  for (const el of Array.from(doc.getElementsByTagNameNS(W_NS, 'dstrike'))) {
+    if (dstrikeIsOff(el)) continue;
+    const strike = doc.createElementNS(W_NS, 'w:strike');
+    for (const a of Array.from(el.attributes)) {
+      if (a.localName !== 'val') strike.setAttribute(a.name, a.value);
+    }
+    el.parentNode.replaceChild(strike, el);
+  }
+}
+/* 快路径（S5）：document.xml 不含 dstrike 时零额外 DOM 扫描；本流水线解包/重打包次数不变（仍各一次） */
 function docxParseForMd(docXml, warnings) {
   const doc = docxParseDoc(docXml);
+  if (docXml.indexOf('dstrike') >= 0) docxNormalizeDstrike(doc);
   const imgNames = docxImageNames(doc);
   const maths = [];
   let degradedCount = 0;
