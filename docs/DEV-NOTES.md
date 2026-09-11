@@ -867,6 +867,28 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 
 **新坑 ③（补全根因）：pwsh 里原生命令的输出既不能进变量、也不能接管道** —— `git ls-files --cached | Measure-Object -Line` → `程序"git.exe"无法运行: Access is denied`（**沙箱禁命名管道**）；`$x = git rev-list --count HEAD` → `$x` 为空。**这解释了坑 ② 的两个变体**（PS 把原生命令当管道处理）。**防再犯**：原生命令**只用 statement 级直接输出**；要计数/过滤就换 .NET/PS 原生写法，或让命令自己算（如 `git rev-list --count HEAD` 直接打印）。
 
+## 2026-09-11 规范符合性 S4+S5 批（AgentTeams `doc2md-s4s5`；先红后绿 + 独立验收）
+
+**团队**：core-dev（S4-x/S5-x 断言定稿 + S4 实现）/ conv-dev（S5 实现）/ qa-dev（独立验收 t5）；captain 负责产物构建与官方两相跑。
+**提交链**：`a53eaba`（组 S S4-1..S4-4 / S5-1..S5-3 先红断言定稿）→ `38e623f`（S4：`src/sniff.js` decodeText 全篇判定 +17/−10）→ `162bcc1`（S5 初版 `w:dstrike` 归一 +23）→ `29f02b5`（S5 重构：抽可 import 纯函数 `normalizeDstrikeXml`/`dstrikeIsOff`，+37/−16）→ `885b548`（产物 111,449 B / `A0D40639…B28977`）。
+
+**官方两相（captain 升权实跑；Windows / Node 24.18.1 + 系统 Edge 回退）**：
+
+| 相位 | src 状态 | 产物 | 官方 npm test |
+|---|---|---|---|
+| 先红 | `git checkout a53eaba -- src/`（实现前） | 110,021 B / `302AA424…B50B4B`（与 S3 批逐字节一致） | **174 tests / 168 pass / 6 fail**（红点 = S4-1、S4-2、S5-1、S5-3 + 2 组壳；S4-3/S4-4/S5-2 守护绿） |
+| 后绿 | 实现态（`38e623f` + `29f02b5`） | 111,449 B / `A0D40639…B28977` | **174/174 pass / 0 fail（46.6s）**，exit 0 |
+
+**CI 等价复核**：提交产物后重建 → `git diff --exit-code index.html` = **0**（构建逐字节确定）。断言文件 blob 全程 `56ea4596…` 未变。
+
+**流程发现（下一批沿用）**：
+1. **成员会话（委派子代理）能力边界**：`node` 单进程可跑；但**一切派生被拒**（`node --test` / esbuild JS API / Playwright 全 `spawn EPERM`），且**审批弹窗被禁用**（升权自动拒 = 终局）。→ **官方套件与产物构建只能由 captain 会话（升权可用）执行**；任务书按此分工：成员交付 = 源码 + 单进程自检 + eslint，captain = build + 官方两相 + 产物提交。
+2. **两相证据固化方法（可复用）**：先红 = `git checkout <先红提交> -- src/` + `npm run build` + `npm test`；后绿 = `git checkout HEAD -- src/` + 重建 + `npm test`。前提 = **断言与实现各自成提交**（本批 `a53eaba` 只含测试 → 其 src 即实现前状态）。
+3. **产物控制**：本批出现过成员会话重建 `index.html`（等价路径：esbuild CLI + 自写注入脚本；其干跑证明与 `tools/build.mjs` 逐字节等价）。规则：**产物只由 captain 提交**；任何证据跑都要记录**产物 hash**，否则「跑的是哪份产物」不可考。
+4. **成员自报与磁盘可能不符**（曾出现「零改动」自报 vs 工作树 ` M src/docx.js`；「esbuild 全 EPERM」自报 vs 产物确被重建）→ captain 核验一律以 `git status` / `Get-FileHash` / pwsh 现读为准。
+5. **「read/grep 缓存过期」在 captain 侧未复现**：conv-dev 报告 `grep index.html normalizeDstrikeXml` 0 命中（实际 :772 有）；我用 grep 工具与 `Select-String` 同时读，**均 2 命中（772 / 779）** → 记为未复现观察，不作结论。
+6. **文档批改工具坑（本批踩到）**：`read` 的 `limit` 上限 **2000**，且**整读大文件（195 KB 的 CONTRACT.md）会被输出上限截断** → 批量改文档时 `old_string` 必须取自**窄窗读**（按行号小窗）或直接交给 `edit` 的唯一性校验；另：**插入行会让后续固定行号全部位移**，改多处要靠内容/前缀定位，不要用先前记下的行号。
+
 
 
 
