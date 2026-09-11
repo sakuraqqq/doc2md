@@ -31,6 +31,7 @@ pastes/
 docs/copyright/
 tools/gen-copyright.mjs
 tools/_verify-clean.mjs
+tools/_pdf-pages.mjs
 .script-archive/
 
 # --- 系统 / 编辑器 ---
@@ -38,3 +39,7 @@ Thumbs.db
 .DS_Store
 .idea/
 .vscode/
+
+# tesseract.js node 版缓存残留（tools/verify-ocr.mjs 中断时会留在根目录）
+# 2026-09-11 用户拍板：先忽略，verify:ocr 通过后再删除该文件
+eng.traineddata
