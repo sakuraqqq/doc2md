@@ -879,6 +879,14 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 | 先红 | `git checkout a53eaba -- src/`（实现前） | 110,021 B / `302AA424…B50B4B`（与 S3 批逐字节一致） | **174 tests / 168 pass / 6 fail**（红点 = S4-1、S4-2、S5-1、S5-3 + 2 组壳；S4-3/S4-4/S5-2 守护绿） |
 | 后绿 | 实现态（`38e623f` + `29f02b5`） | 111,449 B / `A0D40639…B28977` | **174/174 pass / 0 fail（46.6s）**，exit 0 |
 
+**独立验收（qa-dev，t5，2026-09-11）—— PASS，无 findings**：
+- **换数据**（与实现方不同族）：自造 88192 B「8192 B ASCII 头 + 80000 B GBK 正文」txt + 自写 store-only zip 造的 3 个 docx（main / offvals / mix，**不用 fflate**）；真页面 + `window.__doc2md.convert` / `decodeText`，断言体**逐字复制**组 S 并注明 file:line（`contract_v1.test.mjs:2709-2711 · 2716-2722 · 2726-2727 · 2731-2752 · 2825-2859`）→ **7/7 绿**（S4-1 输出 len 54592、无 U+FFFD；S4-4 `seen=['utf-8']`）。
+- **独立负对照（本批最硬的证据）**：把 `a53eaba` 的产物快照隔离回放 → **110,021 B / `302AA424…B50B4B`，与 captain 的先红产物逐字节相同（两侧独立复现同一 hash）** → S4-1/S4-2/S5-1/S5-3 **变红**、S4-3/S4-4/S5-2 守护绿；主工作树全程零改动（status 空、artifact `A0D40639…`、src 哈希不变）。
+- **独立复跑**：`node tests/pwa-audit.mjs` → **48/48 exit 0**；`npm test` 在成员会话恒 `spawn EPERM`（如实登记，官方 174/174 引 captain 升权计数作交叉引用）。
+- **零回归核对**：断言 blob 在 `a53eaba` / HEAD / 磁盘三处均 `56ea4596…`；`git log a53eaba..HEAD -- tests/contract_v1.test.mjs` **空**；`diff --stat a53eaba..HEAD` 仅 `index.html` + 两个 src 文件。
+- **产物核身**：页内 `crypto.subtle` 读出的 SHA256 = 磁盘 = 已提交产物（**111,449 B / `a0d40639…b28977`**）。
+- 证据留存：`.tmp/qa-t5/`（gitignored）10 件夹具 + manifest（bytes + sha256）+ 3 个脚本；可复用配方另存 script_archive `mtx49yhaky61`。
+
 **CI 等价复核**：提交产物后重建 → `git diff --exit-code index.html` = **0**（构建逐字节确定）。断言文件 blob 全程 `56ea4596…` 未变。
 
 **流程发现（下一批沿用）**：
