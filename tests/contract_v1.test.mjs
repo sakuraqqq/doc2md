@@ -19,6 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import nodePath from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { readZip } from './lib/zipio.mjs';
 import { startServer } from './lib/server.mjs';
 
@@ -105,6 +106,29 @@ const REAL_CASES = [
 // ---------------------------------------------------------------------------
 // 契约组 A：目标页面就绪
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 契约组 T — 产物一致性（防「本地陈旧产物陷阱」；2026-09-12 用户拍板纳入 v0.1.3）
+// 症状：`npm test` 断的是**已构建的 index.html**——只改 src/ 忘了 `npm run build` 时，本地会对着旧产物
+//   全绿（CI 有 `build && git diff --exit-code index.html` 拦，本地没有）。
+// 断言：现场重建一次产物，字节必须与磁盘一致；不一致 = 产物陈旧（true 先红，build 后绿）。
+// 代价：需要能 spawn esbuild（与 C/M 组需浏览器同级的前置条件）；受限环境请改用 CI 或用户机复跑。
+// ---------------------------------------------------------------------------
+test('契约组 T：产物一致性（src → index.html，防陈旧产物陷阱）', async () => {
+  const before = crypto.createHash('sha256').update(fs.readFileSync(PAGE)).digest('hex');
+  let buildFailed = null;
+  try {
+    execFileSync(process.execPath, [nodePath.join(ROOT, 'tools', 'build.mjs')], { cwd: ROOT, stdio: 'pipe' });
+  } catch (e) {
+    buildFailed = e;
+  }
+  assert.equal(buildFailed, null, `无法重建产物（需 esbuild / 允许 spawn）：${buildFailed && buildFailed.message}`);
+  const after = crypto.createHash('sha256').update(fs.readFileSync(PAGE)).digest('hex');
+  assert.equal(
+    after,
+    before,
+    'index.html 与 src/ 不一致（产物陈旧）——请跑 `npm run build` 并提交产物后再测试'
+  );
+});
 test('契约组 A：网页版就绪（当前红——A线未交付 index.html；实现后自动转绿，无需改测试）', async (t) => {
   await t.test('A0 目标页面 index.html 存在', () => {
     assert.ok(
