@@ -62,7 +62,7 @@ git push --dry-run origin v0.1.1
 
 ## 4. npm pack 类核对（本项目无 npm 包，等价清单）
 
-- 交付物 = **静态站**（index.html ≈102KB / 104,064 B——应用逻辑 bundle ≈64KB + 模板壳 + **vendor/（8 个库分文件）+ langs/（OCR 语言包）** + manifest.json + sw.js + icons/——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
+- 交付物 = **静态站**（index.html **110,021 B（110KB）**——拆分口径（2026-09-11 实测）= esbuild 应用逻辑 bundle **72,001 B**（`src/app.js` IIFE）+ 模板内联 fflate **30,163 B** + 内联 CSS **4,862 B** + HTML 骨架/静态文案 **2,995 B**（逐段相加 = 文件总字节，详见 `docs/architecture.md` §4.5）+ **vendor/（8 个库分文件）+ langs/（OCR 语言包）** + manifest.json + sw.js + icons/——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
 - 等价核对：Pages 部署目录清单（工作流上传根目录；部署后核对 index.html/manifest/sw/icons/vendor/*/langs/* 齐）、发布记录留存：版本 + 测试结果 + 各产物 SIZE + SHA256（见下方记录区）。
 - 若未来发布 npm 包：`npm pack --dry-run --json`（**必须 --json**，plain 输出看不见清单）核对 LICENSE/产物/源码/入口都在清单。
 
