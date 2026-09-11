@@ -180,35 +180,51 @@ const DSTRIKE_OFF = new Set(['false', '0', 'off']);
 export function dstrikeIsOff(val) {
   return DSTRIKE_OFF.has(String(val === null || val === undefined ? '' : val).trim().toLowerCase());
 }
-/* 属性串 → { off, keep }：off=是否「关」；keep=改名后可沿用的属性串（丢掉 w:val——无属性即「开」，
- * 把 "off"/"1"/"true" 之类变体带过去会被 mammoth 的 readBooleanElement 误判为开）。 */
+/* 属性串 → { off, keep }（引号感知：只在「引号外」识别 val —— 避免把别的属性值里的 val=… 当成属性）。
+ * off=是否「关」；keep=改名后可沿用的属性串（丢掉 w:val——无属性即「开」，把 "off"/"1"/"true" 之类的
+ * 变体带过去会被 mammoth 的 readBooleanElement 误判为开）。 */
+const DSTRIKE_VAL_RE = /(?:^|\s)(?:[\w.-]+:)?val\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 function dstrikeAttrPlan(attrs) {
-  const m = /(?:^|\s)(?:[\w.-]+:)?val\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attrs);
-  if (!m) return { off: false, keep: attrs };
+  DSTRIKE_VAL_RE.lastIndex = 0;
+  let m = DSTRIKE_VAL_RE.exec(attrs);
+  while (m !== null && insideQuotes(attrs, m.index)) m = DSTRIKE_VAL_RE.exec(attrs);
+  if (m === null) return { off: false, keep: attrs };
   const v = m[1] === undefined ? m[2] : m[1];
   const rest = attrs.slice(0, m.index) + attrs.slice(m.index + m[0].length); // 保留原间距（勿 trim，否则吞掉与后续属性的分隔空格）
   return { off: dstrikeIsOff(v), keep: rest.trim() === '' ? '' : rest };
 }
-/* 配对形态回调（自闭合标签的结尾 `/` 会误入本分支：原样返回，交自闭合分支处理） */
-function dstrikePair(m, pfx, attrs, inner) {
-  if (attrs.endsWith('/')) return m;
+/* idx 之前是否处于引号内（XML 引号必成对；用于排除「别的属性值里的 val=…」） */
+function insideQuotes(s, idx) {
+  let d = 0;
+  let q = 0;
+  for (let i = 0; i < idx; i++) {
+    if (s[i] === '"') d++;
+    else if (s[i] === "'") q++;
+  }
+  return d % 2 === 1 || q % 2 === 1;
+}
+/* 单正则交替（S5-4/S5-5 加固）。选 ②「单正则交替分支」而非 ①「两遍换序」的理由：
+ *   交替让一次匹配**恰好等于一个标签或一个完整元素**，修复不依赖两遍之间的顺序、无需额外状态；
+ *   而 ①（先自闭合、后配对）仍要求「配对遍面对的输入已无自闭合标签」——w:val=false 的自闭合按口径
+ *   原样保留、不会被自闭合遍消费，配对遍仍会把它当开标签并整段吞掉其后元素（同类漏改未根除）。
+ *   ① 自闭合分支在交替中**优先** + 属性惰性匹配 → 匹配面不跨标签，不再把 `…/>` 当开标签消费后续元素；
+ *   ② 属性模式引号感知（`"…"`/`'…'` 作为整体）→ 属性值含 > 也能匹配（旧 `[^>]*?` 在引号内提前截断）。
+ * 回调参数：inner === undefined 即自闭合分支命中。 */
+const DSTRIKE_TAG = /<([\w.-]+):dstrike\b((?:"[^"]*"|'[^']*'|[^>"'])*?)(?:\/>|>([\s\S]*?)<\/\1:dstrike>)/g;
+/* 交替分支统一回调 */
+function dstrikeReplace(m, pfx, attrs, inner) {
   const plan = dstrikeAttrPlan(attrs);
   if (plan.off) return m;
+  if (inner === undefined) return '<' + pfx + ':strike' + plan.keep + '/>';
   return '<' + pfx + ':strike' + plan.keep + '>' + inner + '</' + pfx + ':strike>';
 }
-/* 自闭合形态回调 */
-function dstrikeSelf(m, pfx, attrs) {
-  const plan = dstrikeAttrPlan(attrs);
-  if (plan.off) return m;
-  return '<' + pfx + ':strike' + plan.keep + '/>';
-}
 /* document.xml 文本 → 文本的归一（纯函数：不触 DOM/window，可被单进程 node 直接 import 断言）。
- * 不含 dstrike 时原样返回（零改写快路径）；与命名空间前缀无关（w2:dstrike 同样归一）。 */
+ * 不含 dstrike 时原样返回（零改写快路径，identity）；与命名空间前缀无关（w2:dstrike 同样归一）。 */
 export function normalizeDstrikeXml(xml) {
   const s = String(xml);
   if (s.indexOf('dstrike') < 0) return s;
-  const paired = s.replace(/<([\w.-]+):dstrike\b([^>]*?)>([\s\S]*?)<\/\1:dstrike>/g, dstrikePair);
-  return paired.replace(/<([\w.-]+):dstrike\b([^>]*?)\/>/g, dstrikeSelf);
+  DSTRIKE_TAG.lastIndex = 0;
+  return s.replace(DSTRIKE_TAG, dstrikeReplace);
 }
 /* 快路径（S5）：document.xml 不含 dstrike 时零改写；本流水线解包/重打包次数不变（仍各一次） */
 function docxParseForMd(docXml, warnings) {
