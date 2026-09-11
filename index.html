@@ -153,13 +153,21 @@
   function decodeText(buf) {
     const bom = decodeBom(buf);
     if (bom !== null) return bom;
-    const probeN = Math.min(buf.byteLength, 4096);
-    const headTxt = new TextDecoder("utf-8").decode(buf.subarray(0, probeN));
-    for (const enc of charsetLabels(headTxt)) {
+    const strictUtf8 = tryUtf8Strict(buf);
+    if (strictUtf8 !== null) return strictUtf8;
+    const looseTxt = new TextDecoder("utf-8").decode(buf);
+    for (const enc of charsetLabels(looseTxt)) {
       const decoded = tryDecode(buf, enc);
       if (decoded !== null) return decoded;
     }
-    return gb18030Fallback(buf, headTxt);
+    return gb18030Fallback(buf, looseTxt);
+  }
+  function tryUtf8Strict(buf) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+    } catch {
+      return null;
+    }
   }
   function decodeBom(buf) {
     if (startsWith(buf, [239, 187, 191])) return new TextDecoder("utf-8").decode(buf.subarray(3));
@@ -217,15 +225,15 @@
       return null;
     }
   }
-  function gb18030Fallback(buf, headTxt) {
-    if (countFffd(headTxt, 2) >= 2) {
+  function gb18030Fallback(buf, looseTxt) {
+    if (countFffd(looseTxt, 2) >= 2) {
       try {
         const g = new TextDecoder("gb18030").decode(buf);
         if (countFffd(g, 2) < 2) return g;
       } catch {
       }
     }
-    return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+    return looseTxt;
   }
   function countFffd(s, cap) {
     let n = 0;
@@ -739,8 +747,36 @@
     }
     return { frag, degraded };
   }
+  var DSTRIKE_OFF = /* @__PURE__ */ new Set(["false", "0", "off"]);
+  function dstrikeIsOff(val) {
+    return DSTRIKE_OFF.has(String(val === null || val === void 0 ? "" : val).trim().toLowerCase());
+  }
+  function dstrikeAttrPlan(attrs) {
+    const m = /(?:^|\s)(?:[\w.-]+:)?val\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attrs);
+    if (!m) return { off: false, keep: attrs };
+    const v = m[1] === void 0 ? m[2] : m[1];
+    const rest = attrs.slice(0, m.index) + attrs.slice(m.index + m[0].length);
+    return { off: dstrikeIsOff(v), keep: rest.trim() === "" ? "" : rest };
+  }
+  function dstrikePair(m, pfx, attrs, inner) {
+    if (attrs.endsWith("/")) return m;
+    const plan = dstrikeAttrPlan(attrs);
+    if (plan.off) return m;
+    return "<" + pfx + ":strike" + plan.keep + ">" + inner + "</" + pfx + ":strike>";
+  }
+  function dstrikeSelf(m, pfx, attrs) {
+    const plan = dstrikeAttrPlan(attrs);
+    if (plan.off) return m;
+    return "<" + pfx + ":strike" + plan.keep + "/>";
+  }
+  function normalizeDstrikeXml(xml) {
+    const s = String(xml);
+    if (s.indexOf("dstrike") < 0) return s;
+    const paired = s.replace(/<([\w.-]+):dstrike\b([^>]*?)>([\s\S]*?)<\/\1:dstrike>/g, dstrikePair);
+    return paired.replace(/<([\w.-]+):dstrike\b([^>]*?)\/>/g, dstrikeSelf);
+  }
   function docxParseForMd(docXml, warnings) {
-    const doc = docxParseDoc(docXml);
+    const doc = docxParseDoc(normalizeDstrikeXml(docXml));
     const imgNames = docxImageNames(doc);
     const maths = [];
     let degradedCount = 0;
