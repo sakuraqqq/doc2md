@@ -129,7 +129,6 @@ function countNonAscii(s) {
   return n;
 }
 // 行内空白归一（html2md 域共用；行内拼接规则的文本节点处理由 html2md.js 使用）
-// 行内空白归一（html2md 域共用；行内拼接规则的文本节点处理由 html2md.js 使用）
 export function normWs(s) { return s.replace(/\s+/g, ' '); }
 
 /* ---------- 类型嗅探（magic bytes，不信任扩展名） ---------- */
