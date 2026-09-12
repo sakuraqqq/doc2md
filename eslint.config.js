@@ -6,6 +6,11 @@
 //   其余一律忽略：vendor/（第三方库）、langs/（语言包）、tests/（契约测试——由 node:test 自证，
 //   测试脚本不受 lint 约束）、node_modules/、构建产物、.tmp/、browser-screenshots/。
 //
+// 本地私有脚本（第八轮审查报告 §2.1）：tools/_*.mjs 与 tools/gen-copyright.mjs 已被 .gitignore 排除
+//   （软著材料/临时脚本，不入库）——CI 干净检出不含它们，但本地 `npm run lint` 会照跑并报 error/warning，
+//   让 AGENTS「eslint 0w/0e」基线在本地失真（「我改的没错却红了」的噪音）。故 ignore 与 .gitignore
+//   精确对齐：只忽略这三类私有脚本，**不忽略 tools/ 整体**（其余开发脚本照常守门）。
+//
 // 规则：@eslint/js recommended + eslint-plugin-sonarjs（recommended）+ 复杂度守门：
 //   - core complexity（圈复杂度）max 10
 //   - sonarjs/cognitive-complexity（认知复杂度）threshold 15
@@ -65,6 +70,9 @@ export default [
       'dist/**',
       'build/**',
       '*.log',
+      // 与 .gitignore 对齐的本地私有脚本（不入库 → 不 lint；见文件头 §2.1 说明）
+      'tools/_*.mjs',
+      'tools/gen-copyright.mjs',
     ],
   },
   SRC,
