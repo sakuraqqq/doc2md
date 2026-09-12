@@ -1362,6 +1362,151 @@ test('契约组 G6：xlsx rels Target ../ 相对路径（sample-rels-dotdot.xlsx
     await server.close();
   }
 });
+// ---------------------------------------------------------------------------
+// 契约组 G7：第八轮审查报告 §1.2/§1.3/§1.6/§3.1（v0.1.4 契约先红）
+// 依据：docs/doc2md-第八轮审查报告-2026-09-12.md —— §1.2（date1904 被忽略 → 日期静默错 1462 天，P3）、
+//   §1.3（decodeXml 链式 replace 二次解码 → 单元格文本静默损坏，P3）、§1.6（数字实体 > 0xFFFF 经
+//   fromCharCode 截断，P4）、§3.1（serialDateOrRaw 数字判定不含科学计数法 → 日期样式单元格原样输出）。
+// 口径：
+//   ① §1.2 `date1904` 为 xsd:boolean——"1"/"true" = 1904 日期系统（基准 1904-01-01），
+//      "0"/"false"/缺省 = 1900 系统（基准 1899-12-30 + 序列，含 1900 虚构闰日规则）。同一 serial
+//      38000：1900 → 2004-01-14；1904 → 2008-01-15（相差 1462 天）。`t="d"` ISO 字符串是绝对日期，
+//      **不受 date1904 影响**（该路径不得改动）。
+//   ② §1.3 XML 实体只解**一层**：`&amp;lt;div&amp;gt;标签&amp;amp;&amp;lt;实体` → `&lt;div&gt;标签&amp;&lt;实体`；
+//      数字实体同理（`&amp;#x41;&amp;#66;` → `&#x41;&#66;`，不得二次解码成 'AB'）。
+//   ③ §1.6 数字实体按码点解码：`&#x1F600;` → 😀（fromCharCode 只取低 16 位 → U+F600 私用区乱码）。
+//   ④ §3.1 科学计数法 `<v>1.5E2</v>`（= 150）+ 日期样式 → 按序列号换算（1900 → 1900-05-29；
+//      1904 → 1904-05-30），不得原样输出 "1.5E2"。
+// 用例包 = 测试内现造（页内 window.fflate 现造最小工作簿，不入库样例，与 S3 minimalXlsx 同构）；
+//   断言解锁 backend='xlsx-self'——自解析路径必须真正被覆盖，防「回退库路径侥幸全绿」。
+// 契约先红（当前实现态）：G7-2 / G7-3（1904 两形态）、G7-6（单层解码）、G7-7（emoji 码点）、
+//   G7-8（科学计数法）红；G7-1（1900 控制组）、G7-4（"0"/"false" 假值控制组）、G7-5（t="d" ISO）
+//   现绿（如实登记——由全量跑守零回归）。
+// ---------------------------------------------------------------------------
+const R8_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellXfs count="2"><xf numFmtId="0" xfId="0"/><xf numFmtId="14" applyNumberFormat="1"/></cellXfs></styleSheet>';
+const R8_SST = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="3"><si><t>&amp;lt;div&amp;gt;标签&amp;amp;&amp;lt;实体</t></si><si><t>&#x1F600;emoji</t></si><si><t>&amp;#x41;&amp;#66;</t></si></sst>';
+// 行 1 = 表头（inlineStr 标签）；行 2 = 取值：A2 双转义共享字符串 / B2 无样式数字（控制组）/
+// C2 日期样式（numFmtId=14）序列号 38000 / D2 emoji 数字实体 / E2 双转义数字实体 /
+// F2 t="d" ISO 日期 / G2 日期样式 + 科学计数法 1.5E2
+const R8_SHEET_ROWS =
+  '<row r="1"><c r="A1" t="inlineStr"><is><t>entity</t></is></c><c r="B1" t="inlineStr"><is><t>rawNum</t></is></c><c r="C1" t="inlineStr"><is><t>serialDate</t></is></c><c r="D1" t="inlineStr"><is><t>emoji</t></is></c><c r="E1" t="inlineStr"><is><t>numEntity</t></is></c><c r="F1" t="inlineStr"><is><t>isoDate</t></is></c><c r="G1" t="inlineStr"><is><t>sci</t></is></c></row>' +
+  '<row r="2"><c r="A2" t="s"><v>0</v></c><c r="B2"><v>38000</v></c><c r="C2" s="1"><v>38000</v></c><c r="D2" t="s"><v>1</v></c><c r="E2" t="s"><v>2</v></c><c r="F2" t="d"><v>2021-06-10T00:47:45.700Z</v></c><c r="G2" s="1"><v>1.5E2</v></c></row>';
+/* 最小工作簿 parts（date1904Attr = null 表示不写 <workbookPr>） */
+function r8XlsxParts(date1904Attr) {
+  const wbPr = date1904Attr === null ? '' : '<workbookPr date1904="' + date1904Attr + '"/>';
+  return {
+    ct: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>',
+    rels: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+    wb: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' + wbPr + '<sheets><sheet name="S1" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    wbRels: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>',
+    styles: R8_STYLES,
+    sst: R8_SST,
+    sheet: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + R8_SHEET_ROWS + '</sheetData></worksheet>',
+  };
+}
+test('契约组 G7：第八轮 §1.2/§1.3/§1.6/§3.1（1904 日期系统 / 单层解码 / 数字实体码点 / 科学计数法）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const convertR8 = (attr) => {
+        const parts = r8XlsxParts(attr);
+        return page.evaluate((p) => {
+          const F = window.fflate;
+          const zip = F.zipSync({
+            '[Content_Types].xml': F.strToU8(p.ct),
+            '_rels/.rels': F.strToU8(p.rels),
+            'xl/workbook.xml': F.strToU8(p.wb),
+            'xl/_rels/workbook.xml.rels': F.strToU8(p.wbRels),
+            'xl/styles.xml': F.strToU8(p.styles),
+            'xl/sharedStrings.xml': F.strToU8(p.sst),
+            'xl/worksheets/sheet1.xml': F.strToU8(p.sheet),
+          });
+          return window.__doc2md.convert(new File([zip], 'r8-kit.xlsx'));
+        }, parts);
+      };
+      const r1900 = await convertR8(null);
+      const r1904 = await convertR8('1');
+      const rTrue = await convertR8('true');
+      const rFalse = await convertR8('false');
+      const rZero = await convertR8('0');
+      /* 统一入口断言：无 error + 自解析路径（backend）——回退库路径会掩盖本组全部缺陷 */
+      const mdOf = (r) => {
+        assert.equal(r.error, undefined, `convert 返回错误：${r.error}`);
+        assert.equal(r.meta.backend, 'xlsx-self', `backend=${r.meta.backend}（期望 xlsx-self——用例必须走自解析路径）`);
+        return r.markdown || '';
+      };
+
+      await t.test('G7-1 serial 38000 + 日期样式，1900 系统（无 workbookPr）→ 2004-01-14（控制组）', () => {
+        const md = mdOf(r1900);
+        assert.ok(md.includes('2004-01-14'), `1900 系统日期错误：${JSON.stringify(md)}`);
+        assert.ok(md.includes('38000'), `无日期样式单元格不得换算（B2 应原样 38000）：${JSON.stringify(md)}`);
+      });
+      await t.test('G7-2 date1904="1" → 1904 系统：serial 38000 = 2008-01-15（当前静默错 1462 天）', () => {
+        const md = mdOf(r1904);
+        assert.ok(md.includes('2008-01-15'), `date1904="1" 未生效（仍按 1900 系统）：${JSON.stringify(md)}`);
+        assert.ok(!md.includes('2004-01-14'), `date1904="1" 仍按 1900 系统换算（错 1462 天）：${JSON.stringify(md)}`);
+      });
+      await t.test('G7-3 date1904="true"（xsd:boolean 另一合法形态）→ 2008-01-15', () => {
+        const md = mdOf(rTrue);
+        assert.ok(md.includes('2008-01-15'), `date1904="true" 未按 1904 系统：${JSON.stringify(md)}`);
+        assert.ok(!md.includes('2004-01-14'), `date1904="true" 仍按 1900 系统：${JSON.stringify(md)}`);
+      });
+      await t.test('G7-4 date1904="false"/"0"（假值）→ 1900 系统（不得把「属性存在」当命中）', () => {
+        for (const [attr, r] of [['false', rFalse], ['0', rZero]]) {
+          const md = mdOf(r);
+          assert.ok(md.includes('2004-01-14'), `date1904="${attr}" 被误判为 1904 系统：${JSON.stringify(md)}`);
+          assert.ok(!md.includes('2008-01-15'), `date1904="${attr}" 误按 1904 换算：${JSON.stringify(md)}`);
+        }
+      });
+      await t.test('G7-5 t="d" ISO 日期路径不受 date1904 影响（截断到天，不得带时间）', () => {
+        for (const [tag, r] of [['无', r1900], ['1904', r1904]]) {
+          const md = mdOf(r);
+          assert.ok(md.includes('2021-06-10'), `t="d" ISO 日期丢失（date1904=${tag}）：${JSON.stringify(md)}`);
+          assert.ok(!md.includes('T00:47:45'), `t="d" ISO 日期未截断到天（date1904=${tag}）：${JSON.stringify(md)}`);
+        }
+      });
+      await t.test('G7-6 §1.3 XML 实体只解一层（&amp;lt;… 保留为 &lt;…；&amp;#x41; 保留为 &#x41;）', () => {
+        const md = mdOf(r1900);
+        assert.ok(md.includes('&lt;div&gt;标签&amp;&lt;实体'), `双转义文本被二次解码：${JSON.stringify(md)}`);
+        assert.ok(!md.includes('<div>标签'), `出现二次解码产物 "<div>标签"：${JSON.stringify(md)}`);
+        assert.ok(md.includes('&#x41;&#66;'), `双转义数字实体被二次解码成 AB：${JSON.stringify(md)}`);
+      });
+      await t.test('G7-7 §1.6 数字实体按码点（&#x1F600; → 😀，不得截断为 U+F600）', () => {
+        const md = mdOf(r1900);
+        assert.ok(md.includes('😀emoji'), `数字实体被 fromCharCode 截断：${JSON.stringify(md)}`);
+        assert.ok(!md.includes('\uF600'), `输出含 U+F600 私用区乱码：${JSON.stringify(md)}`);
+      });
+      await t.test('G7-8 §3.1 科学计数法 <v>1.5E2</v> + 日期样式 → 按序列号换算（1900 → 1900-05-29；1904 → 1904-05-30）', () => {
+        const md0 = mdOf(r1900);
+        assert.ok(md0.includes('1900-05-29'), `科学计数法未换算（1900 系统）：${JSON.stringify(md0)}`);
+        assert.ok(!md0.includes('1.5E2'), `科学计数法原样输出：${JSON.stringify(md0)}`);
+        const md4 = mdOf(r1904);
+        assert.ok(md4.includes('1904-05-30'), `科学计数法未按 1904 系统换算：${JSON.stringify(md4)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
 // 离线静态断言（无浏览器依赖）：读 index.html 源码文本。
 // 断言（断言语义）：
 //   H1 源码不含 'doc2md.local'（伪域名 corePath——红线：任何外域请求都是违约）。
@@ -1873,6 +2018,111 @@ test('契约组 K：富文本边界快照 + PDF 粘连/行序 —— 契约先�
         assert.ok(idx >= 0, `输出未找到标题 'Doc2md Sample PDF'：${JSON.stringify(md.slice(0, 200))}`);
         assert.ok(idx <= 2, `标题行位置=${idx + 1}（期望前 3 行内）——跨 BT 块行坐标未重置 → 行序错乱（t16 发现，修复方向=BT 重置 cx/cy）：${JSON.stringify(lines.slice(0, 8))}`);
       });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 K2：第八轮审查报告 §1.1/§1.4/§1.5（v0.1.4 契约先红）
+// 依据：docs/doc2md-第八轮审查报告-2026-09-12.md —— §1.1（HTML 行内代码含反引号 → 输出 Markdown
+//   结构破坏，P2）、§1.4（SVG/表单控件/canvas 等无文本语义元素内容泄漏进正文，P3）、
+//   §1.5（列表项内表格的合并单元格告警丢失，P4）。
+// 口径（拍板）：
+//   ① §1.1 严格按 CommonMark 代码段：围栏长度 = 内容最长反引号串 + 1（**至少 1**——无反引号的普通
+//      内容仍用单反引号，既有组 D 快照零回归）；内容**首/尾**为反引号时围栏内侧补一个空格
+//      （CommonMark 代码段首尾空格剥离：不补空格会与围栏串相连 → 结构破坏）。
+//      期望：<p>a <code>x`y`z</code> b</p> → "a" + 双反引号围栏内容 + " b"（见 K2_CODE_CASES）。
+//   ② §1.4 无文本语义元素 remove 集合 = svg, canvas, object, iframe, embed, audio, video, select,
+//      option, textarea, button；**label 文字保留**（label 承载表单字段正文语义——拍板口径）。
+//      未知**行内**标签「子节点平铺」兜底语义不变，故 k2-17（embed，void 无子内容）为控制组。
+//   ③ §1.5 告警不得因元素位于列表项内而丢失：顶层 / li 内 / 嵌套 li 内 / blockquote 内同口径
+//      （同一条去重文案、恰好 1 条），且表格内容与顶层同结构。
+// 契约先红（当前实现态）：k2-1..k2-6（含反引号的行内代码）、k2-8..k2-16（泄漏用例，9 条）、
+//   k2-20/k2-21（li 内 / 嵌套 li 内告警）红；k2-7（普通代码控制组）、k2-17（embed 控制组）、
+//   k2-18（label 保留）、k2-19/k2-22（顶层 / blockquote 告警控制组）现绿（如实登记——由全量跑守零回归）。
+// ---------------------------------------------------------------------------
+const K2_CODE_CASES = [
+  { id: 'k2-1', name: '行内代码含反引号 → 双反引号围栏（报告 §1.1 case1）', html: '<p>a <code>x`y`z</code> b</p>', expected: 'a ``x`y`z`` b' },
+  { id: 'k2-2', name: '代码内容 = 单个反引号 → 围栏 2 + 内侧补空格', html: '<p><code>`</code></p>', expected: '`` ` ``' },
+  { id: 'k2-3', name: '代码内容首字符为反引号 → 内侧补空格', html: '<p><code>`x</code></p>', expected: '`` `x ``' },
+  { id: 'k2-4', name: '代码内容尾字符为反引号 → 内侧补空格', html: '<p><code>x`</code></p>', expected: '`` x` ``' },
+  { id: 'k2-5', name: '代码内容首尾均为反引号 → 围栏 2 + 两侧补空格', html: '<p><code>`a`</code></p>', expected: '`` `a` ``' },
+  { id: 'k2-6', name: '代码内容含双反引号（a+2 反引号+b）→ 围栏 3', html: '<p><code>a``b</code></p>', expected: '```a``b```' },
+  { id: 'k2-7', name: '普通行内代码 → 单反引号（零回归控制组，同组 D d1-3 口径）', html: '<p>The <code>jumps</code>.</p>', expected: 'The `jumps`.' },
+];
+// §1.4 无文本语义元素：内容**不得**进正文（前文/后文 相邻文本仍原样拼接——原文无空白不得强插空格）
+const K2_REMOVE_CASES = [
+  { id: 'k2-8', name: 'svg（title/text 子节点）— 报告 §1.4 case2', html: '<p>前文<svg><title>logo</title><text>SVG里的文字</text></svg>后文</p>', expected: '前文后文' },
+  { id: 'k2-9', name: 'canvas 后备文字 — case4', html: '<p>前文<canvas>canvas后备文字</canvas>后文</p>', expected: '前文后文' },
+  { id: 'k2-10', name: 'select/option — case3', html: '<p>前文<select><option>选项A</option><option>选项B</option></select>后文</p>', expected: '前文后文' },
+  { id: 'k2-11', name: 'textarea 初始值', html: '<p>前文<textarea>textarea默认值</textarea>后文</p>', expected: '前文后文' },
+  { id: 'k2-12', name: 'button 按钮文字', html: '<p>前文<button>点击提交</button>后文</p>', expected: '前文后文' },
+  { id: 'k2-13', name: 'iframe 后备内容', html: '<p>前文<iframe src="x.html">iframe后备内容</iframe>后文</p>', expected: '前文后文' },
+  { id: 'k2-14', name: 'object 后备内容', html: '<p>前文<object data="x.swf">object后备内容</object>后文</p>', expected: '前文后文' },
+  { id: 'k2-15', name: 'audio 后备内容', html: '<p>前文<audio controls>audio后备内容</audio>后文</p>', expected: '前文后文' },
+  { id: 'k2-16', name: 'video 后备内容', html: '<p>前文<video controls>video后备内容</video>后文</p>', expected: '前文后文' },
+  { id: 'k2-17', name: 'embed（void，无子内容）— 零回归控制组', html: '<p>前文<embed src="x.swf">后文</p>', expected: '前文后文' },
+  { id: 'k2-18', name: 'label 文字保留（拍板口径：label 承载正文语义）', html: '<p>前文<label>用户名</label>后文</p>', expected: '前文用户名后文' },
+];
+// §1.5 合并单元格告警：顶层 / li 内 / 嵌套 li 内 / blockquote 内同口径（同一条去重文案，恰好 1 条）
+const K2_WARN_MERGED = '表格含合并单元格（rowspan/colspan），已按普通单元格展平（v1 不支持合并单元格结构）';
+const K2_MERGED_TABLE = '<table><tr><td colspan="2">合并</td></tr><tr><td>a</td><td>b</td></tr></table>';
+const K2_WARN_CASES = [
+  { id: 'k2-19', name: '顶层表格（控制组，现状 1 条）', html: K2_MERGED_TABLE },
+  { id: 'k2-20', name: 'li 内表格（报告 §1.5 case5——当前 0 条）', html: '<ul><li>前' + K2_MERGED_TABLE + '</li></ul>' },
+  { id: 'k2-21', name: '嵌套 li 内表格（同链路：嵌套列表递归）', html: '<ul><li>外<ul><li>内' + K2_MERGED_TABLE + '</li></ul></li></ul>' },
+  { id: 'k2-22', name: 'blockquote 内表格（控制组，现状 1 条）', html: '<blockquote>' + K2_MERGED_TABLE + '</blockquote>' },
+];
+test('契约组 K2：第八轮 §1.1/§1.4/§1.5（行内代码动态围栏 / 无文本语义元素 / 列表项内告警透传）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      for (const c of K2_CODE_CASES) {
+        await t.test(c.id + ' ' + c.name, async () => {
+          const md = await page.evaluate((html) => window.__doc2md.htmlToMarkdown(html), c.html);
+          assert.equal(md, c.expected, '行内代码围栏不符合 CommonMark 代码段（' + c.id + '）：' + JSON.stringify(md));
+        });
+      }
+      for (const c of K2_REMOVE_CASES) {
+        await t.test(c.id + ' ' + c.name, async () => {
+          const md = await page.evaluate((html) => window.__doc2md.htmlToMarkdown(html), c.html);
+          assert.equal(md, c.expected, '无文本语义元素内容泄漏进正文（' + c.id + '）：' + JSON.stringify(md));
+        });
+      }
+      for (const c of K2_WARN_CASES) {
+        await t.test(c.id + ' ' + c.name, async () => {
+          const res = await page.evaluate((html) => {
+            const ctx = { warnings: [] };
+            const md = window.__doc2md.htmlToMarkdown(html, ctx);
+            return { md, warnings: ctx.warnings };
+          }, c.html);
+          assert.ok(res.warnings.includes(K2_WARN_MERGED), '合并单元格告警丢失（不得因位于列表项内而消失，' + c.id + '）：' + JSON.stringify(res.warnings));
+          assert.equal(res.warnings.length, 1, '告警条数=' + res.warnings.length + '（期望 1——同文案去重）：' + JSON.stringify(res.warnings));
+          assert.ok(res.md.includes('| a | b |'), '表格行内容丢失（' + c.id + '）：' + JSON.stringify(res.md));
+          assert.ok(res.md.includes('合并'), '合并单元格内容丢失（' + c.id + '）：' + JSON.stringify(res.md));
+        });
+      }
     } finally {
       await browser.close();
     }
