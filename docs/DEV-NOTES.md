@@ -951,6 +951,22 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 
 **纪律更新**：`.ps1` 新建/修改用无 BOM UTF-8；**既有带 BOM 脚本不主动去 BOM**（双保险，PS7 读带 BOM 亦正常）；`.cmd`/`.bat` 必须无 BOM（cmd.exe 不认 BOM）。
 
+**补测（2026-09-12，用户报坑「在表达式里捕获原生命令输出」）—— PS7 捕获形态矩阵**（对象 `git rev-parse --short HEAD`，已带 `GIT_CONFIG_*` 三件套确认 git 自身可用，排除 dubious ownership 干扰）：
+
+| 写法 | 结果 |
+|---|---|
+| statement 级 `git …` | ✅ 正常输出 |
+| `$x = git …`（赋值） | ❌ `StandardOutputEncoding is only supported when standard output is redirected` |
+| `$s = "H=" + (git …)`（表达式拼接 / 子表达式） | ❌ 同上 |
+| `$y = (git …)` / `@(git …)` / `foreach ($l in git …) { }` | ❌ 同上 |
+| `git … > 文件`（重定向） | ❌ 同上 |
+| `git … \| Out-String`（管道） | ❌ `拒绝访问`（沙箱禁命名管道，与上者**不同错**） |
+| `$c = cmd /c "git …"`（外层包裹再捕获） | ❌ 同 PS7 错 |
+| **`Start-Process git -ArgumentList … -RedirectStandardOutput <file> -Wait`** | ✅ **可用**（回读文件即得值）—— pwsh 内唯一能落盘的捕获法 |
+| `cmd /c "git …"`（statement 级） | ✅ 正常输出 |
+
+**结论**：① **原生命令只在 statement 级直接输出**（纪律不变；PS7 下从「静默空值」升级为**明确报错**，可诊断性更好）；② 需要取值时两条正解 —— **(a) 让命令自身打印，在 `run_code` 的 TS 层解析 stdout**（首选，本会话一直这么用）；**(b) `Start-Process -RedirectStandardOutput` 落文件后回读**（pwsh 内唯一可行）；③ `git --output=<file>` 对 `rev-parse` 无效（该参数属 log/diff 族），别指望。
+
 
 
 
