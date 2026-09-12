@@ -357,7 +357,11 @@
   function codeFrag(el) {
     const raw = el.textContent || "";
     const c = raw.trim();
-    return c === "" ? null : { t: "`" + c + "`", lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+    if (c === "") return null;
+    const runs = c.match(/`+/g) || [""];
+    const fence = "`".repeat(Math.max(1, Math.max(...runs.map((s) => s.length)) + 1));
+    const body = c.startsWith("`") || c.endsWith("`") ? " " + c + " " : c;
+    return { t: fence + body + fence, lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
   }
   function strikeFrag(el, mode) {
     return emphasisFrag(el, mode, "~~");
@@ -450,8 +454,8 @@
     ["H5", (el) => headingBlock(el, 5)],
     ["H6", (el) => headingBlock(el, 6)],
     ["P", (el) => wrapBlock(inlineTrim(el, "newline"))],
-    ["UL", (el) => wrapBlock(listElToMd(el, 0))],
-    ["OL", (el) => wrapBlock(listElToMd(el, 0))],
+    ["UL", (el, ctx) => wrapBlock(listElToMd(el, 0, ctx))],
+    ["OL", (el, ctx) => wrapBlock(listElToMd(el, 0, ctx))],
     ["BLOCKQUOTE", (el, ctx) => wrapBlock(quoteElToMd(el, ctx))],
     ["TABLE", (el, ctx) => wrapBlock(tableToMd(el, ctx))],
     ["PRE", (el) => preBlock(el)],
@@ -464,7 +468,7 @@
     if (handler) return handler(el, ctx);
     return blockifyContainer(el, ctx).filter((b) => b !== "");
   }
-  function listElToMd(listEl, indent) {
+  function listElToMd(listEl, indent, ctx) {
     const isOL = listEl.tagName === "OL";
     const rawStart = parseInt(listEl.getAttribute("start"), 10);
     let n = 1;
@@ -472,7 +476,7 @@
     const lines = [];
     for (const li of listEl.children) {
       if (li.tagName !== "LI") continue;
-      lines.push(...liToLines(li, indent, isOL, n));
+      lines.push(...liToLines(li, indent, isOL, n, ctx));
       if (isOL) n++;
     }
     return lines.filter((l) => l !== null).join("\n");
@@ -485,9 +489,9 @@
     }
     if (clear || head !== "") st.frags.length = 0;
   }
-  function blockChildToLines(st, child) {
+  function blockChildToLines(st, child, ctx) {
     pushMarkerLine(st, false);
-    for (const blk of blockOfEl(child, null)) {
+    for (const blk of blockOfEl(child, ctx)) {
       if (blk === "") continue;
       const blkLines = blk.split("\n");
       const first = st.usedMarker ? st.contIndent : st.prefix + st.marker;
@@ -497,10 +501,10 @@
       st.blocked = true;
     }
   }
-  function nestedListToLines(st, child, indent) {
+  function nestedListToLines(st, child, indent, ctx) {
     pushMarkerLine(st, true);
     st.nested = true;
-    const sub = listElToMd(child, indent + st.marker.length);
+    const sub = listElToMd(child, indent + st.marker.length, ctx);
     if (sub) sub.split("\n").forEach((l) => st.lines.push(l));
   }
   function liTailToLines(st) {
@@ -512,19 +516,19 @@
     st.lines.push(cont + tl[0]);
     for (let i = 1; i < tl.length; i++) st.lines.push(st.contIndent + tl[i]);
   }
-  function liChildToLines(child, st, indent) {
+  function liChildToLines(child, st, indent, ctx) {
     const tag = child.tagName;
     if (tag === "UL" || tag === "OL") {
-      nestedListToLines(st, child, indent);
+      nestedListToLines(st, child, indent, ctx);
       return;
     }
     if (BLOCK_TAGS.has(tag) && tag !== "LI") {
-      blockChildToLines(st, child);
+      blockChildToLines(st, child, ctx);
       return;
     }
     fragFor(child, "newline", st.frags);
   }
-  function liToLines(li, indent, isOL, num) {
+  function liToLines(li, indent, isOL, num, ctx) {
     const prefix = " ".repeat(indent);
     const marker = isOL ? num + ". " : "- ";
     const st = {
@@ -549,7 +553,7 @@
         continue;
       }
       if (child.nodeType !== 1) continue;
-      liChildToLines(child, st, indent);
+      liChildToLines(child, st, indent, ctx);
     }
     liTailToLines(st);
     return st.lines;
@@ -607,9 +611,10 @@
     if (!b.startsWith("```")) return false;
     return b.trimEnd().endsWith("```");
   }
+  var NO_TEXT_TAGS = "script, style, noscript, head, template, svg, canvas, object, iframe, embed, audio, video, select, option, textarea, button";
   function htmlToMarkdown(html, ctx) {
     const doc = new DOMParser().parseFromString(html, "text/html");
-    doc.querySelectorAll("script, style, noscript, head, template").forEach((n) => n.remove());
+    doc.querySelectorAll(NO_TEXT_TAGS).forEach((n) => n.remove());
     const blocks = blockifyContainer(doc.body, ctx || null);
     const joined = blocks.map((b) => isPreBlock(b) ? b : b.replace(/\n{3,}/g, "\n\n"));
     return joined.join("\n\n").trim();
@@ -954,10 +959,18 @@
     }
     return map;
   }
-  async function xlsxWorkbookMap(buf) {
+  function parseDate1904(wbText) {
+    const tag = /<workbookPr\s[^>]*>/.exec(wbText);
+    const m = tag ? /date1904\s*=\s*["']([^"']*)["']/.exec(tag[0]) : null;
+    const v = m ? m[1].trim().toLowerCase() : "";
+    return v === "1" || v === "true";
+  }
+  async function xlsxWorkbookMap(buf, meta) {
     const wb = await zipEntry(buf, "xl/workbook.xml");
     if (!wb) throw new Error("\u7F3A xl/workbook.xml\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
-    const sheets = parseSheetTags(new TextDecoder().decode(wb.data));
+    const wbText = new TextDecoder().decode(wb.data);
+    if (meta) meta.date1904 = parseDate1904(wbText);
+    const sheets = parseSheetTags(wbText);
     const rels = await zipEntry(buf, "xl/_rels/workbook.xml.rels");
     if (!rels) throw new Error("\u7F3A xl/_rels/workbook.xml.rels\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
     const ridToTarget = parseRelsMap(new TextDecoder().decode(rels.data));
@@ -972,8 +985,16 @@
     }
     return map;
   }
+  var XML_NAMED_ENTITIES = { amp: "&", quot: '"', lt: "<", gt: ">", apos: "'" };
+  var XML_ENTITY_RE = /&(amp|quot|lt|gt|apos);|&#x([0-9a-fA-F]+);|&#(\d+);/g;
+  var MAX_CODE_POINT = 1114111;
+  function decodeXmlEntity(all, named, hex, dec) {
+    if (named !== void 0) return XML_NAMED_ENTITIES[named];
+    const cp = parseInt(hex === void 0 ? dec : hex, hex === void 0 ? 10 : 16);
+    return cp <= MAX_CODE_POINT ? String.fromCodePoint(cp) : all;
+  }
   function decodeXml(s) {
-    return String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&apos;/g, "'").replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10)));
+    return String(s || "").replace(XML_ENTITY_RE, decodeXmlEntity);
   }
   function parseCellAttrs(attrs) {
     const tMatch = / t="([^"]*)"/.exec(attrs);
@@ -1109,15 +1130,20 @@
     const body = norm.slice(1).map((r) => "| " + r.map(esc).join(" | ") + " |");
     return [header, sep, ...body].join("\n");
   }
-  function excelSerialToDate(serial) {
-    const s = Math.floor(serial);
-    let off = s;
-    if (s >= 1 && s < 61) off = s + 1;
-    const d = new Date(Date.UTC(1899, 11, 30) + off * 864e5);
+  var MS_PER_DAY = 864e5;
+  function serialToYmd(baseUtcMs, off) {
+    const d = new Date(baseUtcMs + off * MS_PER_DAY);
     const y = d.getUTCFullYear();
     const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
     const da = String(d.getUTCDate()).padStart(2, "0");
     return y + "-" + mo + "-" + da;
+  }
+  function excelSerialToDate(serial, date1904) {
+    const s = Math.floor(serial);
+    if (date1904) return serialToYmd(Date.UTC(1904, 0, 1), s);
+    let off = s;
+    if (s >= 1 && s < 61) off = s + 1;
+    return serialToYmd(Date.UTC(1899, 11, 30), off);
   }
   function isoDateOnly(v) {
     return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : decodeXml(v);
@@ -1183,18 +1209,18 @@
     };
   }
   var NO_DATE_STYLES = { isDateStyle: () => false };
-  function serialDateOrRaw(c, styles) {
-    const numeric = /^[+-]?[\d.]+$/.test(c.v);
-    if (c.s === "" || !numeric) return decodeXml(c.v);
+  var NUMERIC_VALUE_RE = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+  function serialDateOrRaw(c, styles, date1904) {
+    if (c.s === "" || !NUMERIC_VALUE_RE.test(c.v)) return decodeXml(c.v);
     if (!styles.isDateStyle(parseInt(c.s, 10))) return decodeXml(c.v);
-    return excelSerialToDate(parseFloat(c.v));
+    return excelSerialToDate(parseFloat(c.v), date1904);
   }
   function boolCellText(v) {
     if (v === "1") return "true";
     if (v === "0") return "false";
     return v;
   }
-  function cellToString(c, ss, styles) {
+  function cellToString(c, ss, styles, date1904) {
     if (c.t === "s") {
       const si = parseInt(c.v, 10);
       if (Number.isNaN(si)) return "";
@@ -1204,7 +1230,7 @@
     if (c.t === "str") return decodeXml(c.v);
     if (c.t === "b") return boolCellText(c.v);
     if (c.t === "d") return isoDateOnly(c.v);
-    return serialDateOrRaw(c, styles);
+    return serialDateOrRaw(c, styles, date1904);
   }
   var XLSX_MAX_COLS = 16384;
   function refLetterValue(ch) {
@@ -1224,21 +1250,21 @@
     }
     return i === 0 ? -1 : n - 1;
   }
-  function rowToTexts(cells, ss, styles) {
+  function rowToTexts(cells, ss, styles, date1904) {
     const out = [];
     cells.forEach((c) => {
       const col = colIndexOfRef(c.r || "");
       const at = col >= 0 ? col : out.length;
       while (out.length < at) out.push("");
-      out[at] = cellToString(c, ss, styles);
+      out[at] = cellToString(c, ss, styles, date1904);
     });
     return out;
   }
-  function xlsxParseSheet(xml, rowLimit, strings, dateStyles) {
+  function xlsxParseSheet(xml, rowLimit, strings, dateStyles, date1904) {
     const styles = dateStyles || NO_DATE_STYLES;
     const { rawRows, maxS, more } = scanSheetRows(xml, rowLimit);
     const ss = maxS >= 0 ? parseSharedStrings(strings || "", maxS) : [];
-    const rows = rawRows.map((cells) => rowToTexts(cells, ss, styles));
+    const rows = rawRows.map((cells) => rowToTexts(cells, ss, styles, date1904));
     return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more };
   }
   function truncationMessage(readCount, totalRows, skipped) {
@@ -1246,7 +1272,7 @@
     if (skipped > 0) msg += `\uFF1B\u53E6\u6709 ${skipped} \u4E2A sheet \u672A\u8BFB\u53D6`;
     return msg + "\uFF09";
   }
-  async function xlsxSelfParse(buf, readMap, names) {
+  async function xlsxSelfParse(buf, readMap, names, date1904) {
     const stringsEntry = await zipEntry(buf, "xl/sharedStrings.xml");
     let stringsXml = null;
     if (stringsEntry) {
@@ -1266,7 +1292,7 @@
       const entry = await zipEntry(buf, s.target);
       if (!entry) throw new Error("\u7F3A\u5DE5\u4F5C\u8868 XML\uFF08" + s.target + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
       const xml = new TextDecoder().decode(entry.data);
-      const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml, dateStyles);
+      const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml, dateStyles, date1904);
       totalRows += scanned;
       if (sheetTrunc) truncated = true;
       parts.push(`### Sheet: ${s.name === null ? "Sheet1" : s.name}
@@ -1315,11 +1341,12 @@ ${xlsxRowsToMd(kept)}`);
     return { markdown: parts.join("\n\n").trim(), warnings, truncated, backend: "read-excel-file" };
   }
   async function xlsxConvert(file, buf) {
-    const map = await xlsxWorkbookMap(buf).catch(() => null);
+    const wbMeta = {};
+    const map = await xlsxWorkbookMap(buf, wbMeta).catch(() => null);
     if (!map || map.length === 0) return xlsxByLib(file, buf, [null], [null]);
     const readMap = map.slice(0, XLSX_SHEET_LIMIT);
     const names = map.map((s) => s.name);
-    return await xlsxSelfParse(buf, readMap, names).catch(() => xlsxByLib(file, buf, readMap.map((s) => s.name), names));
+    return await xlsxSelfParse(buf, readMap, names, wbMeta.date1904 === true).catch(() => xlsxByLib(file, buf, readMap.map((s) => s.name), names));
   }
 
   // src/bline.js
