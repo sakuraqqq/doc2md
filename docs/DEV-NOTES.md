@@ -936,6 +936,21 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 **止血与防再犯**：① **归档团队**（`doc2md-v014`）—— 归档后 `.agent-teams` 零写入、子代理 **0 running**，回路切断；② **失败即停**，不交给框架自动重试（本批教训：第一次 `HTTP 400` 就该停手，而非自转到第 5 次）；③ **任务书瘦身**：重活（官方跑 / 产物构建 / 跨组验收）收到 captain 侧，成员只做小步实现与自检；④ 任务**全 terminal 立即归档**，不留 idle 成员被再次拉起；⑤ **崩前征兆**：`attempt 递增` + `大内存 node（>400MB）` + `msedge 堆积` → 任一出现即停。
 **另记（本批踩到）**：`Get-CimInstance` / `tasklist` / `wmic` / `Get-NetTCPConnection` 在本沙箱**全被拒或返回空** → 进程排查只能用 `Get-Process`（名字/PID/启动时间/CPU/线程/句柄/工作集）；**「查不到」≠「不存在」**。判断「哪个 node 是 DSH 本体」要靠**启动时间 vs 会话运行时长**，不能凭 CPU 高低（跑飞的残留与本体都高 CPU）。
 
+## 2026-09-12 环境变更：PowerShell 5.1 → 7.6.6（工具链解释器换血，实测）
+
+**实测**（在 `pwsh` 工具内查 `$PSVersionTable`）：`PSVersion = 7.6.6` / `PSEdition = Core` / `EXE = C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.6.0_x64__8wekyb3d8bbwe\pwsh.exe` —— 此前是 `C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe`（5.1）。用户 2026-09-12 装 Store 版 PS7 后，DSH 工具的 `pwsh` 解析随之切换。
+
+**同类坑的 5.1 → 7.6.6 对照（同批复测）**：
+
+| 坑 | 5.1 时代表现 | 7.6.6 实测 | 结论 |
+|---|---|---|---|
+| 无 BOM 中文 `.ps1` | 乱码（按 ANSI/GBK 读） | `中文输出测试 OK` | ✅ **消失**（新建/修改用无 BOM UTF-8 即可） |
+| 原生参数传引号被剥 | `node -e "…require(\"fs\")…"` 到 node 手里成 `require(fs)` | `node -e "console.log('quoted-arg-ok', 1+1)"` → `quoted-arg-ok 2` | ✅ **消失**（可直接用 `node -e`，不必再落临时脚本） |
+| 原生命令输出进变量/子表达式 | **静默返回空**（`$x = git …` → `""`） | **明确报错**：`程序'git.exe'运行失败：StandardOutputEncoding is only supported when standard output is redirected` | ⚠️ **沙箱禁重定向 → 仍不可用**，但不再静默骗人；**纪律不变：原生命令只用 statement 级直接输出** |
+| `Get-CimInstance` / `tasklist` / `wmic` / `Get-NetTCPConnection` | 拒绝访问或返回空 | 同（本轮未复测变化） | 进程排查继续只用 `Get-Process` |
+
+**纪律更新**：`.ps1` 新建/修改用无 BOM UTF-8；**既有带 BOM 脚本不主动去 BOM**（双保险，PS7 读带 BOM 亦正常）；`.cmd`/`.bat` 必须无 BOM（cmd.exe 不认 BOM）。
+
 
 
 

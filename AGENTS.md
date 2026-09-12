@@ -19,7 +19,7 @@
 - **转换器注册表契约**：`registry = { pdf, docx, xlsx, image, text }`，每个转换器签名 `(file, buf) => Promise<{markdown, warnings?}>`；入口 `convert(file)` 返回 `{markdown, meta}`。详见 docs/architecture.md（B线据此实现 PDF/XLSX/图片OCR，不得改接口）。
 - **类型嗅探**：宁可多嗅（magic bytes）不信任扩展名；识别不了给友好提示，不崩。
 - **大小护栏**：> 50MB 拒绝处理并提示。
-- **中文编码**：源文件一律 UTF-8（无 BOM 无害）；`.ps1` 若写则必须保 BOM（见全局编码纪律）；向用户显示中文前确认输出编码。
+- **中文编码**：源文件一律 UTF-8（无 BOM 无害）；`.ps1` 新建/修改用**无 BOM UTF-8** 即可（2026-09-12 起主链路为 **PS 7.6.6**，实测无 BOM 中文脚本正常跑）；**既有带 BOM 的不主动去 BOM**（双保险）；`.cmd`/`.bat` **必须无 BOM**（cmd.exe 不认 BOM）；向用户显示中文前确认输出编码。
 - **操作路由**：读 JSON 用 `safe_json_io`、读文本用 `read` 工具、别默认 pwsh 现写；pwsh 只用于专属工具够不到的场景（如 zip 打包、哈希核验）。GitHub/LICENSE 查证用 `github_repo` / `browser_*` / `web_search`，**禁止 pwsh 爬网页**。
 - **重构配额（童子军规则；2026-09-08 拍板，2026-09-10 修订）**：每次改动代码顺手做「一点点」重构——单次 ≤50 行，只做抽函数 / 表驱动化 / 消灭复杂度警告，不搞大拆分；**专项减脂批**（一次清多个超限函数）按函数体量放宽行数，但**必须配等价性台**（重构前快照经 `git hash-object` 校验 = 基线 blob，且负对照能报出差异）；重构后断言必须全绿、lint 不得新增 warning；修 bug 与重构分提交（一提交一件事）；每批记录 metrics before → after。
   **硬门禁（2026-09-10 拍板）**：CI 跑 `npm run metrics`，**超限函数数必须为 0**（超限即 exit 1）。实测基线（2026-09-10，干净检出）：`eslint src/**/*.js` **0 warning**、metrics 超限 **0**；`tools/` 里 2 条告警来自 gitignored 私有脚本，不入库、CI 不计。
