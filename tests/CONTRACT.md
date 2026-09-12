@@ -471,6 +471,15 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-12 第八轮审查修复批（组 K2 22 例 + 组 G7 8 例先红后绿；AgentTeams `doc2md-v014`）**：来源 = `docs/doc2md-第八轮审查报告-2026-09-12.md`（ZCode，v0.1.3 发布后全量复查）—— §1.1 行内代码含反引号破坏输出结构（P2）、§1.4 SVG/表单/canvas 文本泄漏、§1.5 li 内表格合并告警丢失、§1.2 xlsx 1904 日期系统静默错 1462 天、§1.3 `decodeXml` 链式替换双重解码、§1.6 数字实体截断（另 §3.1 科学计数法 / §2.1 本地 lint 基线 / §3.3 注释清理）。captain 逐条复现后开修（用户 2026-09-12「现在开修」）。
+  拍板：报告口径全采纳 + 两处加严（`date1904` 按 xsd:boolean 全形态：`1/true → 1904`、`0/false/缺省 → 1900`，**属性存在不算命中**；嵌套 li 告警同样透传）；§1.4 remove 集合 = `svg/canvas/object/iframe/embed/audio/video/select/option/textarea/button`，**`label` 保留**；§3.2（cjk `%` 半合并）**不动**、登记待拍板。
+  提交链：`4329c21`（先红断言：组 K2 22 + 组 G7 8，+250/−0）→ `82cc702`（html2md 三修 +33/−16）· `54cfdf8`（xlsx 三修 +55/−24）→ `7854023`（eslint ignore 对齐 .gitignore）+ `ce4c743`（sniff 注释清理）→ `fc9efef`（产物 index.html **113,561 B / SHA `22CB96C20714A12326C1F4A4C2FD028E4197111CF22B587447EFBB547FD30D0F`**）+ `b29770b`（metrics）。
+  **官方两相（captain 升权实跑）**：**先红** = 只跑新组 `K2|G7` → `tests 32 / pass 8 / fail 24`（K2 红 17 / G7 红 5 + 2 组壳；控制组 5 绿按设计保持绿），exit 1；**后绿** = 全量 **212 tests / pass 212 / fail 0（47.5s）**，exit 0；`npm run lint`（全量 src+tools）**0 error / 0 warning**；metrics 17 文件 / 332 函数 / 超限 0 / 重复率 0.5%。断言文件 blob 全程 `5bfa64bb…` 未变。
+  **独立验收（t5 / qa-dev，PASS）**：三方同哈希 pin（HEAD = 工作树 = 被测副本）；换数据 = 自写 ZIP 头 + zlib 造 8 个工作簿（1904 两形态 / 1900 三形态 / 属性乱序+单引号 / 空格形态 / deflate）与 19 条 HTML → 产物 8/8 + 41/41、`src` 直调同判（产物 ≡ src）；**负对照 pin 住**：修复前产物 `c9e8ca9a` → 32 红（契约 17 条与先红登记逐条一致）、修复前 `src/xlsx.js` `5625444e` → 8/8 kit 红；零回归差分 36 语料 **UNEXPECTED=0**、4 docx 样例 md+warnings 逐字节相同。
+  **交叉审查（t6；因基础设施故障 transfer 给 qa-dev，verdict = pass）**：html2md 对抗 16 例（产物 16/16、src 16/16、自写解析器回读 9/9，围栏 1/2/3/4/6 正确；修复前产物 10 红）；xlsx 2 工作簿 × 35 单元（serial 0/60/负值/超大/科学计数 ± 指数 + 多层转义 + `&#x10FFFF;`/`&#x110000;`/非法实体）与独立期望 **0 不符**。
+  **未修观察（非阻塞，登记）**：① `&#xD800;` / `&#0;` 按码点直出（脏数据边界，建议后续映射 U+FFFD）；② 1904 下 serial 2958465 → 10004 年（输入越界）；③ 行内 code 含换行保留原换行（CommonMark 合法）。
+  **流程发现（重要）**：① reviewer 会话连续两次 `DeepSeek API error (HTTP 400 INVALID_REQUEST)` 秒败 —— 后经用户确认根因是**宿主内存泄漏崩溃**（非会话问题）；② 崩溃触发框架**自动重试**（t6 累计到 attempt=5），内存不稳时形成「重试 → 重装大上下文 → 尖峰 → 再崩」回路 → **止血 = 归档团队**（已执行；归档后 `.agent-teams` 零写入、子代理 0 running）；③ **防再犯**：失败即停不交给框架重试 / 任务书瘦身（重活收到 captain 侧）/ 任务全 terminal 立即归档 / 崩前征兆 = attempt 递增 + 大内存 node(>400MB) + msedge 堆积；④ 成员往来邮件一处日期笔误（`1904-01-14` 应为 `2004-01-14`）经全库 grep 确认**未落进任何文件**。
+
 - **2026-09-11/12 规范符合性 S4+S5 收口批（S4-5..S4-7 / S5-4 / S5-5 先红后绿；AgentTeams `doc2md-s4s5` 续跑）**：来源 = 首轮交叉审查的 3 条 finding（S4-R1 全文 ≥2 处零散 U+FFFD 触发**整篇 gb18030 mojibake**；S5-R1 同前缀混排漏改；S5-R2 属性值含 `>` 漏改）→ 用户 2026-09-11 拍板「**修完再发**」（口径 A′）。
   口径：**A′** = `fffd >= 2 && nonAscii > 0 && fffd*10 >= nonAscii` 才进 gb18030 回退（次级比较放宽为 `countFffd(g) < fffd`）；**S5** 改**单正则交替分支**（自闭合分支优先 + 属性段引号感知），替代「两遍换序」（后者对 `w:val=false` 自闭合仍有同类漏改）。
   提交链：`6a891a2`（t8 先红断言 +76/−0）→ `217459f`（t9 S4 结构判据门，`src/sniff.js` +34/−18）→ `bad086a`（t10 S5 单正则交替，`src/docx.js` +32/−16）→ `f54d7a6`（产物 index.html **112,194 B / SHA `234605758623B1F30B1E2250D64CCC5B9B96FF79AC25E77C09170DA9AE8348C8`**）。
