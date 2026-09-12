@@ -68,11 +68,20 @@ function emphasisFrag(el, mode, wrap) {
   return { t: wrap + inner + wrap, lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
 }
 
-// `code`：按原始 textContent 去首尾空白（不折叠内部空白——与 emphasisFrag 口径不同）
+/* `code`：按原始 textContent 去首尾空白（不折叠内部空白——与 emphasisFrag 口径不同）。
+ * 动态围栏（第八轮审查报告 §1.1）：围栏长度 = 内容最长反引号串 + 1（**至少 1**——无反引号的普通
+ * 内容仍是单反引号，既有快照零回归）；旧实现恒用单反引号，内容自身含反引号时围栏被提前闭合，
+ * 输出结构破坏（x`y`z → 「x」代码 +「y」代码 + 残尾）。内容首/尾为反引号时围栏内侧补一个空格：
+ * CommonMark 代码段的首尾空格会被剥离（内容本身不是全空白），不补则内容与围栏连成长串 → 解析
+ * 不出代码段（内容「`」→ 围栏 2 + 两侧补空格）。 */
 function codeFrag(el) {
   const raw = el.textContent || '';
   const c = raw.trim();
-  return c === '' ? null : { t: '`' + c + '`', lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
+  if (c === '') return null;
+  const runs = c.match(/`+/g) || [''];
+  const fence = '`'.repeat(Math.max(1, Math.max(...runs.map((s) => s.length)) + 1));
+  const body = c.startsWith('`') || c.endsWith('`') ? ' ' + c + ' ' : c;
+  return { t: fence + body + fence, lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
 }
 
 // ~~删除线~~：HTML `<s>`（不再准确）/`<del>`（删除标记）/`<strike>`（历史别名）语义 = 删除；
@@ -189,8 +198,8 @@ const BLOCK_EL = new Map([
   ['H5', (el) => headingBlock(el, 5)],
   ['H6', (el) => headingBlock(el, 6)],
   ['P', (el) => wrapBlock(inlineTrim(el, 'newline'))],
-  ['UL', (el) => wrapBlock(listElToMd(el, 0))],
-  ['OL', (el) => wrapBlock(listElToMd(el, 0))],
+  ['UL', (el, ctx) => wrapBlock(listElToMd(el, 0, ctx))],
+  ['OL', (el, ctx) => wrapBlock(listElToMd(el, 0, ctx))],
   ['BLOCKQUOTE', (el, ctx) => wrapBlock(quoteElToMd(el, ctx))],
   ['TABLE', (el, ctx) => wrapBlock(tableToMd(el, ctx))],
   ['PRE', (el) => preBlock(el)],
@@ -207,7 +216,9 @@ function blockOfEl(el, ctx) {
 }
 
 // 列表：递归缩进（每层缩进 = 父级标记宽度：'1. '=3、'- '=2；CommonMark 嵌套列表最小缩进）
-function listElToMd(listEl, indent) {
+/* ctx 透传（第八轮审查报告 §1.5）：列表项内的表格等块级子元素要能上报 warnings（旧链路
+ * blockChildToLines 把 ctx 硬编码为 null → li 内合并单元格告警静默丢失） */
+function listElToMd(listEl, indent, ctx) {
   const isOL = listEl.tagName === 'OL';
   // start 属性 NaN 判定（审查报告 §1.4）：start="0" 合法（parseInt('0')||1 会把 0 改写成 1）
   const rawStart = parseInt(listEl.getAttribute('start'), 10);
@@ -216,7 +227,7 @@ function listElToMd(listEl, indent) {
   const lines = [];
   for (const li of listEl.children) {
     if (li.tagName !== 'LI') continue;
-    lines.push(...liToLines(li, indent, isOL, n));
+    lines.push(...liToLines(li, indent, isOL, n, ctx));
     if (isOL) n++;
   }
   // t14 §1.3：'' = 列表项内段间空行（保留）；null = 过滤哨兵（当前无产出，仅防误删空行分隔）
@@ -233,9 +244,9 @@ function pushMarkerLine(st, clear) {
 }
 
 // li 内块级子元素：flush 当前片段，按「首块 marker 行 + 段间空行 + 续行缩进」换行（CommonMark 列表续行）
-function blockChildToLines(st, child) {
+function blockChildToLines(st, child, ctx) {
   pushMarkerLine(st, false);
-  for (const blk of blockOfEl(child, null)) {
+  for (const blk of blockOfEl(child, ctx)) {
     if (blk === '') continue;
     const blkLines = blk.split('\n');
     const first = st.usedMarker ? st.contIndent : st.prefix + st.marker;
@@ -247,10 +258,10 @@ function blockChildToLines(st, child) {
 }
 
 // li 内嵌套列表：flush 当前片段后递归（缩进 = 父 marker 宽度）
-function nestedListToLines(st, child, indent) {
+function nestedListToLines(st, child, indent, ctx) {
   pushMarkerLine(st, true);
   st.nested = true;
-  const sub = listElToMd(child, indent + st.marker.length);
+  const sub = listElToMd(child, indent + st.marker.length, ctx);
   if (sub) sub.split('\n').forEach((l) => st.lines.push(l));
 }
 
@@ -266,17 +277,17 @@ function liTailToLines(st) {
 }
 
 // li 子节点分派：嵌套列表 / 块级子元素 / 行内片段（walker 保留行内格式，fragFor 走元素级片段）
-function liChildToLines(child, st, indent) {
+function liChildToLines(child, st, indent, ctx) {
   const tag = child.tagName;
-  if (tag === 'UL' || tag === 'OL') { nestedListToLines(st, child, indent); return; }
+  if (tag === 'UL' || tag === 'OL') { nestedListToLines(st, child, indent, ctx); return; }
   // t14 §1.3（第六轮审查报告 §1.3）：li 内块级子元素（P/DIV 等）flush 当前片段，按
   // 「首块 marker 行 + 段间空行 + 续行缩进」换行（CommonMark 列表续行）；旧实现行内平铺
   // 把 <li><p>a</p><p>b</p></li> 合并为「- a b」——多段列表项结构丢失
-  if (BLOCK_TAGS.has(tag) && tag !== 'LI') { blockChildToLines(st, child); return; }
+  if (BLOCK_TAGS.has(tag) && tag !== 'LI') { blockChildToLines(st, child, ctx); return; }
   fragFor(child, 'newline', st.frags);
 }
 
-function liToLines(li, indent, isOL, num) {
+function liToLines(li, indent, isOL, num, ctx) {
   const prefix = ' '.repeat(indent);
   const marker = isOL ? (num + '. ') : '- ';
   const st = {
@@ -297,7 +308,7 @@ function liToLines(li, indent, isOL, num) {
       continue;
     }
     if (child.nodeType !== 1) continue;
-    liChildToLines(child, st, indent);
+    liChildToLines(child, st, indent, ctx);
   }
   liTailToLines(st);
   return st.lines;
@@ -371,9 +382,15 @@ function isPreBlock(b) {
   return b.trimEnd().endsWith('```');
 }
 
+/* 无文本语义元素（第八轮审查报告 §1.4）：脚本/样式/元信息之外，**替换型/控件型**元素的内容
+ * 对正文是噪音——svg（图标 <title>/<text>）、canvas（后备文字）、object/iframe/embed/audio/video
+ * （后备内容）、select/option/textarea（表单选项与默认值）、button（按钮文字）。
+ * label 承载表单字段的正文语义 → **不**移除；未知行内标签「子节点平铺」兜底语义不变。 */
+const NO_TEXT_TAGS =
+  'script, style, noscript, head, template, svg, canvas, object, iframe, embed, audio, video, select, option, textarea, button';
 export function htmlToMarkdown(html, ctx) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('script, style, noscript, head, template').forEach((n) => n.remove());
+  doc.querySelectorAll(NO_TEXT_TAGS).forEach((n) => n.remove());
   const blocks = blockifyContainer(doc.body, ctx || null);
   // t14 §1.4（第六轮审查报告 §1.4）：块间/普通块内 \n{3,} → \n\n 归一化**跳过 PRE 围栏内部**——
   // 代码块内连续空行原样保留（旧实现全局替换把 <pre> 内 3 个空行吞到 1 个；块间由 join 的 2 个空行分隔，逐块归一化等价）
