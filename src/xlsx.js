@@ -105,10 +105,21 @@ function parseRelsMap(relText) {
   }
   return map;
 }
-export async function xlsxWorkbookMap(buf) {
+/* 第八轮 §1.2：workbook.xml 的日期系统——<workbookPr date1904="…">（OOXML xsd:boolean：
+ * "1"/"true" = 1904 日期系统；缺省/"0"/"false" = 1900 系统。属性或标签缺失 → false） */
+function parseDate1904(wbText) {
+  const tag = /<workbookPr\s[^>]*>/.exec(wbText);
+  const m = tag ? /date1904\s*=\s*["']([^"']*)["']/.exec(tag[0]) : null; // 单/双引号两种 XML 属性形态
+  const v = m ? m[1].trim().toLowerCase() : '';
+  return v === '1' || v === 'true';
+}
+/* meta（可选出参）：date1904 标记随映射一并取出（同一个 zipEntry，不重复解压 workbook.xml） */
+export async function xlsxWorkbookMap(buf, meta) {
   const wb = await zipEntry(buf, 'xl/workbook.xml');
   if (!wb) throw new Error('缺 xl/workbook.xml，回退库解析');
-  const sheets = parseSheetTags(new TextDecoder().decode(wb.data));
+  const wbText = new TextDecoder().decode(wb.data);
+  if (meta) meta.date1904 = parseDate1904(wbText);
+  const sheets = parseSheetTags(wbText);
   const rels = await zipEntry(buf, 'xl/_rels/workbook.xml.rels');
   if (!rels) throw new Error('缺 xl/_rels/workbook.xml.rels，回退库解析');
   const ridToTarget = parseRelsMap(new TextDecoder().decode(rels.data));
@@ -133,10 +144,20 @@ export async function xlsxSheetNames(buf) {
   return map && map.length > 0 ? map.map((s) => s.name) : null;
 }
 
+/* XML 实体单遍解码（第八轮 §1.3/§1.6）：一次 alternation 扫描 + 查表——不再链式 replace
+ * （链式会把前一步产物再次命中：XML 原文 `&amp;lt;` 二次解码成 `<`；正确语义是只解一层）。
+ * 数字实体走 String.fromCodePoint（`&#x1F600;` → 😀；fromCharCode 只取低 16 位 → U+F600 乱码）；
+ * 越界码点（如 &#x110000;）按原文保留——脏数据不抛 RangeError（与旧实现「不崩」语义一致）。 */
+const XML_NAMED_ENTITIES = { amp: '&', quot: '"', lt: '<', gt: '>', apos: "'" };
+const XML_ENTITY_RE = /&(amp|quot|lt|gt|apos);|&#x([0-9a-fA-F]+);|&#(\d+);/g;
+const MAX_CODE_POINT = 0x10ffff;
+function decodeXmlEntity(all, named, hex, dec) {
+  if (named !== undefined) return XML_NAMED_ENTITIES[named];
+  const cp = parseInt(hex === undefined ? dec : hex, hex === undefined ? 10 : 16);
+  return cp <= MAX_CODE_POINT ? String.fromCodePoint(cp) : all;
+}
 function decodeXml(s) {
-  return String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'")
-    .replace(/&#x([0-9a-fA-F]+);/g, (_all, h) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_all, d) => String.fromCharCode(parseInt(d, 10)));
+  return String(s || '').replace(XML_ENTITY_RE, decodeXmlEntity);
 }
 
 /* 单元格属性提取（t1 重构：从 scanSheetRows 抽出——t/s 两属性；S3-① 增 r = 单元格引用如 "C2"） */
@@ -290,15 +311,22 @@ function xlsxRowsToMd(rows) {
  * 序列 ≥61 时基准 1899-12-30 + 序列（Excel 序列 61 = 真实 1900-03-01）；序列 1..59 = 基准 + 序列 + 1
  * （Excel 序列 1 = 真实 1900-01-01——Jan/Feb 区间含虚构闰日）；序列 60（虚构 1900-02-29）顺延 1900-03-01。
  * 时间部分按口径截断（G5-2「日期」= 只到天）。 */
-function excelSerialToDate(serial) {
-  const s = Math.floor(serial);
-  let off = s;
-  if (s >= 1 && s < 61) off = s + 1; // 序列 1..59（Jan/Feb 含虚构闰日）+1；≥61 基准+序列；≤0 原样
-  const d = new Date(Date.UTC(1899, 11, 30) + off * 86400000);
+const MS_PER_DAY = 86400000;
+/* 基准 UTC 时刻 + 天偏移 → YYYY-MM-DD（只到天，G5-2 口径；t15 抽公共格式化） */
+function serialToYmd(baseUtcMs, off) {
+  const d = new Date(baseUtcMs + off * MS_PER_DAY);
   const y = d.getUTCFullYear();
   const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
   const da = String(d.getUTCDate()).padStart(2, '0');
   return y + '-' + mo + '-' + da;
+}
+/* date1904 = 1904 日期系统（基准 1904-01-01；同一 serial 比 1900 系统晚 1462 天）；缺省 1900 系统 */
+function excelSerialToDate(serial, date1904) {
+  const s = Math.floor(serial);
+  if (date1904) return serialToYmd(Date.UTC(1904, 0, 1), s);
+  let off = s;
+  if (s >= 1 && s < 61) off = s + 1; // 序列 1..59（Jan/Feb 含虚构闰日）+1；≥61 基准+序列；≤0 原样
+  return serialToYmd(Date.UTC(1899, 11, 30), off);
 }
 /* t="d"（ISO 日期字符串，如 2021-06-10T00:47:45.700Z）：按「日期」口径截断到天（G5-2） */
 function isoDateOnly(v) {
@@ -371,11 +399,12 @@ function parseStylesDateFormats(stylesXml) {
 const NO_DATE_STYLES = { isDateStyle: () => false };
 
 /* t15：序列号/普通值单元格 → 文本（样式命中日期 → YYYY-MM-DD；否则原样）——拆函数防复杂度越限 */
-function serialDateOrRaw(c, styles) {
-  const numeric = /^[+-]?[\d.]+$/.test(c.v);
-  if (c.s === '' || !numeric) return decodeXml(c.v);
+/* 数字字面量（第八轮 §3.1：Excel <v> 可存 1.5E2 科学计数法形态，旧判定会原样输出不换算） */
+const NUMERIC_VALUE_RE = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+function serialDateOrRaw(c, styles, date1904) {
+  if (c.s === '' || !NUMERIC_VALUE_RE.test(c.v)) return decodeXml(c.v);
   if (!styles.isDateStyle(parseInt(c.s, 10))) return decodeXml(c.v);
-  return excelSerialToDate(parseFloat(c.v));
+  return excelSerialToDate(parseFloat(c.v), date1904);
 }
 
 /* t="b" 布尔单元格 → 文本（t8 重构：从 xlsxParseSheet 抽出；1/0 → true/false，其余原样） */
@@ -387,7 +416,7 @@ function boolCellText(v) {
 /* 单元格 → 字符串（t8 重构：从 xlsxParseSheet 抽出）。类型口径与库一致：t="s"→共享字符串；
  * t="inlineStr"→is/t 文本；t="str"→v 文本；t="b"→true/false；t="d"→ISO 日期（t15：截断到天）；
  * 数字/日期序列号→命中日期样式的转 YYYY-MM-DD（t15 §2.3），其余原样 */
-function cellToString(c, ss, styles) {
+function cellToString(c, ss, styles, date1904) {
   if (c.t === 's') {
     const si = parseInt(c.v, 10);
     if (Number.isNaN(si)) return '';
@@ -397,7 +426,7 @@ function cellToString(c, ss, styles) {
   if (c.t === 'str') return decodeXml(c.v);
   if (c.t === 'b') return boolCellText(c.v);
   if (c.t === 'd') return isoDateOnly(c.v);
-  return serialDateOrRaw(c, styles);
+  return serialDateOrRaw(c, styles, date1904);
 }
 /* 列引用 → 0 基列号（'C2' → 2、'AA1' → 26）：取前导字母段，遇非字母停。无字母或超 XLSX 列上限
  * （XFD = 16384 列）→ -1（调用方回落文档序——防 <c r="ZZZZZZ"> 触发巨量补空）。 */
@@ -423,25 +452,25 @@ function colIndexOfRef(ref) {
 /* 一行原始单元格 → 字符串数组（t8 重构）。S3-① 拍板（2026-09-10）：单元格列位置由 c@r 决定——
  * 稀疏行按列号补空（A2/C2 → [A2, '', C2]，不再让 C2 挤到第 2 列）、行内乱序也按列号归位；
  * 无 r / r 非法（超 XLSX 列上限）时退回文档序顺序追加（既有样例无 r → 行为不变）。 */
-function rowToTexts(cells, ss, styles) {
+function rowToTexts(cells, ss, styles, date1904) {
   const out = [];
   cells.forEach((c) => {
     const col = colIndexOfRef(c.r || '');
     const at = col >= 0 ? col : out.length;
     while (out.length < at) out.push('');
-    out[at] = cellToString(c, ss, styles);
+    out[at] = cellToString(c, ss, styles, date1904);
   });
   return out;
 }
 
 /* t33 自解析单 sheet：流式读取前 ROW_LIMIT 行（扫描到 ROW_LIMIT+1 个即判定截断），行内单元格映射为字符串数组。
  * 类型口径见 cellToString。返回 { rows, scanned, truncated } */
-function xlsxParseSheet(xml, rowLimit, strings, dateStyles) {
+function xlsxParseSheet(xml, rowLimit, strings, dateStyles, date1904) {
   const styles = dateStyles || NO_DATE_STYLES;
   const { rawRows, maxS, more } = scanSheetRows(xml, rowLimit);
   // 共享字符串按需解析：maxS 已知后再解（守卫已在外层基于 compSize 判定，此处仅截断索引）
   const ss = maxS >= 0 ? parseSharedStrings(strings || '', maxS) : [];
-  const rows = rawRows.map((cells) => rowToTexts(cells, ss, styles));
+  const rows = rawRows.map((cells) => rowToTexts(cells, ss, styles, date1904));
   return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more };
 }
 
@@ -453,7 +482,7 @@ function truncationMessage(readCount, totalRows, skipped) {
 }
 
 /* t33 流式自解析路径（异常/护栏触发即 throw → 外层 .catch 回退库解析）；t8：按 workbook 映射（name+target）读表 */
-async function xlsxSelfParse(buf, readMap, names) {
+async function xlsxSelfParse(buf, readMap, names, date1904) {
   const stringsEntry = await zipEntry(buf, 'xl/sharedStrings.xml');
   let stringsXml = null;
   if (stringsEntry) {
@@ -474,7 +503,7 @@ async function xlsxSelfParse(buf, readMap, names) {
     const entry = await zipEntry(buf, s.target);
     if (!entry) throw new Error('缺工作表 XML（' + s.target + '），回退库解析');
     const xml = new TextDecoder().decode(entry.data);
-    const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml, dateStyles);
+    const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml, dateStyles, date1904);
     totalRows += scanned;
     if (sheetTrunc) truncated = true;
     parts.push(`### Sheet: ${s.name === null ? 'Sheet1' : s.name}\n\n${xlsxRowsToMd(rows)}`);
@@ -528,10 +557,12 @@ async function xlsxByLib(file, buf, readNames, names) {
 export async function xlsxConvert(file, buf) {
   // t8：workbook 映射（tab 顺序 name + rels r:id→Target）为一等公民——自解析按 target 读；
   // 映射失败（损坏/无 workbook.xml 或 rels）→ 直接回退库路径（不静默错位/不静默单 sheet）
-  const map = await xlsxWorkbookMap(buf).catch(() => null);
+  // 第八轮 §1.2：日期系统随映射一并取出（date1904 命中 → 1904 基准；缺省/假值 → 1900 基准）
+  const wbMeta = {};
+  const map = await xlsxWorkbookMap(buf, wbMeta).catch(() => null);
   if (!map || map.length === 0) return xlsxByLib(file, buf, [null], [null]);
   const readMap = map.slice(0, XLSX_SHEET_LIMIT);
   const names = map.map((s) => s.name); // 全量名（截断计数用）
   // 首选：t33 流式自解析（线性扫描 ≤ROW_LIMIT+1 行即停）；任何异常/护栏 → .catch 回退库路径（无 try/catch 吞异常）
-  return await xlsxSelfParse(buf, readMap, names).catch(() => xlsxByLib(file, buf, readMap.map((s) => s.name), names));
+  return await xlsxSelfParse(buf, readMap, names, wbMeta.date1904 === true).catch(() => xlsxByLib(file, buf, readMap.map((s) => s.name), names));
 }
