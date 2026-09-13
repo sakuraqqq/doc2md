@@ -118,7 +118,7 @@
 - 契约权威源：`tests/CONTRACT.md`（~170KB，组 A-P）· `tests/contract_v1.test.mjs`
 - 决策史：`docs/design-decisions.md`（DD-4~17）· 架构：`docs/architecture.md` · 许可：`docs/licenses.md`
 - 审查报告：第五轮 `docs/doc2md-第五轮审查报告-2026-09-08.md`（已闭环）· 第六轮 `docs/doc2md-第六轮审查报告-2026-09-08.md`（§2.4/§2.10/§3 已闭环；§2.2/§2.3/§2.6/§2.7/§2.9 未修）· 第七轮 `docs/doc2md-第七轮审查报告-2026-09-09.md`（§2.2/§2.4 已闭环；§2.1/§2.3 待做；§2.5/§2.6 已留档）
-- 上游对照：`docs/upstream-markitdown-checklist.md`（格式支持对照）· `docs/spec-conformance-tests.md`（**格式规范符合性测试机制 + 对照表**；外部线索台账在本地 `.私档/`，不入公开仓库）
+- 上游对照：`docs/upstream-markitdown-checklist.md`（格式支持对照）· `docs/spec-conformance-tests.md`（**格式规范符合性测试机制 + 对照表**；外部线索台账在本地 `.私档/`，不入公开仓库）· `docs/doc2md-vs-pdfinspector-对比报告-2026-09-14.md`（**PDF 三方输出对比**：doc2md / MarkItDown / pdf-inspector WASM，独立检出取证）
 - 私人文档（`.私档/`，不进仓库）：沟通包、面谈准备、论文选题构想、软著 AI 声明速查、HANDOFF-商业化线（已从 docs/ 移入）
 
 ## 7. 团队状态
