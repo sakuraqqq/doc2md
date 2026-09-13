@@ -918,7 +918,7 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 ## 2026-09-12 v0.1.3 发布准备批（版本号 + 两条防线 + 全门禁复跑）
 
 **范围（用户拍板「按建议纳入」）**：v0.1.3 backlog E 节 ① 本地陈旧产物陷阱、② 部署白名单 smoke 纳入；③ tests 重复不做。
-**提交链**：`7cd6478`（sniff 注释与代码对齐）→ `8d1ea57`（版本号 v0.1.3：template footer + package.json + package-lock）→ `8664a98`（产物 112,194 B / `96452DA0…4C54`）→ `ac27551`（metrics 刷新）→ `5317c60`（**契约组 T** 产物一致性）→ `5683b05`（**部署 smoke**：tools/deploy-smoke.mjs + deploy-pages.yml 接线）。
+**提交链**：`7cd6478`（sniff 注释与代码对齐）→ `8d1ea57`（版本号 v0.1.3：template footer + package.json + package-lock）→ `8664a98`（产物 112,194 B / `96452DA0…4C54`）→ `ac27551`（metrics 刷新）→ `5317c60`（**契约组 T** 产物一致性）→ `5683b05`（**部署 smoke**：tools/deploy-smoke.mjs + deploy-pages.yml 接线）→ `d6929e6`（发布准备文档 + metrics 刷新；**tag `v0.1.3` 指向此处**——2026-09-14 双端实测勘误，原记 tag = `5683b05` 有误）。
 **① 契约组 T**：现场跑 `tools/build.mjs` 重建产物 → 比对 sha256；不一致即 FAIL（error message 直接给「请跑 npm run build 并提交产物」）。**先红实测**：手工污染 index.html → FAIL（hash 差异可见）；恢复后 PASS。位置放在契约组 A **之前**（先于其它组执行，避免其它组对着陈旧产物断言）。代价：需能 spawn esbuild（与 C/M 组需浏览器同级前置）。
 **② 部署白名单 smoke**：`tools/deploy-smoke.mjs [siteDir=_site]` 按「引用即必需」核对——index.html 的 script/img/link 同源引用 + sw.js 里 `'./x'` 形式的登记资源 + 必需顶层文件（manifest.json/.nojekyll/sw.js）与目录（vendor/langs/icons）。**实测**：真实组装 `_site` → PASS（15 引用全解析）；删掉 `vendor/mammoth.browser.min.js` → exit 1 并精确列出该文件。接线在 `deploy-pages.yml` 组装步骤之后、上传之前。
 **发布前全门禁（本会话升权实跑）**：build exit 0（`112,194 B / 96452DA0…4C54`）· lint src 0/0 · metrics **17 文件 / 330 函数 / 超限 0 / 重复率 0.5%** · 契约 **180/180 pass / 0 fail（39.9s）** · pwa **48/48** · OCR **PASS（93%）**。

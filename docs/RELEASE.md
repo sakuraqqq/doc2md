@@ -100,14 +100,14 @@
 
 ## v0.1.3 · 2026-09-12
 
-- **来源**：commit `5683b05`（tag 指向；链 = 版本 bump `8d1ea57` → 产物 `8664a98` → 组 T `5317c60` → 部署 smoke `5683b05`）/ tag `v0.1.3`（tag 之后 main 前进一个纯文档提交 `d6929e6`，不重打 tag）
+- **来源**：tag `v0.1.3` = **`d6929e6`**（2026-09-14 双端实测勘误：原记「commit `5683b05`（tag 指向）」有误——`5683b05` 实为 tag 前一个提交「部署 smoke」）/ 提交链 = 版本 bump `8d1ea57` → 产物 `8664a98` → metrics `ac27551` → 组 T `5317c60` → 部署 smoke `5683b05` → 发布准备 `d6929e6`（**tag 指向此处**，不重打 tag）
 - **测试结果**（本会话升权实跑；Windows / Node 24.18.1 + 系统 Edge 回退）：
   - 契约：`npm test` → **180/180 pass / 0 fail（39.9s）**（新增契约组 **T** 产物一致性 1 例；收口批 S4-5..S4-7 / S5-4 / S5-5 五例先红转绿；既有 174 断言零回归）
   - PWA：`node tests/pwa-audit.mjs` → **48/48**
   - OCR：`npm run verify:ocr` → HELLO/DOC2MD/2026 全命中，置信度 **93%**（worker 就绪 370ms）
   - 构建：`npm run build` → index.html **112,194 B**（bundle 74,174 B）；CI `tests`（build-consistency → lint → metrics → 契约 → pwa → OCR）与 `deploy-pages`（**新增白名单 smoke 步骤**）由 push 触发
   - 度量：`npm run metrics` → 17 文件 / 330 函数 / **超限 0** / 重复率 **0.5%**
-- **产物 SHA256**（本机回读实测，与磁盘一致；tag 基线 `5683b05`）：
+- **产物 SHA256**（本机回读实测，与磁盘一致；tag 基线 `d6929e6`）：
   | 文件 | 大小 | SHA256（完整） |
   |---|---|---|
   | index.html | 112,194 B | 96452DA055F3083820CFA98B1267EB5C7C5235C566D26914D125B5C1F4714C54 |
