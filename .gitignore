@@ -21,6 +21,16 @@ pastes/
 *.log
 .pw-browsers/
 
+# --- Linux 侧本机测试环境（含本机绝对路径，永不入库；2026-09-14 实测补入）---
+#   .env.sh 内是 /home/<user>/... 绝对路径；.venv-markitdown 为 markitdown 对比用 Python venv
+#   （约 340MB 第三方包）；.home/.debs 为免 root 方案的假 HOME 与解包系统库；_cmp 为临时对比目录
+.env.sh
+.env.sh.bak-*
+.home/
+.debs/
+.venv-markitdown/
+_cmp/
+
 # --- AgentTeams 团队运行时状态（含 inbox 会话数据，不入库）---
 .agent-teams/
 

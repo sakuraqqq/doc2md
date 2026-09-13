@@ -2,7 +2,8 @@
 
 > 交接对象：新会话（AI 助手）· 项目：doc2md（纯前端离线文档转 Markdown）
 > 基线：**HEAD `b29770b`**（v0.1.3 发布准备批：版本号 + 注释对齐 + 组 T + 部署 smoke；其后仅文档提交） · 契约：**212/212**（**2026-09-11/12 S4/S5 批 + 收口批两相实测**：先红 168/6 → 后绿 174/174（46.6s）→ 收口批先红 21/5 → **后绿 179/179（46.0s）** 零回归；减脂批前为用户终端权威跑 153/153） · 门禁全绿（lint 0/0 · metrics 超限 0 / 重复率 0.6% · PWA 48/48 · OCR 93% PASS · 产物 diff 0） · 工作区：与版本库同目录
-> 发布：**v0.1.3 已发布**（tag `v0.1.3` = `5683b05`，2026-09-12；tag 后 main 前进一个纯文档提交 `d6929e6`，不重打 tag）· 观察期 **2026-09-12 起 ≥3 天 → 09-15 复盘**
+> 发布：**v0.1.3 已发布**（tag `v0.1.3` = `d6929e6`，2026-09-12）· 观察期 **2026-09-12 起 ≥3 天 → 09-15 复盘**
+> ⚠️ **tag SHA 勘误（2026-09-14 Linux 侧实测）**：本文原记 tag = `5683b05`，与**双端实测不符**——本地 `git show-ref --tags` 与远端 `git ls-remote --tags` 均为 **`d6929e6`**；`5683b05` 实为 tag 前一个提交（"feat(ci): 部署白名单 smoke"）。差异成因本次未取证（新克隆无 reflog），**以实测值 `d6929e6` 为准**。
 > 开场白模板：`项目：doc2md 主开发线 · 基线 <HEAD SHA> · 先读本文件 + AGENTS.md + docs/RELEASE.md`
 > **权威源声明**：本文件 = 状态性内容的**唯一权威源**；会话级交接（如 `.私档/HANDOFF-*.md`，gitignored）只是临时补充，**收尾时必须回灌本文件**（基线 / backlog / 门禁链），不得长期并行两套状态。
 
@@ -10,7 +11,7 @@
 
 ## 1. 现状一句话
 
-**已发布 v0.1.3**（tag `v0.1.3` = `5683b05`，2026-09-12；其后 main 前进一个纯文档提交 `d6929e6`）。v0.1.2（`f5aed38`）之后 main 继续前进到 **`b29770b`**（第七轮批 + v0.1.3 首提交准备 + 真实样例批 OCR 中文空格合并 + **减脂批：metrics 超限 23 → 0** + **公开仓库合规清扫** + **规范符合性 S2 删除线 / S3 表格列位置** + **metrics 假绿修复与口径定案** + **embed-bline 护栏 / 隐患处置落盘** + **文档漂移对齐（权威源 / 数字回填）** + **`.gitignore` 收口** + **规范符合性 S4 编码全篇判定 / S5 `w:dstrike` 归一** + **收口批：S4 口径 A′ 结构判据门 / S5 单正则交替加固（用户拍板「修完再发」）**），**不重打 tag**（用户拍板）。**2026-09-11/12 两批两相（本会话升权实跑）**：S4/S5 批先红 **168/6** → 后绿 **174/174**；收口批先红 **26 tests / 21 pass / 5 fail** → 后绿 **179/179 pass / 0 fail（46.0s）**、PWA **48/48**、OCR **93% PASS**、build + `git diff --exit-code index.html` **exit 0**、`eslint src/**` **0w/0e**、metrics **文件 16 / 函数 323 / 超限 0**；**重复率 0.6%**（口径 = **只度量 `src/` + `tools/`，`tests/` 排除**，2026-09-10 用户拍板；原记 4% 系 metrics 读旧报告的假绿，工具已修）。**远端 `origin/main` 落后 5 个提交（至 `885b548`）待你 push。**
+**已发布 v0.1.3**（tag `v0.1.3` = `d6929e6`，2026-09-12；**2026-09-14 双端实测勘误，原记 `5683b05` 有误**）。v0.1.2（`f5aed38`）之后 main 继续前进到 **`b29770b`**（第七轮批 + v0.1.3 首提交准备 + 真实样例批 OCR 中文空格合并 + **减脂批：metrics 超限 23 → 0** + **公开仓库合规清扫** + **规范符合性 S2 删除线 / S3 表格列位置** + **metrics 假绿修复与口径定案** + **embed-bline 护栏 / 隐患处置落盘** + **文档漂移对齐（权威源 / 数字回填）** + **`.gitignore` 收口** + **规范符合性 S4 编码全篇判定 / S5 `w:dstrike` 归一** + **收口批：S4 口径 A′ 结构判据门 / S5 单正则交替加固（用户拍板「修完再发」）**），**不重打 tag**（用户拍板）。**2026-09-11/12 两批两相（本会话升权实跑）**：S4/S5 批先红 **168/6** → 后绿 **174/174**；收口批先红 **26 tests / 21 pass / 5 fail** → 后绿 **179/179 pass / 0 fail（46.0s）**、PWA **48/48**、OCR **93% PASS**、build + `git diff --exit-code index.html` **exit 0**、`eslint src/**` **0w/0e**、metrics **文件 16 / 函数 323 / 超限 0**；**重复率 0.6%**（口径 = **只度量 `src/` + `tools/`，`tests/` 排除**，2026-09-10 用户拍板；原记 4% 系 metrics 读旧报告的假绿，工具已修）。**远端同步状态（2026-09-14 Linux 侧实测）**：`origin/main` = `f7caa21`，`885b548` / `b29770b` 均已是其祖先——原记「落后 5 个提交待 push」**已闭结**；现状是**本地落后 1 个纯文档提交**（`f7caa21`：吸收 Linux 侧跨平台验证 + vs MarkItDown 对比报告）。
 
 ## 2. 已完成批次（累计，9/7 起；最近一批在最下）
 
@@ -81,7 +82,7 @@
 
 **B. v0.1.2 剩余功能**：PDF 图纸页保图（27 页机械指导书实测触发）｜~~预览 1MB 截断~~ ✅ 已闭环（§8.1 批）
 
-**C. 发版**：~~v0.1.2~~ ✅ 已发布（`f5aed38`）｜~~v0.1.3~~ ✅ **已发布（2026-09-12，tag `v0.1.3` = `5683b05`）**：S4/S5 规范符合性闭环 + 收口批 + 两条新防线（组 T / 部署 smoke）；观察期 09-12 起 ≥3 天 → **09-15 复盘**
+**C. 发版**：~~v0.1.2~~ ✅ 已发布（`f5aed38`）｜~~v0.1.3~~ ✅ **已发布（2026-09-12，tag `v0.1.3` = `d6929e6`；原记 `5683b05` 系误，2026-09-14 实测勘误）**：S4/S5 规范符合性闭环 + 收口批 + 两条新防线（组 T / 部署 smoke）；观察期 09-12 起 ≥3 天 → **09-15 复盘**
 
 **D. 毕设线（另一条线，非本线）**：视觉检测方向（YOLO26，老师已确认「可以」）；构想 v2 / 环境清单未产出，用户未催
 
@@ -103,6 +104,7 @@
 |---|---|
 | git log | `git --no-pager log --oneline -N`（PowerShell 下分页器报 `'nutc': unknown terminal type.`） |
 | git 其它命令 | **不加管道/重定向**：`git … \| Select-Object` / `2>&1` / `\| Out-String` → `Program 'git.exe' failed to run: Access is denied`（沙箱禁命名管道，**命令根本没执行**——易误判为 commit 失败）；`-c safe.directory='*'` 在 pwsh 下引号被吞 → 用同进程三件套 `$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*`（§8.1 批实测固化） |
+| git 网络命令（**Linux 侧**） | **必须加 `-c http.sslVerify=false`**：Steam++ 对 `github.com` 做 TLS 中间人（hosts 指向 `127.0.0.1` 反代），其根证书不在 WSL 信任库 → 裸 `git fetch/pull/push` 报 `server certificate verification failed. CAfile: none CRLfile: none`（2026-09-14 实测）；加该参数后 `ls-remote`/`fetch` 实测通。同理 Chromium 需 `--ignore-certificate-errors`（见全局 AGENTS.md「本机浏览器」节） |
 | 提交身份 | **本环境无全局身份**（`.git/config` 无 `[user]`；裸 `git commit` 报 `Author identity unknown` → `fatal: empty ident name`）——一律 `-c user.name=sakuraqqq -c user.email=sakuraqqq@users.noreply.github.com` **局部覆盖**（noreply，防邮箱泄露） |
 | build / test | **用户终端**跑（沙箱禁 esbuild spawn / node --test / 浏览器 spawn）；经用户批准的一次性升权可在会话内实跑（§8.1 批已实证：`npm run build` + `npm test` 145/145） |
 | 发布动作 | `git push` / `tag` / `gh release` **用户执行**（AI 只到 dry-run） |
@@ -134,3 +136,37 @@
 7. **S5 后续加固（t13 的 3 条 low）**：注释/CDATA 内未闭合 dstrike 跨边界配对（自 S5 既有）、非法嵌套内层漏改、畸形输入配对分支 O(n²)
 8. **第八轮未修观察（非阻塞，全 low）**：`&#xD800;`/`&#0;` 按码点直出（建议后续映射 U+FFFD）· 1904 下 serial 2958465 → 10004 年（输入越界）· 行内 code 含换行保留原换行（CommonMark 合法）；另 §3.2 cjk `%` 半合并待拍板
 6. 毕设线待用户开口（视觉构想 v2 + YOLO26 环境清单）
+
+---
+
+## 9. Linux 侧工作区现状（2026-09-14 实测落盘）
+
+> 本机：WSL2 Ubuntu-24.04 · 工作区 `~/dsh-workspace/doc2md`（与 Windows 侧**同一仓库**的另一检出）。
+> 本节只记**仓库级事实**（tag / 远端 / 产物）+ **本检出的环境事实**；随下次 Linux 侧会话更新。
+
+| 项 | 实测值 |
+|---|---|
+| 检出方式 | **浅克隆**（`.git/shallow` 存在，depth=1）→ 2026-09-14 已 `fetch --unshallow --tags` **恢复完整历史（228 提交）** |
+| 本地 HEAD | 领先 1 个提交（主题 `chore: .gitignore 补本机环境 + HANDOFF tag SHA 勘误与 Linux 侧实测现状`；**SHA 随 rebase/amend 变化，故不硬编码**）；与 `origin/main`（`f7caa21`）**分叉**——共同祖先 `f6c84b2` |
+| tag（4 个，均 lightweight） | `v0.1.0`=`1636027` · `v0.1.1`=`3265b0c` · `v0.1.2`=`f5aed38` · **`v0.1.3`=`d6929e6`** |
+| 产物 | `index.html` **113,561 B** / SHA256 前缀 `22CB96C2…` —— 与第八轮产物记录**一致** ✅ |
+| 依赖 | `node_modules` 就绪（eslint / jscpd / prettier / playwright / tsc） |
+| 本机环境文件 | `.env.sh`（免 root 方案：假 HOME + 解包系统库 + 全局 Playwright 缓存）——**已 gitignore** |
+
+**2026-09-14 三处修正（均由实测驱动，非推断）**：
+
+1. **tag SHA 勘误** —— `v0.1.3` 实为 `d6929e6`（原记 `5683b05` 有误；详见文首勘误块）。
+2. **`.gitignore` 补 6 条** —— `.env.sh` / `.env.sh.bak-*` / `.home/` / `.debs/` / `.venv-markitdown/` / `_cmp/`。修前逐项 `check-ignore` **均为 TRACKABLE**，一次 `git add -A` 会推入约 **515MB**（其中 `.env.sh` 含本机绝对路径），违反全局红线 #11；修后逐项 **`IGNORED`**、`git status` 仅剩预期改动。
+3. **`.env.sh` Playwright 路径修复** —— 原值 `$D2M_ROOT/.pw-browsers` 是自 `trial/doc2md` 复制来的**空壳**（仅剩 `.links`），实测 `chromium.executablePath()` → **`exists = false`**；改为 `${HOME}/.cache/ms-playwright`（真实全局缓存；`$HOME` 在 source 时展开 = 真实 HOME）后实测 **`exists = true`**。
+
+**隐私 / 许可复查（发布前强制审查，2026-09-14）**：
+
+- 跟踪文件全量 grep：**零真实命中** —— 命中项均为 `actions/checkout@v4` 类 `@` 误报、noreply 提交身份（合规）、二进制压缩噪声。
+- `assets/screenshot.png`（50,935 B）经**读图人工核验**：为脱敏演示界面（「项目季度报告（样例）」「关键令牌：DOC2MD-DOCX-OK-2026」），**无本机路径 / 用户名 / 邮箱**；PNG 仅含 `IHDR`/`IDAT`，无 `tEXt` 元数据块。
+- 提交身份：`sakuraqqq <sakuraqqq@users.noreply.github.com>` ✅ noreply 合规。
+- **结论：通过**（本次仅本地改动，未发布任何内容）。
+
+**遗留（未处理，待拍板）**：
+
+- `.pw-browsers/`（12 KB，已 gitignore）为废弃残留，可删；
+- **本地与远端已分叉**（共同祖先 `f6c84b2`，各领先 1；本地 = 主题 `chore: .gitignore 补本机环境…` 的提交，远端 = `f7caa21`）：首次 `git pull` 因**漏加 `-c http.sslVerify=false`** 失败（`server certificate verification failed. CAfile: none`），其后的 `add` / `commit` 均已成功。两边改动文件**零交集**（本地 = `.gitignore` + 本文件；远端 = `docs/spec-conformance-tests.md` 等 3 个）→ **rebase 无冲突**，命令：`git -c safe.directory='*' -c http.sslVerify=false pull --rebase`，随后 `git -c safe.directory='*' -c http.sslVerify=false push`。（另：`--ff-only` 在分叉后必然失败，勿再用；本机 git 网络命令一律带 `sslVerify=false`，见 §5。**push 另有一关**：本沙箱为**非交互**环境，`push --dry-run` 实测报 `fatal: could not read Username for 'https://github.com'` —— 证书与认证是两个独立的坑，**push 必须在用户终端执行**，与 §5「发布动作」一致。）
