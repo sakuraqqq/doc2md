@@ -37,3 +37,5 @@
 
 - 转换器按插件/包分层：pdf/docx/xlsx 各有独立 converter 类，支持插件机制与可选依赖（`markitdown[pdf,docx,pptx]`）。
 - 组织上：核心 + 可选依赖 + 3rd-party 插件；doc2md v1 用「单文件内联 + 注册表 registry」更轻，符合单文件离线红线。
+
+> **输出质量实测（2026-09-13）**：功能覆盖面之外，同批样例的**输出质量**对比另见 `docs/doc2md-vs-markitdown-对比报告-2026-09-13.md`（docx 表头语义 / xlsx 值保真 / 图片 OCR 三项我方占优；速度上游占优，因无浏览器开销）。

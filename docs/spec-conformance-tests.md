@@ -78,6 +78,33 @@
 - **§1.2 OOXML 1904 日期系统**：只按 1900 系统换算 → `date1904` 工作簿静默错 1462 天。修：`workbookPr date1904` 按 xsd:boolean 判定（`1/true` → 1904 基准；`0/false/缺省` → 1900），`t="d"` ISO 路径不动。组 G7 g7-1..g7-5。
 - **§3.1 科学计数法**：`<v>1.5E2</v>` 不匹配原数字判定 → 日期样式不换算。修：数字判定含科学计数法（无歧义 alternation，过 sonarjs 超线性检查）。组 G7 g7-8。
 - **行为/告警类（非规范）**：§1.4 无文本语义元素（`svg/canvas/object/iframe/embed/audio/video/select/option/textarea/button`）不再行内平铺进正文（**`label` 保留**）；§1.5 `ctx` 透传修复 li（含嵌套 li）内表格合并告警丢失。组 K2 k2-8..k2-21。
+### 2.7 独立复跑（跨平台验证，2026-09-13 · WSL2 Ubuntu 24.04）
+
+**目的**：按「换环境独立验收」口径，把**同一提交**搬到另一操作系统 + 另一浏览器内核上复跑全套契约，验证「全绿」不是本机环境产物。
+
+- **基线**：`f6c84b2`（与 Windows 侧同一提交）；受版本控制文件**零改动**（`git status` 干净，仅未跟踪的 `node_modules`）。**未跑 `npm run build`**——直接验已提交的 `index.html`，避免改产物污染证据。
+- **环境（无 root / 无系统浏览器）**：WSL2 Ubuntu 24.04；缺 `libnss3`/`libnspr4`/`libasound2` → `apt-get download` + `dpkg-deb -x` 解到工作区 + `LD_LIBRARY_PATH`；`HOME` 与 `npm_config_cache` 指到工作区；Playwright Chromium **151.0.7922.34** 装到工作区。
+- **结果**（`npm test` → `node --test`）：
+
+  ```
+  ℹ tests 209   ℹ pass 207   ℹ fail 0   ℹ skipped 2   ℹ cancelled 0   ℹ duration_ms 23559
+  ```
+
+- **与 Windows 侧 212 的口径说明（差 3 ≠ 差异失败）**：Windows 侧同提交为 **212/212**（含 `real-cid-paper.pdf` 跑通的 C2 组）。差 3 的来源是 **C2 组被 skip 时组内 3 个子测试不注册**：C2 组体（`tests/contract_v1.test.mjs:410`）内嵌 `c1`/`c2`/`c3` 三个子测试（446 / 452 / 462 行），`{ skip: CID_PAPER_SKIP }` 生效时它们根本不会创建。该样例（第三方论文）依 **2026-09-10 用户拍板不入库**：Windows 侧它在本机 `.私档/` → C2 展开为 1+3=4 项；Linux 侧无此文件 → 塌为 1 项 skip。B5 组无子测试，两侧均计 1 项 → **212 − 3 = 209**，等价于全绿（`fail 0`）。
+- **跨平台佐证**：
+  - **契约组 M（手机视口 390×844）** 在真 Linux Chromium 上通过（`isMobile + hasTouch` 上下文）。
+  - **DD-12 根因得证**：`input[type=file]` 的实现是「隐藏 input + 可见按钮触发」→ `waitFor visible` 必然超时；改 `attached` 是正确修正（跨平台复现同一边界）。
+  - S2/S3/S4/S5 四组规范符合性用例、K2/G7（第八轮）、L/N/O/P/Q/R 全绿；console error 0。
+- **复现（占位符化，路径随环境替换）**：
+
+  ```bash
+  cd <工作区>/trial
+  export HOME=$PWD/.home npm_config_cache=$PWD/.npm-cache
+  export PLAYWRIGHT_BROWSERS_PATH=$PWD/.pw-browsers
+  export LD_LIBRARY_PATH=$PWD/debs/root/usr/lib/x86_64-linux-gnu
+  cd doc2md && npm test
+  ```
+
 ## 3. 待拍板点（首轮）
 
 1. **删除线范围（S2 已修，剩 CSS 分支）**：`<s>/<del>/<strike>` → `~~` 已实现（`1a6c581`）。CSS `text-decoration: line-through` 是否一起支持（HTML 输入常见，约 +5 行解析）——**仍待拍板**。
@@ -132,3 +159,4 @@ h('<table><tr><td colspan="2">wide</td><td>c</td></tr></table>');  // 修前 | w
 - 2026-09-11 S4 闭环：新增 §2.3 修复记录；S4 判定 ⚠️→✅（口径 A 全篇判定）；§3 拍板点 4 转「已定案」；§4 补复现片段。
 - 2026-09-11 S5 闭环：新增 §2.4 修复记录；S5 判定 ⏸→✅（docx 预处理归一 + `w:val` 关闭值边界 + 零改写快路径）；§3 拍板点 5 转「已定案并实现」。
 - 2026-09-11/12 S4+S5 收口批：新增 §2.5；S4-5..S4-7 / S5-4 / S5-5 五条断言先红（26/21/5）后绿（**179/179**）；口径 A′ 落地（结构判据门）与 S5 单正则交替加固；产物 `f54d7a6`（112,194 B / `23460575…8C8`）；§3 新增已知边界 6/7。
+- 2026-09-13 跨平台独立复跑：新增 §2.7（WSL2 Ubuntu 24.04，无 root + 真 Chromium）：`tests 209 / pass 207 / fail 0 / skipped 2`，与 Windows 侧 212 的差 3 = C2 组被 skip 时其 3 个子测试不注册（口径说明已写入 §2.7）；DD-12 根因跨平台得证。
