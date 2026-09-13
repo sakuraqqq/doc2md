@@ -147,7 +147,7 @@
 | 项 | 实测值 |
 |---|---|
 | 检出方式 | **浅克隆**（`.git/shallow` 存在，depth=1）→ 2026-09-14 已 `fetch --unshallow --tags` **恢复完整历史（228 提交）** |
-| 本地 HEAD | 领先 1 个提交（主题 `chore: .gitignore 补本机环境 + HANDOFF tag SHA 勘误与 Linux 侧实测现状`；**SHA 随 rebase/amend 变化，故不硬编码**）；与 `origin/main`（`f7caa21`）**分叉**——共同祖先 `f6c84b2` |
+| 本地 HEAD | **与 `origin/main` 完全同步、工作区干净**（快照值 `efed461`，2026-09-14 收口；随远端前进会变） |
 | tag（4 个，均 lightweight） | `v0.1.0`=`1636027` · `v0.1.1`=`3265b0c` · `v0.1.2`=`f5aed38` · **`v0.1.3`=`d6929e6`** |
 | 产物 | `index.html` **113,561 B** / SHA256 前缀 `22CB96C2…` —— 与第八轮产物记录**一致** ✅ |
 | 依赖 | `node_modules` 就绪（eslint / jscpd / prettier / playwright / tsc） |
@@ -166,7 +166,18 @@
 - 提交身份：`sakuraqqq <sakuraqqq@users.noreply.github.com>` ✅ noreply 合规。
 - **结论：通过**（本次仅本地改动，未发布任何内容）。
 
+**2026-09-14 收口：分叉已消除** ✅
+
+本检出一度与远端分叉（共同祖先 `f6c84b2`：本地 = `.gitignore` + 本文件改动，远端 = `f7caa21`）。收口走了三步：
+
+1. 本地改动导出为**单提交 patch**，在真实基线 `f7caa21` 上**预演 `git am` 通过**（零冲突；应用后两个文件与本地版本**逐字节一致**）；
+2. patch 交付至 `.私档/linux/`，由 Windows 侧应用并 push —— 落库提交 `45b2bec`，并由其把散落在 `docs/DEV-NOTES.md` / `docs/RELEASE.md` / 第八轮审查报告里的**同一处 tag 勘误一并同步**（本侧 patch 只覆盖了 HANDOFF）；
+3. 本侧 `git fetch && git reset --hard origin/main` → **分叉消除**（HEAD = `origin/main`，工作区干净）。
+
+**Linux 侧定位（策略，2026-09-14 用户拍板）**：**只读不推** —— 产出与交接一律落 `.私档/linux/`（见该目录 `_约定.md`），push 统一由 Windows 侧执行。
+
+> ⚠️ 两个独立的坑，别混：**证书**（Steam++ TLS 中间人 → 本机 git 网络命令一律带 `-c http.sslVerify=false`，见 §5）；**认证**（本沙箱为**非交互**环境，`push --dry-run` 实测报 `fatal: could not read Username for 'https://github.com'`）→ 后者决定了 **push 只能在用户终端执行**。
+
 **遗留（未处理，待拍板）**：
 
-- `.pw-browsers/`（12 KB，已 gitignore）为废弃残留，可删；
-- **本地与远端已分叉**（共同祖先 `f6c84b2`，各领先 1；本地 = 主题 `chore: .gitignore 补本机环境…` 的提交，远端 = `f7caa21`）：首次 `git pull` 因**漏加 `-c http.sslVerify=false`** 失败（`server certificate verification failed. CAfile: none`），其后的 `add` / `commit` 均已成功。两边改动文件**零交集**（本地 = `.gitignore` + 本文件；远端 = `docs/spec-conformance-tests.md` 等 3 个）→ **rebase 无冲突**，命令：`git -c safe.directory='*' -c http.sslVerify=false pull --rebase`，随后 `git -c safe.directory='*' -c http.sslVerify=false push`。（另：`--ff-only` 在分叉后必然失败，勿再用；本机 git 网络命令一律带 `sslVerify=false`，见 §5。**push 另有一关**：本沙箱为**非交互**环境，`push --dry-run` 实测报 `fatal: could not read Username for 'https://github.com'` —— 证书与认证是两个独立的坑，**push 必须在用户终端执行**，与 §5「发布动作」一致。）
+- `.pw-browsers/`（12 KB，已 gitignore）为自 `trial/doc2md` 复制来的废弃残留（真浏览器已在 `~/.cache/ms-playwright`），**可删**。
