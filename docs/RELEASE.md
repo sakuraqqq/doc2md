@@ -123,7 +123,7 @@
 
 ## v0.1.4 · 2026-09-14（发布准备批）
 
-- **来源**：提交链 = 提交 A `dd960b1`（A1–A4）→ 提交 B `fc6cfa8`（B1–C1 + T3 两项）→ 提交 C `4344293`（F1 文档级等宽判据 + U8 回归守护）→ 提交 D `d82611a`（HANDOFF 回灌）→ 提交 E `1e2377d`（版本 bump + 产物重建）→ **本提交（v0.1.4 发布记录，tag 拟指向此处 —— 即发布准备批的最后一笔，与 v0.1.3 的 `d6929e6` 同惯例）**
+- **来源**：提交链 = 提交 A `dd960b1`（A1–A4）→ 提交 B `fc6cfa8`（B1–C1 + T3 两项）→ 提交 C `4344293`（F1 文档级等宽判据 + U8 回归守护）→ 提交 D `d82611a`（HANDOFF 回灌）→ 提交 E `1e2377d`（版本 bump + 产物重建）→ 提交 F `cfb20b7`（v0.1.4 发布记录）—— **tag `v0.1.4` = `cfb20b76374fba384aa37e7c3edc0f9f92a31187`**（2026-09-14 本机 `git show-ref --tags` 实测回读，指向提交 F；lightweight tag，与历史 4 个 tag 同型）
 - **测试结果**（2026-09-14 本会话升权实跑；Windows / Node 24.18.1 + 系统 Edge 回退）：
   - 契约：`node --test tests/contract_v1.test.mjs` → **232 tests / 230 pass / 0 fail / 2 skip（53.3s）**；skip = `real-cid-paper`（第三方样例不入库）；本版新增契约组 **U**（U-0 字节锁 + U1–U8）与 **组 V**（V0–V6，13 项）
   - PWA：`node tests/pwa-audit.mjs` → **48/48**
@@ -136,8 +136,8 @@
   | index.html | 118,244 B | 62B8ADA17028747829C92E5F5BA366331297CBF7CC6385D8C10F75CD79D2786D |
   | manifest.json | 730 B | D5B46A975B60640318252A39D4C83D2766A62E9A3E907E182945C7C89B858E98 |
   | sw.js | 4,253 B | FAF9771E1009CD83721116E6AD0D61BB15D644FE061B271D3183B04C312C3F85 |
-- **发布动作**（用户终端执行）：`git push origin main`（至 `1e2377d`）→ `git tag v0.1.4` → `git push origin v0.1.4`（**先 commit 后 tag、禁 `--tags`**）；GitHub Release 与 Pages 部署由用户执行
-- **观察期**：开始 2026-09-14 → 复盘 ≥3 天后；反馈汇总：<待填>
+- **发布动作**（**2026-09-14 已由用户在终端执行完成**）：`git push origin main`（至 `cfb20b7`）→ `git tag v0.1.4` → `git push origin v0.1.4` → GitHub Release 已发布；Pages 部署由 push 自动触发。**实测回读**：`origin/main` = `cfb20b7`、本地 HEAD = `cfb20b7`、待推送 0、工作树 clean
+- **观察期**：开始 **2026-09-14**（发布日）→ 复盘 **≥2026-09-17**（满 3×24h）；反馈汇总：<待填>
 - **备注**：
   - 本版 = 真机 7 篇 Chromium 打印 PDF 暴露的四类**静默错**修复 + 嗅探/编码/docx 四项加固 + 文档级等宽判据（F1）：
     - **提交 A**：A1 翻转 Tm 行序（按 Tm 的 d 符号统一屏幕方向）· A2 补 `TL`(36)（leading 存规范值 + `nextLine` 随 d 定向）· A3 等宽代码围栏 · A4 同位置叠印去重；**支撑性修复**：`Td/TD/T*` 平移的是**行矩阵**而非当前笔位（A4 判据成立的前提）
