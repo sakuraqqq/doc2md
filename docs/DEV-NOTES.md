@@ -967,6 +967,40 @@ P1 五项（GBK/截断/corePath/逐页 OCR/图片+公式）此前全部落在「
 
 **结论**：① **原生命令只在 statement 级直接输出**（纪律不变；PS7 下从「静默空值」升级为**明确报错**，可诊断性更好）；② 需要取值时两条正解 —— **(a) 让命令自身打印，在 `run_code` 的 TS 层解析 stdout**（首选，本会话一直这么用）；**(b) `Start-Process -RedirectStandardOutput` 落文件后回读**（pwsh 内唯一可行）；③ `git --output=<file>` 对 `rev-parse` 无效（该参数属 log/diff 族），别指望。
 
+---
+
+## 2026-09-14 事故：手机端 Git 同步工具清零二进制（远端 main 被污染 → revert 恢复）
+
+**现象**：远端 `main` 多出一条提交 `567ff2f`（主题 `Last Sync: 2026-09-14 17:17 (Mobile)`），**全部内容 = 删除 6 个二进制文件**：`icons/icon-180.png` / `icon-192.png` / `icon-512.png` / `icon-512-maskable.png` + `tests/data/sample.png` + `tests/lib/assets/sample-image.png`。本机 push 被拒：`! [rejected] main -> main (fetch first)`。
+
+**根因**：手机端 Git 同步类应用（gitsync）**不搬运二进制内容** → 它生成的「同步」提交把二进制写成 0 字节/删除。
+
+**处置**（Windows 侧本地完成，push 由用户终端执行）：
+
+```
+git merge --ff-only origin/main      # 快进到 567ff2f
+git revert --no-edit 567ff2f         # 生成 faceb9f：6 个文件全部恢复
+# 用户终端：git push origin main     # 快进推送，无需 force
+```
+
+**核验（三证）**：
+
+| 项 | 结果 |
+|---|---|
+| `git diff --stat 0b7b309 HEAD` | **空输出、退出码 0** → 全树与坏提交之前完全一致 |
+| 6 个文件 blob | 逐一相同（如 `icon-192.png` = `cd88610b…`、`sample.png` = `5aec84b7…`） |
+| CI 反应 | `567ff2f` = `tests` + `deploy-pages` **双 failure**（护栏按设计拦住 → **线上站点未被破坏**，实测 `icons/icon-192.png` 仍返回真图）；`faceb9f` = 双 **success** |
+
+**防再犯**：
+
+1. **手机端同步工具只读拉取，禁止向本仓库推送**；推送一律经桌面终端（与「发布动作人执」同源）。
+2. 现有两道护栏（契约组 B 字节锁 + 部署白名单 smoke）**已验证能拦住部署**，但覆盖是点状的（只锁已断言的样例与部署引用）；若日后新增二进制资产（字体/图片/wasm），建议加 `tools/binary-guard.mjs`：扫描全部**已跟踪的二进制**，任何 0 字节或缺失即 exit 1。
+
+**通用教训**：远端出现未知提交时，**先 fetch 看 diff 再决定整合方式**；直接 `git pull` 会把对方的删除一并合并进来（本例若直接 pull，那 6 个文件会**保持删除状态**，而不是恢复）。
+
+**另一个沙箱坑（同批实测）**：`git fetch` 在沙箱内被拒 —— `error: cannot create standard input pipe for remote-https: Permission denied`（与「禁命名管道」同源）；按纪律升权一次后 fetch 正常。fetch 前记得 `-c http.sslVerify=false` 绕 Steam++ TLS 中间人。
+
+
 
 
 
