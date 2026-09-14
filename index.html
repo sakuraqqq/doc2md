@@ -1855,8 +1855,7 @@ ${xlsxRowsToMd(kept)}`);
   var MONO_MAX_WIDTH = 700;
   var MONO_MIN_LETTERS = 1;
   var CODE_MIN_ASCII = 1;
-  function monospaceFontIds(runs) {
-    const kinds = /* @__PURE__ */ new Map();
+  function addFontStats(kinds, runs) {
     for (const r of runs) {
       if (r.gw.length === 0) continue;
       let rec = kinds.get(r.fontId);
@@ -1867,12 +1866,18 @@ ${xlsxRowsToMd(kept)}`);
       for (const w of r.gw) rec.widths.add(w);
       rec.letters += r.letters;
     }
+    return kinds;
+  }
+  function monospaceFontsOf(kinds) {
     const mono = /* @__PURE__ */ new Set();
     for (const [id, rec] of kinds) {
       const w = rec.widths.size === 1 ? [...rec.widths][0] : 0;
       if (w > 0 && w <= MONO_MAX_WIDTH && rec.letters >= MONO_MIN_LETTERS) mono.add(id);
     }
     return mono;
+  }
+  function monospaceFontIds(runs) {
+    return monospaceFontsOf(addFontStats(/* @__PURE__ */ new Map(), runs));
   }
   function isCodeLine(line, monoFonts) {
     let ascii = 0;
@@ -1883,8 +1888,7 @@ ${xlsxRowsToMd(kept)}`);
     }
     return ascii >= CODE_MIN_ASCII;
   }
-  function pageLineObjects(runs) {
-    const monoFonts = monospaceFontIds(runs);
+  function pageLineObjects(runs, monoFonts) {
     return groupRunsIntoLines(runs).map((line) => ({ text: lineText(line), code: isCodeLine(line, monoFonts) }));
   }
   function linesToMarkdown(lines) {
@@ -1904,9 +1908,9 @@ ${xlsxRowsToMd(kept)}`);
     if (fenced) out.push("```");
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
-  function runsToPageText(runs) {
+  function runsToPageText(runs, monoFonts) {
     if (runs.length === 0) return "";
-    return linesToMarkdown(pageLineObjects(runs));
+    return linesToMarkdown(pageLineObjects(runs, monoFonts ?? monospaceFontIds(runs)));
   }
   var PDF_GARBAGE_RE = [/\p{Cs}/u, /\p{Co}/u, /\p{Cc}/u, /\uFFFD/u];
   function isPdfGarbageCode(ch) {
@@ -1938,9 +1942,20 @@ ${xlsxRowsToMd(kept)}`);
     if (line !== "") lines.push(line);
     return lines.join("\n").trim();
   }
-  async function pageText(page) {
+  async function documentMonospaceFonts(doc, pageCount) {
+    const kinds = /* @__PURE__ */ new Map();
+    for (let i = 1; i <= pageCount; i++) {
+      const page = await doc.getPage(i);
+      try {
+        addFontStats(kinds, await pdfPageRuns(page));
+      } catch {
+      }
+    }
+    return monospaceFontsOf(kinds);
+  }
+  async function pageText(page, monoFonts) {
     try {
-      return runsToPageText(await pdfPageRuns(page));
+      return runsToPageText(await pdfPageRuns(page), monoFonts);
     } catch {
       return textContentFallback(page);
     }
@@ -1963,8 +1978,8 @@ ${xlsxRowsToMd(kept)}`);
     warnings.push(`\u7B2C ${idx} \u9875\u65E0\u6587\u672C\u5C42\u4E14 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u8DF3\u8FC7\u8BE5\u9875`);
     return null;
   }
-  async function collectPage(page, idx, pageCount, pages, warnings) {
-    const text = await pageText(page);
+  async function collectPage(page, idx, pageCount, pages, warnings, monoFonts) {
+    const text = await pageText(page, monoFonts);
     if (!needsOcr(text)) {
       pages.push({ idx, text });
       setStatus(`\u8F6C\u6362\u4E2D\uFF1A\u7B2C ${idx}/${pageCount} \u9875`);
@@ -1989,10 +2004,11 @@ ${xlsxRowsToMd(kept)}`);
     const warnings = [];
     let ocrCount = 0;
     try {
+      const monoFonts = await documentMonospaceFonts(doc, pageCount);
       for (let i = 1; i <= pageCount; i++) {
         const page = await doc.getPage(i);
         try {
-          if (await collectPage(page, i, pageCount, pages, warnings)) ocrCount++;
+          if (await collectPage(page, i, pageCount, pages, warnings, monoFonts)) ocrCount++;
         } finally {
           page.cleanup();
         }

@@ -7,6 +7,10 @@
  *  - A3/A4（v0.1.4 批 2，2026-09-14）：等宽代码行合并为 ``` 围栏块（`#` 注释不裸露为标题）；
  *    同一行内同位置重复绘制的 run 只留一份。依据：真实 Chromium 打印 PDF 实测（代码字体 glyph
  *    宽度种类 = 1 @549.8/1000；页脚同一位置同文本重复 4 份，每页 168–252 对）。
+ *  - F1（v0.1.4 提交 C，2026-09-14）：A3 的等宽字体统计由「按页」提升为「**全篇**」（两遍：第一遍
+ *    只统计不产文本且不 cleanup，第二遍产文本、逐页 cleanup 命中算子列表缓存）。成因：注释专用
+ *    字体子集在某些页 letters = 0 被 MONO_MIN_LETTERS 挡掉 → 该页 `# 注释` 判不出代码行 → 围栏断开、
+ *    注释裸露成 H1（真实 7 篇实测 40 条 / 严口径 13 条，归因 letters=0 40 例、宽度/variety 0 例）。
  */
 import BLINE from './bline.js';
 import { collapseCjkSpaces } from './cjk.js';
@@ -221,14 +225,14 @@ const MONO_MIN_LETTERS = 1;
 const CODE_MIN_ASCII = 1;
 
 /** A3：等宽字体判据（纯数据——只用 showText 的 glyph width/unicode，不依赖字体对象 API）。
- * 逐 fontId 汇总该字体全部 glyph 宽度，三条件同时成立才算等宽：
+ * 逐 fontId 汇总该字体全部 glyph 宽度（F1 修复后 = **全篇**累计，见 documentMonospaceFonts），
+ * 三条件同时成立才算等宽：
  *  ① 【宽度种类 = 1】②【0 < 宽度 ≤ 700/1000 em】（上界排除 CJK 全宽 1000，下界排除零宽退化）
  *  ③【该字体样本里的 ASCII 字母数 ≥ MONO_MIN_LETTERS】——宽度一致性只有在「比例字体里宽度会分化的
  *     字符」上才有证据力：数字/标点在几乎所有字体里都是等宽（tabular），纯数字子集会被 ①② 误判。
  * 实测正例：Courier 600/1000（104 glyph、38 种字符、79 字母）、真实 Jupyter 代码字体 549.8/1000
  * （1064 glyph、64 种字符、760 字母）。 */
-function monospaceFontIds(runs) {
-  const kinds = new Map(); // fontId → { widths: Set(glyph 宽度), letters: ASCII 字母数 }
+function addFontStats(kinds, runs) {
   for (const r of runs) {
     if (r.gw.length === 0) continue;
     let rec = kinds.get(r.fontId);
@@ -239,12 +243,23 @@ function monospaceFontIds(runs) {
     for (const w of r.gw) rec.widths.add(w);
     rec.letters += r.letters;
   }
+  return kinds;
+}
+
+/** 统计表 → 等宽 fontId 集合（判据自批 2 起一字未改：宽度种类 = 1 且 0 < w ≤ 700/1000 em 且
+ * letters ≥ MONO_MIN_LETTERS。F1 修复只改**统计范围**——按页 → 全篇，判据与阈值不动） */
+function monospaceFontsOf(kinds) {
   const mono = new Set();
   for (const [id, rec] of kinds) {
     const w = rec.widths.size === 1 ? [...rec.widths][0] : 0;
     if (w > 0 && w <= MONO_MAX_WIDTH && rec.letters >= MONO_MIN_LETTERS) mono.add(id);
   }
   return mono;
+}
+
+/** 本页 runs → 等宽 fontId 集合（兼容/兜底路径：调用方未提供全篇统计时使用，行为同批 2 的按页口径） */
+function monospaceFontIds(runs) {
+  return monospaceFontsOf(addFontStats(new Map(), runs));
 }
 
 /** A3：代码行 ⟺ 该行含可见 ASCII glyph（数 ≥ CODE_MIN_ASCII）且**全部**来自等宽 fontId；
@@ -259,9 +274,9 @@ function isCodeLine(line, monoFonts) {
   return ascii >= CODE_MIN_ASCII;
 }
 
-/** 行对象（A3）：{ text, code }——行序与文本走同一条基线（groupRunsIntoLines + lineText） */
-function pageLineObjects(runs) {
-  const monoFonts = monospaceFontIds(runs);
+/** 行对象（A3）：{ text, code }——行序与文本走同一条基线（groupRunsIntoLines + lineText）。
+ * monoFonts 由调用方传入（F1：全篇统计），不再在本函数内按页统计。 */
+function pageLineObjects(runs, monoFonts) {
   return groupRunsIntoLines(runs).map((line) => ({ text: lineText(line), code: isCodeLine(line, monoFonts) }));
 }
 
@@ -285,10 +300,12 @@ function linesToMarkdown(lines) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/** runs → 行文本（按 y 分组，组内按 x 排序；组间以换行分隔；A3 围栏/A4 去重见上） */
-function runsToPageText(runs) {
+/** runs → 行文本（按 y 分组，组内按 x 排序；组间以换行分隔；A3 围栏/A4 去重见上）。
+ * monoFonts = 全篇等宽字体集合（F1：由调用方按全篇累计后传入）；未传则回退**本页**统计
+ *（兼容路径——离线台/直接调用方沿用批 2 的按页口径，产品路径恒传全篇集合）。 */
+function runsToPageText(runs, monoFonts) {
   if (runs.length === 0) return '';
-  return linesToMarkdown(pageLineObjects(runs));
+  return linesToMarkdown(pageLineObjects(runs, monoFonts ?? monospaceFontIds(runs)));
 }
 
 /** 有效文本比例（CID 质量门槛，t27；t8 判类方向锁定**黑名单**——2026-09-08 captain 口径补充；
@@ -329,10 +346,29 @@ async function textContentFallback(page) {
   return lines.join('\n').trim();
 }
 
+/** A3 全篇等宽字体统计（F1 修复，2026-09-14）：第一遍**只统计不产文本**，得到文档级 monoFonts。
+ * 按页统计时，注释专用字体子集在某些页 letters = 0 会被 MONO_MIN_LETTERS 挡掉 → 该页 `# 注释`
+ * 判不出代码行 → 围栏断开、注释以 H1 形态裸露（真实 7 篇实测 40 条/严口径 13 条，成因全是 letters=0）。
+ * 注：本遍**不** page.cleanup()——PDFPageProxy 把算子列表缓存在 _intentStates，第二遍
+ * getOperatorList() 命中缓存（实测见报告），避免算子列表重复求值的 CPU 翻倍；逐页只累加
+ * 「fontId → 宽度集合/字母数」（不保留 run 对象）；单页异常跳过统计，该页仍走第二遍的兜底路径。 */
+async function documentMonospaceFonts(doc, pageCount) {
+  const kinds = new Map();
+  for (let i = 1; i <= pageCount; i++) {
+    const page = await doc.getPage(i);
+    try {
+      addFontStats(kinds, await pdfPageRuns(page));
+    } catch {
+      /* 单页算子异常：不影响其余页统计（该页文本在第二遍由 pageText 回退 getTextContent） */
+    }
+  }
+  return monospaceFontsOf(kinds);
+}
+
 /** 单页文本层：首选 operator list 重建（保留 run 边界 → 字间距空格修复，复审 §1.2），异常回退 getTextContent */
-async function pageText(page) {
+async function pageText(page, monoFonts) {
   try {
-    return runsToPageText(await pdfPageRuns(page));
+    return runsToPageText(await pdfPageRuns(page), monoFonts);
   } catch {
     return textContentFallback(page);
   }
@@ -362,9 +398,9 @@ async function pageTextWithOcr(page, idx, pageCount, text, warnings) {
   return null;
 }
 
-/** 单页入库：文本层 → 质量门槛 → OCR 降级；返回本页是否走了 OCR */
-async function collectPage(page, idx, pageCount, pages, warnings) {
-  const text = await pageText(page);
+/** 单页入库：文本层 → 质量门槛 → OCR 降级；返回本页是否走了 OCR（monoFonts 透传自全篇统计） */
+async function collectPage(page, idx, pageCount, pages, warnings, monoFonts) {
+  const text = await pageText(page, monoFonts);
   if (!needsOcr(text)) {
     pages.push({ idx, text });
     setStatus(`转换中：第 ${idx}/${pageCount} 页`);
@@ -393,12 +429,14 @@ export async function pdfConvert(file, buf) {
   const warnings = [];
   let ocrCount = 0;
   try {
+    // F1（2026-09-14）：第一遍全篇统计等宽字体（不产文本、不 cleanup → 第二遍算子列表命中缓存）
+    const monoFonts = await documentMonospaceFonts(doc, pageCount);
     for (let i = 1; i <= pageCount; i++) {
       const page = await doc.getPage(i);
       try {
-        if (await collectPage(page, i, pageCount, pages, warnings)) ocrCount++;
+        if (await collectPage(page, i, pageCount, pages, warnings, monoFonts)) ocrCount++;
       } finally {
-        page.cleanup();
+        page.cleanup(); // 第二遍逐页释放（缓存已消费；_intentStates 在此清空）
       }
     }
   } finally {

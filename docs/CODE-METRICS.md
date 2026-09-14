@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-14T15:04:43.927Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-14T15:31:23.638Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：17；函数总数：346；超限函数数：0（圈 >10 或认知 >15）
-- 圈复杂度最高：10；认知复杂度最高：15
+- 度量文件数：17；函数总数：349；超限函数数：0（圈 >10 或认知 >15）
+- 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 346 个，超限 0 个。
+重构后当前：函数 349 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -25,7 +25,6 @@
 
 | 文件 | 函数 | 行 | 圈复杂度 | 认知复杂度 |
 |---|---|---|---|---|
-| src\pdf.js | monospaceFontIds | 230 | 10 | 15 |
 | src\xlsx.js | xlsxSelfParse | 485 | 10 | 13 |
 | tools\metrics.mjs | loadIgnoreFilter | 53 | 10 | 13 |
 | src\convert.js | convert | 56 | 10 | 10 |
@@ -48,8 +47,8 @@
 | src\html2md.js | blockifyContainer | 147 | 7 | 13 |
 | src\docx.js | ommlEnclosingPara | 136 | 7 | 8 |
 | src\xlsx.js | xlsxWorkbookMap | 117 | 7 | 8 |
-| src\pdf.js | addGlyph | 64 | 7 | 7 |
-| src\pdf.js | pdfConvert | 380 | 7 | 7 |
+| src\pdf.js | addGlyph | 68 | 7 | 7 |
+| src\pdf.js | pdfConvert | 416 | 7 | 7 |
 | src\html2md.js | linkFrag | 95 | 7 | 6 |
 | src\sniff.js | charsetLabelOf | 77 | 7 | 6 |
 | src\sniff.js | isBmp | 201 | 7 | 6 |
@@ -59,14 +58,15 @@
 | src\html2md.js | liToLines | 290 | 6 | 11 |
 | src\xlsx.js | parseSharedStrings | 278 | 6 | 11 |
 | src\html2md.js | blockChildToLines | 247 | 6 | 10 |
-| src\pdf.js | linesToMarkdown | 270 | 6 | 10 |
+| src\pdf.js | linesToMarkdown | 285 | 6 | 10 |
 | src\sniff.js | gb18030Fallback | 111 | 6 | 10 |
 | src\docx.js | docxParseForMd | 232 | 6 | 9 |
 | src\html2md.js | listElToMd | 221 | 6 | 9 |
 | src\ocr.js | getOcrWorker | 30 | 6 | 9 |
-| src\pdf.js | lineText | 198 | 6 | 8 |
-| src\pdf.js | textQualityRatio | 307 | 6 | 8 |
-| src\pdf.js | groupRunsIntoLines | 171 | 6 | 7 |
+| src\pdf.js | lineText | 202 | 6 | 8 |
+| src\pdf.js | textQualityRatio | 324 | 6 | 8 |
+| src\pdf.js | groupRunsIntoLines | 175 | 6 | 7 |
+| src\pdf.js | monospaceFontsOf | 251 | 6 | 7 |
 | src\docx.js | ommlMathEntry | 144 | 6 | 6 |
 | src\sniff.js | decodeText | 23 | 6 | 6 |
 | src\sniff.js | ctrlRatio | 240 | 6 | 6 |
@@ -81,9 +81,9 @@
 | src\docx.js | docxConvert | 295 | 6 | 5 |
 | src\html2md.js | codeFrag | 77 | 6 | 5 |
 | src\html2md.js | liTailToLines | 269 | 6 | 5 |
-| src\pdf.js | countAsciiGlyph | 55 | 6 | 5 |
-| src\pdf.js | isCjkChar | 144 | 6 | 5 |
-| src\pdf.js | needsSpace | 161 | 6 | 5 |
+| src\pdf.js | countAsciiGlyph | 59 | 6 | 5 |
+| src\pdf.js | isCjkChar | 148 | 6 | 5 |
+| src\pdf.js | needsSpace | 165 | 6 | 5 |
 | src\ui.js | buildActions | 167 | 6 | 5 |
 | src\xlsx.js | zipEntry | 58 | 6 | 5 |
 | src\xlsx.js | parseCellAt | 186 | 6 | 5 |
@@ -91,7 +91,8 @@
 | tools\gen-icons.mjs | sample | 28 | 6 | 5 |
 | tools\gen-icons.mjs | maskablePoint | 39 | 6 | 5 |
 | tools\metrics.mjs | fnName | 98 | 6 | 5 |
-| src\pdf.js | textContentFallback | 318 | 5 | 7 |
+| src\pdf.js | addFontStats | 235 | 5 | 8 |
+| src\pdf.js | textContentFallback | 335 | 5 | 7 |
 | src\sniff.js | charsetLabels | 62 | 5 | 7 |
 | src\xlsx.js | colIndexOfRef | 439 | 5 | 7 |
 | src\docx.js | docxMathFragment | 163 | 5 | 6 |
@@ -105,7 +106,7 @@
 | src\docx.js | docxAltFromName | 35 | 5 | 4 |
 | src\html2md.js | liChildToLines | 280 | 5 | 4 |
 | src\html2md.js | cellToMd | 343 | 5 | 4 |
-| src\pdf.js | asciiWordEdge | 150 | 5 | 4 |
+| src\pdf.js | asciiWordEdge | 154 | 5 | 4 |
 | src\sniff.js | decodeBom | 44 | 5 | 4 |
 | src\sniff.js | trimMetaValue | 91 | 5 | 4 |
 | src\sniff.js | isPdfHead | 219 | 5 | 4 |
@@ -116,7 +117,7 @@
 | src\xlsx.js | refLetterValue | 434 | 5 | 4 |
 | tools\metrics.mjs | nodeCogPoints | 154 | 5 | 4 |
 | src\xlsx.js | stripBracketed | 336 | 4 | 7 |
-| src\pdf.js | isCodeLine | 252 | 4 | 6 |
+| src\pdf.js | isCodeLine | 267 | 4 | 6 |
 | tools\gen-icons.mjs | (anonymous) | 114 | 4 | 6 |
 | src\xlsx.js | findTagStart | 173 | 4 | 5 |
 | tools\metrics.mjs | childNodes | 25 | 4 | 5 |
@@ -125,7 +126,7 @@
 | src\html2md.js | collectFrags | 38 | 4 | 4 |
 | src\html2md.js | (anonymous) | 39 | 4 | 4 |
 | src\ocr.js | (anonymous) | 37 | 4 | 4 |
-| src\pdf.js | pdfPageRuns | 132 | 4 | 4 |
+| src\pdf.js | pdfPageRuns | 136 | 4 | 4 |
 | src\sniff.js | startsWith | 11 | 4 | 4 |
 | src\xlsx.js | parseRelsMap | 96 | 4 | 4 |
 | src\xlsx.js | parseNumFmtCodes | 350 | 4 | 4 |
@@ -141,10 +142,10 @@
 | src\docx.js | (anonymous) | 288 | 4 | 3 |
 | src\html2md.js | pushMarkerLine | 237 | 4 | 3 |
 | src\html2md.js | spanOf | 337 | 4 | 3 |
-| src\pdf.js | ocrPageToText | 17 | 4 | 3 |
-| src\pdf.js | (anonymous) | 120 | 4 | 3 |
-| src\pdf.js | (anonymous) | 122 | 4 | 3 |
-| src\pdf.js | pageTextWithOcr | 347 | 4 | 3 |
+| src\pdf.js | ocrPageToText | 21 | 4 | 3 |
+| src\pdf.js | (anonymous) | 124 | 4 | 3 |
+| src\pdf.js | (anonymous) | 126 | 4 | 3 |
+| src\pdf.js | pageTextWithOcr | 383 | 4 | 3 |
 | src\sniff.js | zipKind | 232 | 4 | 3 |
 | src\xlsx.js | inflateEntry | 48 | 4 | 3 |
 | src\xlsx.js | parseDate1904 | 110 | 4 | 3 |
@@ -161,10 +162,11 @@
 | tools\gen-icons.mjs | inDocRect | 48 | 4 | 3 |
 | tools\metrics.mjs | childNesting | 163 | 4 | 3 |
 | tools\metrics.mjs | collectFunctions | 179 | 4 | 3 |
-| src\pdf.js | glyphRun | 80 | 3 | 4 |
+| src\pdf.js | glyphRun | 84 | 3 | 4 |
 | src\docx.js | ommlChild | 50 | 3 | 3 |
 | src\html2md.js | fragFor | 134 | 3 | 3 |
-| src\pdf.js | isPdfGarbageCode | 303 | 3 | 3 |
+| src\pdf.js | isPdfGarbageCode | 320 | 3 | 3 |
+| src\pdf.js | documentMonospaceFonts | 355 | 3 | 3 |
 | src\sniff.js | countFffd | 125 | 3 | 3 |
 | src\sniff.js | countNonAscii | 131 | 3 | 3 |
 | src\xlsx.js | parseXfIds | 363 | 3 | 3 |
@@ -182,10 +184,11 @@
 | src\html2md.js | quoteElToMd | 318 | 3 | 2 |
 | src\html2md.js | (anonymous) | 321 | 3 | 2 |
 | src\html2md.js | htmlToMarkdown | 391 | 3 | 2 |
-| src\pdf.js | showTextRun | 99 | 3 | 2 |
-| src\pdf.js | (anonymous) | 119 | 3 | 2 |
-| src\pdf.js | (anonymous) | 121 | 3 | 2 |
-| src\pdf.js | collectPage | 366 | 3 | 2 |
+| src\pdf.js | showTextRun | 103 | 3 | 2 |
+| src\pdf.js | (anonymous) | 123 | 3 | 2 |
+| src\pdf.js | (anonymous) | 125 | 3 | 2 |
+| src\pdf.js | runsToPageText | 306 | 3 | 2 |
+| src\pdf.js | collectPage | 402 | 3 | 2 |
 | src\ui.js | setStatus | 13 | 3 | 2 |
 | src\ui.js | fmtSize | 17 | 3 | 2 |
 | src\ui.js | downloadMd | 40 | 3 | 2 |
@@ -223,13 +226,12 @@
 | src\html2md.js | tableToMd | 370 | 2 | 1 |
 | src\html2md.js | isPreBlock | 380 | 2 | 1 |
 | src\html2md.js | (anonymous) | 397 | 2 | 1 |
-| src\pdf.js | screenY | 93 | 2 | 1 |
-| src\pdf.js | (anonymous) | 126 | 2 | 1 |
-| src\pdf.js | (anonymous) | 127 | 2 | 1 |
-| src\pdf.js | isOverprintRun | 190 | 2 | 1 |
-| src\pdf.js | runsToPageText | 289 | 2 | 1 |
-| src\pdf.js | pageText | 333 | 2 | 1 |
-| src\pdf.js | needsOcr | 342 | 2 | 1 |
+| src\pdf.js | screenY | 97 | 2 | 1 |
+| src\pdf.js | (anonymous) | 130 | 2 | 1 |
+| src\pdf.js | (anonymous) | 131 | 2 | 1 |
+| src\pdf.js | isOverprintRun | 194 | 2 | 1 |
+| src\pdf.js | pageText | 369 | 2 | 1 |
+| src\pdf.js | needsOcr | 378 | 2 | 1 |
 | src\sniff.js | headAscii | 16 | 2 | 1 |
 | src\sniff.js | tryUtf8Strict | 39 | 2 | 1 |
 | src\sniff.js | swapUtf16be | 52 | 2 | 1 |
@@ -311,12 +313,13 @@
 | src\ocr.js | (anonymous) | 21 | 1 | 0 |
 | src\ocr.js | (anonymous) | 22 | 1 | 0 |
 | src\ocr.js | (anonymous) | 55 | 1 | 0 |
-| src\pdf.js | (anonymous) | 25 | 1 | 0 |
-| src\pdf.js | (anonymous) | 118 | 1 | 0 |
-| src\pdf.js | (anonymous) | 173 | 1 | 0 |
-| src\pdf.js | (anonymous) | 199 | 1 | 0 |
-| src\pdf.js | pageLineObjects | 263 | 1 | 0 |
-| src\pdf.js | (anonymous) | 265 | 1 | 0 |
+| src\pdf.js | (anonymous) | 29 | 1 | 0 |
+| src\pdf.js | (anonymous) | 122 | 1 | 0 |
+| src\pdf.js | (anonymous) | 177 | 1 | 0 |
+| src\pdf.js | (anonymous) | 203 | 1 | 0 |
+| src\pdf.js | monospaceFontIds | 261 | 1 | 0 |
+| src\pdf.js | pageLineObjects | 279 | 1 | 0 |
+| src\pdf.js | (anonymous) | 280 | 1 | 0 |
 | src\sniff.js | normWs | 137 | 1 | 0 |
 | src\sniff.js | (anonymous) | 172 | 1 | 0 |
 | src\sniff.js | leU16 | 193 | 1 | 0 |

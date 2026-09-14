@@ -1037,6 +1037,30 @@ git revert --no-edit 567ff2f         # 生成 faceb9f：6 个文件全部恢复
 1. **本沙箱同时禁「命名管道」两条路**：既禁 `child_process.spawn` 带 pipe（playwright 启动浏览器 → `spawn EPERM`），也禁浏览器**自身**的 mojo IPC（手起 `msedge --headless` → `FATAL:mojo\…\platform_channel.cc:183 Check failed: 拒绝访问 (0x5)` → 弹窗 `msedge.exe - 应用程序错误 0x80000003`，模态框会吊住进程）。**结论：浏览器级验证一律升权后走 playwright 的 `channel msedge` 回退**（本批已实证多次）；不要手起浏览器，也不必为此装 chromium（其下载器同样要 fork 子进程 → `spawn EPERM`）。
 2. 该 `0x80000003` 与 09-13 报告的 `0xC0000142` **不是同一错误码/阶段**：前者进程已启动后触发断点异常（`STATUS_BREAKPOINT`），后者是加载器初始化即失败（`STATUS_DLL_INIT_FAILED`、进程从未起来）。两者都写 `Application Popup` Id=26 通道，排查时别混为一谈。
 
+---
+
+## 2026-09-14 v0.1.4 提交 A/B 推送前「隐私 & 版权」审查（结论：通过）
+
+**范围**：待推送提交 `dd960b1`（提交 A）+ `fc6cfa8`（提交 B）。方法 = 全局《Privacy & Copyright Review》硬门禁（源码面命令 + 逐项人工判读）。
+
+**隐私审查**（跟踪文件全量）：
+
+| 检查项 | 方法 | 结果 |
+|---|---|---|
+| 绝对路径（含系统用户名） | 检索 Windows 用户目录前缀（形如 `<盘符>:\Users\<用户名>`） | **零命中** ✅ |
+| 个人邮箱（qq/gmail/163/126/outlook/hotmail/foxmail/sina/yeah） | 域名白名单式枚举 | **零命中** ✅ |
+| 手机号 | `1[3-9]\d{9}` | 5 处命中，**逐条判读全为误报**（SHA256 十六进制串巧合匹配 + pdf.js 压缩长行）✅ |
+| 私人/策略目录入库 | `git ls-files -- .私档/ docs/copyright/ .script-archive/` | **全部为空（未跟踪）** ✅ |
+| 第三方 wasm 胶水层 `/home/...` | `git grep -l "/home/" HEAD -- vendor` | 2 个 tesseract `*-lstm.wasm.js`（emscripten 虚拟 FS 常量）→ **合规** ✅ |
+| 提交身份 | `git log --format="%an <%ae>"` | `sakuraqqq <sakuraqqq@users.noreply.github.com>`（noreply）✅ |
+| 新增样例 | 全部由 `tests/gen-samples.mjs` 合成生成（无第三方内容、无个人信息） | ✅ |
+
+**版权 / 许可审查**：`LICENSE`（1,066 B）与 `docs/licenses.md`（7,060 B）在位；vendor 第三方资产许可登记由契约组 H11 持续守护（Adobe cmaps 等）。
+
+**结论：通过** ✅ —— 隐私面与版权面均无命中，未触发下线 / 历史清洗流程。
+
+**时序问题（如实登记，防再犯）**：本次审查与推送**几乎同刻**发生 —— `refs/remotes/origin/main` 的 `update by push` 记录为 **23:13:02**，而提交 B 创建于 23:06:20、captain 跑完审查在此之后。即：推送由用户在终端自行完成（符合「发布动作人执」），审查则以**事后追认**形式完成。因结论为通过故无需处置；**下次（提交 C）纪律改为「审查落盘 → 用户再推送」**，避免「先上线后审查」的时序风险。
+
 
 
 
