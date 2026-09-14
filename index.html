@@ -190,14 +190,15 @@
     return new TextDecoder("utf-16le").decode(swap);
   }
   function charsetLabels(headTxt) {
+    const t = headTxt.toLowerCase();
     const labels = [];
-    let metaIdx = headTxt.indexOf("<meta");
+    let metaIdx = t.indexOf("<meta");
     while (metaIdx >= 0) {
-      const metaEnd = headTxt.indexOf(">", metaIdx);
+      const metaEnd = t.indexOf(">", metaIdx);
       if (metaEnd < 0) break;
-      const label = charsetLabelOf(headTxt.slice(metaIdx, metaEnd + 1));
+      const label = charsetLabelOf(t.slice(metaIdx, metaEnd + 1));
       if (label && !labels.includes(label)) labels.push(label);
-      metaIdx = headTxt.indexOf("<meta", metaIdx + 1);
+      metaIdx = t.indexOf("<meta", metaIdx + 1);
     }
     return labels;
   }
@@ -265,8 +266,6 @@
     [254, 255]
   ];
   var ASCII_IMAGE_SIGS = [
-    ["GIF8", "gif"],
-    ["BM", "bmp"],
     ["II*\0", "tiff"],
     ["MM\0*", "tiff"]
   ];
@@ -274,24 +273,51 @@
     const head = buf.subarray(0, 65536);
     if (head.length === 0) return { type: "unknown", detail: "empty" };
     const ascii = headAscii(head);
-    const pdfAt = ascii.indexOf("%PDF");
-    if (pdfAt >= 0 && pdfAt <= 1024) return { type: "pdf" };
+    if (isPdfHead(ascii)) return { type: "pdf" };
     if (startsWith(head, OLE2_SIG)) return { type: "doc" };
-    const image = imageKind(head, ascii);
+    const image = imageKind(head, ascii, buf);
     if (image) return { type: "image", detail: image };
     if (isZipHead(head)) return zipKind(ascii);
     if (BOM_SIGS.some((sig) => startsWith(head, sig))) return { type: "text" };
     if (ctrlRatio(head.subarray(0, 4096)) > 0.3) return { type: "unknown", detail: "binary" };
     return { type: "text" };
   }
-  function imageKind(head, ascii) {
+  function imageKind(head, ascii, buf) {
     if (startsWith(head, PNG_SIG)) return "png";
     if (startsWith(head, JPEG_SIG)) return "jpeg";
+    if (isGif(ascii, head, buf)) return "gif";
+    if (isBmp(head, buf.byteLength)) return "bmp";
     for (const [prefix, kind] of ASCII_IMAGE_SIGS) {
       if (ascii.startsWith(prefix)) return kind;
     }
     if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WEBP") return "webp";
     return null;
+  }
+  function leU16(u8, at) {
+    return u8[at] | u8[at + 1] << 8;
+  }
+  function leU32(u8, at) {
+    return (u8[at] | u8[at + 1] << 8 | u8[at + 2] << 16 | u8[at + 3] << 24) >>> 0;
+  }
+  function isBmp(head, total) {
+    if (head.length < 14) return false;
+    const size = leU32(head, 2);
+    const offBits = leU32(head, 10);
+    if (size !== 0 && (size < 14 || size > total)) return false;
+    return offBits >= 14 && offBits <= (size === 0 ? total : size);
+  }
+  function isGif(ascii, head, buf) {
+    if (!ascii.startsWith("GIF87a") && !ascii.startsWith("GIF89a")) return false;
+    if (head.length < 10) return false;
+    if (leU16(head, 6) === 0 || leU16(head, 8) === 0) return false;
+    return buf.byteLength > 0 && buf[buf.byteLength - 1] === 59;
+  }
+  var PDF_VERSION_RE = /^%PDF-\d\.\d/;
+  function isPdfHead(ascii) {
+    const at = ascii.indexOf("%PDF-");
+    if (at < 0 || at > 1024) return false;
+    if (!PDF_VERSION_RE.test(ascii.slice(at, at + 8))) return false;
+    return ascii.includes("obj") || ascii.includes("%%EOF");
   }
   function isZipHead(head) {
     return head[0] === 80 && head[1] === 75 && (head[2] === 3 || head[2] === 5 || head[2] === 7);
@@ -636,8 +662,8 @@
     const b = String(name || "doc").replace(/\.docx$/i, "");
     return b.replace(/[\\/:*?"<>|\s]+/g, "-").slice(0, 64) || "doc";
   }
-  function docxAltFromName(name) {
-    const n = String(name || "").trim();
+  function docxAltFromName(entry) {
+    const n = String(entry.descr || "").trim() || String(entry.name || "").trim();
     if (!n) return "";
     return n.replace(/\.[A-Za-z0-9]{1,8}$/, "");
   }
@@ -835,7 +861,7 @@
     const ct = image.contentType || "image/png";
     const metaEntry = imgNames[state.idx] || {};
     state.idx++;
-    const alt = docxAltFromName(metaEntry.name);
+    const alt = docxAltFromName(metaEntry);
     const ab = await image.readAsArrayBuffer().catch(() => null);
     const bytes = ab ? new Uint8Array(ab) : null;
     if (!bytes || bytes.length === 0) return { src: "", alt: "" };

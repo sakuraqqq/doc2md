@@ -2,7 +2,8 @@
  * 决策史（任务书 t6 定版，保留）：
  *  - 拍板（2026-09-04 用户）：docx 保留 GFM 表格 —— mammoth→HTML（含 table 元素）→ 复用 htmlToMarkdown。
  *  - P1（t6；t2 修订：2026-09-07 方案 A 用户拍板——阈值 0 全抽取、废止 ≤100KB 内嵌分支，见 tests/CONTRACT.md 契约组 I）：
- *    图片全量抽取（→ meta.assets）+ alt 口径（Word 图片名去扩展名，禁 AI 描述）
+ *    图片全量抽取（→ meta.assets）+ alt 口径（C1：Word「可选文字」descr 优先、空 descr 回落图片名；
+ *    去扩展名；禁 AI 生成描述——descr/name 均为文档自带属性，批 3 前只取 name）
  *    + OMML 公式 → LaTeX（占位令牌法保证顺序；fflate 内联解包+重打包，全本地零外发）。
  *  - S5（2026-09-11 契约组 S，t4）：`w:dstrike` → `w:strike` 归一（mammoth 源码实证：删除线只读 `w:strike`，
  *    `dstrike` 出现 0 次=整段静默丢弃）；`w:val=false/0/off` 语义为「关」→ **原样保留**，其余归一为不带 `w:val` 的 `w:strike`。
@@ -29,9 +30,10 @@ function docxSafeBase(name) {
   const b = String(name || 'doc').replace(/\.docx$/i, '');
   return b.replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 64) || 'doc';
 }
-// alt 口径：Word 图片名（docPr name）去扩展名；名为空 → 空 alt
-function docxAltFromName(name) {
-  const n = String(name || '').trim();
+// alt 口径（C1，v0.1.4 批 3，2026-09-14）：Word「可选文字」docPr descr 优先；descr 为空/纯空白则回落
+// docPr name（旧行为）；取值去扩展名；两者都空 → 空 alt（仍禁 AI 生成描述——descr 是文档自带属性）
+function docxAltFromName(entry) {
+  const n = String(entry.descr || '').trim() || String(entry.name || '').trim();
   if (!n) return '';
   return n.replace(/\.[A-Za-z0-9]{1,8}$/, '');
 }
@@ -261,12 +263,13 @@ function docxInjectLatex(md, maths) {
 }
 
 /* 单张图片 → { src, alt }（t11 重构：从 docxConvert 的 convertImage 回调抽出）。
- * state = { idx, seq }：idx 按文档序取 docPr（name → alt）；seq 仅成功抽取时递增（命名 assets/<base>-<N>.<ext>） */
+ * state = { idx, seq }：idx 按文档序取 docPr（C1：descr → name 去扩展名）；seq 仅成功抽取时递增
+ *（命名 assets/<base>-<N>.<ext>） */
 async function docxImageElement(image, state, docBase, imgNames, assets) {
   const ct = image.contentType || 'image/png';
   const metaEntry = imgNames[state.idx] || {};
   state.idx++;
-  const alt = docxAltFromName(metaEntry.name);
+  const alt = docxAltFromName(metaEntry);
   // 读取失败按空图处理（上层已有 bytes==null → 空 src/alt 路径）：Promise 级 .catch，无 try/catch 吞异常
   const ab = await image.readAsArrayBuffer().catch(() => null);
   const bytes = ab ? new Uint8Array(ab) : null;

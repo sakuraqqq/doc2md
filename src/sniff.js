@@ -3,6 +3,8 @@
  * 决策史：BOM 优先（审查报告 §1.3 建议 #3）、GBK/GB18030 兜底（审查报告 §1.4）、
  *        PDF 前 1024 搜 %PDF 兜底（architecture §3）、二进制启发式 >30% → unknown(binary)
  *        编码判定全篇化（S4 口径 A/A′：UTF-8 fatal 快检 + 全篇 fffd/nonAscii 判据门；2026-09-11 拍板）
+ *        B1/B2/B3（v0.1.4 批 3，2026-09-14）：`BM`/`GIF8*` 前缀型签名补结构校验；`%PDF` 判定要求
+ *        版本形态 + `obj`/`%%EOF` 结构证据；`<meta` 扫描大小写不敏感（`<META CHARSET="big5">` 此前静默丢字）。
  */
 
 /* ---------- 工具 ---------- */
@@ -54,16 +56,19 @@ function swapUtf16be(buf) {
 }
 
 /* 全扫描 <meta>：按出现顺序收集 charset 候选（① 第一个带 charset 的 meta 优先；viewport 等无 charset
- * 的 meta 前置不再漏检；t12 线性纪律：indexOf 循环 + 切片） */
+ * 的 meta 前置不再漏检；t12 线性纪律：indexOf 循环 + 切片）。
+ * B3（批 3，2026-09-14）：先整体小写一次再做 indexOf——`<META CHARSET="big5">` 大写标签/属性此前
+ * 漏检（Big5 字节被 UTF-8/gb18030 误读 = 静默丢字）。一次 O(n) 小写 + 既有索引循环，仍是线性扫描。 */
 function charsetLabels(headTxt) {
+  const t = headTxt.toLowerCase();
   const labels = [];
-  let metaIdx = headTxt.indexOf('<meta');
+  let metaIdx = t.indexOf('<meta');
   while (metaIdx >= 0) {
-    const metaEnd = headTxt.indexOf('>', metaIdx);
+    const metaEnd = t.indexOf('>', metaIdx);
     if (metaEnd < 0) break;
-    const label = charsetLabelOf(headTxt.slice(metaIdx, metaEnd + 1));
+    const label = charsetLabelOf(t.slice(metaIdx, metaEnd + 1));
     if (label && !labels.includes(label)) labels.push(label);
-    metaIdx = headTxt.indexOf('<meta', metaIdx + 1); // 继续找下一个 meta
+    metaIdx = t.indexOf('<meta', metaIdx + 1); // 继续找下一个 meta
   }
   return labels;
 }
@@ -140,10 +145,10 @@ const BOM_SIGS = [
   [0xff, 0xfe],
   [0xfe, 0xff],
 ];
-// ASCII 前缀型图片签名（顺序无关——各前缀互斥）
+// ASCII 前缀型图片签名（顺序无关——各前缀互斥）。B1（批 3，2026-09-14）：`BM`/`GIF8*` 移出本表，
+// 改走 isBmp/isGif 结构校验（只看前缀会把 `BMW…`/`GIF89a 说明…` 形态的纯文本误判成图片）；
+// TIFF（`II*\0`/`MM\0*`）本批不动（无负例、不改口径）。
 const ASCII_IMAGE_SIGS = [
-  ['GIF8', 'gif'],
-  ['BM', 'bmp'],
   ['II*\u0000', 'tiff'],
   ['MM\u0000*', 'tiff'],
 ];
@@ -152,13 +157,14 @@ export async function sniff(buf) {
   const head = buf.subarray(0, 65536);
   if (head.length === 0) return { type: 'unknown', detail: 'empty' };
   const ascii = headAscii(head);
-  // PDF：先认首部；再兜底「偶有前置垃圾字节」——前 1024 字节内搜首个 %PDF（architecture §3）
-  const pdfAt = ascii.indexOf('%PDF');
-  if (pdfAt >= 0 && pdfAt <= 1024) return { type: 'pdf' };
+  // PDF（B2，批 3，2026-09-14）：版本形态 `%PDF-\d.\d` + 头部 64KB 内 `obj`/`%%EOF` 结构证据；
+  // 保留「偶有前置垃圾字节」兜底——前 1024 B 内搜首个签名（architecture §3）。只看「搜到 %PDF」
+  // 会把正文提及该写法的纯文本判成 pdf（样例 sample-pdf-mention.txt）。
+  if (isPdfHead(ascii)) return { type: 'pdf' };
   // OLE2 复合文档魔数（Word 97-2003 二进制 .doc 等老 Office 格式；t5 新增·契约组 O——专型化便于
   // convert 层给「另存为 .docx」友好指引；不再落入未知二进制/文本，E5 断言允许 unknown|doc）
   if (startsWith(head, OLE2_SIG)) return { type: 'doc' };
-  const image = imageKind(head, ascii);
+  const image = imageKind(head, ascii, buf);
   if (image) return { type: 'image', detail: image };
   // ZIP 系（docx/xlsx/pptx/zip）
   if (isZipHead(head)) return zipKind(ascii);
@@ -169,15 +175,52 @@ export async function sniff(buf) {
   return { type: 'text' };
 }
 
-/* 图片签名 → detail（无命中返回 null） */
-function imageKind(head, ascii) {
+/* 图片签名 → detail（无命中返回 null）。B1（批 3，2026-09-14）：BMP/GIF 需结构自洽，不得只看前缀 */
+function imageKind(head, ascii, buf) {
   if (startsWith(head, PNG_SIG)) return 'png';
   if (startsWith(head, JPEG_SIG)) return 'jpeg';
+  if (isGif(ascii, head, buf)) return 'gif';
+  if (isBmp(head, buf.byteLength)) return 'bmp';
   for (const [prefix, kind] of ASCII_IMAGE_SIGS) {
     if (ascii.startsWith(prefix)) return kind;
   }
   if (ascii.startsWith('RIFF') && ascii.slice(8, 12) === 'WEBP') return 'webp';
   return null;
+}
+
+/* ---------- B1：前缀型签名的结构校验（批 3，2026-09-14） ---------- */
+/* 头部小端整数读取（BMP 文件头字段；越界按 0 处理——长度已在调用方校验） */
+function leU16(u8, at) {
+  return u8[at] | (u8[at + 1] << 8);
+}
+function leU32(u8, at) {
+  return (u8[at] | (u8[at + 1] << 8) | (u8[at + 2] << 16) | (u8[at + 3] << 24)) >>> 0;
+}
+/* BMP 结构校验：14 字节文件头自洽——bfSize（偏移 2；0 = 写者未填，按文件长度）落在 [14, 文件长度]，
+ * bfOffBits（偏移 10，像素数据偏移）落在 [14, bfSize]。「BMW…」纯文本这两个字段是乱码 → 不判图。 */
+function isBmp(head, total) {
+  if (head.length < 14) return false;
+  const size = leU32(head, 2);
+  const offBits = leU32(head, 10);
+  if (size !== 0 && (size < 14 || size > total)) return false;
+  return offBits >= 14 && offBits <= (size === 0 ? total : size);
+}
+/* GIF 结构校验：完整签名（GIF87a/GIF89a）+ 逻辑屏幕宽高非零 + 文件末字节 = 0x3B（trailer）。
+ * 负例 `GIF89a 说明…` 文本：宽高字段恰好非零，但末字节是换行 → 不判图。 */
+function isGif(ascii, head, buf) {
+  if (!ascii.startsWith('GIF87a') && !ascii.startsWith('GIF89a')) return false;
+  if (head.length < 10) return false;
+  if (leU16(head, 6) === 0 || leU16(head, 8) === 0) return false;
+  return buf.byteLength > 0 && buf[buf.byteLength - 1] === 0x3b;
+}
+
+/* ---------- B2：PDF 判定（批 3，2026-09-14） ---------- */
+const PDF_VERSION_RE = /^%PDF-\d\.\d/; // 版本形态硬要求（`%PDF` 裸字样不算）
+function isPdfHead(ascii) {
+  const at = ascii.indexOf('%PDF-');
+  if (at < 0 || at > 1024) return false; // 前 1024 B 内（architecture §3 的「前置垃圾字节」兜底）
+  if (!PDF_VERSION_RE.test(ascii.slice(at, at + 8))) return false;
+  return ascii.includes('obj') || ascii.includes('%%EOF'); // 结构证据（头部 64KB 内）
 }
 
 /* ZIP 头（PK + 03/05/07） */

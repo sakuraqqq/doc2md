@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-14T14:55:14.414Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-14T15:04:43.927Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：17；函数总数：341；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：17；函数总数：346；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：15
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 341 个，超限 0 个。
+重构后当前：函数 346 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -34,49 +34,51 @@
 | src\ocr.js | ocrAssetsWarm | 11 | 9 | 11 |
 | src\ui.js | renderResult | 195 | 9 | 10 |
 | src\xlsx.js | xlsxByLib | 531 | 9 | 10 |
-| src\docx.js | ommlParts | 101 | 9 | 9 |
-| src\sniff.js | sniff | 151 | 9 | 8 |
+| src\docx.js | ommlParts | 103 | 9 | 9 |
+| src\sniff.js | imageKind | 179 | 9 | 9 |
 | src\xlsx.js | parseRowCells | 202 | 8 | 14 |
 | src\html2md.js | joinFrags | 25 | 8 | 10 |
-| src\docx.js | ommlScript | 64 | 8 | 9 |
+| src\docx.js | ommlScript | 66 | 8 | 9 |
 | src\xlsx.js | cellToString | 419 | 8 | 9 |
-| src\docx.js | docxCollectWarnings | 282 | 8 | 8 |
+| src\docx.js | docxCollectWarnings | 285 | 8 | 8 |
 | src\ui.js | downloadZip | 54 | 8 | 8 |
 | src\convert.js | imageConvert | 15 | 8 | 7 |
+| src\sniff.js | sniff | 156 | 8 | 7 |
 | src\xlsx.js | isBuiltinDateId | 374 | 8 | 7 |
 | src\html2md.js | blockifyContainer | 147 | 7 | 13 |
-| src\docx.js | ommlEnclosingPara | 134 | 7 | 8 |
+| src\docx.js | ommlEnclosingPara | 136 | 7 | 8 |
 | src\xlsx.js | xlsxWorkbookMap | 117 | 7 | 8 |
 | src\pdf.js | addGlyph | 64 | 7 | 7 |
 | src\pdf.js | pdfConvert | 380 | 7 | 7 |
-| src\sniff.js | imageKind | 173 | 7 | 7 |
 | src\html2md.js | linkFrag | 95 | 7 | 6 |
-| src\sniff.js | charsetLabelOf | 72 | 7 | 6 |
+| src\sniff.js | charsetLabelOf | 77 | 7 | 6 |
+| src\sniff.js | isBmp | 201 | 7 | 6 |
+| src\sniff.js | isGif | 210 | 7 | 6 |
 | tools\metrics.mjs | countCycPoints | 118 | 7 | 6 |
 | src\xlsx.js | scanSheetRows | 223 | 6 | 13 |
 | src\html2md.js | liToLines | 290 | 6 | 11 |
 | src\xlsx.js | parseSharedStrings | 278 | 6 | 11 |
 | src\html2md.js | blockChildToLines | 247 | 6 | 10 |
 | src\pdf.js | linesToMarkdown | 270 | 6 | 10 |
-| src\sniff.js | gb18030Fallback | 106 | 6 | 10 |
-| src\docx.js | docxParseForMd | 230 | 6 | 9 |
+| src\sniff.js | gb18030Fallback | 111 | 6 | 10 |
+| src\docx.js | docxParseForMd | 232 | 6 | 9 |
 | src\html2md.js | listElToMd | 221 | 6 | 9 |
 | src\ocr.js | getOcrWorker | 30 | 6 | 9 |
 | src\pdf.js | lineText | 198 | 6 | 8 |
 | src\pdf.js | textQualityRatio | 307 | 6 | 8 |
 | src\pdf.js | groupRunsIntoLines | 171 | 6 | 7 |
-| src\docx.js | ommlMathEntry | 142 | 6 | 6 |
-| src\sniff.js | decodeText | 21 | 6 | 6 |
-| src\sniff.js | ctrlRatio | 197 | 6 | 6 |
+| src\docx.js | ommlMathEntry | 144 | 6 | 6 |
+| src\sniff.js | decodeText | 23 | 6 | 6 |
+| src\sniff.js | ctrlRatio | 240 | 6 | 6 |
 | src\ui.js | assetsTotalBytes | 104 | 6 | 6 |
 | src\xlsx.js | findEocd | 16 | 6 | 6 |
 | tools\gen-icons.mjs | onTextLine | 67 | 6 | 6 |
 | src\convert.js | unsupportedError | 85 | 6 | 5 |
 | src\convert.js | runConverter | 96 | 6 | 5 |
-| src\docx.js | ommlDelim | 82 | 6 | 5 |
-| src\docx.js | dstrikeAttrPlan | 187 | 6 | 5 |
-| src\docx.js | docxImageElement | 265 | 6 | 5 |
-| src\docx.js | docxConvert | 292 | 6 | 5 |
+| src\docx.js | ommlDelim | 84 | 6 | 5 |
+| src\docx.js | dstrikeAttrPlan | 189 | 6 | 5 |
+| src\docx.js | docxImageElement | 268 | 6 | 5 |
+| src\docx.js | docxConvert | 295 | 6 | 5 |
 | src\html2md.js | codeFrag | 77 | 6 | 5 |
 | src\html2md.js | liTailToLines | 269 | 6 | 5 |
 | src\pdf.js | countAsciiGlyph | 55 | 6 | 5 |
@@ -90,22 +92,24 @@
 | tools\gen-icons.mjs | maskablePoint | 39 | 6 | 5 |
 | tools\metrics.mjs | fnName | 98 | 6 | 5 |
 | src\pdf.js | textContentFallback | 318 | 5 | 7 |
-| src\sniff.js | charsetLabels | 58 | 5 | 7 |
+| src\sniff.js | charsetLabels | 62 | 5 | 7 |
 | src\xlsx.js | colIndexOfRef | 439 | 5 | 7 |
-| src\docx.js | docxMathFragment | 161 | 5 | 6 |
-| src\docx.js | insideQuotes | 197 | 5 | 6 |
+| src\docx.js | docxMathFragment | 163 | 5 | 6 |
+| src\docx.js | insideQuotes | 199 | 5 | 6 |
 | src\xlsx.js | findCentralEntry | 25 | 5 | 6 |
-| src\docx.js | docxInjectLatex | 250 | 5 | 5 |
-| src\docx.js | (anonymous) | 252 | 5 | 5 |
+| src\docx.js | docxInjectLatex | 252 | 5 | 5 |
+| src\docx.js | (anonymous) | 254 | 5 | 5 |
 | src\xlsx.js | parseSheetTags | 82 | 5 | 5 |
 | src\convert.js | textConvert | 32 | 5 | 4 |
-| src\docx.js | extForContentType | 20 | 5 | 4 |
+| src\docx.js | extForContentType | 21 | 5 | 4 |
+| src\docx.js | docxAltFromName | 35 | 5 | 4 |
 | src\html2md.js | liChildToLines | 280 | 5 | 4 |
 | src\html2md.js | cellToMd | 343 | 5 | 4 |
 | src\pdf.js | asciiWordEdge | 150 | 5 | 4 |
-| src\sniff.js | decodeBom | 42 | 5 | 4 |
-| src\sniff.js | trimMetaValue | 86 | 5 | 4 |
-| src\sniff.js | isZipHead | 184 | 5 | 4 |
+| src\sniff.js | decodeBom | 44 | 5 | 4 |
+| src\sniff.js | trimMetaValue | 91 | 5 | 4 |
+| src\sniff.js | isPdfHead | 219 | 5 | 4 |
+| src\sniff.js | isZipHead | 227 | 5 | 4 |
 | src\ui.js | downloadMdEmbedded | 130 | 5 | 4 |
 | src\ui.js | truncatePreview | 159 | 5 | 4 |
 | src\xlsx.js | decodeXmlEntity | 154 | 5 | 4 |
@@ -117,12 +121,12 @@
 | src\xlsx.js | findTagStart | 173 | 4 | 5 |
 | tools\metrics.mjs | childNodes | 25 | 4 | 5 |
 | tools\metrics.mjs | walkFiles | 39 | 4 | 5 |
-| src\docx.js | ommlConcat | 110 | 4 | 4 |
+| src\docx.js | ommlConcat | 112 | 4 | 4 |
 | src\html2md.js | collectFrags | 38 | 4 | 4 |
 | src\html2md.js | (anonymous) | 39 | 4 | 4 |
 | src\ocr.js | (anonymous) | 37 | 4 | 4 |
 | src\pdf.js | pdfPageRuns | 132 | 4 | 4 |
-| src\sniff.js | startsWith | 9 | 4 | 4 |
+| src\sniff.js | startsWith | 11 | 4 | 4 |
 | src\xlsx.js | parseRelsMap | 96 | 4 | 4 |
 | src\xlsx.js | parseNumFmtCodes | 350 | 4 | 4 |
 | src\app.js | handleFiles | 15 | 4 | 3 |
@@ -130,18 +134,18 @@
 | src\bline.js | (anonymous) | 6 | 4 | 3 |
 | src\convert.js | ocrWarnings | 25 | 4 | 3 |
 | src\convert.js | done | 62 | 4 | 3 |
-| src\docx.js | texText | 41 | 4 | 3 |
-| src\docx.js | ommlIs | 47 | 4 | 3 |
-| src\docx.js | ommlRad | 74 | 4 | 3 |
-| src\docx.js | docxImageNames | 126 | 4 | 3 |
-| src\docx.js | (anonymous) | 285 | 4 | 3 |
+| src\docx.js | texText | 43 | 4 | 3 |
+| src\docx.js | ommlIs | 49 | 4 | 3 |
+| src\docx.js | ommlRad | 76 | 4 | 3 |
+| src\docx.js | docxImageNames | 128 | 4 | 3 |
+| src\docx.js | (anonymous) | 288 | 4 | 3 |
 | src\html2md.js | pushMarkerLine | 237 | 4 | 3 |
 | src\html2md.js | spanOf | 337 | 4 | 3 |
 | src\pdf.js | ocrPageToText | 17 | 4 | 3 |
 | src\pdf.js | (anonymous) | 120 | 4 | 3 |
 | src\pdf.js | (anonymous) | 122 | 4 | 3 |
 | src\pdf.js | pageTextWithOcr | 347 | 4 | 3 |
-| src\sniff.js | zipKind | 189 | 4 | 3 |
+| src\sniff.js | zipKind | 232 | 4 | 3 |
 | src\xlsx.js | inflateEntry | 48 | 4 | 3 |
 | src\xlsx.js | parseDate1904 | 110 | 4 | 3 |
 | src\xlsx.js | parseCellAttrs | 164 | 4 | 3 |
@@ -158,20 +162,19 @@
 | tools\metrics.mjs | childNesting | 163 | 4 | 3 |
 | tools\metrics.mjs | collectFunctions | 179 | 4 | 3 |
 | src\pdf.js | glyphRun | 80 | 3 | 4 |
-| src\docx.js | ommlChild | 48 | 3 | 3 |
+| src\docx.js | ommlChild | 50 | 3 | 3 |
 | src\html2md.js | fragFor | 134 | 3 | 3 |
 | src\pdf.js | isPdfGarbageCode | 303 | 3 | 3 |
-| src\sniff.js | countFffd | 120 | 3 | 3 |
-| src\sniff.js | countNonAscii | 126 | 3 | 3 |
+| src\sniff.js | countFffd | 125 | 3 | 3 |
+| src\sniff.js | countNonAscii | 131 | 3 | 3 |
 | src\xlsx.js | parseXfIds | 363 | 3 | 3 |
 | tools\gen-icons.mjs | pngRGBA | 77 | 3 | 3 |
 | src\convert.js | guardError | 78 | 3 | 2 |
-| src\docx.js | docxSafeBase | 28 | 3 | 2 |
-| src\docx.js | docxAltFromName | 33 | 3 | 2 |
-| src\docx.js | ommlFracTex | 58 | 3 | 2 |
-| src\docx.js | docxParseDoc | 118 | 3 | 2 |
-| src\docx.js | dstrikeIsOff | 180 | 3 | 2 |
-| src\docx.js | dstrikeReplace | 215 | 3 | 2 |
+| src\docx.js | docxSafeBase | 29 | 3 | 2 |
+| src\docx.js | ommlFracTex | 60 | 3 | 2 |
+| src\docx.js | docxParseDoc | 120 | 3 | 2 |
+| src\docx.js | dstrikeIsOff | 182 | 3 | 2 |
+| src\docx.js | dstrikeReplace | 217 | 3 | 2 |
 | src\html2md.js | brFrag | 55 | 3 | 2 |
 | src\html2md.js | emphasisFrag | 64 | 3 | 2 |
 | src\html2md.js | imgFrag | 111 | 3 | 2 |
@@ -203,8 +206,8 @@
 | src\bline.js | pdfWorkerUrl | 15 | 2 | 1 |
 | src\bline.js | tessWorkerUrl | 21 | 2 | 1 |
 | src\cjk.js | collapseCjkSpaces | 28 | 2 | 1 |
-| src\docx.js | ommlChildren | 54 | 2 | 1 |
-| src\docx.js | normalizeDstrikeXml | 223 | 2 | 1 |
+| src\docx.js | ommlChildren | 56 | 2 | 1 |
+| src\docx.js | normalizeDstrikeXml | 225 | 2 | 1 |
 | src\html2md.js | flush | 150 | 2 | 1 |
 | src\html2md.js | headingBlock | 174 | 2 | 1 |
 | src\html2md.js | preBlock | 185 | 2 | 1 |
@@ -227,10 +230,10 @@
 | src\pdf.js | runsToPageText | 289 | 2 | 1 |
 | src\pdf.js | pageText | 333 | 2 | 1 |
 | src\pdf.js | needsOcr | 342 | 2 | 1 |
-| src\sniff.js | headAscii | 14 | 2 | 1 |
-| src\sniff.js | tryUtf8Strict | 37 | 2 | 1 |
-| src\sniff.js | swapUtf16be | 50 | 2 | 1 |
-| src\sniff.js | tryDecode | 93 | 2 | 1 |
+| src\sniff.js | headAscii | 16 | 2 | 1 |
+| src\sniff.js | tryUtf8Strict | 39 | 2 | 1 |
+| src\sniff.js | swapUtf16be | 52 | 2 | 1 |
+| src\sniff.js | tryDecode | 98 | 2 | 1 |
 | src\ui.js | copyText | 22 | 2 | 1 |
 | src\ui.js | setEmbedMaxBytes | 88 | 2 | 1 |
 | src\ui.js | bytesToB64 | 89 | 2 | 1 |
@@ -252,14 +255,14 @@
 | src\app.js | embedMaxBytes | 63 | 1 | 0 |
 | src\app.js | (anonymous) | 70 | 1 | 0 |
 | src\app.js | (anonymous) | 71 | 1 | 0 |
-| src\docx.js | (anonymous) | 90 | 1 | 0 |
-| src\docx.js | (anonymous) | 94 | 1 | 0 |
-| src\docx.js | (anonymous) | 95 | 1 | 0 |
+| src\docx.js | (anonymous) | 92 | 1 | 0 |
 | src\docx.js | (anonymous) | 96 | 1 | 0 |
 | src\docx.js | (anonymous) | 97 | 1 | 0 |
-| src\docx.js | ommlPlaceholderRun | 151 | 1 | 0 |
-| src\docx.js | (anonymous) | 271 | 1 | 0 |
-| src\docx.js | convertImage | 311 | 1 | 0 |
+| src\docx.js | (anonymous) | 98 | 1 | 0 |
+| src\docx.js | (anonymous) | 99 | 1 | 0 |
+| src\docx.js | ommlPlaceholderRun | 153 | 1 | 0 |
+| src\docx.js | (anonymous) | 274 | 1 | 0 |
+| src\docx.js | convertImage | 314 | 1 | 0 |
 | src\html2md.js | escUrl | 16 | 1 | 0 |
 | src\html2md.js | (anonymous) | 82 | 1 | 0 |
 | src\html2md.js | strikeFrag | 90 | 1 | 0 |
@@ -314,8 +317,10 @@
 | src\pdf.js | (anonymous) | 199 | 1 | 0 |
 | src\pdf.js | pageLineObjects | 263 | 1 | 0 |
 | src\pdf.js | (anonymous) | 265 | 1 | 0 |
-| src\sniff.js | normWs | 132 | 1 | 0 |
-| src\sniff.js | (anonymous) | 166 | 1 | 0 |
+| src\sniff.js | normWs | 137 | 1 | 0 |
+| src\sniff.js | (anonymous) | 172 | 1 | 0 |
+| src\sniff.js | leU16 | 193 | 1 | 0 |
+| src\sniff.js | leU32 | 196 | 1 | 0 |
 | src\ui.js | $ | 6 | 1 | 0 |
 | src\ui.js | (anonymous) | 38 | 1 | 0 |
 | src\ui.js | (anonymous) | 51 | 1 | 0 |
