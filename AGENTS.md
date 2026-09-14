@@ -28,6 +28,7 @@
 ## 本地命令约定
 
 - git 操作一律加前缀 `git -c safe.directory='*'`（全局 gitconfig 沙箱写不了，别试写全局配置）。
+- **禁止用手机同步类工具（gitsync 等）推送本仓库**：2026-09-14 实测其会**清零二进制文件**（一次删掉 4 个 PWA 图标 + 2 个测试样例 PNG，CI 双 failure 拦住后才由 revert 恢复）；**手机侧只读拉取，推送一律经桌面终端**。
 - 提交身份用 `-c user.name=... -c user.email=...` 局部覆盖（基线 commit 同款），以仓库历史既有身份为准，不猜。
 - npm 依赖：如需安装，cache 指到工作区内（`$env:npm_config_cache='<workspace>/.npm-cache'`），禁止在 ~/.dsh / AppData 安装；装完确认许可再内联。
 - 工作区外文件：先复制进工作区再处理；沙箱拒绝如实上报，同一操作不重试超过 2 次。
