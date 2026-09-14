@@ -115,6 +115,10 @@
       "bytes": 758,
       "sha256": "06812ba68fcfc5127d38b85f54836f6be68c89e9190e453387f4b51566dba56e"
     },
+    "sample-comment-subset.pdf": {
+      "bytes": 870,
+      "sha256": "efe20796a6a2126b5ed993973db5c4946f94c6e65e7d93d00e50384ba7c0ce95"
+    },
     "sample-bmw-text.txt": {
       "bytes": 145,
       "sha256": "4e13a90d312f7e2f2d5fea5d402e7f7de8d536d90fda636612296cc59a4717d7"

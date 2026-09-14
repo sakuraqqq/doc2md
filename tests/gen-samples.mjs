@@ -470,6 +470,29 @@ const V014_PDF_STREAMS = {
   'sample-overprint.pdf': ['BT /F1 14 Tf 1 0 0 -1 72 720 Tm', '(OVERPRINT-TOKEN) Tj', '0.3 0 Td', '(OVERPRINT-TOKEN) Tj', '0.3 0 Td', '(OVERPRINT-TOKEN) Tj', 'ET'].join('\n'),
 };
 
+/* ---------------- sample-comment-subset.pdf（F1 回归守护：文档级等宽判据；2026-09-14） ----------------
+ * 两页最小复现（qa-dev 在 t6 独立验收中判 F1 不通过时建议的合成回归）：
+ *   第 1 页内容 = `# 1. 2. 3. 4. 5.`（Courier 但**只有 `#`/数字/点/空格，无 ASCII 字母**）
+ *     → 该 fontId 在**本页** letters = 0，被 MONO_MIN_LETTERS = 1 挡掉；
+ *   第 2 页内容 = `import cv2`（含 ASCII 字母）→ 该 fontId 在**全篇** letters > 0。
+ * 修前（按页统计）：第 1 页注释判不出代码行 → 围栏断开、`#` 裸露成 Markdown H1；
+ * 修后（文档级统计）：两页的注释/代码都在同一 ``` 围栏内。
+ * 宽度判据（种类 = 1 且 0 < w ≤ 700/1000）在修前修后完全一致——本样例只锁「统计范围」这一变量。
+ */
+function buildCommentSubsetPdf() {
+  const s1 = ['BT /F2 14 Tf 1 0 0 -1 72 720 Tm', '(# 1. 2. 3. 4. 5.) Tj', 'ET'].join('\n');
+  const s2 = ['BT /F2 14 Tf 1 0 0 -1 72 720 Tm', '(import cv2) Tj', 'ET'].join('\n');
+  return buildPdfShell([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F2 7 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F2 7 0 R >> >> /Contents 6 0 R >>',
+    `<< /Length ${Buffer.byteLength(s1, 'latin1')} >>\nstream\n${s1}\nendstream`,
+    `<< /Length ${Buffer.byteLength(s2, 'latin1')} >>\nstream\n${s2}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>',
+  ]);
+}
+
 /* ---------------- v0.1.4 批 3 契约组 V 样例（嗅探负例/正例 + docx alt；2026-09-14，合成·确定性·进 manifest 字节锁）
  * 依据：批 3 缺陷口径（B1 `BM*`/`GIF8*` 前缀误判 / B2 `%PDF` 文本误判 / B3 大写 `<META>` 漏检 /
  *   C1 docx 图片 alt 取 `descr`）。全部自造合成、确定性字节、**生成而非拷贝**（沿用 put() + manifest 字节锁）。
@@ -643,6 +666,7 @@ put('sample-truncated.txt', buildTruncatedTxt());
 put('sample-corrupt-xlsx.xlsx', buildCorruptXlsx());
 put('sample-numfmt-date.xlsx', buildNumFmtDateXlsx());
 for (const [name, stream] of Object.entries(V014_PDF_STREAMS)) put(name, buildV014Pdf(stream));
+put('sample-comment-subset.pdf', buildCommentSubsetPdf());
 /* 批 3 契约组 V 样例（7 个：3 嗅探负例 + 2 真格式正例 + 1 Big5 大写 META + 1 docx alt） */
 put('sample-bmw-text.txt', Buffer.from(BMW_TEXT, 'utf8'));
 put('sample-gif8-text.txt', Buffer.from(GIF8_TEXT, 'utf8'));

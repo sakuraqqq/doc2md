@@ -3245,10 +3245,11 @@ const U_SAMPLES = [
   'sample-tl-leading.pdf',
   'sample-quote-ops.pdf',
   'sample-overprint.pdf',
+  'sample-comment-subset.pdf',
 ];
 
 test('契约组 U：v0.1.4 PDF 缺陷批（翻转 Tm 行序 / TL 算子 / 等宽围栏 / 叠印去重）—— 契约先红', async (t) => {
-  await t.test('U-0 五个样例存在且与 manifest 字节级一致（×5）', () => {
+  await t.test('U-0 六个样例存在且与 manifest 字节级一致（×6）', () => {
     for (const name of U_SAMPLES) {
       const p = nodePath.join(DATA, name);
       assert.ok(fs.existsSync(p), `${name} 缺失——请运行 npm run gen:samples`);
@@ -3370,6 +3371,22 @@ test('契约组 U：v0.1.4 PDF 缺陷批（翻转 Tm 行序 / TL 算子 / 等宽
           !/^```/m.test(md),
           `比例字体正文被误判为代码块（围栏判据过宽）：${JSON.stringify(bodyLines(md).slice(0, 6))}`
         );
+      });
+
+      // U8（F1 回归守护；qa-dev 在 t6 独立验收中判 F1 不通过并要求补的合成回归）：
+      // 等宽判据必须是**文档级**——第 1 页只有 `#`/数字注释（本页 letters = 0）时，按页统计会被
+      // MONO_MIN_LETTERS 挡掉、注释裸露成 H1；文档级统计下第 2 页的字母应把该 fontId 判为等宽，两页同栏。
+      await t.test('U8 文档级等宽判据：单页无字母的注释子集仍进围栏（F1 回归守护）', async () => {
+        const md = await convert('sample-comment-subset.pdf');
+        const parts = md.split(/^```.*$/m);
+        const inside = parts.filter((_, i) => i % 2 === 1).join('\n');
+        const outside = parts.filter((_, i) => i % 2 === 0).join('\n');
+        assert.ok(
+          inside.includes('# 1. 2. 3. 4. 5.'),
+          `第 1 页无字母注释未进围栏（按页统计的旧缺陷复现）：${JSON.stringify(bodyLines(md))}`
+        );
+        assert.ok(inside.includes('import cv2'), `第 2 页代码行未进围栏：${JSON.stringify(bodyLines(md))}`);
+        assert.ok(!/^[ \t]*#[ \t]*\d/m.test(outside), `注释裸露在围栏外（会渲染成 H1）：${JSON.stringify(bodyLines(md))}`);
       });
     } finally {
       await browser.close();
