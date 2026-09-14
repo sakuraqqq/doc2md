@@ -4,6 +4,9 @@
  *    （修复「全书文本量 <10 才 OCR」对混合型 PDF 的误判）。
  *  - OCR 进度回填 #status（page N/M）；OCR 页数进 warning；backend 随 OCR 计数。
  *  - 输出：<!-- page N/M --> 分页注释 + 正文（架构 §4.3）。
+ *  - A3/A4（v0.1.4 批 2，2026-09-14）：等宽代码行合并为 ``` 围栏块（`#` 注释不裸露为标题）；
+ *    同一行内同位置重复绘制的 run 只留一份。依据：真实 Chromium 打印 PDF 实测（代码字体 glyph
+ *    宽度种类 = 1 @549.8/1000；页脚同一位置同文本重复 4 份，每页 168–252 对）。
  */
 import BLINE from './bline.js';
 import { collapseCjkSpaces } from './cjk.js';
@@ -44,22 +47,38 @@ async function ocrPageToText(page, idx, pageCount) {
  *      的合理空格照常按 A/B 判定；实际空格字形 run 到达时由既有 guard 防双空格）。
  * 兜底：getOperatorList 异常时回退 getTextContent（旧行为）。
  */
-const PN = { BT: 31, ET: 32, TF: 37, TM: 42, TD_MOVE: 40, TD_LEAD: 41, NL: 43, SHOW: 44, SHOW_SPACED: 45 };
+/* 算子常量（pdfjs-dist 3.11.174 实测核对，2026-09-14：10 项全部一致；升级 pdf.js 需重新核对——E4 漂移风险） */
+const PN = { BT: 31, ET: 32, TL: 36, TF: 37, TD_MOVE: 40, TD_LEAD: 41, TM: 42, NL: 43, SHOW: 44, SHOW_SPACED: 45 };
 
-/** 单个 glyph 项累加进 { str, w }：字形对象取 unicode/width，对象型定位修正取 h（文本空间） */
+/** A3：可见 ASCII glyph 计数（ascii = 半角可见字符数，letters = 其中的 ASCII 字母数）——等宽判据的
+ * 证据强度条件用（见 monospaceFontIds 条件 ③）。非 ASCII 直接返回。 */
+function countAsciiGlyph(acc, ch) {
+  const c = ch.charCodeAt(0);
+  if (c >= 128) return;
+  acc.ascii++;
+  if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122)) acc.letters++;
+}
+
+/** 单个 glyph 项累加进 { str, w, gw, ascii, letters }：字形对象取 unicode/width，对象型定位修正取 h（文本空间）。
+ * A3：顺带记下原始 glyph 宽度（gw，千分之一 em）与 ASCII 字类计数（见 countAsciiGlyph）。 */
 function addGlyph(acc, g, fontSize) {
   if (!g || typeof g !== 'object') return;
   if (typeof g.unicode === 'string') {
+    const gw = g.width || 0;
     acc.str += g.unicode;
-    acc.w += ((g.width || 0) * fontSize) / 1000;
+    acc.w += (gw * fontSize) / 1000;
+    if (g.unicode.trim() !== '') {
+      acc.gw.push(gw);
+      countAsciiGlyph(acc, g.unicode);
+    }
   } else if (typeof g.h === 'number') {
     acc.w += g.h; // 对象型定位修正（文本空间）
   }
 }
 
-/** showText/TJ 的 glyph 序列 → { str, w }：数值项 = 千分之一 em 的字距调整；对象项见 addGlyph */
+/** showText/TJ 的 glyph 序列 → { str, w, gw, ascii, letters }：数值项 = 千分之一 em 的字距调整；对象项见 addGlyph */
 function glyphRun(glyphs, fontSize) {
-  const acc = { str: '', w: 0 };
+  const acc = { str: '', w: 0, gw: [], ascii: 0, letters: 0 };
   for (const g of glyphs) {
     if (typeof g === 'number') { acc.w += (g * fontSize) / 1000; continue; } // TJ 数值调整（千分之一 em）
     addGlyph(acc, g, fontSize);
@@ -67,24 +86,45 @@ function glyphRun(glyphs, fontSize) {
   return acc;
 }
 
-/** Tj/TJ：按当前文本状态产出一条 run（空串不产出），并把笔位移到 run 末尾 */
+/** 屏幕方向 y（页顶 → 页底：值大在前）。A1（2026-09-14 修复）：Tm 的 d < 0（翻转文本矩阵）时，
+ * 文本空间 y 与屏幕方向**相反**——真实 Chromium 打印 PDF 一律写 `1 0 0 -1 x y Tm`（node 侧
+ * pdfjs-dist 算子级取证：首样本页 1324 处，阅读顺序对应 cy **递增**）；而 d = +1 的文档
+ * （如既有 sample-spacing.pdf）阅读顺序对应 cy 递减。统一换算成 sy 后再按 sy 降序排，两种都正确。 */
+function screenY(st) {
+  return st.flip ? -st.cy : st.cy;
+}
+
+/** Tj/TJ：按当前文本状态产出一条 run（空串不产出），并把笔位移到 run 末尾。
+ * A3：run 带上 fontId / glyph 宽度 / 可见 ASCII glyph 数（等宽判据只消费这三项）。 */
 function showTextRun(st, args, runs) {
-  const { str, w } = glyphRun(args[0] || [], st.fontSize);
-  if (str !== '') runs.push({ str, x: st.cx, y: st.cy, w, fontSize: st.fontSize });
+  const { str, w, gw, ascii, letters } = glyphRun(args[0] || [], st.fontSize);
+  if (str !== '') {
+    runs.push({ str, x: st.cx, y: st.cy, sy: screenY(st), w, fontSize: st.fontSize, fontId: st.fontId, gw, ascii, letters });
+  }
   st.cx += w;
 }
 
-/* 文本算子分派表：st = 文本状态（fontSize/cx/cy/leading），args = 算子参数，runs = 输出累积。
+/* 文本算子分派表：st = 文本状态（fontSize/fontId/cx/cy/lx/leading/flip），args = 算子参数，runs = 输出累积。
  * BT 注释（t16 回归；t18 修复）：PDF 规范规定 BT 将文本矩阵/行矩阵重置为单位阵——跨 BT...ET 块，
  * Td/TD/T* 从**各块自己的**文本空间原点起步（上一块的尾部平移不复用）。若不重置，下一块的 Td 会累加到
- * 上一块的 cx/cy 上 → 行坐标错乱、跨块行序倒挂。注：leading 属文本状态（BT 不重置），保留。 */
+ * 上一块的 cx/cy 上 → 行坐标错乱、跨块行序倒挂。注：leading 属文本状态（BT 不重置），保留。
+ * flip 说明（A1，2026-09-14）：Tm 的 d 符号决定文本空间 y 的朝向——翻转矩阵（d < 0，Chromium 打印 PDF
+ * 的通用形态）下，阅读顺序对应 cy 递增；非翻转（d > 0）下对应 cy 递减。见 screenY()。
+ * lx 说明（A4 支撑，2026-09-14）：PDF 的 Td/TD/T* 平移的是**行矩阵**，笔位随之回到行原点（Tm = Tlm），
+ * 不是在当前笔位上再加 delta。样例 sample-overprint.pdf 的 `0.3 0 Td` 三连绘正是靠此语义叠在同一处
+ *（pdf.js getTextContent 复核：x = 72 / 72.3 / 72.6）；用「笔位累加」模型会把三份叠印算成
+ * 72 / 206.868 / 341.736 的横向排布，A4 判据（|Δx| < 0.5 字宽）永不命中。 */
 const TEXT_OPS = {
-  [PN.BT]: (st) => { st.cx = 0; st.cy = 0; },
-  [PN.TF]: (st, args) => { st.fontSize = args[1] || 0; },
-  [PN.TM]: (st, args) => { st.cx = args[4] || 0; st.cy = args[5] || 0; },
-  [PN.TD_MOVE]: (st, args) => { st.cx += args[0] || 0; st.cy += args[1] || 0; },
-  [PN.TD_LEAD]: (st, args) => { st.leading = -(args[1] || 0); st.cx += args[0] || 0; st.cy += args[1] || 0; },
-  [PN.NL]: (st) => { st.cy -= st.leading; },
+  [PN.BT]: (st) => { st.cx = st.lx = 0; st.cy = 0; },
+  [PN.TF]: (st, args) => { st.fontSize = args[1] || 0; st.fontId = args[0] || ''; },
+  [PN.TM]: (st, args) => { st.cx = st.lx = args[4] || 0; st.cy = args[5] || 0; st.flip = (args[3] || 0) < 0; },
+  [PN.TD_MOVE]: (st, args) => { st.lx += args[0] || 0; st.cx = st.lx; st.cy += args[1] || 0; },
+  [PN.TD_LEAD]: (st, args) => { st.leading = -(args[1] || 0); st.lx += args[0] || 0; st.cx = st.lx; st.cy += args[1] || 0; },
+  // A2（2026-09-14 修复）：TL(36) 此前缺表——leading 恒 0 → T* 不换行，用 TL+T* 定位的文档三行压成一行
+  // 且粘连（样例 sample-tl-leading.pdf 实测）。口径：leading 存**规范值**（TL 参数即 leading，不取负，
+  // 与 TD 的 `-ty` 同得正值）；nextLine 的推进方向随 flip 定向（翻转矩阵下 cy 递增才是向下）。
+  [PN.TL]: (st, args) => { st.leading = args[0] || 0; },
+  [PN.NL]: (st) => { st.cy += st.flip ? st.leading : -st.leading; st.cx = st.lx; },
   [PN.SHOW]: showTextRun,
   [PN.SHOW_SPACED]: showTextRun,
 };
@@ -92,7 +132,7 @@ const TEXT_OPS = {
 async function pdfPageRuns(page) {
   const opList = await page.getOperatorList();
   const runs = [];
-  const st = { fontSize: 0, cx: 0, cy: 0, leading: 0 };
+  const st = { fontSize: 0, fontId: '', cx: 0, cy: 0, lx: 0, leading: 0, flip: false };
   for (let i = 0; i < opList.fnArray.length; i++) {
     const op = TEXT_OPS[opList.fnArray[i]];
     if (op) op(st, opList.argsArray[i] || [], runs);
@@ -125,14 +165,16 @@ function needsSpace(prev, r, text) {
   return !/ /.test(text.slice(-1)) && !/^ /.test(r.str);
 }
 
-/** 按 y 分组（PDF 文本空间 y 向上增长——降序 = 页顶→页底）；容差 = run 字号（近似行高）/2 */
+/** 按 sy 分组（sy = 屏幕方向 y，页顶 → 页底递减；容差 = run 字号（近似行高）/2）
+ * A1（2026-09-14）：此前按原始 cy 降序排——翻转 Tm（d < 0）文档的阅读顺序对应 cy 递增，排序结果整段倒置。
+ * 现改为按 screenY() 换算后的 sy 降序排，翻转/非翻转两种坐标系都得到「页顶在前」的行序。 */
 function groupRunsIntoLines(runs) {
   const lines = [];
-  const sorted = [...runs].sort((a, b) => b.y - a.y);
+  const sorted = [...runs].sort((a, b) => b.sy - a.sy);
   let cur = [];
   for (const r of sorted) {
-    const topY = cur.length > 0 ? cur[cur.length - 1].y : r.y;
-    if (cur.length > 0 && Math.abs(r.y - topY) > Math.max(r.fontSize, 1) / 2) {
+    const topY = cur.length > 0 ? cur[cur.length - 1].sy : r.sy;
+    if (cur.length > 0 && Math.abs(r.sy - topY) > Math.max(r.fontSize, 1) / 2) {
       lines.push(cur);
       cur = [];
     }
@@ -142,6 +184,15 @@ function groupRunsIntoLines(runs) {
   return lines;
 }
 
+/** A4：同位置叠印（页脚/水印在同一处重复绘制）——文本完全相同且起点几乎相同的相邻 run 只留一份。
+ * 判据：|Δx| < 0.5 × 平均字宽（run.w / 字符数）；跨行不并（只在单个行对象的 run 序列内比较，
+ * 且与「已保留的上一份」比——四连绘时第 2/3/4 份都命中同一基准）。 */
+function isOverprintRun(prev, r) {
+  if (prev.str !== r.str) return false;
+  const charWidth = r.w / Math.max(1, [...r.str].length);
+  return Math.abs(r.x - prev.x) < 0.5 * charWidth;
+}
+
 /** 单行 run 序列 → 文本：按 x 升序，逐 run 按 needsSpace 补空格；末了折叠连续空格
  *  （表格列布局的 run 边界 + 空格字形 run 叠加会产生双空格——保留恢复收益、消除噪音） */
 function lineText(line) {
@@ -149,6 +200,7 @@ function lineText(line) {
   let text = '';
   let prev = null;
   for (const r of line) {
+    if (prev && isOverprintRun(prev, r)) continue; // A4：叠印只留第一份
     if (prev && needsSpace(prev, r, text)) text += ' ';
     text += r.str;
     prev = r;
@@ -156,11 +208,87 @@ function lineText(line) {
   return text.replace(/ {2,}/g, ' ').trimEnd();
 }
 
-/** runs → 行文本（按 y 分组，组内按 x 排序；组间以换行分隔；空格修复见文件头注释） */
+/* A3 口径参数（captain 2026-09-14 定案 + 本批两条**有实测证据的补充判据**；如需回到原始口径，
+ * 把两个常量改回注释里的原值即可，各一行）：
+ *  - MONO_MIN_LETTERS：等宽字体至少要采到几个 ASCII 字母（原口径无此条件 = 0）。证据：真实课程
+ *    作业 PDF 封面页两个「纯数字子集」字体（500/1000、0 字母）命中原判据 → 学号/年月行被误包进
+ *    2 个围栏块；置 1 后该文档逐字节回归。
+ *  - CODE_MIN_ASCII：代码行的可见 ASCII glyph 下限（原口径 = 2）。证据：中文注释行只有 1 个 ASCII
+ *    glyph（`#`），下限 2 会把整块代码劈成两段、注释裸露成 Markdown 标题（正是 A3 要修的形态）；
+ *    真实 Jupyter 代码 PDF 实测下限 1 → 围栏块 15/5、栏外 `#` 行 2/0；下限 2 → 18/10、栏外 `#` 行 4/4。 */
+const MONO_MAX_WIDTH = 700; // 千分之一 em（0.7em）：排除 CJK 全宽 1000 与零宽退化
+const MONO_MIN_LETTERS = 1;
+const CODE_MIN_ASCII = 1;
+
+/** A3：等宽字体判据（纯数据——只用 showText 的 glyph width/unicode，不依赖字体对象 API）。
+ * 逐 fontId 汇总该字体全部 glyph 宽度，三条件同时成立才算等宽：
+ *  ① 【宽度种类 = 1】②【0 < 宽度 ≤ 700/1000 em】（上界排除 CJK 全宽 1000，下界排除零宽退化）
+ *  ③【该字体样本里的 ASCII 字母数 ≥ MONO_MIN_LETTERS】——宽度一致性只有在「比例字体里宽度会分化的
+ *     字符」上才有证据力：数字/标点在几乎所有字体里都是等宽（tabular），纯数字子集会被 ①② 误判。
+ * 实测正例：Courier 600/1000（104 glyph、38 种字符、79 字母）、真实 Jupyter 代码字体 549.8/1000
+ * （1064 glyph、64 种字符、760 字母）。 */
+function monospaceFontIds(runs) {
+  const kinds = new Map(); // fontId → { widths: Set(glyph 宽度), letters: ASCII 字母数 }
+  for (const r of runs) {
+    if (r.gw.length === 0) continue;
+    let rec = kinds.get(r.fontId);
+    if (!rec) {
+      rec = { widths: new Set(), letters: 0 };
+      kinds.set(r.fontId, rec);
+    }
+    for (const w of r.gw) rec.widths.add(w);
+    rec.letters += r.letters;
+  }
+  const mono = new Set();
+  for (const [id, rec] of kinds) {
+    const w = rec.widths.size === 1 ? [...rec.widths][0] : 0;
+    if (w > 0 && w <= MONO_MAX_WIDTH && rec.letters >= MONO_MIN_LETTERS) mono.add(id);
+  }
+  return mono;
+}
+
+/** A3：代码行 ⟺ 该行含可见 ASCII glyph（数 ≥ CODE_MIN_ASCII）且**全部**来自等宽 fontId；
+ * 不含 ASCII 的纯 CJK 行永不入栏（非 ASCII 字形不参与判据——含中文注释的代码行不该被否掉）。 */
+function isCodeLine(line, monoFonts) {
+  let ascii = 0;
+  for (const r of line) {
+    if (r.ascii === 0) continue;
+    if (!monoFonts.has(r.fontId)) return false;
+    ascii += r.ascii;
+  }
+  return ascii >= CODE_MIN_ASCII;
+}
+
+/** 行对象（A3）：{ text, code }——行序与文本走同一条基线（groupRunsIntoLines + lineText） */
+function pageLineObjects(runs) {
+  const monoFonts = monospaceFontIds(runs);
+  return groupRunsIntoLines(runs).map((line) => ({ text: lineText(line), code: isCodeLine(line, monoFonts) }));
+}
+
+/** 行对象 → 页正文（A3）：连续代码行合并为一个 ``` 围栏块（语言标注留空），块前后各留一个空行；
+ * 块内保留原行文本（`#` 注释因此不会裸露成 Markdown 标题）。 */
+function linesToMarkdown(lines) {
+  const out = [];
+  let fenced = false;
+  for (const l of lines) {
+    if (l.code) {
+      if (!fenced) out.push('', '```');
+      out.push(l.text);
+      fenced = true;
+      continue;
+    }
+    if (fenced) out.push('```', '');
+    out.push(l.text);
+    fenced = false;
+  }
+  if (fenced) out.push('```');
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** runs → 行文本（按 y 分组，组内按 x 排序；组间以换行分隔；A3 围栏/A4 去重见上） */
 function runsToPageText(runs) {
   if (runs.length === 0) return '';
-  const out = groupRunsIntoLines(runs).map(lineText);
-  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return linesToMarkdown(pageLineObjects(runs));
 }
 
 /** 有效文本比例（CID 质量门槛，t27；t8 判类方向锁定**黑名单**——2026-09-08 captain 口径补充；

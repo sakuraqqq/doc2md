@@ -674,9 +674,18 @@ test('契约组 D：htmlToMarkdown 精确输出快照 —— 契约先红（当�
 // E3/E4 当前已绿（ZIP 魔数识别 + 空文件判定已实现）——如实登记，不强行造红（见 CONTRACT.md §8 口径说明）。
 // ---------------------------------------------------------------------------
 const SNIFF_CASES = [
+  // e1（2026-09-14 用户拍板：输入升级为真实形态）：原输入仅 `junk:%PDF-1.4\n`（无 obj/%%EOF）——那正是批 3
+  // B2 要修掉的「裸 %PDF 字样」形态（正文提到 `%PDF` 即判 pdf）。升级为「垃圾前缀 + 真实 PDF 结构
+  // （`1 0 obj` + `%%EOF`）」，保留本用例原始意图 =「**前置垃圾字节的 PDF 仍判 pdf**」（搜首个 `%PDF`
+  // 位置 ≤1024，architecture §3）。口径分工：裸 `%PDF-1.4` 字样 → `text` 由组 V V2-1 覆盖；
+  //  含 `obj` 无 `%%EOF` 的截断 PDF → `pdf` 由组 V V2-2 覆盖。
   {
-    id: 'e1', name: '垃圾前缀 + %PDF-1.4（搜 %PDF 位置 ≤1024）',
-    bytes: [...new TextEncoder().encode('junk:%PDF-1.4\n')],
+    id: 'e1', name: '垃圾前缀 + 真实 PDF 结构（`%PDF-1.4` + `1 0 obj` + `%%EOF`）——前置垃圾字节的 PDF 仍判 pdf',
+    bytes: [
+      ...new TextEncoder().encode(
+        'junk:%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\ntrailer\n<< /Root 1 0 R >>\nstartxref\n0\n%%EOF\n'
+      ),
+    ],
     expected: { type: 'pdf' },
   },
   {
@@ -3206,6 +3215,378 @@ test('契约组 S：S5 OOXML 双删除线 w:dstrike 归一（→ ~~；w:val fals
         const res = await convertDocx(s5Document([[s5Run('<w:dstrike w:x="a>b"/>', 'gt')]]));
         assert.equal(res.error, null, `convert 返回错误：${res.error}`);
         assert.ok(res.markdown.includes('~~gt~~'), `属性值含 > 时静默漏改（正则在引号内提前截断）：${JSON.stringify(res.markdown)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 U：v0.1.4 PDF 缺陷批（A1 翻转 Tm 行序 / A2 缺 TL(36) / A3 等宽代码围栏 / A4 叠印去重）
+// 依据：2026-09-14 真机 7 篇 Chromium 打印 PDF 实测（输出侧：整篇行序反向、代码清单无围栏、页脚三倍）
+//   + node 侧 pdfjs-dist 算子级取证（真实 PDF 的 setTextMatrix 一律 d = −1、阅读顺序对应 cy **递增**；
+//   既有 sample-spacing.pdf 为 d = +1、cy 递减）——样例登记见 tests/CONTRACT.md §3「v0.1.4 缺陷批样例」。
+// 断言口径（§J.2 先红断言设计）：
+//   A1 用位置比较（indexOf 大小，不用「含不含」）；A2 用**行切分**判定（不靠 indexOf）；
+//   A3 判两件事（出现围栏 + `#` 注释不得出现在围栏外的行首）；A4 判计数 === 1。
+// 宽严说明：U3 不绑定实现路径（不规定围栏语言标注、是否合并相邻代码行），只锁用户可见结果；
+//   U4 只锁「同位置同文本去重后恰 1 次」；U6 是**守护断言**（撇号/双引号算子文字不丢失——pdf.js 已在
+//   求值阶段分解 46/47，防后续误把「粘连」当「文字丢失」修）。
+// 契约先红（当前实现态）：U1 整段倒序、U2 三行压成一行且粘连、U3 无围栏且注释裸露、U5 同样倒序、
+//   U4 计数 3 红；U-0（字节锁）/U6（三 token 均在）/U7（比例字体正文不得出现围栏）现绿——
+//   由全量跑守零回归（如实登记，不做「先红即全红」的假象）。
+// ---------------------------------------------------------------------------
+const U_SAMPLES = [
+  'sample-flipped-tm.pdf',
+  'sample-monospace-code.pdf',
+  'sample-tl-leading.pdf',
+  'sample-quote-ops.pdf',
+  'sample-overprint.pdf',
+];
+
+test('契约组 U：v0.1.4 PDF 缺陷批（翻转 Tm 行序 / TL 算子 / 等宽围栏 / 叠印去重）—— 契约先红', async (t) => {
+  await t.test('U-0 五个样例存在且与 manifest 字节级一致（×5）', () => {
+    for (const name of U_SAMPLES) {
+      const p = nodePath.join(DATA, name);
+      assert.ok(fs.existsSync(p), `${name} 缺失——请运行 npm run gen:samples`);
+      const rec = readManifest().files[name];
+      assert.ok(rec, `${name} 未登记于 manifest`);
+      const buf = fs.readFileSync(p);
+      assert.equal(buf.length, rec.bytes, `${name} 大小与 manifest 不一致（样例被改动）`);
+      assert.equal(
+        crypto.createHash('sha256').update(buf).digest('hex'),
+        rec.sha256,
+        `${name} SHA 与 manifest 不一致（样例被改动）`
+      );
+    }
+  });
+
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      /* 正文行（去分页注释/空行）——A2 的行切分判定依赖它 */
+      const bodyLines = (md) => md.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('<!--'));
+      const convert = async (name) => {
+        const b64 = fs.readFileSync(nodePath.join(DATA, name)).toString('base64');
+        const res = await page.evaluate(
+          async (arg) => {
+            const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+            return window.__doc2md.convert(new File([bytes], arg.name));
+          },
+          { b64, name }
+        );
+        assert.equal(res.error, undefined, `${name} convert 返回错误：${res.error}`);
+        return res.markdown || '';
+      };
+
+      // U1（A1）：翻转 Tm（d = −1）下三行必须按阅读顺序 TOP → MIDDLE → BOTTOM
+      await t.test('U1 翻转 Tm 行序：TOP-LINE-FIRST 在 BOTTOM-LINE-THIRD 之前（A1）', async () => {
+        const md = await convert('sample-flipped-tm.pdf');
+        const iTop = md.indexOf('TOP-LINE-FIRST');
+        const iMid = md.indexOf('MIDDLE-LINE-SECOND');
+        const iBot = md.indexOf('BOTTOM-LINE-THIRD');
+        assert.ok(iTop >= 0 && iMid >= 0 && iBot >= 0, `三行令牌未全部出现：${JSON.stringify(bodyLines(md))}`);
+        assert.ok(
+          iTop < iMid && iMid < iBot,
+          `翻转 Tm（1 0 0 -1）下行序反向（期望 TOP → MIDDLE → BOTTOM）：${JSON.stringify(bodyLines(md))}`
+        );
+      });
+
+      // U2（A2）：TL(36) + T* 定位的三行必须各占一行（leading 恒 0 时压成一行且粘连）
+      await t.test('U2 TL(36) 行距：TL-LINE-ONE/TWO/THREE 各占一行且顺序正确（A2）', async () => {
+        const md = await convert('sample-tl-leading.pdf');
+        const lines = bodyLines(md);
+        const idx = ['TL-LINE-ONE', 'TL-LINE-TWO', 'TL-LINE-THREE'].map((tok) => lines.findIndex((l) => l.includes(tok)));
+        assert.ok(idx.every((i) => i >= 0), `令牌缺失：${JSON.stringify(lines)}`);
+        assert.equal(new Set(idx).size, 3, `三行未各占一行（TL 缺算子 → leading 恒 0 → 粘连成一行）：${JSON.stringify(lines)}`);
+        assert.ok(idx[0] < idx[1] && idx[1] < idx[2], `行序错误（期望 ONE → TWO → THREE）：${JSON.stringify(lines)}`);
+      });
+
+      // U3（A3）：等宽代码行必须进围栏，且 `#` 注释不得出现在围栏外（否则渲染成 H1）
+      await t.test('U3 等宽代码围栏：代码进围栏 + `#` 注释不裸露为正文（A3）', async () => {
+        const md = await convert('sample-monospace-code.pdf');
+        const parts = md.split(/^```.*$/m); // 奇偶交替：索引 1/3/5… = 围栏内
+        const inside = parts.filter((_, i) => i % 2 === 1).join('\n');
+        const outside = parts.filter((_, i) => i % 2 === 0).join('\n');
+        assert.ok(parts.length >= 3, `未出现成对代码围栏（等宽代码清单无围栏）：${JSON.stringify(bodyLines(md))}`);
+        assert.ok(
+          inside.includes('import cv2') && inside.includes('gray = cv2.cvtColor'),
+          `代码正文未落在围栏内：${JSON.stringify(bodyLines(md))}`
+        );
+        assert.ok(
+          !/^[ \t]*#[ \t]*comment-should-not-be-h1/m.test(outside),
+          `\`#\` 注释裸露在围栏外（Markdown 会渲染成一级标题）：${JSON.stringify(bodyLines(md))}`
+        );
+      });
+
+      // U4（A4）：同一行内同位置三次绘制 → 去重后恰 1 次
+      await t.test('U4 同位置叠印去重：OVERPRINT-TOKEN 计数 === 1（A4）', async () => {
+        const md = await convert('sample-overprint.pdf');
+        const n = md.split('OVERPRINT-TOKEN').length - 1;
+        assert.equal(n, 1, `同位置重复绘制未去重：OVERPRINT-TOKEN 出现 ${n} 次（期望 1）：${JSON.stringify(bodyLines(md))}`);
+      });
+
+      // U5（A1 第二断言点）：等宽样例同为翻转 Tm —— 内容流顺序须保持（import cv2 最先）
+      await t.test('U5 翻转 Tm 行序（等宽样例）：import cv2 出现在 gray = cvtColor 之前（A1）', async () => {
+        const md = await convert('sample-monospace-code.pdf');
+        const iImport = md.indexOf('import cv2');
+        const iGray = md.indexOf('gray = cv2.cvtColor');
+        assert.ok(iImport >= 0 && iGray >= 0, `代码行丢失：${JSON.stringify(bodyLines(md))}`);
+        assert.ok(iImport < iGray, `翻转 Tm 下代码行序反向（期望 import cv2 最先）：${JSON.stringify(bodyLines(md))}`);
+      });
+
+      // U6（守护）：撇号 / 双引号算子（46/47）——pdf.js 已分解，文字不得丢失（防误修）
+      await t.test('U6 撇号/双引号算子文字不丢失（46/47 守护）', async () => {
+        const md = await convert('sample-quote-ops.pdf');
+        for (const tok of ['APOS-OP-LINE', 'DQUOTE-OP-LINE', 'PLAIN-TJ-CONTROL']) {
+          assert.ok(md.includes(tok), `令牌 ${tok} 丢失（pdf.js 已把 ' / " 分解为 nextLine+showText，文字必须保留）：${JSON.stringify(bodyLines(md))}`);
+        }
+      });
+
+      // U7（负对照）：比例字体（Helvetica）正文不得被误判为代码块——防「围栏判据过宽」回归
+      await t.test('U7 负对照：sample.pdf（比例字体正文）输出不得出现代码围栏（A3 判据不得误伤）', async () => {
+        const md = await convert('sample.pdf');
+        assert.ok(
+          !/^```/m.test(md),
+          `比例字体正文被误判为代码块（围栏判据过宽）：${JSON.stringify(bodyLines(md).slice(0, 6))}`
+        );
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 V：v0.1.4 批 3（B1 `BM*`/`GIF8*` 前缀误判 / B2 `%PDF` 文本误判 / B3 大写 `META` 漏检 /
+//   C1 docx 图片 alt 取 `descr`）+ T3 两项（脏数字实体登记闭环 + WHATWG C1 映射表参数化）
+// 依据（2026-09-14 三方对比 + 真机反馈复盘 → v0.1.4 批 3 范围；登记见 tests/CONTRACT.md §2/§3）：
+//   B1 现象：纯文本以 `BM`/`GIF8` 开头 → 只看前缀即判 image（BMP/GIF）；
+//   B2 现象：正文提到 `%PDF` → 前 1024 B 搜到即判 pdf（「正文提及」与「真 PDF」不分）；
+//   B3 现象：`<META CHARSET="big5">`（大写标签/属性）→ `charsetLabels` 的 `indexOf('<meta')` 大小写敏感
+//     → 漏检 charset → Big5 字节被 UTF-8/gb18030 误读（整段乱码、无报错的静默丢字）；
+//   C1 现象：docx 图片 alt 只取 `docPr name`，Word「可选文字」（`descr`）被忽略。
+// T3-1 = 脏数字实体登记闭环（三处过时登记更新 + V6 锁现状）· T3-2 = C1 映射表参数化断言（V5）。
+// 断言口径（先红后绿；宽严见各条注释，不绑定实现路径）：
+//   V1 负例判 text + 真 BMP/GIF 仍判 image（结构校验不得误杀真图）；
+//   V2 提及 `%PDF` 判 text + 真 PDF / 截断到 `obj` 的 PDF 仍判 pdf；
+//   V3 大写 META 的 Big5 HTML：解码中文可读 + 无 U+FFFD；
+//   V4 docx 图片 alt = `descr` 优先、`descr` 空回落 `name`（去扩展名）；
+//   V5 WHATWG 数字字符引用「C1 映射表」27 项（表驱动逐条）+ 未映射 5 项保留 C1 码位；
+//   V6 脏数字实体锁现状（`&#0;`/`&#xD800;`/越界 → U+FFFD 符合规范；`&#x;` 缺失位数现状 = 字面回填 + 偏差注释）。
+// 样例：7 个新增（gen-samples 生成 + manifest 字节锁）——3 个嗅探负例 + 2 个真格式正例 + 1 个 Big5 大写
+//   META HTML + 1 个 docx alt 样例；其余输入页内现造（不入库）。
+// 契约先红（当前实现态）：V1（前缀命中 → image）· V2（提及 `%PDF` → pdf）· V3（大写 META → 乱码）·
+//   V4（alt 取 name 而非 descr）红；V0（样例字节锁）/V5（WHATWG C1 映射）/V6（数字字符引用归一）现绿
+//   ——由全量跑守零回归（如实登记，不做「先红即全红」的假象）。
+// ---------------------------------------------------------------------------
+const V_SAMPLES = [
+  'sample-bmw-text.txt',
+  'sample-gif8-text.txt',
+  'sample-pdf-mention.txt',
+  'sample.bmp',
+  'sample.gif',
+  'sample-big5-upper-meta.html',
+  'sample-image-alt.docx',
+];
+const V_BIG5_TEXT = '中文測試：DOC2MD-BIG5-UPPER-2026';
+/* WHATWG HTML「数字字符引用结束状态」C1 映射表（0x80–0x9F 区间；未列出的 0x81/8D/8F/90/9D = 保留原码位） */
+const V_C1_MAP = [
+  [0x80, 0x20ac], [0x82, 0x201a], [0x83, 0x0192], [0x84, 0x201e], [0x85, 0x2026], [0x86, 0x2020],
+  [0x87, 0x2021], [0x88, 0x02c6], [0x89, 0x2030], [0x8a, 0x0160], [0x8b, 0x2039], [0x8c, 0x0152],
+  [0x8e, 0x017d], [0x91, 0x2018], [0x92, 0x2019], [0x93, 0x201c], [0x94, 0x201d], [0x95, 0x2022],
+  [0x96, 0x2013], [0x97, 0x2014], [0x98, 0x02dc], [0x99, 0x2122], [0x9a, 0x0161], [0x9b, 0x203a],
+  [0x9c, 0x0153], [0x9e, 0x017e], [0x9f, 0x0178],
+];
+const V_C1_KEEP = [0x81, 0x8d, 0x8f, 0x90, 0x9d];
+const vHex = (cp) => 'U+' + cp.toString(16).toUpperCase().padStart(4, '0');
+
+test('契约组 V：v0.1.4 批 3（BM*/GIF8* 前缀误判 / %PDF 文本误判 / 大写 META 漏检 / docx alt 取 descr）—— 契约先红', async (t) => {
+  await t.test('V0 七个新增样例存在且与 manifest 字节级一致（×7）', () => {
+    for (const name of V_SAMPLES) {
+      const p = nodePath.join(DATA, name);
+      assert.ok(fs.existsSync(p), `${name} 缺失——请运行 npm run gen:samples`);
+      const rec = readManifest().files[name];
+      assert.ok(rec, `${name} 未登记于 manifest`);
+      const buf = fs.readFileSync(p);
+      assert.equal(buf.length, rec.bytes, `${name} 大小与 manifest 不一致（样例被改动）`);
+      assert.equal(
+        crypto.createHash('sha256').update(buf).digest('hex'),
+        rec.sha256,
+        `${name} SHA 与 manifest 不一致（样例被改动）`
+      );
+    }
+  });
+
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const sampleBytes = (name) => Array.from(fs.readFileSync(nodePath.join(DATA, name)));
+      const sniffOf = (name) => page.evaluate((b) => window.__doc2md.sniff(new Uint8Array(b)), sampleBytes(name));
+
+      // V1（B1）：`BM`/`GIF8*` 前缀的纯文本不得判成图片；真 BMP/GIF 仍判 image（结构校验不得误杀真图）
+      await t.test('V1-1 负例：`BM` / `GIF89a` 前缀的纯文本 → type=text（B1 前缀误判）', async () => {
+        for (const name of ['sample-bmw-text.txt', 'sample-gif8-text.txt']) {
+          const res = await sniffOf(name);
+          assert.deepEqual(res, { type: 'text' }, `${name} 被判为 ${JSON.stringify(res)}——只看前缀即判图（缺结构校验）`);
+        }
+      });
+      await t.test('V1-2 正例守护：真 1×1 BMP / GIF89a（文件头自洽）→ type=image（结构校验不得误杀真图）', async () => {
+        assert.deepEqual(await sniffOf('sample.bmp'), { type: 'image', detail: 'bmp' }, '真 BMP 被结构校验误杀');
+        assert.deepEqual(await sniffOf('sample.gif'), { type: 'image', detail: 'gif' }, '真 GIF 被结构校验误杀');
+      });
+
+      // V2（B2）：正文提及 `%PDF` 判 text；真 PDF（含对象结构）/ 截断到 `obj` 的 PDF 仍判 pdf
+      await t.test('V2-1 负例：正文提到 `%PDF-1.4` 的纯文本 → type=text（B2 文本误判）', async () => {
+        const res = await sniffOf('sample-pdf-mention.txt');
+        assert.deepEqual(res, { type: 'text' }, `正文提及 %PDF 被判为 ${JSON.stringify(res)}——「搜到 %PDF 即判 pdf」`);
+      });
+      await t.test('V2-2 正例守护：真 PDF + 截断到 `obj`（无 xref/%%EOF）的 PDF → type=pdf', async () => {
+        assert.deepEqual(await sniffOf('sample.pdf'), { type: 'pdf' }, '真 PDF 未判 pdf');
+        // 页内现造：`%PDF-\d.\d` 版本形态 + 首个对象（无 xref/%%EOF）——截断 PDF 不得判 text
+        const truncated = [...new TextEncoder().encode('%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')];
+        const res = await page.evaluate((b) => window.__doc2md.sniff(new Uint8Array(b)), truncated);
+        assert.deepEqual(res, { type: 'pdf' }, `截断 PDF（含 obj、无 %%EOF）被判为 ${JSON.stringify(res)}`);
+      });
+
+      // V3（B3）：大写 `<META CHARSET="big5">` 的 Big5 HTML —— 解码中文可读、无 U+FFFD（不得静默丢字）
+      await t.test('V3 大写 META（`<META CHARSET="big5">`）Big5 HTML：解码中文可读且无 U+FFFD（B3）', async () => {
+        const bytes = sampleBytes('sample-big5-upper-meta.html');
+        const dt = await page.evaluate((b) => window.__doc2md.decodeText(new Uint8Array(b)), bytes);
+        assert.ok(
+          dt.includes(V_BIG5_TEXT),
+          `decodeText 未含「${V_BIG5_TEXT}」（大写 <META> 漏检 charset → Big5 字节被 UTF-8/gb18030 误读）：${JSON.stringify(dt.slice(60, 140))}`
+        );
+        assert.ok(!dt.includes('\uFFFD'), `decodeText 含替换字符 U+FFFD（静默丢字）：${JSON.stringify(dt.slice(60, 140))}`);
+        const res = await page.evaluate(
+          (b) => window.__doc2md.convert(new File([new Uint8Array(b)], 'sample-big5-upper-meta.html')),
+          bytes
+        );
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
+        assert.equal(res.meta.type, 'text', `类型应为 text：${res.meta.type}`);
+        assert.ok(
+          (res.markdown || '').includes(V_BIG5_TEXT),
+          `markdown 未含「${V_BIG5_TEXT}」：${JSON.stringify((res.markdown || '').slice(60, 140))}`
+        );
+      });
+
+      // V4（C1）：docx 图片 alt = `descr` 优先、`descr` 空回落 `name`（去扩展名）
+      await t.test('V4 docx 图片 alt：`descr` 优先、`descr` 空回落 `name`（C1）', async () => {
+        const b64 = fs.readFileSync(nodePath.join(DATA, 'sample-image-alt.docx')).toString('base64');
+        const res = await page.evaluate(
+          async (arg) => {
+            const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+            return window.__doc2md.convert(new File([bytes], 'sample-image-alt.docx'));
+          },
+          { b64 }
+        );
+        assert.equal(res.error, undefined, `convert 返回错误：${res.error}`);
+        const refs = [...(res.markdown || '').matchAll(/!\[([^\]]*)\]\(([^)]+)\)/g)].map((m) => ({ alt: m[1], src: m[2] }));
+        assert.deepEqual(
+          refs,
+          [
+            { alt: 'ALT-FROM-DESCR-2026', src: 'assets/sample-image-alt-1.png' },
+            { alt: 'fallback-name', src: 'assets/sample-image-alt-2.png' },
+          ],
+          `图片 alt 取值不符（期望 descr 优先 / 空 descr 回落 name 去扩展名）：${JSON.stringify(refs)}`
+        );
+      });
+
+      // V5（T3-2）：WHATWG 数字字符引用「C1 映射表」——27 项映射 + 5 项保留码位（表驱动逐条）
+      await t.test('V5-1 C1 映射表 27 项：`&#<0x80–0x9F 已映射码点>;` → 规范映射字符', async () => {
+        const seen = [];
+        for (const [cp, mapped] of V_C1_MAP) {
+          const md = await page.evaluate((html) => window.__doc2md.htmlToMarkdown(html, { warnings: [] }), `<p>&#${cp};</p>`);
+          seen.push(`${vHex(cp)}→${JSON.stringify(md)}`);
+          assert.equal(
+            md,
+            String.fromCodePoint(mapped),
+            `数字字符引用 &#${cp}; 未按 WHATWG C1 映射为 ${vHex(mapped)}（逐条：${seen.join(' ')}）`
+          );
+        }
+      });
+      await t.test('V5-2 未映射 5 项（0x81/8D/8F/90/9D）：保留对应 C1 码位（不得吞字/替换）', async () => {
+        const seen = [];
+        for (const cp of V_C1_KEEP) {
+          const md = await page.evaluate((html) => window.__doc2md.htmlToMarkdown(html, { warnings: [] }), `<p>&#${cp};</p>`);
+          seen.push(`${vHex(cp)}→${JSON.stringify(md)}`);
+          assert.equal(
+            md,
+            String.fromCodePoint(cp),
+            `数字字符引用 &#${cp}; 应保留 C1 码位 ${vHex(cp)}（逐条：${seen.join(' ')}）`
+          );
+        }
+      });
+
+      // V6（T3-1）：脏数字实体锁现状 —— 数字为 0 / 孤立代理 / 越界 → U+FFFD（规范）；`&#x;` 缺失位数现状锁
+      await t.test('V6-1 数字为 0 / 孤立代理 / 越界（>U+10FFFF）→ U+FFFD（WHATWG 数字字符引用结束状态）', async () => {
+        for (const [ref, why] of [['&#0;', '数字 0'], ['&#xD800;', '孤立代理'], ['&#x110000;', '超出 U+10FFFF']]) {
+          const md = await page.evaluate((html) => window.__doc2md.htmlToMarkdown(html, { warnings: [] }), `<p>A${ref}B</p>`);
+          assert.equal(md, 'A\uFFFDB', `${ref}（${why}）未按规范归一为 U+FFFD（实际 ${JSON.stringify(md)}）`);
+        }
+      });
+      // V6-2（2026-09-14 captain 实跑后改口径）：**现状锁**——按实测值断言（按规范值写会永久红、卡死门禁）。
+      // 规范（WHATWG HTML「输入流预处理」）：U+0000 应被替换为 U+FFFD；**实测当前实现丢弃 U+0000**
+      // （`A` + U+0000 + `B` → `AB`）= 已登记规范偏差（**low**），待拍板修复，**本批不修**（批 3 范围不含该行为）。
+      await t.test('V6-2 输入流 U+0000 现状锁：当前被丢弃（规范要求 U+FFFD——偏差登记 low）', async () => {
+        const md = await page.evaluate(() => window.__doc2md.htmlToMarkdown('<p>A\u0000B</p>', { warnings: [] }));
+        assert.equal(
+          md,
+          'AB',
+          `HTML 输入流 U+0000 现状应为「被丢弃」（实际 ${JSON.stringify(md)}）——若实现改为按 WHATWG 归一 U+FFFD，本断言须随口径拍板同步更新（改断言 = 改口径）`
+        );
+      });
+      // V6-3（2026-09-14 captain 实跑后改口径）：**现状锁**——`&#x;`（缺失位数）实测输出 U+FFFD。
+      // 规范（WHATWG HTML §13.2.5.81「十六进制字符引用起始状态」）：无位数 = absence-of-digits 解析错误 →
+      //   原文回填 → 应为字面 `&#x;`；**实测 U+FFFD** = 已登记规范偏差（**low**），待拍板修复，**本批不修**。
+      await t.test('V6-3 `&#x;`（缺失位数）现状锁：当前输出 U+FFFD（规范要求字面 `&#x;`——偏差登记 low）', async () => {
+        const md = await page.evaluate(() => window.__doc2md.htmlToMarkdown('<p>A&#x;B</p>', { warnings: [] }));
+        assert.equal(
+          md,
+          'A\uFFFDB',
+          "`&#x;`（缺失位数）现状应为 U+FFFD（实际 " +
+            JSON.stringify(md) +
+            "）——若实现改为按 WHATWG §13.2.5.81 原文回填字面 `&#x;`，本断言须随口径拍板同步更新（改断言 = 改口径）"
+        );
       });
     } finally {
       await browser.close();

@@ -75,7 +75,7 @@
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
-| E1 | `junk:%PDF-1.4\n`（垃圾前缀）→ `pdf`（找首个 `%PDF` 位置 ≤1024，architecture §3） | `deepEqual({type:'pdf'})` | 🟢 绿（契约先红 c8d42ad 判 `text`；c24f8ab 修复后 2026-09-05 独立验收 `{type:'pdf'}` 命中，见 §7） |
+| E1 | `junk:%PDF-1.4\n1 0 obj\n…\n%%EOF`（垃圾前缀 + 真实 PDF 结构）→ `pdf`（找首个 `%PDF` 位置 ≤1024，architecture §3） | `deepEqual({type:'pdf'})` | 🟢 绿（契约先红 c8d42ad 判 `text`；c24f8ab 修复后 2026-09-05 独立验收 `{type:'pdf'}` 命中，见 §7。**2026-09-14 输入升级（用户拍板）**：原输入仅 `junk:%PDF-1.4\n`（无 obj/%%EOF）= 批 3 B2 要修掉的「裸 %PDF 字样」形态；升级为真实形态后仍判 `pdf`，保留「前置垃圾字节的 PDF 仍判 pdf」意图——口径分工：「裸 %PDF-1.4 字样 → text」由组 V V2-1、「含 obj 无 %%EOF → pdf」由 V2-2 覆盖） |
 | E2 | `MZ…`（exe 魔数 + 控制字节）→ `unknown`(binary)（不得落 `text`） | `deepEqual({type:'unknown',detail:'binary'})` | 🟢 绿（契约先红 c8d42ad 判 `text`；c24f8ab 修复后 2026-09-05 独立验收 `{type:'unknown',detail:'binary'}` 命中，见 §7） |
 | E3 | 普通 zip（PK 魔数，无 word//xl//ppt/ 部件）→ `zip` 或 `unknown`，不得判回 `text` | `type ∈ {zip, unknown}` | 🟢 绿（c8d42ad 已判 `zip`；c24f8ab 后仍 `zip`——zip/unknown 定版待实现拍板，见 §8 口径说明） |
 | E4 | 空文件（0 字节）→ `unknown`(empty) | `deepEqual({type:'unknown',detail:'empty'})` | 🟢 绿（c8d42ad 已如此；c24f8ab 后仍如此） |
@@ -356,6 +356,34 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 
 **范围说明**：① `w:dstrike` 归一在 docx 预处理层实现（不改上游 mammoth）；② 快路径（原始字节不含 `w:dstrike` 时零额外解包/改写）属性能约束，由实现侧等价性台 + 独立验收核验，不写成断言（避免冻结实现细节）；③ 正对照（`w:strike` → `~~strike~~`）沿用 S2-5，不重复断言。
 
+### 契约组 V — v0.1.4 批 3：嗅探前缀/`%PDF` 误判 + 大写 `META` + docx alt（2026-09-14；契约先红）
+
+范围（批 3 四项 + T3 两项）：B1 `BM*`/`GIF8*` 前缀误判 / B2 `%PDF` 文本误判 / B3 大写 `META` 漏检 /
+C1 docx 图片 alt 取 `descr`；T3-1 = 脏数字实体登记闭环（V6 + 三处文档登记）· T3-2 = WHATWG C1 映射表参数化（V5）。
+样例：7 个新增入库样例（gen-samples 生成 + manifest 字节锁，见 §3）；V2-2 的截断 PDF 与 V5/V6 的实体串页内现造（不入库）。
+
+| 编号 | 断言 | 标准 | 当前（基线 = 批 3 未实现；契约先红） |
+|---|---|---|---|
+| V0 | 7 个新增样例存在 + manifest 字节锁（×7） | 大小/SHA 与 manifest 一致 | 🟢 绿（本机实测 7/7 一致） |
+| V1-1 | 负例：`BM` / `GIF89a` 前缀的纯文本（`sample-bmw-text.txt` / `sample-gif8-text.txt`） | `{ type: 'text' }` | 🔴 红（本机 `sniff` 直跑：→ `image/bmp` / `image/gif`——只看前缀） |
+| V1-2 | 正例守护：真 1×1 BMP / GIF89a（`sample.bmp` / `sample.gif`，文件头自洽） | `{ type: 'image', detail: 'bmp'|'gif' }` | 🟢 绿（结构校验不得误杀真图；批 3 后须保持） |
+| V2-1 | 负例：正文提到 `%PDF-1.4` 的纯文本（`sample-pdf-mention.txt`） | `{ type: 'text' }` | 🔴 红（本机 `sniff` 直跑：→ `pdf`） |
+| V2-2 | 正例守护：真 PDF（`sample.pdf`）+ 截断到 `obj`（无 xref/`%%EOF`）的 PDF | `{ type: 'pdf' }` | 🟢 绿（本机 `sniff` 直跑） |
+| V3 | 大写 `<META CHARSET="big5">` 的 Big5 HTML：`decodeText` + `convert` | 含「中文測試：DOC2MD-BIG5-UPPER-2026」且无 U+FFFD | 🔴 红（本机 `decodeText` 直跑：mojibake `いゅ代刚…`——`indexOf('<meta')` 大小写敏感漏检） |
+| V4 | docx 图片 alt：`descr` 优先 / 空 `descr` 回落 `name`（去扩展名）（`sample-image-alt.docx`） | `![ALT-FROM-DESCR-2026](assets/…)` + `![fallback-name](assets/…)` | 🔴 红（旧实现 alt 取 `name` → 首个 alt = `ignored-name`；需浏览器实跑确认） |
+| V5-1 | WHATWG C1 映射表 27 项（表驱动逐条） | `&#<0x80–0x9F 已映射码点>;` → 规范映射字符 | 🟡 待 captain 实跑（规范预期绿：`htmlToMarkdown` 的 `DOMParser` 实现 WHATWG 数字字符引用结束状态） |
+| V5-2 | 未映射 5 项（0x81/8D/8F/90/9D） | 保留对应 C1 码位 | 🟡 待 captain 实跑（规范预期绿，同上） |
+| V6-1 | 数字为 0 / 孤立代理 / 越界（`&#0;` / `&#xD800;` / `&#x110000;`） | `U+FFFD`（WHATWG 数字字符引用结束状态） | 🟡 待 captain 实跑（规范预期绿；T3-1 锚点） |
+| V6-2 | 输入流 `U+0000`（**现状锁**） | 当前**被丢弃**（`A` + U+0000 + `B` → `AB`）；规范要求 `U+FFFD` | 🟢 现状锁（2026-09-14 captain 实跑真值 = `AB`）；规范偏差 **low** 已登记（§7 ④a），待拍板，**本批不修** |
+| V6-3 | `&#x;`（缺失位数）（**现状锁**） | 当前输出 `U+FFFD`（`A` + `&#x;` + `B` → `A` + U+FFFD + `B`）；规范要求原文回填字面 `&#x;` | 🟢 现状锁（2026-09-14 captain 实跑真值 = `A` + U+FFFD + `B`）；规范偏差 **low** 已登记（§7 ④b），待拍板，**本批不修** |
+
+**范围说明**：① V1/V2 不绑定实现路径（结构校验写法自由），只锁「负例判 text、正例仍判 image/pdf」；
+② V3 只要求大写标签/属性命中（不要求扩展 charset 表）；③ V5/V6 走 `htmlToMarkdown`（HTML 引用路径 =
+`DOMParser`）——docx/xlsx 自解析路径的实体语义另由 V6-3 注释与 T3 登记说明，不在本批断言内；
+④ V1–V4 的 🔴 由本机离线（`node` 直跑 `src/sniff.js`）与样例静态推导；V5/V6 已由 captain **2026-09-14 统一实跑**：
+V0 / V1-2 / V2-2 / V5-1 / V5-2 / V6-1 ✔ 绿，V1-1 / V2-1 / V3 / V4 ✖ 红（批 3 待实现的设计内先红），
+V6-2 / V6-3 已按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7 ④）。
+
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |
@@ -400,6 +428,36 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | `sample-truncated.txt` | TXT（合成） | 契约组 F7——UTF-8 末尾截断一字节（'你好世界，这是一个测试文档。' 42 B → 41 B；FFFD 过度触发——第五轮审查报告 §1.4） | 41 B / SHA `DBEFD79D…`；UTF-8 合法至结尾残序列（E3 80），正文 13 字完好 | 字节锁（manifest）；确定性生成 |
 | `sample-corrupt-xlsx.xlsx` | XLSX（损坏构造） | 契约组 G4-1——EOCD 中央目录 localOff=0x7FFFFF00 越界（zipEntry 无边界校验 → DataView/typed array 裸异常——第五轮审查报告 §1.5） | 113 B / SHA `54F22ECC…`；PK\x03 本地头（名 'xl/workbook.xml' 供 sniff 判 xlsx）+ CD 条目 + EOCD（count=1） | 字节锁（manifest）；确定性构造（非 zip 打包——纯结构字节） |
 | `sample-numfmt-date.xlsx` | XLSX（合成） | 契约组 G5——numFmt=14 序列号日期（45123=2023-07-16 / 45292.75=2024-01-01T18:00；styles.xml cellXfs 映射——第六轮审查报告 §2.3） | 2,260 B / SHA `05565B56…`；zip 合法，styles.xml 含 cellXfs `numFmtId="14"`，sheet1.xml 含 45123/45292.75 数值单元格（s="0"） | 字节锁（manifest）；确定性生成（生成而非人工） |
+
+### v0.1.4 缺陷批样例（契约组 U；2026-09-14 真机实测驱动，合成·确定性·进 manifest 字节锁）
+
+| 文件 | 类别 | 用途（契约组） | 验证规模（生成器实测） | 登记规则 |
+|---|---|---|---|---|
+| `sample-flipped-tm.pdf` | PDF（合成） | 契约组 U1——**A1 翻转 Tm 行序**：内容流 `1 0 0 -1 72 720 Tm` + `0 20 Td` 三行；真实 Chromium 打印 PDF 的算子级形态（d = −1、阅读顺序对应 cy 递增） | 760 B / SHA `AF927A9E…`；%PDF-1.4 合法，Helvetica 单字体，3×showText + 2×moveText[0,20] | 字节锁（manifest）；纯拉丁（T-2 口径）；确定性生成 |
+| `sample-monospace-code.pdf` | PDF（合成） | 契约组 U3/U5——**A3 等宽代码围栏**（Courier 四行等宽 + `#` 注释不得成 H1）+ A1 行序（`import cv2` 应最先） | 836 B / SHA `E373A204…`；Courier 字体（glyph 宽度恒 600/1000），4×showText + 3×moveText[0,20] | 同上 |
+| `sample-tl-leading.pdf` | PDF（合成） | 契约组 U2——**A2 缺 `TL`(36) 算子**：`20 TL` + `T*` 定位三行（无 Td/TD）；缺算子时 leading 恒 0 → 三行压成一行且粘连 | 741 B / SHA `5812CFCC…`；算子序列实测 = setLeading[20] + 2×nextLine（pdf.js 映射证明 TL/T* 确以 36/43 到达） | 同上 |
+| `sample-quote-ops.pdf` | PDF（合成） | 契约组 U6——撇号 `'` / 双引号 `"` 算子**文字不丢失**守护（pdf.js 已在求值阶段分解为 nextLine+showText；此样例锁「三 token 均在」防误修） | 747 B / SHA `CC4FB92D…`；算子序列 = setLeading + nextLine + setWordSpacing + setCharSpacing + 2×showText | 同上 |
+| `sample-overprint.pdf` | PDF（合成） | 契约组 U4——**A4 同位置叠印去重**：同一行内三次同文本绘制（真实页脚叠印形态，实测真实 PDF 每页 168–252 对重复） | 758 B / SHA `06812BA6…`；3×showText（同文本）+ 2×moveText[0.3,0] | 同上 |
+
+> **机制取证（2026-09-14，node 侧 pdfjs-dist 直读算子序列，非推断）**：真实 Chromium 打印 PDF（Jupyter 导出，7 篇）
+> 的 `setTextMatrix` **一律 d = −1**（1324 个/首样本页），阅读顺序（内容流顺序）对应 **cy 递增**，行切换一律
+> `moveText`（Td，0 次 `nextLine`）；而既有 `sample-spacing.pdf` 是 d = +1（cy 递减）——两者行序方向相反，
+> 即 A1 根因（判决口径 = 按 Tm 的 d 符号统一方向）。`TL`/`T*` 在真实样例中未出现，故 A2 的符号口径由
+> 合成样例 + PDF 规范共同约束（见 `src/pdf.js` 注释与 docs/DEV-NOTES.md 2026-09-14 节）。
+
+### v0.1.4 批 3 契约组 V 样例（2026-09-14，合成·确定性·进 manifest 字节锁）
+
+| 文件 | 类别 | 用途（契约组） | 验证规模（生成器实测） | 登记规则 |
+|---|---|---|---|---|
+| `sample-bmw-text.txt` | TXT（合成） | 契约组 V1-1——**B1 负例**：以 `BMW 汽车说明文字` 开头的纯文本（`BM` 前缀 ≠ BMP 位图） | 145 B / SHA `4E13A90D…` | 字节锁（manifest）；确定性生成（生成而非拷贝） |
+| `sample-gif8-text.txt` | TXT（合成） | 契约组 V1-1——**B1 负例**：以 `GIF89a 是图片格式说明` 开头的纯文本（`GIF8*` 前缀 ≠ GIF 图片） | 155 B / SHA `1FBF8F71…` | 同上 |
+| `sample-pdf-mention.txt` | TXT（合成） | 契约组 V2-1——**B2 负例**：正文提到 `%PDF-1.4` 但无任何 PDF 对象结构 | 164 B / SHA `E448CD5A…` | 同上 |
+| `sample.bmp` | BMP（合成） | 契约组 V1-2——**B1 正例守护**：1×1 24bpp 真 BMP（`bfSize`=58=文件长度、`bfOffBits`=54、DIB 头 40——结构自洽） | 58 B / SHA `C92ACA13…`；`BM` + 14 B 文件头 + 40 B DIB + 像素行 | 同上 |
+| `sample.gif` | GIF（合成） | 契约组 V1-2——**B1 正例守护**：1×1 GIF89a（逻辑屏幕 1×1 非零、全局色表、图像块、trailer `0x3B`） | 35 B / SHA `6C63CC50…` | 同上 |
+| `sample-big5-upper-meta.html` | HTML（合成，Big5 编码） | 契约组 V3——**B3**：大写 `<META CHARSET="big5">` 的 Big5 字节 HTML（旧实现 `indexOf('<meta')` 大小写敏感 → 漏检 charset → 整段乱码） | 170 B / SHA `E9F3DD91…`；Big5 字节由生成器反查表编码 + **往返自检**（正文 `中文測試：DOC2MD-BIG5-UPPER-2026`） | 同上 |
+| `sample-image-alt.docx` | DOCX（合成） | 契约组 V4——**C1**：图 1 `descr="ALT-FROM-DESCR-2026"`（`name="ignored-name.png"`）+ 图 2 `descr=""`（`name="fallback-name.png"`） | 15,397 B / SHA `7C852B81…`；zip 合法，`document.xml` 含 2×`pic:cNvPr`（1 带 descr）+ rId7/rId8 关系 | 同上 |
+
+> 既有样例**字节零变化**：`node tests/gen-samples.mjs` 重跑后逐文件 SHA 比对（含 U 批 5 个新样例）——除 `manifest.json`（追加 7 条新登记）外 0 变化；7 个新样例连续两次生成 SHA 相同（幂等）。
 
 ### 真实样例清单（T-3 通路落地：用户终端自 GitHub 上游下载，2026-09-04 登记）
 
@@ -477,7 +535,7 @@ npm run gen:samples           # 重新生成样例（确定性）
   **官方两相（captain 升权实跑）**：**先红** = 只跑新组 `K2|G7` → `tests 32 / pass 8 / fail 24`（K2 红 17 / G7 红 5 + 2 组壳；控制组 5 绿按设计保持绿），exit 1；**后绿** = 全量 **212 tests / pass 212 / fail 0（47.5s）**，exit 0；`npm run lint`（全量 src+tools）**0 error / 0 warning**；metrics 17 文件 / 332 函数 / 超限 0 / 重复率 0.5%。断言文件 blob 全程 `5bfa64bb…` 未变。
   **独立验收（t5 / qa-dev，PASS）**：三方同哈希 pin（HEAD = 工作树 = 被测副本）；换数据 = 自写 ZIP 头 + zlib 造 8 个工作簿（1904 两形态 / 1900 三形态 / 属性乱序+单引号 / 空格形态 / deflate）与 19 条 HTML → 产物 8/8 + 41/41、`src` 直调同判（产物 ≡ src）；**负对照 pin 住**：修复前产物 `c9e8ca9a` → 32 红（契约 17 条与先红登记逐条一致）、修复前 `src/xlsx.js` `5625444e` → 8/8 kit 红；零回归差分 36 语料 **UNEXPECTED=0**、4 docx 样例 md+warnings 逐字节相同。
   **交叉审查（t6；因基础设施故障 transfer 给 qa-dev，verdict = pass）**：html2md 对抗 16 例（产物 16/16、src 16/16、自写解析器回读 9/9，围栏 1/2/3/4/6 正确；修复前产物 10 红）；xlsx 2 工作簿 × 35 单元（serial 0/60/负值/超大/科学计数 ± 指数 + 多层转义 + `&#x10FFFF;`/`&#x110000;`/非法实体）与独立期望 **0 不符**。
-  **未修观察（非阻塞，登记）**：① `&#xD800;` / `&#0;` 按码点直出（脏数据边界，建议后续映射 U+FFFD）；② 1904 下 serial 2958465 → 10004 年（输入越界）；③ 行内 code 含换行保留原换行（CommonMark 合法）。
+  **未修观察（非阻塞，登记）**：① ~~`&#xD800;` / `&#0;` 按码点直出（脏数据边界，建议后续映射 U+FFFD）~~ ✅ **已闭环（2026-09-14 实测：已输出 `U+FFFD`，符合 WHATWG）**——数字字符引用数字为 0 / 孤立代理 / 越界（>U+10FFFF）时规范要求 `U+FFFD`；契约组 V V6-1 锁死，本条过时登记同步更新于 `docs/spec-conformance-tests.md` §3.9 与 `docs/HANDOFF-主开发线.md` §8.8；`&#x;`（缺失位数）**单列一条 low**（规范要求字面回填 `&#x;`；docx 路径 = mammoth 解出 `U+0000` → html2md 的 `DOMParser` 层归一 `U+FFFD`，与字面要求不符；**是否修待用户拍板，本批不修**，V6-3 锁现状）；② 1904 下 serial 2958465 → 10004 年（输入越界）；③ 行内 code 含换行保留原换行（CommonMark 合法）；④ **html2md 字符引用/输入流边界 2 条规范偏差（2026-09-14 captain 实跑登记，均 low，待用户拍板，本批不修）**：④a 输入流 `U+0000` 当前**被丢弃**（`A` + NUL + `B` → `AB`）——WHATWG「输入流预处理」要求替换为 `U+FFFD`（契约组 V **V6-2** 按现状锁定；同条更正 ① 中「docx 路径经 DOMParser 归一 U+FFFD」的机制描述：`U+0000` 实测被丢弃，docx 源 `&#x;` 的实际产出待拍板修复时统一重测）；④b `&#x;`（缺失位数）当前输出 `U+FFFD`——WHATWG §13.2.5.81 要求原文回填字面 `&#x;`（契约组 V **V6-3** 按现状锁定）。两条均为「**按现状锁 + 显式登记偏差**」，不按规范值断言（规范值会永久红、卡死门禁），也不假装符合规范。
   **流程发现（重要）**：① reviewer 会话连续两次 `DeepSeek API error (HTTP 400 INVALID_REQUEST)` 秒败 —— 后经用户确认根因是**宿主内存泄漏崩溃**（非会话问题）；② 崩溃触发框架**自动重试**（t6 累计到 attempt=5），内存不稳时形成「重试 → 重装大上下文 → 尖峰 → 再崩」回路 → **止血 = 归档团队**（已执行；归档后 `.agent-teams` 零写入、子代理 0 running）；③ **防再犯**：失败即停不交给框架重试 / 任务书瘦身（重活收到 captain 侧）/ 任务全 terminal 立即归档 / 崩前征兆 = attempt 递增 + 大内存 node(>400MB) + msedge 堆积；④ 成员往来邮件一处日期笔误（`1904-01-14` 应为 `2004-01-14`）经全库 grep 确认**未落进任何文件**。
 
 - **2026-09-11/12 规范符合性 S4+S5 收口批（S4-5..S4-7 / S5-4 / S5-5 先红后绿；AgentTeams `doc2md-s4s5` 续跑）**：来源 = 首轮交叉审查的 3 条 finding（S4-R1 全文 ≥2 处零散 U+FFFD 触发**整篇 gb18030 mojibake**；S5-R1 同前缀混排漏改；S5-R2 属性值含 `>` 漏改）→ 用户 2026-09-11 拍板「**修完再发**」（口径 A′）。
@@ -861,7 +919,7 @@ line2
 
 | 编号 | 输入字节 | 期望 | 要点 |
 |---|---|---|---|
-| e1 | `junk:%PDF-1.4\n`（UTF-8） | `{ type: 'pdf' }` | 前 1024（64KB）内搜首个 `%PDF` 命中即 pdf（architecture §3 兜底） |
+| e1 | `junk:%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\ntrailer\n<< /Root 1 0 R >>\nstartxref\n0\n%%EOF\n`（UTF-8） | `{ type: 'pdf' }` | **2026-09-14 输入升级（用户拍板）**：原 `junk:%PDF-1.4\n`（无 obj/%%EOF）= 批 3 B2 要修的「裸 %PDF 字样」形态；现为「垃圾前缀 + 真实 PDF 结构」——要点 = 前 1024 内搜首个 `%PDF`（architecture §3 兜底）**且**头部 64KB 内有 `obj`/`%%EOF`；口径分工见组 V V2-1 / V2-2 |
 | e2 | `4D 5A 90 00 03 00 00 00 04 00 00 00 FF FF`（MZ 魔数 + NUL/控制字节） | `{ type: 'unknown', detail: 'binary' }` | exe 改装回 text = 乱码「成功」——二进制启发式后判 unknown（detail 建议 `binary`） |
 | e3 | `50 4B 03 04 14 00 …`（PK 魔数，无 word//xl//ppt/） | type ∈ { `zip`, `unknown` } | 不得判回 `text`；具体定版（zip vs unknown）待实现拍板后回填本表 |
 | e4 | （0 字节） | `{ type: 'unknown', detail: 'empty' }` | 空文件（architecture §3：提示「文件为空」） |
