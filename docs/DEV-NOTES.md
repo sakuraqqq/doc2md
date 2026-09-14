@@ -1000,6 +1000,44 @@ git revert --no-edit 567ff2f         # 生成 faceb9f：6 个文件全部恢复
 
 **另一个沙箱坑（同批实测）**：`git fetch` 在沙箱内被拒 —— `error: cannot create standard input pipe for remote-https: Permission denied`（与「禁命名管道」同源）；按纪律升权一次后 fetch 正常。fetch 前记得 `-c http.sslVerify=false` 绕 Steam++ TLS 中间人。
 
+---
+
+## 2026-09-14 v0.1.4 缺陷批 · 提交 A（A1 翻转 Tm 行序 / A2 缺 `TL`(36) / A3 等宽代码围栏 / A4 叠印去重）
+
+**背景**：真机 7 篇 Chromium 打印 PDF（Jupyter 导出）暴露四类**静默错**（`warnings=[]`、console error 0）：整篇行序反向、代码清单无围栏、`#` 注释裸露成 H1、页脚同位置 3–4 倍叠印。三方合并清单见本地 `.私档/项目/复盘/20260914-复盘材料-待修清单-合并三方.md`，任务书见同目录 `20260914-复盘决议-v0.1.3转正与v0.1.4范围.md`。
+
+**根因（算子级取证，非推断）**：node + pdfjs-dist 3.11.174 直读 `getOperatorList()`（脚本 `.tmp/dump-ops.mjs` / `probe-real-pdf.mjs` / `probe3.mjs` / `probe4.mjs`，均 gitignored）：
+
+| 缺陷 | 取证结论 |
+|---|---|
+| A1 行序 | 真实 PDF 的 `setTextMatrix` **一律 d = −1**（首样本页 1324 处），阅读顺序对应 cy **递增**；既有 `sample-spacing.pdf` 是 d = +1、对应 cy 递减 → 原实现「一律按 cy 降序」在翻转坐标系下整段倒置 |
+| A2 缺算子 | `TL`(36) 不在 `PN` 表 → leading 恒 0 → `T*` 不换行（pdf.js 侧确认 TL 以 `setLeading`、T\* 以 `nextLine` 到达；`PN` 10 项常量与 `pdfjs.OPS` 逐项核对一致） |
+| A3 判据 | 真实代码字体 glyph 宽度**种类 = 1**（549.8/1000）；正文比例字体 > 1；CJK 字体 1000 全宽 → 可按「fontId 宽度种类 = 1 且 ≤ 0.7em」纯数据判等宽 |
+| A4 叠印 | 同位置叠印 = 同一 x 上同文本重复 4 份（机器视觉 12 第 1/2 页实测 **252/168** 对） |
+| **支撑性缺陷**（批 1 实现内自曝） | `Td/TD/T*` 平移的是**行矩阵**、不是当前笔位 —— 原状态机把 tx 累加到笔位上，叠印三份 x 被算成 72/206.9/341.7（真值 72/72.3/72.6）→ **A4 判据永不命中**；补行原点 `lx` 跟踪后才成立 |
+
+**拍板**（用户 2026-09-14）：
+1. A4 容差 = 同一行内 + 文本完全相同 + x 容差 < 0.5 字宽；跨行不并。
+2. A2 只补 `TL`(36)（46/47 不补 —— 实测 pdf.js 已在求值阶段把 `'`/`"` 分解为 nextLine+showText，文字不丢失）；**符号口径修正**：leading 存规范值 + `nextLine` 随 Tm 的 d 符号定向。与决议字面 `-(args[0])` 在 d = −1（真实场景）下**行为等价**，在 d > 0 下符合 PDF 规范（决议口径会反向）。
+3. A3 判据常量 `MONO_MIN_LETTERS = 1`、`CODE_MIN_ASCII = 1`（各一行可回滚、原值 0/2 写在注释）：前者消除纯数字子集字体把封面「学号/年月」行误包围栏；后者让中文注释行（仅 1 个 ASCII glyph `#`）不再裸露成标题。
+
+**做了什么**：`src/pdf.js` 单文件 —— `screenY()` 统一屏幕方向 + `groupRunsIntoLines` 按 sy 排序（A1）；`PN.TL` + 定向 `nextLine`（A2）；fontId 宽度统计 → `monospaceFontIds` / `isCodeLine` / `linesToMarkdown` 围栏组装（A3）；`isOverprintRun` + `lineText` 同行去重（A4）；行原点 `lx` 跟踪（支撑性）。契约新增**组 U**（U-0 字节锁 + U1–U7）；5 个缺陷样例由 `tests/gen-samples.mjs` **生成**并进 manifest 字节锁（逐字节复现手机侧交付：760/836/741/747/758 B，SHA 逐一相等；既有 23 个样例字节零变化）。
+
+**实测**（本会话，升权 + msedge 回退）：
+- **契约组 U 全绿 9/9**（U1–U7 + U-0）；产物 `index.html` 113,561 → **115,457 chars**。
+- 5 样例：`monospace-code` 围栏 0→1 块 / 0→4 代码行、栏外 `#` 行 1→0；`overprint` OVERPRINT-TOKEN 3→1；其余三个逐字节不变。
+- 真实 7 篇（各 2 页）：**栏外 `#` 行合计 192 → 11**、围栏块 0 → 3–15 块/篇（12: 24→0 · 03: 14→0 · 06: 38→0 · 07: 35→0 · 08: 21→0 · 09: 28→0 · **05: 32→11 残余**）。
+- 等价性台：9 个合成样例中 7 个逐字节一致（仅 A3/A4 两个目标样例按预期变化）；`sample-spacing.pdf` 仍出 `Hello world`、`sample.pdf` 无围栏、U6 三 token 均在。
+
+**残余（登记，本批不修）**：
+1. **05 的 11 行栏外 `#`**：根因 = **字体回退**、非阈值 —— 该 PDF 把中文注释行的 ASCII 字符（`#`/`1`/`.`）交给 CJK 字体渲染（宽度种类 {500, 1000} → 按「种类 = 1」正确判为非等宽）。放宽到「只看 ASCII 宽度种类」会把说明书正文行也判成代码（同一字体 ASCII 宽度恒 500）→ 明确**不放宽**。
+2. **极端「逐字符一字体子集」PDF**（软著说明书：每个拉丁字母一个字体资源、宽度恒 133）标题行仍误判 → 6 个单行围栏；候选补判据（最小采样量 / 宽度合理性 / ≥2 行才成块）留 v0.2 拍板。
+
+**环境坑（本批新踩，2026-09-14）**：
+1. **本沙箱同时禁「命名管道」两条路**：既禁 `child_process.spawn` 带 pipe（playwright 启动浏览器 → `spawn EPERM`），也禁浏览器**自身**的 mojo IPC（手起 `msedge --headless` → `FATAL:mojo\…\platform_channel.cc:183 Check failed: 拒绝访问 (0x5)` → 弹窗 `msedge.exe - 应用程序错误 0x80000003`，模态框会吊住进程）。**结论：浏览器级验证一律升权后走 playwright 的 `channel msedge` 回退**（本批已实证多次）；不要手起浏览器，也不必为此装 chromium（其下载器同样要 fork 子进程 → `spawn EPERM`）。
+2. 该 `0x80000003` 与 09-13 报告的 `0xC0000142` **不是同一错误码/阶段**：前者进程已启动后触发断点异常（`STATUS_BREAKPOINT`），后者是加载器初始化即失败（`STATUS_DLL_INIT_FAILED`、进程从未起来）。两者都写 `Application Popup` Id=26 通道，排查时别混为一谈。
+
+
 
 
 

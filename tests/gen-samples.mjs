@@ -249,7 +249,8 @@ ${Array.from({ length: N }, (_, i) => `<Override PartName="/xl/worksheets/sheet$
  * 合成 docx：两段各含一张 w:drawing 图片（rId7=image1.png 小图、rId8=image2.png 大图）。
  * 图片无 alt（descr=""）——断言「alt 非 AI 描述」覆盖的正是「文件名/题注/空 alt」口径。
  */
-const IMG_DRAWING = (id, name, rid) => `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="3600000" cy="1200000"/><wp:docPr id="${id}" name="${name}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}" descr=""/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="3600000" cy="1200000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
+// descr = Word 图片「可选文字」（批 3 C1：alt 取 descr 优先、空 descr 回落 name）；默认 '' 与既有样例逐字节一致
+const IMG_DRAWING = (id, name, rid, descr = '') => `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="3600000" cy="1200000"/><wp:docPr id="${id}" name="${name}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}" descr="${descr}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="3600000" cy="1200000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
 
 function buildImagesDocx(smallPng, bigPng) {
   const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -436,6 +437,162 @@ function buildMultiOmmlDocx() {
   ]);
 }
 
+/* ---------------- v0.1.4 PDF 缺陷样例族（5 个；契约组 U 先红） ----------------
+ * 依据：2026-09-14 真机 7 篇 PDF 实测（Chromium 打印的 Jupyter 导出）+ 三方对比材料（本地 .私档/）。
+ * 机制（node 侧 pdfjs-dist 算子级取证，2026-09-14）：真实 PDF 的 setTextMatrix 一律 d = -1
+ *   （内容流写 `1 0 0 -1 x y Tm`），阅读顺序（自上而下）对应 **cy 递增**，行切换用 `0 20 Td` 正步进；
+ *   既有 sample-spacing.pdf 是 d = +1（`1 0 0 1 ... Tm`）→ 阅读顺序对应 cy 递减。两者方向相反，
+ *   这正是 A1（翻转 Tm 行序反向）的根因。TL(T*) / 撇号 / 双引号算子实测经 pdf.js 映射为
+ *   setLeading / nextLine（见下 sample-tl-leading / sample-quote-ops）。
+ * 覆盖：A1 行序 / A2 缺 TL(36) / A3 等宽代码围栏 / A4 同位置叠印去重。
+ * 全部为自造合成样例、纯拉丁文本层（T-2 口径）、确定性字节（xref 偏移动态计算）。
+ */
+function buildV014Pdf(stream) {
+  return buildPdfShell([
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>',
+    `<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`,
+  ]);
+}
+const V014_PDF_STREAMS = {
+  // A1：翻转 Tm + 正步进三行——期望 TOP → MIDDLE → BOTTOM（当前整段倒序）
+  'sample-flipped-tm.pdf': ['BT /F1 14 Tf 1 0 0 -1 72 720 Tm', '(TOP-LINE-FIRST) Tj', '0 20 Td', '(MIDDLE-LINE-SECOND) Tj', '0 20 Td', '(BOTTOM-LINE-THIRD) Tj', 'ET'].join('\n'),
+  // A1 + A3：Courier 等宽四行代码（含 `#` 注释）——期望进代码围栏、注释不得成为 Markdown 标题
+  'sample-monospace-code.pdf': ['BT /F2 14 Tf 1 0 0 -1 72 720 Tm', '(# comment-should-not-be-h1) Tj', '0 20 Td', '(import cv2) Tj', '0 20 Td', '(image = cv2.imread("dog.png")) Tj', '0 20 Td', '(gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)) Tj', 'ET'].join('\n'),
+  // A2：TL 20 + T* 定位三行（无 Td/TD）——缺 TL(36) 时 leading 恒 0 → 三行压成一行且粘连
+  'sample-tl-leading.pdf': ['BT /F1 14 Tf 1 0 0 -1 72 720 Tm', '20 TL', '(TL-LINE-ONE) Tj', 'T*', '(TL-LINE-TWO) Tj', 'T*', '(TL-LINE-THREE) Tj', 'ET'].join('\n'),
+  // A2 相关：撇号 / 双引号算子（pdf.js 已在求值阶段分解为 nextLine+showText —— 文字不丢失，仅行粘连）
+  'sample-quote-ops.pdf': ['BT /F1 14 Tf 1 0 0 -1 72 720 Tm', '20 TL', "(APOS-OP-LINE) '", '0.5 1 (DQUOTE-OP-LINE) "', '(PLAIN-TJ-CONTROL) Tj', 'ET'].join('\n'),
+  // A4：同一行内同位置三次绘制（页脚叠印形态）——期望 OVERPRINT-TOKEN 恰出现 1 次
+  'sample-overprint.pdf': ['BT /F1 14 Tf 1 0 0 -1 72 720 Tm', '(OVERPRINT-TOKEN) Tj', '0.3 0 Td', '(OVERPRINT-TOKEN) Tj', '0.3 0 Td', '(OVERPRINT-TOKEN) Tj', 'ET'].join('\n'),
+};
+
+/* ---------------- v0.1.4 批 3 契约组 V 样例（嗅探负例/正例 + docx alt；2026-09-14，合成·确定性·进 manifest 字节锁）
+ * 依据：批 3 缺陷口径（B1 `BM*`/`GIF8*` 前缀误判 / B2 `%PDF` 文本误判 / B3 大写 `<META>` 漏检 /
+ *   C1 docx 图片 alt 取 `descr`）。全部自造合成、确定性字节、**生成而非拷贝**（沿用 put() + manifest 字节锁）。
+ */
+// B1 负例：以 `BM`/`GIF89a` 开头、整体是纯文本（旧实现只认前缀 → 误判 image/bmp|gif）
+const BMW_TEXT = [
+  'BMW 汽车说明文字：本文档是纯文本，用于类型嗅探负例（`BM` 前缀 ≠ BMP 位图）。',
+  '关键令牌：DOC2MD-BMW-TEXT-2026',
+  '',
+].join('\n');
+const GIF8_TEXT = [
+  'GIF89a 是图片格式说明：本文档是纯文本，用于类型嗅探负例（`GIF8*` 前缀 ≠ GIF 图片）。',
+  '关键令牌：DOC2MD-GIF8-TEXT-2026',
+  '',
+].join('\n');
+// B2 负例：正文提到 `%PDF-1.4` 字样，但无任何 PDF 对象结构（旧实现前 1024 B 搜到 `%PDF` 即判 pdf）
+const PDF_MENTION_TEXT = [
+  '文档格式说明：PDF 文件以 %PDF-1.4 开头，本文档只是提到该写法的纯文本，不含 PDF 对象结构。',
+  '关键令牌：DOC2MD-PDF-MENTION-2026',
+  '',
+].join('\n');
+
+/* B1 正例：1×1 真 BMP（14 B 文件头自洽：bfSize = 文件长度 58、bfOffBits = 54、DIB 头 40）+ 1×1 真 GIF89a
+ * （逻辑屏幕 1×1 非零 + 全局色表 + 图像块 + trailer 0x3B）——守护「结构校验不得误杀真图」。确定性字节，无时间戳。 */
+function buildBmp1x1() {
+  const b = Buffer.alloc(58);
+  b.write('BM', 0, 'ascii');
+  b.writeUInt32LE(58, 2); // bfSize = 文件长度（自洽）
+  b.writeUInt32LE(0, 6); // bfReserved1/2
+  b.writeUInt32LE(54, 10); // bfOffBits（= 14 + 40 ≤ 文件长度）
+  b.writeUInt32LE(40, 14); // DIB 头大小（常见集合）
+  b.writeInt32LE(1, 18); // 宽
+  b.writeInt32LE(1, 22); // 高
+  b.writeUInt16LE(1, 26); // planes
+  b.writeUInt16LE(24, 28); // 24bpp
+  b.writeUInt32LE(0, 30); // BI_RGB
+  b.writeUInt32LE(4, 34); // 像素数据（行对齐 4 B）
+  b.writeUInt32LE(2835, 38);
+  b.writeUInt32LE(2835, 42);
+  b[54] = 0x33; b[55] = 0x66; b[56] = 0x99; b[57] = 0x00; // BGR + 行末填充
+  return b;
+}
+function buildGif1x1() {
+  return Buffer.concat([
+    Buffer.from('GIF89a', 'ascii'), // 完整签名（GIF87a/GIF89a 两形态见契约组 V 断言）
+    Buffer.from([0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00]), // 逻辑屏幕描述符：宽 1 / 高 1 / 全局色表标志
+    Buffer.from([0x00, 0x00, 0x00, 0xff, 0xff, 0xff]), // 全局色表 2 色
+    Buffer.from([0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]), // 图像描述符 1×1
+    Buffer.from([0x02, 0x02, 0x44, 0x01, 0x00]), // LZW min code size 2 + 数据块 + 块终止
+    Buffer.from([0x3b]), // trailer
+  ]);
+}
+
+/* B3：大写 `<META CHARSET="big5">` 的 Big5 编码 HTML（旧实现只认小写 `<meta` → 漏检 charset → 整段乱码）。
+ * Big5 字节生成：node 无 `TextEncoder('big5')` → 用 `TextDecoder('big5')` 反查双字节表（确定性；生成期
+ * 往返自检，编码错误立即 throw，不留静默错样例）。 */
+function big5Encode(text) {
+  const table = new Map();
+  for (let b0 = 0x81; b0 <= 0xfe; b0++) {
+    for (let b1 = 0x40; b1 <= 0xfe; b1++) {
+      if (b1 === 0x7f) continue;
+      const s = new TextDecoder('big5').decode(Uint8Array.from([b0, b1]));
+      if (s.length === 1 && !table.has(s)) table.set(s, [b0, b1]);
+    }
+  }
+  const out = [];
+  for (const ch of text) {
+    if (ch.charCodeAt(0) < 0x80) { out.push(ch.charCodeAt(0)); continue; }
+    const pair = table.get(ch);
+    if (!pair) throw new Error('big5Encode 无映射字符：' + ch);
+    out.push(pair[0], pair[1]);
+  }
+  if (new TextDecoder('big5').decode(Uint8Array.from(out)) !== text) {
+    throw new Error('big5Encode 往返自检失败（样例会静默错）：' + text);
+  }
+  return out;
+}
+const BIG5_UPPER_TEXT = '中文測試：DOC2MD-BIG5-UPPER-2026';
+function buildBig5UpperMetaHtml() {
+  return Buffer.concat([
+    Buffer.from('<!DOCTYPE html>\n<html lang="zh-Hant">\n<head><META CHARSET="big5"><title>Big5 uppercase META</title></head>\n<body>\n<p>', 'utf8'),
+    Buffer.from(big5Encode(BIG5_UPPER_TEXT)),
+    Buffer.from('</p>\n</body>\n</html>\n', 'utf8'),
+  ]);
+}
+
+/* C1：docx 图片 alt 取值（`descr` = Word「可选文字」优先；`descr` 空 → 回落 `name`）。
+ * 图 1：name=ignored-name.png + descr=ALT-FROM-DESCR-2026 → alt 必须取 descr（旧实现取 name → 红）；
+ * 图 2：name=fallback-name.png + descr="" → alt 回落 name（去扩展名）。两图同小图 PNG（确定性资产复制）。 */
+function buildImageAltDocx(png) {
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>
+<w:p><w:r><w:t>图片 alt 样例（descr 优先 / 空 descr 回落 name）</w:t></w:r></w:p>
+<w:p><w:r>${IMG_DRAWING(1, 'ignored-name.png', 'rId7', 'ALT-FROM-DESCR-2026')}</w:r></w:p>
+<w:p><w:r>${IMG_DRAWING(2, 'fallback-name.png', 'rId8', '')}</w:r></w:p>
+<w:p><w:r><w:t>关键令牌：DOC2MD-IMG-ALT-2026</w:t></w:r></w:p>
+</w:body></w:document>`;
+  const ct = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="png" ContentType="image/png"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+<Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image2.png"/>
+</Relationships>`;
+  return buildZip([
+    { name: '[Content_Types].xml', data: Buffer.from(ct, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rels, 'utf8') },
+    { name: 'word/document.xml', data: Buffer.from(doc, 'utf8') },
+    { name: 'word/_rels/document.xml.rels', data: Buffer.from(docRels, 'utf8') },
+    { name: 'word/media/image1.png', data: png },
+    { name: 'word/media/image2.png', data: png },
+  ]);
+}
+
 /* ---------------- 组装 ---------------- */
 console.log('doc2md 契约测试样例生成 → tests/data/');
 put('sample.txt', Buffer.from(TXT, 'utf8'));
@@ -485,6 +642,15 @@ put('sample-lowtext.pdf', buildLowtextPdf());
 put('sample-truncated.txt', buildTruncatedTxt());
 put('sample-corrupt-xlsx.xlsx', buildCorruptXlsx());
 put('sample-numfmt-date.xlsx', buildNumFmtDateXlsx());
+for (const [name, stream] of Object.entries(V014_PDF_STREAMS)) put(name, buildV014Pdf(stream));
+/* 批 3 契约组 V 样例（7 个：3 嗅探负例 + 2 真格式正例 + 1 Big5 大写 META + 1 docx alt） */
+put('sample-bmw-text.txt', Buffer.from(BMW_TEXT, 'utf8'));
+put('sample-gif8-text.txt', Buffer.from(GIF8_TEXT, 'utf8'));
+put('sample-pdf-mention.txt', Buffer.from(PDF_MENTION_TEXT, 'utf8'));
+put('sample.bmp', buildBmp1x1());
+put('sample.gif', buildGif1x1());
+put('sample-big5-upper-meta.html', buildBig5UpperMetaHtml());
+put('sample-image-alt.docx', buildImageAltDocx(sampleImage()));
 
 /* ---------------- real-big.xlsx（大行数：50,000 行 × 3 列；契约组 L4/L5，t32） ----------------
  * 单 sheet 大行数样例：触发 L4（流式/性能——当前实现全量解析后截断，50K 行预计超 3000ms）与
@@ -861,7 +1027,7 @@ function buildNumFmtDateXlsx() {
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）；sample-truncated.txt 为 UTF-8 末尾截断样例（第五轮审查报告 §1.4 FFFD 过度触发——契约组 F7）；sample-corrupt-xlsx.xlsx 为损坏 xlsx 越界样例（EOCD localOff 越界，第五轮审查报告 §1.5——契约组 G4）；sample-numfmt-date.xlsx 为 numFmt=14 序列号日期样例（45123/45292.75，第六轮审查报告 §2.3——契约组 G5）；sample-rels-dotdot.xlsx 为 rels Target 用 `../` 相对路径样例（第七轮审查报告 §2.2——契约组 G6）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）；sample-truncated.txt 为 UTF-8 末尾截断样例（第五轮审查报告 §1.4 FFFD 过度触发——契约组 F7）；sample-corrupt-xlsx.xlsx 为损坏 xlsx 越界样例（EOCD localOff 越界，第五轮审查报告 §1.5——契约组 G4）；sample-numfmt-date.xlsx 为 numFmt=14 序列号日期样例（45123/45292.75，第六轮审查报告 §2.3——契约组 G5）；sample-rels-dotdot.xlsx 为 rels Target 用 `../` 相对路径样例（第七轮审查报告 §2.2——契约组 G6）；sample-flipped-tm.pdf / sample-monospace-code.pdf / sample-tl-leading.pdf / sample-quote-ops.pdf / sample-overprint.pdf 为 v0.1.4 缺陷批合成样例（契约组 U 先红；由来 = 2026-09-14 真机 7 篇 Chromium 打印 PDF 实测 + 算子级取证：A1 翻转 Tm 行序反向 / A2 缺 `TL`(36) 算子 / A3 等宽代码围栏 / A4 同位置叠印去重；全部自造合成、纯拉丁文本层、确定性字节）；sample-bmw-text.txt / sample-gif8-text.txt / sample-pdf-mention.txt / sample.bmp / sample.gif / sample-big5-upper-meta.html / sample-image-alt.docx 为 v0.1.4 批 3 契约组 V 样例（2026-09-14：B1 `BM*`·`GIF8*` 前缀误判的纯文本负例 + 1×1 真 BMP/GIF 正例、B2 正文提及 `%PDF` 的纯文本负例、B3 大写 `<META CHARSET="big5">` 的 Big5 编码 HTML、C1 docx 图片 alt 取 `descr`；全部自造合成、确定性生成、manifest 字节锁）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
