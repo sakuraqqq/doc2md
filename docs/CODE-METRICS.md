@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-15T07:02:33.016Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-15T07:51:13.950Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：17；函数总数：349；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：17；函数总数：353；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 349 个，超限 0 个。
+重构后当前：函数 353 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -27,10 +27,10 @@
 |---|---|---|---|---|
 | src/xlsx.js | xlsxSelfParse | 485 | 10 | 13 |
 | tools/metrics.mjs | loadIgnoreFilter | 53 | 10 | 13 |
-| src/convert.js | convert | 60 | 10 | 10 |
+| src/convert.js | convert | 70 | 10 | 10 |
 | src/xlsx.js | collectTTexts | 250 | 9 | 14 |
 | src/ui.js | buildEmbedMap | 110 | 9 | 13 |
-| src/ocr.js | ocrAssetsWarm | 11 | 9 | 11 |
+| src/ocr.js | ocrAssetsWarm | 22 | 9 | 11 |
 | src/ui.js | renderResult | 195 | 9 | 10 |
 | src/xlsx.js | xlsxByLib | 531 | 9 | 10 |
 | src/docx.js | ommlParts | 103 | 9 | 9 |
@@ -42,6 +42,7 @@
 | src/docx.js | docxCollectWarnings | 285 | 8 | 8 |
 | src/ui.js | downloadZip | 54 | 8 | 8 |
 | src/convert.js | imageConvert | 16 | 8 | 7 |
+| src/convert.js | ocrWarnings | 30 | 8 | 7 |
 | src/sniff.js | sniff | 156 | 8 | 7 |
 | src/xlsx.js | isBuiltinDateId | 374 | 8 | 7 |
 | src/html2md.js | blockifyContainer | 147 | 7 | 13 |
@@ -62,19 +63,20 @@
 | src/sniff.js | gb18030Fallback | 111 | 6 | 10 |
 | src/docx.js | docxParseForMd | 232 | 6 | 9 |
 | src/html2md.js | listElToMd | 221 | 6 | 9 |
-| src/ocr.js | getOcrWorker | 30 | 6 | 9 |
+| src/ocr.js | getOcrWorker | 41 | 6 | 9 |
 | src/pdf.js | lineText | 202 | 6 | 8 |
 | src/pdf.js | textQualityRatio | 324 | 6 | 8 |
 | src/pdf.js | groupRunsIntoLines | 175 | 6 | 7 |
 | src/pdf.js | monospaceFontsOf | 251 | 6 | 7 |
 | src/docx.js | ommlMathEntry | 144 | 6 | 6 |
+| src/ocr.js | prepareOcrImage | 75 | 6 | 6 |
 | src/sniff.js | decodeText | 23 | 6 | 6 |
 | src/sniff.js | ctrlRatio | 240 | 6 | 6 |
 | src/ui.js | assetsTotalBytes | 104 | 6 | 6 |
 | src/xlsx.js | findEocd | 16 | 6 | 6 |
 | tools/gen-icons.mjs | onTextLine | 67 | 6 | 6 |
-| src/convert.js | unsupportedError | 89 | 6 | 5 |
-| src/convert.js | runConverter | 100 | 6 | 5 |
+| src/convert.js | unsupportedError | 99 | 6 | 5 |
+| src/convert.js | runConverter | 110 | 6 | 5 |
 | src/docx.js | ommlDelim | 84 | 6 | 5 |
 | src/docx.js | dstrikeAttrPlan | 189 | 6 | 5 |
 | src/docx.js | docxImageElement | 268 | 6 | 5 |
@@ -101,7 +103,7 @@
 | src/docx.js | docxInjectLatex | 252 | 5 | 5 |
 | src/docx.js | (anonymous) | 254 | 5 | 5 |
 | src/xlsx.js | parseSheetTags | 82 | 5 | 5 |
-| src/convert.js | textConvert | 36 | 5 | 4 |
+| src/convert.js | textConvert | 46 | 5 | 4 |
 | src/docx.js | extForContentType | 21 | 5 | 4 |
 | src/docx.js | docxAltFromName | 35 | 5 | 4 |
 | src/html2md.js | liChildToLines | 280 | 5 | 4 |
@@ -125,7 +127,7 @@
 | src/docx.js | ommlConcat | 112 | 4 | 4 |
 | src/html2md.js | collectFrags | 38 | 4 | 4 |
 | src/html2md.js | (anonymous) | 39 | 4 | 4 |
-| src/ocr.js | (anonymous) | 37 | 4 | 4 |
+| src/ocr.js | (anonymous) | 48 | 4 | 4 |
 | src/pdf.js | pdfPageRuns | 136 | 4 | 4 |
 | src/sniff.js | startsWith | 11 | 4 | 4 |
 | src/xlsx.js | parseRelsMap | 96 | 4 | 4 |
@@ -133,8 +135,7 @@
 | src/app.js | handleFiles | 15 | 4 | 3 |
 | src/app.js | (anonymous) | 37 | 4 | 3 |
 | src/bline.js | (anonymous) | 6 | 4 | 3 |
-| src/convert.js | ocrWarnings | 29 | 4 | 3 |
-| src/convert.js | done | 66 | 4 | 3 |
+| src/convert.js | done | 76 | 4 | 3 |
 | src/docx.js | texText | 43 | 4 | 3 |
 | src/docx.js | ommlIs | 49 | 4 | 3 |
 | src/docx.js | ommlRad | 76 | 4 | 3 |
@@ -171,7 +172,7 @@
 | src/sniff.js | countNonAscii | 131 | 3 | 3 |
 | src/xlsx.js | parseXfIds | 363 | 3 | 3 |
 | tools/gen-icons.mjs | pngRGBA | 77 | 3 | 3 |
-| src/convert.js | guardError | 82 | 3 | 2 |
+| src/convert.js | guardError | 92 | 3 | 2 |
 | src/docx.js | docxSafeBase | 29 | 3 | 2 |
 | src/docx.js | ommlFracTex | 60 | 3 | 2 |
 | src/docx.js | docxParseDoc | 120 | 3 | 2 |
@@ -306,13 +307,16 @@
 | src/html2md.js | (anonymous) | 374 | 1 | 0 |
 | src/html2md.js | (anonymous) | 374 | 1 | 0 |
 | src/html2md.js | (anonymous) | 393 | 1 | 0 |
-| src/ocr.js | (anonymous) | 15 | 1 | 0 |
-| src/ocr.js | (anonymous) | 17 | 1 | 0 |
-| src/ocr.js | (anonymous) | 19 | 1 | 0 |
-| src/ocr.js | (anonymous) | 20 | 1 | 0 |
-| src/ocr.js | (anonymous) | 21 | 1 | 0 |
-| src/ocr.js | (anonymous) | 22 | 1 | 0 |
-| src/ocr.js | (anonymous) | 55 | 1 | 0 |
+| src/ocr.js | (anonymous) | 26 | 1 | 0 |
+| src/ocr.js | (anonymous) | 28 | 1 | 0 |
+| src/ocr.js | (anonymous) | 30 | 1 | 0 |
+| src/ocr.js | (anonymous) | 31 | 1 | 0 |
+| src/ocr.js | (anonymous) | 32 | 1 | 0 |
+| src/ocr.js | (anonymous) | 33 | 1 | 0 |
+| src/ocr.js | (anonymous) | 68 | 1 | 0 |
+| src/ocr.js | (anonymous) | 76 | 1 | 0 |
+| src/ocr.js | (anonymous) | 94 | 1 | 0 |
+| src/ocr.js | (anonymous) | 94 | 1 | 0 |
 | src/pdf.js | (anonymous) | 29 | 1 | 0 |
 | src/pdf.js | (anonymous) | 122 | 1 | 0 |
 | src/pdf.js | (anonymous) | 177 | 1 | 0 |

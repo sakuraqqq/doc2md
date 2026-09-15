@@ -7,7 +7,7 @@ import { htmlToMarkdown } from './html2md.js';
 import { docxConvert } from './docx.js';
 import { xlsxConvert } from './xlsx.js';
 import { pdfConvert } from './pdf.js';
-import { getOcrWorker } from './ocr.js';
+import { getOcrWorker, prepareOcrImage } from './ocr.js';
 import { collapseCjkSpaces } from './cjk.js';
 
 export const MAX_BYTES = 50 * 1024 * 1024; // 50MB 护栏
@@ -16,7 +16,8 @@ export const MAX_BYTES = 50 * 1024 * 1024; // 50MB 护栏
 async function imageConvert(file, buf) {
   const worker = await getOcrWorker();
   const blob = new Blob([buf], { type: file.type || 'image/png' });
-  const r = await worker.recognize(blob);
+  // v0.1.6（2026-09-15 用户拍板）：大图先缩到长边 1500px 再识别（只缩不放；失败回退原图，见 src/ocr.js）
+  const r = await worker.recognize(await prepareOcrImage(blob));
   // 2026-09-15（真机验收发现，缺陷修复）：**图片直传**与 PDF OCR 降级是两条独立 OCR 入口——
   // 后者（pdf.js ocrPageToText）早已合并汉字间词分空格，前者漏了 → 用户看到「湖南 新 晃 侗 族 自治 县」。
   // 仅 OCR 路径做后处理；文字层路径的空格是真实排版信息，不动（见 src/cjk.js）。
@@ -25,11 +26,20 @@ async function imageConvert(file, buf) {
   return { markdown: text, warnings: ocrWarnings(text, conf), backend: 'tesseract' };
 }
 
-/** OCR 结果提示（空结果 / 低置信度） */
+/** OCR 结果提示（空结果 / 低置信度 / 疑似版面或方向问题） */
 function ocrWarnings(text, conf) {
   if (!text) return ['OCR 未识别到文字（图片可能过小或模糊）'];
-  if (conf !== null && conf < 60) return [`OCR 置信度较低（${conf}%），结果可能不准确`];
-  return [];
+  const list = [];
+  if (conf !== null && conf < 60) list.push(`OCR 置信度较低（${conf}%），结果可能不准确`);
+  // v0.1.6（2026-09-15 用户拍板）：中文场景里混入高比例拉丁字符 = 版面/方向问题的典型形态
+  //（真机实测：崩的配置拉丁占比 0.45–0.63 且置信度 18–41；正常配置 ≤0.2）。
+  // 仅当含足量中文时才判——纯英文图（如 sample.png = HELLO DOC2MD 2026）拉丁占比必然高，不得误报。
+  const cjk = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff]/g) || []).length;
+  const latin = (text.match(/[A-Za-z]/g) || []).length;
+  if (cjk >= 20 && latin / Math.max(1, cjk + latin) > 0.4) {
+    list.push('OCR 结果中非中文字符占比偏高，可能存在版面或方向问题——建议核对原图或调整拍摄角度');
+  }
+  return list;
 }
 
 /** text 转换器（TXT/HTML 路径；backend builtin / builtin-html；contract §4.1） */

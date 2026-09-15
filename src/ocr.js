@@ -6,6 +6,17 @@
 import BLINE from './bline.js';
 import { setStatus } from './ui.js';
 
+/* ---------- OCR 参数口径（v0.1.6，2026-09-15 用户拍板；证据链 .私档/项目/真机OCR复现/grid-20260915/） ----------
+ * ① 版面模式 = 3（AUTO，先做版面分析）——**必须显式设置**：tesseract.js 的隐式默认是
+ *    **6（SINGLE_BLOCK，把整页当一块均匀文本）**，而 tesseract 命令行默认是 3，二者不同。
+ *    真机 4 张样张实测：默认 6 在「图旁正文」与「90° 旋转页」两例上分别**整段 / 整页崩**
+ *    （旋转页输出全是拉丁乱码）；PSM 4 在旋转页上只剩 4–7 字符；PSM 3 在 4 张上**从不最差**，
+ *    且是旋转页**唯一可读**的配置（旋转无需 OSD 词典资产）。
+ * ② 输入长边上限：超过则先等比缩小再识别（**只缩不放**）。12.6MP 真机照片实测：缩到长边
+ *    ≈1500px 后探针命中 2/5 → **5/5**、耗时降 30–60%；更小（≈1024px）反而变差 → 取 1500。 */
+const OCR_PSM = '3';
+const MAX_OCR_EDGE = 1500;
+
 /* ---------- OCR 资源就绪检测（SW 分段缓存 v4 后：首次 OCR 提示下载量，此后离线可用） ---------- */
 let ocrAssetsChecked = false;
 export async function ocrAssetsWarm() {
@@ -51,8 +62,35 @@ export function getOcrWorker() {
         gzip: false,
         workerBlobURL: false,
       });
+      // v0.1.6：显式钉住版面模式（不设则吃 tesseract.js 的隐式默认 6 —— 见文件头 ①）
+      await worker.setParameters({ tessedit_pageseg_mode: OCR_PSM });
       return worker;
     })().catch((e) => { ocrWorkerPromise = null; throw e; });
   }
   return ocrWorkerPromise;
+}
+
+/* ---------- OCR 输入预缩放（v0.1.6，2026-09-15 用户拍板：长边 >1500px → ~1500px，只缩不放） ----------
+ * 质量优化而非必需步骤：**任何失败一律回退原图**，不得因此让转换失败。 */
+export async function prepareOcrImage(blob) {
+  const bmp = await createImageBitmap(blob).catch(() => null);
+  if (!bmp) return blob;
+  const long = Math.max(bmp.width, bmp.height);
+  if (long <= MAX_OCR_EDGE) {
+    if (bmp.close) bmp.close();
+    return blob; // 只缩不放
+  }
+  const k = MAX_OCR_EDGE / long;
+  const w = Math.max(1, Math.round(bmp.width * k));
+  const h = Math.max(1, Math.round(bmp.height * k));
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, 0, 0, w, h);
+  if (bmp.close) bmp.close();
+  const out = await new Promise((res) => cv.toBlob(res, 'image/png')).catch(() => null);
+  return out || blob;
 }

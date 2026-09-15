@@ -2738,6 +2738,8 @@ test('契约组 R：OCR 中文空格合并（collapseCjkSpaces）—— 契约�
           // 只替换 OCR 引擎入口（getOcrWorker 在调用时读 window.Tesseract）——不触网、不跑真 OCR
           window.Tesseract = {
             createWorker: async () => ({
+              // v0.1.6 起产品会**显式**调用 setParameters（PSM 口径，见契约组 W）——假 worker 须实现该接口
+              setParameters: async () => {},
               recognize: async () => ({ data: { text: OCR_RAW, confidence: 90 } }),
               terminate: async () => {},
             }),
@@ -3643,6 +3645,154 @@ test('契约组 V：v0.1.4 批 3（BM*/GIF8* 前缀误判 / %PDF 文本误判 / 
           "`&#x;`（缺失位数）现状应为 U+FFFD（实际 " +
             JSON.stringify(md) +
             "）——若实现改为按 WHATWG §13.2.5.81 原文回填字面 `&#x;`，本断言须随口径拍板同步更新（改断言 = 改口径）"
+        );
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 W：OCR 输入质量（v0.1.6；2026-09-15 真机 4 张样张实测驱动 + 用户拍板）
+// 口径（用户 2026-09-15 拍板，逐条有实测支撑；证据链见 .私档/项目/真机OCR复现/grid-20260915/）：
+//   ① 大图预缩放：长边 > 1500px 的图先缩到长边 1500px（**只缩不放**）。
+//      依据：12.6MP 真机照片实测 —— 原图 + PSM 6 探针 2/5 → 50%/35% 缩放 + PSM 3 **5/5**；
+//      且耗时降 30–60%（6.7s → 4.1s）；更小的 25%（≈1024px）反而变差（12/16）→ 取 1434–2048 区间。
+//   ② 显式设置 PSM 3（AUTO）：tesseract.js 的**隐式默认是 6（SINGLE_BLOCK，不做版面分析）**。
+//      实测：PSM 6 在「图旁正文」与「90° 旋转页」两例上分别整段/整页崩；PSM 4 在旋转页只剩 4–7 字符；
+//      PSM 3 在 4 张上从不最差，且是旋转页**唯一**可读的配置（旋转无需 OSD 词典资产）。
+//   ③ 质量信号：低置信度（既有）+ **高拉丁占比**（新增）——仅在含足量中文时才判「疑似版面/方向问题」，
+//      以免把纯英文图（如 sample.png = HELLO DOC2MD 2026）误报。
+// 断言（W1/W2/W4 先红；W3/W5/W6 为防过度修正的守护）：
+//   W1 行为级：worker 创建后须被**显式**设置 tessedit_pageseg_mode=3
+//   W2 行为级：3000×2000 输入 → 交给 recognize 的图长边 ≤1500px 且宽高比保持
+//   W3 守护：800×600 输入 → 不得放大（只缩不放）
+//   W4 行为级：中文正文 + 高比例拉丁乱码 → warnings 须提示版面/方向
+//   W5 守护：正常中文 + 高置信度 → 不得出现该提示
+//   W6 守护：纯英文图 + 高置信度 → 不得出现该提示（防误报）
+// ---------------------------------------------------------------------------
+test('契约组 W：OCR 输入预缩放 + PSM 显式设置 + 质量信号（v0.1.6）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      // 假 OCR worker 缝（与组 R R3 同法：getOcrWorker 在调用时读 window.Tesseract）——
+      // 记录 ① setParameters 收到的参数 ② 每次 recognize 收到的**位图尺寸**（= 预缩放是否生效的直接证据）
+      await page.evaluate(() => {
+        window.__ocrProbe = { params: [], blobs: [], nextText: '', nextConf: 90 };
+        window.Tesseract = {
+          createWorker: async () => ({
+            setParameters: async (p) => {
+              window.__ocrProbe.params.push(p);
+            },
+            recognize: async (blob) => {
+              const bmp = await createImageBitmap(blob);
+              window.__ocrProbe.blobs.push({ w: bmp.width, h: bmp.height });
+              if (bmp.close) bmp.close();
+              return { data: { text: window.__ocrProbe.nextText, confidence: window.__ocrProbe.nextConf } };
+            },
+            terminate: async () => {},
+          }),
+        };
+      });
+
+      // 页内造图 → 走真实 convert()（嗅探 → imageConvert → 假 worker）
+      const probeImage = (w, h, text, conf) =>
+        page.evaluate(
+          async (a) => {
+            window.__ocrProbe.nextText = a.text;
+            window.__ocrProbe.nextConf = a.conf;
+            const cv = document.createElement('canvas');
+            cv.width = a.w;
+            cv.height = a.h;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, a.w, a.h);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(4, 4, Math.min(40, a.w - 8), Math.min(40, a.h - 8));
+            const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
+            const res = await window.__doc2md.convert(new File([blob], 'probe.png', { type: 'image/png' }));
+            return { markdown: res.markdown, warnings: res.meta.warnings, type: res.meta.type, error: res.error || null };
+          },
+          { w, h, text, conf }
+        );
+
+      const W_GARBAGE = /(版面|方向)/;
+
+      await t.test('W1 行为级：OCR worker 须被显式设置 tessedit_pageseg_mode=3（不得依赖隐式默认 6）', async () => {
+        await probeImage(800, 600, '中文测试', 90);
+        const params = await page.evaluate(() => window.__ocrProbe.params);
+        const psm = params.map((p) => p && p.tessedit_pageseg_mode).filter((v) => v !== undefined);
+        assert.ok(
+          psm.length > 0,
+          `worker 未被设置任何参数（params=${JSON.stringify(params)}）——tesseract.js 隐式默认 PSM=6（SINGLE_BLOCK，不做版面分析）`
+        );
+        assert.ok(psm.includes('3') || psm.includes(3), `tessedit_pageseg_mode 应为 3（AUTO），实际 ${JSON.stringify(psm)}`);
+      });
+
+      await t.test('W2 行为级：大图（3000×2000）须先缩到长边 1500px 再交给 recognize', async () => {
+        await probeImage(3000, 2000, '中文测试', 90);
+        const blobs = await page.evaluate(() => window.__ocrProbe.blobs);
+        const last = blobs[blobs.length - 1];
+        const long = Math.max(last.w, last.h);
+        assert.ok(long <= 1500, `交给 recognize 的图长边 ${long}px > 1500px（未预缩放）：${JSON.stringify(last)}`);
+        const ratio = last.h ? last.w / last.h : 0;
+        assert.ok(
+          Math.abs(ratio - 1.5) <= 0.05,
+          `缩放后宽高比应≈1.5（3000×2000 → 1500×1000），实际 ${ratio.toFixed(3)}：${JSON.stringify(last)}`
+        );
+      });
+
+      await t.test('W3 守护：小图（800×600）不得放大（只缩不放）', async () => {
+        await probeImage(800, 600, '中文测试', 90);
+        const blobs = await page.evaluate(() => window.__ocrProbe.blobs);
+        const last = blobs[blobs.length - 1];
+        assert.deepEqual(last, { w: 800, h: 600 }, `小图不得被放大：${JSON.stringify(last)}`);
+      });
+
+      await t.test('W4 行为级：中文正文 + 高比例拉丁乱码 → warnings 须提示版面/方向', async () => {
+        const cjk = '电容式传感器是将位移压力振动转换成电容量变化的传感器其最常用的形式是由两个平行电极组成';
+        const junk = 'Sis BE = Faz id ERE a. iB er = Sis BE = Faz id ERE a. iB er';
+        const res = await probeImage(1200, 900, `${cjk}\n${junk}`, 85);
+        assert.ok(
+          (res.warnings || []).some((w) => W_GARBAGE.test(String(w))),
+          `未提示「版面/方向」（中文 ${cjk.length} 字 + 拉丁乱码 ${junk.length} 字符）：warnings=${JSON.stringify(res.warnings)}`
+        );
+      });
+
+      await t.test('W5 守护：正常中文 + 高置信度 → 不得出现该提示', async () => {
+        const res = await probeImage(1200, 900, '电容式传感器是将位移、压力、振动转换成电容量变化的传感器，其最常用的形式由两个平行电极组成。', 90);
+        assert.ok(
+          !(res.warnings || []).some((w) => W_GARBAGE.test(String(w))),
+          `正常中文被误报：warnings=${JSON.stringify(res.warnings)}`
+        );
+      });
+
+      await t.test('W6 守护：纯英文图（sample.png 形态）+ 高置信度 → 不得出现该提示（防误报）', async () => {
+        const res = await probeImage(880, 180, 'HELLO DOC2MD 2026', 93);
+        assert.ok(
+          !(res.warnings || []).some((w) => W_GARBAGE.test(String(w))),
+          `纯英文图被误报（拉丁占比必然高，但无中文 → 不得判版面问题）：warnings=${JSON.stringify(res.warnings)}`
         );
       });
     } finally {
