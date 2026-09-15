@@ -223,7 +223,7 @@
   | manifest.json | 730 B | `D5B46A975B60640318252A39D4C83D2766A62E9A3E907E182945C7C89B858E98` |
   | sw.js | 4,253 B | `FAF9771E1009CD83721116E6AD0D61BB15D644FE061B271D3183B04C312C3F85` |
   - 交付物清单（同源分文件）：`vendor/` 185 文件 / 16,051,845 B · `langs/` 2 文件 / 7,670,131 B · `icons/` 4 文件 / 10,014 B；**本版未改 `vendor/`、`langs/`、`icons/` 任何文件**（实测 `git diff --stat b8311ff -- vendor langs icons` 零输出）→ 按发布清单 **`CACHE_NAME` 不需 bump**，保持 **`doc2md-sw-v4`**（组 H3 亦断言 v4）。
-- **发布动作**（**待用户执行**）：
+- **发布动作**（**2026-09-15 已由用户执行完成**）：
   ```bash
   git push origin main                # ① 推本提交（发布准备）
   git tag v0.1.8                      # ② 先 commit 后 tag（顺序反了 tag 指错提交）
@@ -235,6 +235,13 @@
   git push --dry-run origin v0.1.8
   ```
   ⚠️ 沿用 v0.1.7 的三条踩坑：`gh release create` 需 `--repo`（或直接用网页）· `--notes-file` 别指向 `docs/RELEASE.md` · 网页发布时 tag 从下拉**选中已有**而非新建。
+  **实际执行与回读（2026-09-15 20:2x 本机实测，全程只读）**：
+  - `git push origin main` → `dd29252..b3a5387`（快进）；`origin/main` = **`b3a5387e54179d2d06e96b900c06d5273b3deba0`**，**待推送 0**，工作区 clean
+  - `git tag v0.1.8` + `git push origin v0.1.8` → **三端逐字一致** ✅：本地 `git show-ref --tags` = `b3a5387e…deba0` ↔ 远端 `git ls-remote origin refs/tags/v0.1.8` = `b3a5387e…deba0` ↔ Release 页 tag 对象（GitHub API `git/ref/tags/v0.1.8`）= `b3a5387e…deba0`（`object.type = commit` → **lightweight**，与历史 7 个 tag 同型）
+  - **GitHub Release 由用户在网页发布**：<https://github.com/sakuraqqq/doc2md/releases/tag/v0.1.8> · 标题 `v0.1.8` · `published_at = 2026-09-15T12:30:53Z`（= **20:30:53 +08**）· **draft=false / prerelease=false** · **附件 0** · **`/releases/latest` → `v0.1.8`（已标记 Latest）** ✅
+  - **Release 正文 = `docs/release-notes-v0.1.8.md` 全文** ✅ —— 2533 B vs 本地 2501 B，差值 = **32 个 `\r`**；**CRLF 归一后逐字相等** ⇒ 仅行尾格式差异（成因 = 从 Windows 复制粘贴），**内容一致、不需重发**
+  - **Pages 复验（带 cache-bust query 绕开 SW/CDN 旧副本）**：`index.html` = **120,987 B / `14773E5FFDE3072A33FCD127C1DDA6E8CF739CB8366F4D17BDDED0A5EBF3F178`**，与发布产物**逐字节一致**；页脚显示 `doc2md v0.1.8` ✅
+  - **回读方法论（可复用）**：Release 页与 tag 对象走 **GitHub REST**（`releases/tags/<tag>` / `git/ref/tags/<tag>` / `releases/latest`）；Pages 产物走**进程内 `fetch` + sha256 逐字节核**（不派生子进程，规避沙箱命名管道限制）；脚本 `.tmp/verify-release-v018.mjs`（已 `script_archive` 存档）。**正文比对必须先做行尾归一**，否则会把 CRLF 误判为「内容不一致」。
 - **观察期**：开始 **2026-09-15**（发布日）→ 复盘 **≥2026-09-18**；重点观察：① 线上编码判定对**短文件/微损坏文件**的行为（本版修复面）② 2 字节单汉字 GBK 边界（S4-14，已知取舍）是否有真实用户影响 ③ Pages CDN 缓存窗口。
   > 附注：v0.1.7 的观察期（09-15 起 → ≥09-18）**未走完即被本版取代**（中间线上实际运行的是带三类静默错的 v0.1.7 构建；如实登记，用户按修复优先级连续发布）。
 - **隐私 & 版权审查（发布前强制门禁，2026-09-15 本机实测）**：**通过**
