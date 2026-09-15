@@ -286,14 +286,17 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 
 ### 契约组 R — OCR 中文空格合并（2026-09-09；真实样例驱动：PPT 导出图片型 PDF 无文字层 → OCR）
 
-口径：**仅对 OCR 文本**做行内空白合并（文字层路径的排版空格不动）——CJK↔CJK / CJK↔中文标点（含 ASCII 括号、`%+`）/ CJK↔数字；CJK↔拉丁字母保留（中英混排不被打散）、数字↔数字保留、不跨行。实现 = `src/cjk.js`（零依赖纯函数），OCR 路径 `src/pdf.js` `ocrPageToText` 调用。
+口径：**仅对 OCR 文本**做行内空白合并（文字层路径的排版空格不动）——CJK↔CJK / CJK↔中文标点（含 ASCII 括号、`%+`）/ CJK↔数字；CJK↔拉丁字母保留（中英混排不被打散）、数字↔数字保留、不跨行。实现 = `src/cjk.js`（零依赖纯函数）；**两条 OCR 入口都要接**——`src/pdf.js` `ocrPageToText`（扫描页降级）与 `src/convert.js` `imageConvert`（图片直传，**2026-09-15 补接**，见 R3）。
 
 样例：**无新增入库样例**——真实驱动样例含个人信息（姓名/学号），**不入库**；断言用纯函数用例表 + 源码级接入检查，真实指标在本地核验（见下）。
 
 | 编号 | 断言 | 标准 | 当前（基线 03e3a03，契约先红） |
 |---|---|---|---|
-| R1 | 纯函数用例表 12 例：CJK 合并 / 标点与数字边界 / 中英混排保留 / 数字-数字保留 / 跨行不合并 / 全角空格 | 逐例字符串相等 | 🔴 红（**先红**：`window.__doc2md.collapseCjkSpaces` 未挂载） |
-| R2 | 接入（源码级）：index.html 含 `collapseCjkSpaces` 且 OCR 页文本经其处理（`collapseCjkSpaces(text)`） | includes + 正则 | 🔴 红（**先红**：产物无该符号） |
+| R1 | 纯函数用例表 12 例：CJK 合并 / 标点与数字边界 / 中英混排保留 / 数字-数字保留 / 跨行不合并 / 全角空格 | 逐例字符串相等 | 🟢 绿（**先红实测**：`window.__doc2md.collapseCjkSpaces` 未挂载） |
+| R2 | 接入（源码级）：index.html 含 `collapseCjkSpaces` 且 OCR 页文本经其处理（`collapseCjkSpaces(text)`） | includes + 正则 | 🟢 绿（**先红实测**：产物无该符号） |
+| R3 | **图片路径端到端**（2026-09-15 新增；真机验收驱动）：页内把 `window.Tesseract` 换成假 worker（返回 OCR 形态原文 `'湖南 新 晃 侗 族 自治 县'`）→ canvas 造最小合法 PNG → 走**真实** `convert()`（类型嗅探 → `imageConvert`） | 输出 === `'湖南新晃侗族自治县'`（图片 OCR 文本同样合并） | 🟢 绿（**先红实测 2026-09-15**：`actual '湖南 新 晃 侗 族 自治 县'`——`imageConvert` 漏接；两相记录见 §7 2026-09-15 条） |
+
+**R3 的由来（本组此前的盲区）**：R2 是**产物级正则**，只锁 `src/pdf.js` 的 `ocrPageToText` 路径；而 OCR 有**两条入口**——PDF 扫描页降级 + **图片直传**（`src/convert.js` `imageConvert`）——后者漏接 `collapseCjkSpaces` 时 R2 仍然全绿（真机验收即为该形态：中文照片 OCR 输出保留词分空格）。R2 属**冻结断言**（改它 = 改口径），故本批**只新增 R3、R1/R2 逐字未动**。R3 用假 worker 换**零真 OCR 成本 + 确定性**（不触网、不加载语言包）。
 
 **真实样例指标（本地核验，不入库）**：OCR 页 CJK 前置空格率 **72–82% → 1.4–4.9%**；文字层页 **0–1.5% 前后不变**（证「只动 OCR」）。
 
@@ -356,33 +359,57 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 
 **范围说明**：① `w:dstrike` 归一在 docx 预处理层实现（不改上游 mammoth）；② 快路径（原始字节不含 `w:dstrike` 时零额外解包/改写）属性能约束，由实现侧等价性台 + 独立验收核验，不写成断言（避免冻结实现细节）；③ 正对照（`w:strike` → `~~strike~~`）沿用 S2-5，不重复断言。
 
+### 契约组 U — v0.1.4 PDF 缺陷批：翻转 Tm 行序 / `TL` 算子 / 等宽围栏 / 叠印去重（2026-09-14；契约先红）
+
+来源：**真机 7 篇 Chromium 打印 PDF** 暴露的四类**静默错**（`warnings=[]`、console error 0）——整篇行序反向（A1）/
+代码清单无围栏且 `#` 注释裸露成 H1（A3）/ 页脚同位置 3–4 倍叠印（A4）/ 缺 `TL`(36) 算子致行距丢失（A2）；
+提交 C 追加 **F1** = A3 的等宽判据由「按页」提升为「**全篇**」（两遍：第一遍只统计、不产文本且不 `cleanup`，
+第二遍产文本并逐页 `cleanup` 命中算子列表缓存）。实现 = `src/pdf.js`；样例 = 6 个新增入库样例（§3，manifest 字节锁）。
+
+| 编号 | 断言 | 标准 | 当前（基线 = 提交 A 前；契约先红） |
+|---|---|---|---|
+| U-0 | 6 个新增样例存在 + manifest 字节级一致（×6） | 大小/SHA 与 manifest 一致 | 🟢 绿（实测 6/6 一致） |
+| U1 | 翻转 Tm 行序（`sample-flipped-tm.pdf`，Tm d = −1）：`TOP-LINE-FIRST` 在 `BOTTOM-LINE-THIRD` 之前 | 行序按 Tm 的 d 符号统一方向（`screenY`） | 🟢 绿（**先红实测**：整篇行序反向） |
+| U2 | `TL`(36) 行距（`sample-tl-leading.pdf`）：`TL-LINE-ONE/TWO/THREE` 各占一行且顺序正确 | leading 存规范值 + `nextLine` 随 d 定向 | 🟢 绿（**先红实测**：缺算子 → 三行压成一行且粘连） |
+| U3 | 等宽代码围栏（`sample-monospace-code.pdf`）：Courier 四行进 ``` 围栏、`#` 注释不裸露为正文 | 代码行判据 = 可见 ASCII 全部来自等宽 fontId 且 `ascii ≥ CODE_MIN_ASCII` | 🟢 绿（**先红实测**：`#` 成 H1、代码无围栏） |
+| U4 | 同位置叠印去重（`sample-overprint.pdf`）：`OVERPRINT-TOKEN` 计数 === 1 | 同行 + 同文本 + `|Δx| < 0.5 × 平均字宽` → 只留一份 | 🟢 绿（**先红实测**：计数 3） |
+| U5 | 翻转 Tm 行序（等宽样例）：`import cv2` 出现在 `gray = cvtColor` 之前 | 同 U1 | 🟢 绿（A1 同源） |
+| U6 | 撇号 `'` / 双引号 `"` 算子文字**不丢失**（守护） | 三个 token 均在输出中 | 🟢 绿（守护：pdf.js 已在求值阶段分解为 `nextLine` + `showText`，锁「防误修」） |
+| U7 | 负对照：`sample.pdf`（比例字体正文）输出**不得**出现代码围栏 | A3 判据不得误伤正比例字体 | 🟢 绿（守护） |
+| U8 | **文档级等宽判据（F1 回归守护）**：单页 `letters = 0` 的注释专用字体子集仍须进围栏 | 等宽字体统计 = **全篇**口径（非按页） | 🟢 绿（**先红后绿已验证**：暂存修复后 ✖ 且能复现裸露原文 → 恢复后 ✔） |
+
+**先红 / 实测证据（指向权威源，不逐条重述）**：A1–A4 的成因与真实语料实测见 `docs/DEV-NOTES.md` 2026-09-14「v0.1.4 缺陷批 · 提交 A」节；
+F1（U8）及提交 C 的实测见同文件提交 C 节与 `docs/HANDOFF-主开发线.md` §1（真实 7 篇栏外 `#` **松 40 → 0 / 严 13 → 0**、围栏块 **163 → 124**）。
+**独立验收**：qa-dev t10（2026-09-14，**结论通过**）——独立复现同一组数字 + 扩大语料 20 文档无一篇劣于提交 B + `manifest` 36/36 字节锁一致。
+
 ### 契约组 V — v0.1.4 批 3：嗅探前缀/`%PDF` 误判 + 大写 `META` + docx alt（2026-09-14；契约先红）
 
 范围（批 3 四项 + T3 两项）：B1 `BM*`/`GIF8*` 前缀误判 / B2 `%PDF` 文本误判 / B3 大写 `META` 漏检 /
 C1 docx 图片 alt 取 `descr`；T3-1 = 脏数字实体登记闭环（V6 + 三处文档登记）· T3-2 = WHATWG C1 映射表参数化（V5）。
 样例：7 个新增入库样例（gen-samples 生成 + manifest 字节锁，见 §3）；V2-2 的截断 PDF 与 V5/V6 的实体串页内现造（不入库）。
 
-| 编号 | 断言 | 标准 | 当前（基线 = 批 3 未实现；契约先红） |
+| 编号 | 断言 | 标准 | 当前（基线 = 批 3 未实现；契约先红 → **批 3 已实现：全绿**） |
 |---|---|---|---|
 | V0 | 7 个新增样例存在 + manifest 字节锁（×7） | 大小/SHA 与 manifest 一致 | 🟢 绿（本机实测 7/7 一致） |
-| V1-1 | 负例：`BM` / `GIF89a` 前缀的纯文本（`sample-bmw-text.txt` / `sample-gif8-text.txt`） | `{ type: 'text' }` | 🔴 红（本机 `sniff` 直跑：→ `image/bmp` / `image/gif`——只看前缀） |
+| V1-1 | 负例：`BM` / `GIF89a` 前缀的纯文本（`sample-bmw-text.txt` / `sample-gif8-text.txt`） | `{ type: 'text' }` | 🟢 绿（**先红实测**：`sniff` 直跑 → `image/bmp` / `image/gif`——只看前缀；批 3 补结构校验后判 `text`） |
 | V1-2 | 正例守护：真 1×1 BMP / GIF89a（`sample.bmp` / `sample.gif`，文件头自洽） | `{ type: 'image', detail: 'bmp'|'gif' }` | 🟢 绿（结构校验不得误杀真图；批 3 后须保持） |
-| V2-1 | 负例：正文提到 `%PDF-1.4` 的纯文本（`sample-pdf-mention.txt`） | `{ type: 'text' }` | 🔴 红（本机 `sniff` 直跑：→ `pdf`） |
+| V2-1 | 负例：正文提到 `%PDF-1.4` 的纯文本（`sample-pdf-mention.txt`） | `{ type: 'text' }` | 🟢 绿（**先红实测**：`sniff` 直跑 → `pdf`；批 3 补「版本形态 + `obj`/`%%EOF` 证据」后判 `text`） |
 | V2-2 | 正例守护：真 PDF（`sample.pdf`）+ 截断到 `obj`（无 xref/`%%EOF`）的 PDF | `{ type: 'pdf' }` | 🟢 绿（本机 `sniff` 直跑） |
-| V3 | 大写 `<META CHARSET="big5">` 的 Big5 HTML：`decodeText` + `convert` | 含「中文測試：DOC2MD-BIG5-UPPER-2026」且无 U+FFFD | 🔴 红（本机 `decodeText` 直跑：mojibake `いゅ代刚…`——`indexOf('<meta')` 大小写敏感漏检） |
-| V4 | docx 图片 alt：`descr` 优先 / 空 `descr` 回落 `name`（去扩展名）（`sample-image-alt.docx`） | `![ALT-FROM-DESCR-2026](assets/…)` + `![fallback-name](assets/…)` | 🔴 红（旧实现 alt 取 `name` → 首个 alt = `ignored-name`；需浏览器实跑确认） |
-| V5-1 | WHATWG C1 映射表 27 项（表驱动逐条） | `&#<0x80–0x9F 已映射码点>;` → 规范映射字符 | 🟡 待 captain 实跑（规范预期绿：`htmlToMarkdown` 的 `DOMParser` 实现 WHATWG 数字字符引用结束状态） |
-| V5-2 | 未映射 5 项（0x81/8D/8F/90/9D） | 保留对应 C1 码位 | 🟡 待 captain 实跑（规范预期绿，同上） |
-| V6-1 | 数字为 0 / 孤立代理 / 越界（`&#0;` / `&#xD800;` / `&#x110000;`） | `U+FFFD`（WHATWG 数字字符引用结束状态） | 🟡 待 captain 实跑（规范预期绿；T3-1 锚点） |
+| V3 | 大写 `<META CHARSET="big5">` 的 Big5 HTML：`decodeText` + `convert` | 含「中文測試：DOC2MD-BIG5-UPPER-2026」且无 U+FFFD | 🟢 绿（**先红实测**：`decodeText` 直跑 mojibake `いゅ代刚…`——`indexOf('<meta')` 大小写敏感漏检；批 3 改 `headTxt.toLowerCase()` 后命中） |
+| V4 | docx 图片 alt：`descr` 优先 / 空 `descr` 回落 `name`（去扩展名）（`sample-image-alt.docx`） | `![ALT-FROM-DESCR-2026](assets/…)` + `![fallback-name](assets/…)` | 🟢 绿（**先红实测**：旧实现 alt 取 `name` → 首个 alt = `ignored-name`；批 3 改为 `descr` 优先后实测通过） |
+| V5-1 | WHATWG C1 映射表 27 项（表驱动逐条） | `&#<0x80–0x9F 已映射码点>;` → 规范映射字符 | 🟢 绿（2026-09-14 captain 实跑 + 2026-09-15 全量复跑；`htmlToMarkdown` 的 `DOMParser` 实现 WHATWG 数字字符引用结束状态） |
+| V5-2 | 未映射 5 项（0x81/8D/8F/90/9D） | 保留对应 C1 码位 | 🟢 绿（同上：未映射码位保留，不吞字） |
+| V6-1 | 数字为 0 / 孤立代理 / 越界（`&#0;` / `&#xD800;` / `&#x110000;`） | `U+FFFD`（WHATWG 数字字符引用结束状态） | 🟢 绿（2026-09-14 captain 实跑 + 2026-09-15 全量复跑；T3-1 锚点） |
 | V6-2 | 输入流 `U+0000`（**现状锁**） | 当前**被丢弃**（`A` + U+0000 + `B` → `AB`）；规范要求 `U+FFFD` | 🟢 现状锁（2026-09-14 captain 实跑真值 = `AB`）；规范偏差 **low** 已登记（§7 ④a），待拍板，**本批不修** |
 | V6-3 | `&#x;`（缺失位数）（**现状锁**） | 当前输出 `U+FFFD`（`A` + `&#x;` + `B` → `A` + U+FFFD + `B`）；规范要求原文回填字面 `&#x;` | 🟢 现状锁（2026-09-14 captain 实跑真值 = `A` + U+FFFD + `B`）；规范偏差 **low** 已登记（§7 ④b），待拍板，**本批不修** |
 
 **范围说明**：① V1/V2 不绑定实现路径（结构校验写法自由），只锁「负例判 text、正例仍判 image/pdf」；
 ② V3 只要求大写标签/属性命中（不要求扩展 charset 表）；③ V5/V6 走 `htmlToMarkdown`（HTML 引用路径 =
 `DOMParser`）——docx/xlsx 自解析路径的实体语义另由 V6-3 注释与 T3 登记说明，不在本批断言内；
-④ V1–V4 的 🔴 由本机离线（`node` 直跑 `src/sniff.js`）与样例静态推导；V5/V6 已由 captain **2026-09-14 统一实跑**：
-V0 / V1-2 / V2-2 / V5-1 / V5-2 / V6-1 ✔ 绿，V1-1 / V2-1 / V3 / V4 ✖ 红（批 3 待实现的设计内先红），
-V6-2 / V6-3 已按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7 ④）。
+④ V1–V4 的**先红**由本机离线（`node` 直跑 `src/sniff.js` / `decodeText`）与样例静态推导登记；V5/V6 由 captain **2026-09-14 统一实跑**。
+**批 3 已实现（提交 B `fc6cfa8`）→ 本组现为全绿**：V0 / V1-1 / V1-2 / V2-1 / V2-2 / V3 / V4 / V5-1 / V5-2 / V6-1 全 ✔
+（2026-09-15 全量复跑实测：**233 tests / 231 pass / 0 fail / 2 skip**——2 处 skip 为不入库的第三方样例 real-cid-paper 相关组）；
+V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7 ④），**非缺陷**。
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
@@ -438,6 +465,7 @@ V6-2 / V6-3 已按实测真值收敛为**现状锁 + 规范偏差登记**（见 
 | `sample-tl-leading.pdf` | PDF（合成） | 契约组 U2——**A2 缺 `TL`(36) 算子**：`20 TL` + `T*` 定位三行（无 Td/TD）；缺算子时 leading 恒 0 → 三行压成一行且粘连 | 741 B / SHA `5812CFCC…`；算子序列实测 = setLeading[20] + 2×nextLine（pdf.js 映射证明 TL/T* 确以 36/43 到达） | 同上 |
 | `sample-quote-ops.pdf` | PDF（合成） | 契约组 U6——撇号 `'` / 双引号 `"` 算子**文字不丢失**守护（pdf.js 已在求值阶段分解为 nextLine+showText；此样例锁「三 token 均在」防误修） | 747 B / SHA `CC4FB92D…`；算子序列 = setLeading + nextLine + setWordSpacing + setCharSpacing + 2×showText | 同上 |
 | `sample-overprint.pdf` | PDF（合成） | 契约组 U4——**A4 同位置叠印去重**：同一行内三次同文本绘制（真实页脚叠印形态，实测真实 PDF 每页 168–252 对重复） | 758 B / SHA `06812BA6…`；3×showText（同文本）+ 2×moveText[0.3,0] | 同上 |
+| `sample-comment-subset.pdf` | PDF（合成，两页） | 契约组 U8——**F1 文档级等宽判据**：注释专用字体子集在某一页 `letters = 0`（按页判据被 `MONO_MIN_LETTERS` 挡掉 → 该页 `#` 注释裸露成 H1）；锁「等宽统计口径 = **全篇**」 | 870 B / SHA `EFE20796…`；%PDF-1.4 合法，两页内容流各含等宽注释 run | 字节锁（manifest）；纯拉丁（T-2 口径）；确定性生成 |
 
 > **机制取证（2026-09-14，node 侧 pdfjs-dist 直读算子序列，非推断）**：真实 Chromium 打印 PDF（Jupyter 导出，7 篇）
 > 的 `setTextMatrix` **一律 d = −1**（1324 个/首样本页），阅读顺序（内容流顺序）对应 **cy 递增**，行切换一律
@@ -457,7 +485,7 @@ V6-2 / V6-3 已按实测真值收敛为**现状锁 + 规范偏差登记**（见 
 | `sample-big5-upper-meta.html` | HTML（合成，Big5 编码） | 契约组 V3——**B3**：大写 `<META CHARSET="big5">` 的 Big5 字节 HTML（旧实现 `indexOf('<meta')` 大小写敏感 → 漏检 charset → 整段乱码） | 170 B / SHA `E9F3DD91…`；Big5 字节由生成器反查表编码 + **往返自检**（正文 `中文測試：DOC2MD-BIG5-UPPER-2026`） | 同上 |
 | `sample-image-alt.docx` | DOCX（合成） | 契约组 V4——**C1**：图 1 `descr="ALT-FROM-DESCR-2026"`（`name="ignored-name.png"`）+ 图 2 `descr=""`（`name="fallback-name.png"`） | 15,397 B / SHA `7C852B81…`；zip 合法，`document.xml` 含 2×`pic:cNvPr`（1 带 descr）+ rId7/rId8 关系 | 同上 |
 
-> 既有样例**字节零变化**：`node tests/gen-samples.mjs` 重跑后逐文件 SHA 比对（含 U 批 5 个新样例）——除 `manifest.json`（追加 7 条新登记）外 0 变化；7 个新样例连续两次生成 SHA 相同（幂等）。
+> 既有样例**字节零变化**：`node tests/gen-samples.mjs` 重跑后逐文件 SHA 比对（含 U 批 6 个新样例）——除 `manifest.json`（追加新登记）外 0 变化；7 个 V 批新样例连续两次生成 SHA 相同（幂等）。
 
 ### 真实样例清单（T-3 通路落地：用户终端自 GitHub 上游下载，2026-09-04 登记）
 
@@ -528,6 +556,11 @@ npm run gen:samples           # 重新生成样例（确定性）
 | T-7 | 导出/预览护栏阈值（2026-09-08 用户拍板，第六轮审查 §2.4 + B 组预览项） | ✅ **已拍板**：① 单文件内嵌上限 **20MB**——超限**自动切 zip 下载**（不报错、不静默）；② 预览截断 **1MB** + 固定提示文案「（预览已截断，完整内容请复制/下载）」，**不加「查看完整」按钮**（复制/下载仍为完整内容） | 落地为契约组 Q；上限经 `window.__doc2md.embedMaxBytes` 读写（测试调低上限验证超限分支，默认值 20MB 由 Q3 锁）；预览提示文案与阈值同属断言，调整即改口径 |
 
 ## 7. 红绿状态与转绿路径（如实）
+
+- **2026-09-15 v0.1.5 批（组 R 新增 R3：图片 OCR 路径先红后绿；用户「开修」）**：来源 = **真机验收报告**（用户当日交付的移动端验收材料）——**图片直传是第二条 OCR 入口**：`src/pdf.js` `ocrPageToText` 早已调用 `collapseCjkSpaces`，而 `src/convert.js` `imageConvert` **漏接** → 中文照片 OCR 结果保留 tesseract 的词分空格（用户可见症状「湖南 新 晃 侗 族 自治 县」）。**R2 是产物级正则、只锁 pdf 路径 → 图片路径属该组盲区**（R2 为冻结断言，本批**只新增 R3，R1/R2 逐字未动**）。
+  断言（R3）：页内把 `window.Tesseract` 换成假 worker（返回带词分空格的 OCR 原文，**零真 OCR 成本、确定性**）→ canvas 造最小合法 PNG → 走真实 `convert()`（嗅探 → `imageConvert`）→ 断言输出已合并。
+  **实测两相（Windows / Node 24 + 系统 Edge 回退；captain 升权实跑）**：**先红** = 只跑组 R → `tests 4 / pass 2 / fail 2`（R3 ✖ `actual '湖南 新 晃 侗 族 自治 县'` vs `expected '湖南新晃侗族自治县'`；R1/R2 ✔ 保持绿），exit 1；**后绿** = `src/convert.js` 接入后重建 → **233 tests / 231 pass / 0 fail / 2 skip（48.9s）**，exit 0，组 T（产物一致性）绿；产物 index.html **118,263 B / SHA `200D004B11871F7BFDA4F7DA5112BD2F2963FB78630B8367794BC0F40E2E4DB0`**（blob `0258682558efce124784bbadd0ad1447dea72d8b`）。
+  **未做（登记）**：真 OCR 的图片端到端（真 tesseract + chi_sim 跑中文图）**未进快契约组**——契约组需保持确定性与时长（当前全量 48.9s）；该形态由真机验收与 `npm run verify:ocr`（英文令牌）间接覆盖。若要入库，需先补「中文合成样例 + 时间预算」拍板。
 
 - **2026-09-12 第八轮审查修复批（组 K2 22 例 + 组 G7 8 例先红后绿；AgentTeams `doc2md-v014`）**：来源 = `docs/doc2md-第八轮审查报告-2026-09-12.md`（ZCode，v0.1.3 发布后全量复查）—— §1.1 行内代码含反引号破坏输出结构（P2）、§1.4 SVG/表单/canvas 文本泄漏、§1.5 li 内表格合并告警丢失、§1.2 xlsx 1904 日期系统静默错 1462 天、§1.3 `decodeXml` 链式替换双重解码、§1.6 数字实体截断（另 §3.1 科学计数法 / §2.1 本地 lint 基线 / §3.3 注释清理）。captain 逐条复现后开修（用户 2026-09-12「现在开修」）。
   拍板：报告口径全采纳 + 两处加严（`date1904` 按 xsd:boolean 全形态：`1/true → 1904`、`0/false/缺省 → 1900`，**属性存在不算命中**；嵌套 li 告警同样透传）；§1.4 remove 集合 = `svg/canvas/object/iframe/embed/audio/video/select/option/textarea/button`，**`label` 保留**；§3.2（cjk `%` 半合并）**不动**、登记待拍板。
