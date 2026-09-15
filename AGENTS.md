@@ -21,13 +21,15 @@
 - **大小护栏**：> 50MB 拒绝处理并提示。
 - **中文编码**：源文件一律 UTF-8（无 BOM 无害）；`.ps1` 新建/修改用**无 BOM UTF-8** 即可（2026-09-12 起主链路为 **PS 7.6.6**，实测无 BOM 中文脚本正常跑）；**既有带 BOM 的不主动去 BOM**（双保险）；`.cmd`/`.bat` **必须无 BOM**（cmd.exe 不认 BOM）；向用户显示中文前确认输出编码。
 - **操作路由**：读 JSON 用 `safe_json_io`、读文本用 `read` 工具、别默认 pwsh 现写；pwsh 只用于专属工具够不到的场景（如 zip 打包、哈希核验）。GitHub/LICENSE 查证用 `github_repo` / `browser_*` / `web_search`，**禁止 pwsh 爬网页**。
+- **跨平台/跨机核验口径（2026-09-15 实测固化）**：比对**源码**用 git blob（`git rev-parse :<path>`），**不用**工作区 SHA256 —— `core.autocrlf=true` 下同一内容哈希不同；比对**产物**用字节 + SHA256，且**取历史版本内容必须加 `-c core.autocrlf=false`**（否则检出过滤器写入 CRLF：实测 `index.html` 118,244 B → 120,410 B，而 **git 视为无差异**，只有字节级门禁能发现）。**尺寸相同不能当不变量**（v0.1.4 版本 bump 改了字节未改长度 → 哈希静默过期，2026-09-15 勘误）。
 - **重构配额（童子军规则；2026-09-08 拍板，2026-09-10 修订）**：每次改动代码顺手做「一点点」重构——单次 ≤50 行，只做抽函数 / 表驱动化 / 消灭复杂度警告，不搞大拆分；**专项减脂批**（一次清多个超限函数）按函数体量放宽行数，但**必须配等价性台**（重构前快照经 `git hash-object` 校验 = 基线 blob，且负对照能报出差异）；重构后断言必须全绿、lint 不得新增 warning；修 bug 与重构分提交（一提交一件事）；每批记录 metrics before → after。
   **硬门禁（2026-09-10 拍板）**：CI 跑 `npm run metrics`，**超限函数数必须为 0**（超限即 exit 1）。实测基线（2026-09-10，干净检出）：`eslint src/**/*.js` **0 warning**、metrics 超限 **0**；`tools/` 里 2 条告警来自 gitignored 私有脚本，不入库、CI 不计。
   **重复率口径（2026-09-10 用户拍板定案）**：**只度量 `src/` + `tools/`，`tests/` 排除**（契约测试各组的浏览器/服务器样板天然重复，不代表产品代码债；测试脚本的重复待需要时再抽共享夹具）。实测：**0.6%**（前口径含 tests 时 8.86%（`d36fede`）→ 9.37%）。原记「4%」是 `tools/metrics.mjs` 在 jscpd `spawnSync` 失败时读 `.tmp/` **上一次旧报告**的**假绿**——工具已修：先删旧报告，仅 jscpd 成功才读，否则标 **N/A**；另 **espree 解析失败的文件 → metrics 直接 exit 1**（被跳过度量的文件会让「超限 0」不可信）。
 
 ## 本地命令约定
 
-- git 操作一律加前缀 `git -c safe.directory='*'`（全局 gitconfig 沙箱写不了，别试写全局配置）。
+- git 操作一律加前缀 `git -c safe.directory=*`（**不带引号**）—— pwsh 下 `'*'` 的引号会被吞成非法值，报 `fatal: detected dubious ownership`（2026-09-15 实测：不带引号可用；同进程三件套 `$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*` 亦可用。全局 gitconfig 沙箱写不了，别试写全局配置）。
+- **native 命令禁止进 PS 管道 / 表达式 / 变量捕获**（2026-09-15 再次踩到）：`git … | Select-Object`、`2>&1`、`"…" + (git …)` → `Access is denied` 或 `StandardOutputEncoding is only supported when standard output is redirected`，且**命令根本没执行**（易误判为 fetch/commit 失败）。git 输出一律写成**独立语句**。
 - **手机侧不同步本仓库**（2026-09-14 升级；用户已卸载 gitsync，原话「不好用」）：原规则为「禁止推送、可只读拉取」，但实测**拉取同样不可行** —— `.git` **31 MB** + 工作树 **29.2 MB**（`vendor/` 15.3 MB）+ **243 提交**，且历史被**重写两次**（9/10 合规清扫 + 9/14 隐私清洗）→ 旧克隆与远端**无共同祖先**，gitsync 类工具（走 GitHub API **逐文件**拉取，非 git 打包传输）只能全量重拉 → 表现为「一直转圈」。**另**：该工具曾**清零二进制**（一次删掉 4 个 PWA 图标 + 2 个测试样例 PNG，CI 双 failure 拦住后才由 revert 恢复）——这是最初禁用推送的原因。**替代路径**：① 手机看/用产品 → Pages 站点 `https://sakuraqqq.github.io/doc2md/`；② 浏览代码/Release → GitHub App 或网页版；③ 需要本地副本 → 桌面或 Termux 浅克隆（`git clone --depth 1` ≈30 MB，可再配 `git sparse-checkout`）；④ **任何推送一律经桌面终端**（与红线 3「发布动作人执」同源）。
 - 提交身份用 `-c user.name=... -c user.email=...` 局部覆盖（基线 commit 同款），以仓库历史既有身份为准，不猜。
 - npm 依赖：如需安装，cache 指到工作区内（`$env:npm_config_cache='<workspace>/.npm-cache'`），禁止在 ~/.dsh / AppData 安装；装完确认许可再内联。
