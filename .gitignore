@@ -50,6 +50,10 @@ Thumbs.db
 .idea/
 .vscode/
 
-# tesseract.js node 版缓存残留（tools/verify-ocr.mjs 中断时会留在根目录）
+# tesseract.js node 版缓存残留（写在 process.cwd() 而非 langPath；tools/verify-ocr.mjs 与一次性台架脚本
+# 中断/漏清理时会留在仓库根目录）
 # 2026-09-11 用户拍板：先忽略，verify:ocr 通过后再删除该文件
-eng.traineddata
+# 2026-09-15 补 chi_sim —— 当天真机 OCR 台架脚本漏清理，实产 2,471,033 B 缓存（未跟踪，但会被 git add -A 带走）
+# 锚定到根目录，避免误伤 langs/ 下的正式资产（两者均已入库，ignore 规则对已跟踪文件无影响）
+/eng.traineddata
+/chi_sim.traineddata
