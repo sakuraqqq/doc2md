@@ -1656,6 +1656,8 @@ ${xlsxRowsToMd(kept)}`);
   }
 
   // src/ocr.js
+  var OCR_PSM = "3";
+  var MAX_OCR_EDGE = 1500;
   var ocrAssetsChecked = false;
   async function ocrAssetsWarm() {
     if (!("serviceWorker" in navigator) || !navigator.serviceWorker.controller) return true;
@@ -1691,6 +1693,7 @@ ${xlsxRowsToMd(kept)}`);
           gzip: false,
           workerBlobURL: false
         });
+        await worker.setParameters({ tessedit_pageseg_mode: OCR_PSM });
         return worker;
       })().catch((e) => {
         ocrWorkerPromise = null;
@@ -1698,6 +1701,28 @@ ${xlsxRowsToMd(kept)}`);
       });
     }
     return ocrWorkerPromise;
+  }
+  async function prepareOcrImage(blob) {
+    const bmp = await createImageBitmap(blob).catch(() => null);
+    if (!bmp) return blob;
+    const long = Math.max(bmp.width, bmp.height);
+    if (long <= MAX_OCR_EDGE) {
+      if (bmp.close) bmp.close();
+      return blob;
+    }
+    const k = MAX_OCR_EDGE / long;
+    const w = Math.max(1, Math.round(bmp.width * k));
+    const h = Math.max(1, Math.round(bmp.height * k));
+    const cv = document.createElement("canvas");
+    cv.width = w;
+    cv.height = h;
+    const ctx = cv.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bmp, 0, 0, w, h);
+    if (bmp.close) bmp.close();
+    const out = await new Promise((res) => cv.toBlob(res, "image/png")).catch(() => null);
+    return out || blob;
   }
 
   // src/pdf.js
@@ -2031,15 +2056,21 @@ ${p.text}
   async function imageConvert(file, buf) {
     const worker = await getOcrWorker();
     const blob = new Blob([buf], { type: file.type || "image/png" });
-    const r = await worker.recognize(blob);
+    const r = await worker.recognize(await prepareOcrImage(blob));
     const text = collapseCjkSpaces(((r && r.data || {}).text || "").trim());
     const conf = typeof (r && r.data && r.data.confidence) === "number" ? Math.round(r.data.confidence) : null;
     return { markdown: text, warnings: ocrWarnings(text, conf), backend: "tesseract" };
   }
   function ocrWarnings(text, conf) {
     if (!text) return ["OCR \u672A\u8BC6\u522B\u5230\u6587\u5B57\uFF08\u56FE\u7247\u53EF\u80FD\u8FC7\u5C0F\u6216\u6A21\u7CCA\uFF09"];
-    if (conf !== null && conf < 60) return [`OCR \u7F6E\u4FE1\u5EA6\u8F83\u4F4E\uFF08${conf}%\uFF09\uFF0C\u7ED3\u679C\u53EF\u80FD\u4E0D\u51C6\u786E`];
-    return [];
+    const list = [];
+    if (conf !== null && conf < 60) list.push(`OCR \u7F6E\u4FE1\u5EA6\u8F83\u4F4E\uFF08${conf}%\uFF09\uFF0C\u7ED3\u679C\u53EF\u80FD\u4E0D\u51C6\u786E`);
+    const cjk = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff]/g) || []).length;
+    const latin = (text.match(/[A-Za-z]/g) || []).length;
+    if (cjk >= 20 && latin / Math.max(1, cjk + latin) > 0.4) {
+      list.push("OCR \u7ED3\u679C\u4E2D\u975E\u4E2D\u6587\u5B57\u7B26\u5360\u6BD4\u504F\u9AD8\uFF0C\u53EF\u80FD\u5B58\u5728\u7248\u9762\u6216\u65B9\u5411\u95EE\u9898\u2014\u2014\u5EFA\u8BAE\u6838\u5BF9\u539F\u56FE\u6216\u8C03\u6574\u62CD\u6444\u89D2\u5EA6");
+    }
+    return list;
   }
   async function textConvert(file, buf) {
     const text = decodeText(buf);
