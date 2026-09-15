@@ -3050,6 +3050,46 @@ function s4AsciiOneByteDamage() {
 }
 const S4_7_EXPECTED = 'A'.repeat(6000) + '\uFFFD' + 'BCDEF' + 'G'.repeat(1000);
 const countFffdChars = (s) => s.split('\uFFFD').length - 1;
+
+// ---------------------------------------------------------------------------
+// S4-8..S4-14（2026-09-15 收尾批；用户拍板：**阈值 2/10 → 3/4**、页内现造、两处登记）
+//   来源 = AgentTeams `doc2md-s4s5` t12 交叉审查公布的 14 例对抗台配方（编号 C1..C14）。
+//   ⚠️ **原始字节不可得**（生成脚本在 .tmp/qa-t12/，已被清理）→ 本组是**按配方重建**，
+//   判据值与原值同量级、非同值（例：C1 原 fffd=52800/nonAscii=59200，重建 60000/70000；
+//   C8 的 nonAscii 原 3472 / 重建 1826）——决定性项（fffd 与 floor 的关系）一致。
+//   分组：S4-8/9/10 = 守卫（改门后必须仍绿）；S4-11/12/13 = 缺陷（先红）；S4-14 = 边界登记。
+//   依据矩阵（三套阈值 × 17 例实测，脚本 .tmp/s4-gate-probe.mjs）：现门 14/17、
+//   决议候选⑤(f>=5) 13/17（**打破 F6 短 GBK**）、本次采用(f>=3) 16/17（仅牺牲 E1 2 字节单汉字 GBK）。
+// ---------------------------------------------------------------------------
+const S4_C8_BYTES = 10796; // t12-C8：S4-5 型总长
+/* '中文测试' 码点循环填充到 n 字节（GBK 双字节对齐） */
+function s4GbkFill(n) {
+  const out = [];
+  while (out.length < n) for (const b of GBK_ZHONGWEN) out.push(b);
+  return out.slice(0, n);
+}
+/* t12-C1：纯 GBK 长文 80,000 B（守卫——收紧后必须仍回退 gb18030） */
+function s4C1GbkLong() { return s4GbkFill(80000); }
+/* t12-C2：100,000 B ASCII + 200 B GBK 尾（守卫——小 GBK 尾不得被 floor 挡掉） */
+function s4C2AsciiGbkTail() { return [...new Array(100000).fill(0x41), ...s4GbkFill(200)]; }
+/* t12-C8：S4-5 型 10,796 B + 2 处多字节截断（位置 ≈2 KB / ≈9 KB，各 1 个 U+FFFD；守卫） */
+function s4C8Damaged() {
+  const filler = 'S4-5 大体合法 UTF-8 你好世界 ABCD-0123 ';
+  const a = s4PadUtf8(filler, 2048);
+  const d1 = [0xe4, 0xb8];
+  const b = s4PadUtf8(filler, 9000 - (a.length + d1.length));
+  const d2 = [0xe9, 0x9a];
+  const c = s4PadUtf8(filler, S4_C8_BYTES - (a.length + d1.length + b.length + d2.length));
+  return [...a, ...d1, ...b, ...d2, ...c];
+}
+/* t12-C4/C13：ASCII 主体 + 2 个同类坏字节（两个坏字节之间夹可见字符，防「相邻成对」侥幸） */
+function s4AsciiTwoBadBytes(bad) {
+  return [...new Array(6000).fill(0x41), bad, 0x42, bad, ...new Array(1000).fill(0x41)];
+}
+/* t12-C10：短 UTF-8 中文 + 2×0xB0（40 B） */
+function s4ShortUtf8TwoBadBytes() { return [...s4PadUtf8('你好世界', 38), 0xb0, 0xb0]; }
+/* E1 边界：2 字节单汉字 GBK（'中' = D6 D0）——与「UTF-8/ASCII + 2 坏字节」计数签名相同，无法区分 */
+const S4_E1_SINGLE_GBK = GBK_ZHONGWEN.slice(0, 2);
 test('契约组 S：S4 编码判定窗口（全篇判定——头部 ASCII + 正文 GBK 不误判）—— 契约先红', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
   let chromium;
@@ -3137,6 +3177,56 @@ test('契约组 S：S4 编码判定窗口（全篇判定——头部 ASCII + 正
       await t.test('S4-7 守护 floor：纯 ASCII + 单字节损坏 → 不触发 gb18030 回退（其余内容完好）', async () => {
         const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4AsciiOneByteDamage());
         assert.equal(actual, S4_7_EXPECTED, '单字节损坏被整篇重解（0xB0 在 gb18030 下会与后继组成 2 字节序列）');
+      });
+
+      await t.test('S4-8 守卫（重建 t12-C1）：纯 GBK 长文 80,000 B → 仍采纳 gb18030（含「中文测试」、无 U+FFFD）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4C1GbkLong());
+        const head = JSON.stringify(actual.slice(0, 24));
+        assert.ok(actual.includes('中文测试'), `真 GBK 长文被 floor 误伤（未回退 gb18030）：${head}`);
+        assert.ok(!actual.includes('\uFFFD'), `输出含替换字符 U+FFFD（真 GBK 长文未回退）：${head}`);
+      });
+
+      await t.test('S4-9 守卫（重建 t12-C2）：100,000 B ASCII + 200 B GBK 尾 → 仍采纳 gb18030（尾部中文正确、无 U+FFFD）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4C2AsciiGbkTail());
+        const tail = JSON.stringify(actual.slice(-24));
+        assert.ok(actual.includes('中文测试'), `ASCII 主体 + 小 GBK 尾被 floor 挡掉（未回退）：${tail}`);
+        assert.ok(!actual.includes('\uFFFD'), `输出含替换字符 U+FFFD（GBK 尾未回退）：${tail}`);
+      });
+
+      await t.test('S4-10 守卫（重建 t12-C8）：S4-5 型 10,796 B + 2 处截断 → 保持 UTF-8（含「你好世界」、无「浣犲ソ」）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4C8Damaged());
+        const around = JSON.stringify(actual.slice(2030, 2060));
+        assert.ok(actual.includes('你好世界'), `少量损坏被整篇判为 gb18030（结构判据门未生效）：${around}`);
+        assert.ok(!actual.includes('浣犲ソ'), `输出含 gb18030 mojibake 签名「浣犲ソ」（应保持 UTF-8）：${around}`);
+        const fffd = countFffdChars(actual);
+        assert.ok(fffd <= 4, `U+FFFD 计数超预期（${fffd} > 4；仅 2 处截断）：${around}`);
+      });
+
+      await t.test('S4-11 缺陷（重建 t12-C4）：ASCII + 2×0xB0 → 保持 UTF-8（floor 不得放行整篇重解）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4AsciiTwoBadBytes(0xb0));
+        const fffd = countFffdChars(actual);
+        assert.equal(fffd, 2, `ASCII + 2 坏字节被整篇重解（U+FFFD=${fffd} ≠ 2：gb18030 侧把 0xB0+后继解成合法字）`);
+        assert.ok(!/[\u4e00-\u9fff]/.test(actual), '输出凭空出现汉字（ASCII 输入被 gb18030 改写）');
+      });
+
+      await t.test('S4-12 缺陷（重建 t12-C10）：短 UTF-8 中文 + 2×0xB0（40 B）→ 保持 UTF-8（不得变「浣犲ソ涓栫晫」）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4ShortUtf8TwoBadBytes());
+        const shown = JSON.stringify(actual);
+        assert.ok(actual.includes('你好世界'), `短 UTF-8 中文被整篇改写（可读子串丢失）：${shown}`);
+        assert.ok(!actual.includes('浣犲ソ'), `输出含 gb18030 mojibake 签名「浣犲ソ涓栫晫」：${shown}`);
+      });
+
+      await t.test('S4-13 缺陷（重建 t12-C13）：ASCII + 2×0x80 → 保持 UTF-8（0x80 不得被解成「€」）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4AsciiTwoBadBytes(0x80));
+        const fffd = countFffdChars(actual);
+        assert.equal(fffd, 2, `ASCII + 2×0x80 被整篇重解（U+FFFD=${fffd} ≠ 2：gb18030 侧把 0x80 解成 U+20AC）`);
+        assert.ok(!actual.includes('\u20AC'), '输出含「€」（ASCII 输入被 gb18030 改写）');
+      });
+
+      await t.test('S4-14 边界登记：2 字节单汉字 GBK → floor=3 下**不再回退**（已知边界，锁行为防漂移）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), S4_E1_SINGLE_GBK);
+        assert.ok(!actual.includes('中'), `2 字节单汉字 GBK 被回退（边界行为变更——登记口径见 CONTRACT §2 组 S S4-14）：${JSON.stringify(actual)}`);
+        assert.equal(countFffdChars(actual), 2, `输出非「2 个 U+FFFD」（实测 ${JSON.stringify(actual)}）`);
       });
     } finally {
       await browser.close();
