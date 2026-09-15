@@ -99,15 +99,21 @@ function tryDecode(buf, enc) {
   try { return new TextDecoder(enc).decode(buf); } catch { return null; }
 }
 
-/* ③ 启发式回退（S4 口径 A′ 结构判据门）：
+/* ③ 启发式回退（S4 口径 A′ 结构判据门；**2026-09-15 收尾批把阈值 2/10 → 3/4**，用户拍板）：
  *   全篇容错解码后做**全量**计数——fffd = U+FFFD 数、nonAscii = code unit > 0x7F 数；
- *   仅当 fffd >= 2 且 nonAscii > 0 且 fffd * 10 >= nonAscii 才考虑 gb18030 回退
- *   （GBK 文本 fffd/nonAscii ≈ 1；「大体合法 UTF-8 + 少量损坏」该比值 ≈ 0 → 不误翻；纯 ASCII 天然不触发），
+ *   仅当 fffd >= 3 且 nonAscii > 0 且 fffd * 4 >= nonAscii 才考虑 gb18030 回退。
+ *   阈值来由（三套阈值 × 17 例实测矩阵；t12 对抗台重建件 + 仓库 F/S4 既有例 + 极短 GBK 边界）：
+ *     现门 2/10 = 14/17（放行「ASCII/UTF-8 + 2 处坏字节」→ 整篇被 gb18030 改写）；
+ *     决议候选⑤ 5/4 = 13/17（**打破 F6 短 GBK「hello world 你好」fffd=3** → 回归乱码）；
+ *     本次 3/4 = **16/17**。
+ *   边界由来：单个坏字节最多产 1 个 U+FFFD ⇒ fffd=2 与「2 字节真 GBK 单汉字」**签名相同、无法区分**
+ *     → floor=3 选择保住「UTF-8/ASCII + 2 处损坏不被整篇改写」，代价 = 2 字节单汉字 GBK
+ *     不再自动回退（**已知边界**，契约组 S4-14 锁行为；如需兜底须另加手动编码选择，v1 范围外）。
  *   回退时次级保险**放宽**为「gb18030 侧 FFFD 严格更少才采用」（t11 原语义为「数到 2 个即视为更少」；
  *   放宽后 GBK + 坏字节场景亦判定正确，F7 边界不变）。
  *   性能：本路径单遍 O(n) 计数；全篇 loose 解码已在 decodeText 完成，无重复整篇解码。 */
-const FFFD_MIN = 2; // 既有阈值语义：≥2 个 U+FFFD 才考虑回退
-const FFFD_RATIO = 10; // fffd * 10 >= nonAscii ⇔ fffd / nonAscii >= 1/10
+const FFFD_MIN = 3; // 2026-09-15 拍板（旧值 2）：1 个坏字节最多 1 个 U+FFFD → fffd=2 与真 GBK 单字不可分
+const FFFD_RATIO = 4; // 2026-09-15 拍板（旧值 10）：fffd * 4 >= nonAscii
 function gb18030Fallback(buf, looseTxt) {
   const fffd = countFffd(looseTxt);
   if (fffd >= FFFD_MIN) {

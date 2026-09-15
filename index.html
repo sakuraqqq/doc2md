@@ -228,8 +228,8 @@
       return null;
     }
   }
-  var FFFD_MIN = 2;
-  var FFFD_RATIO = 10;
+  var FFFD_MIN = 3;
+  var FFFD_RATIO = 4;
   function gb18030Fallback(buf, looseTxt) {
     const fffd = countFffd(looseTxt);
     if (fffd >= FFFD_MIN) {
