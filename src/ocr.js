@@ -94,3 +94,22 @@ export async function prepareOcrImage(blob) {
   const out = await new Promise((res) => cv.toBlob(res, 'image/png')).catch(() => null);
   return out || blob;
 }
+
+/* ---------- 顺时针旋转 90°（v0.1.7 方向重试用；失败回退原图） ----------
+ * 用途：tesseract 的 AUTO 版面分析**只认一个旋转方向** —— 反方向的横拍页整篇乱码
+ *      （同一夹具实测：顺时针转 90° → CJK 118/123 可读；逆时针转 90° → CJK 7）。
+ *      对失败结果**再顺时针转 90°** 即回到可读方向（实测 CJK 7 → 118）。 */
+export async function rotateImage90(blob) {
+  const bmp = await createImageBitmap(blob).catch(() => null);
+  if (!bmp) return blob;
+  const cv = document.createElement('canvas');
+  cv.width = bmp.height;
+  cv.height = bmp.width;
+  const ctx = cv.getContext('2d');
+  ctx.translate(cv.width / 2, cv.height / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2);
+  if (bmp.close) bmp.close();
+  const out = await new Promise((res) => cv.toBlob(res, 'image/png')).catch(() => null);
+  return out || blob;
+}

@@ -3802,3 +3802,148 @@ test('契约组 W：OCR 输入预缩放 + PSM 显式设置 + 质量信号（v0.1
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 X：OCR 方向重试（v0.1.7；2026-09-15 产品路径实测驱动 + 用户拍板三条约束）
+// 根因（实测）：tesseract 的 AUTO 版面分析**只认一个旋转方向** —— 同一张接近真实比例的页面夹具，
+//   顺时针转 90° → CJK 118/123（可读）；逆时针转 90° → CJK 7（全篇乱码，conf 24）。
+//   产品路径实测（真 chromium + 真 OCR）：对失败方向**再顺时针转 90°** → CJK 118（救回）。
+// 口径（用户 2026-09-15 拍板）：
+//   ① **只重试一次**（绝不进入重试循环）；② **取更优的**（按写死的打分，不许"后到的赢"）；
+//   ③ **阈值写死**（不做成可调参数）；④ **触发 = 与 ocrWarnings 完全同一口径**（"提示即行动"）；
+//   ⑤ **不加 OSD 词典资产**（用户明确否决 +10MB 方案）。
+// 打分（写死，越大越好）：`conf - 100 × 拉丁占比`，拉丁占比分母 = CJK + 拉丁。
+// 断言（X1/X3/X5 先红；X2/X4 为守护）：
+//   X1 行为级：首次差（低置信度）→ 必须发生第二次 recognize，且最终 markdown = 第二次（更优）
+//   X2 守护：首次好 → **恰好 1 次 recognize**（不许无条件重试——"成本只在坏例上"）
+//   X3 行为级：重试的输入必须是**旋转过的**图（位图宽高互换）
+//   X4 守护：两次都差 → 取分高者、不崩（仍返回 warnings）
+//   X5 守护：首次"中文 + 高拉丁占比"（= 会提示版面/方向）也必须触发重试（提示即行动）
+// ---------------------------------------------------------------------------
+test('契约组 X：OCR 方向重试（质量差 → 顺时针 90° 重试一次，取更优）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      // 假 worker 缝：按调用次序消费 __xQueue（每次一个 {text, conf}），并记录每次收到的位图尺寸
+      await page.evaluate(() => {
+        window.__xProbe = { blobs: [], calls: 0 };
+        window.__xQueue = [];
+        window.Tesseract = {
+          createWorker: async () => ({
+            setParameters: async () => {},
+            recognize: async (blob) => {
+              const bmp = await createImageBitmap(blob);
+              window.__xProbe.blobs.push({ w: bmp.width, h: bmp.height });
+              if (bmp.close) bmp.close();
+              window.__xProbe.calls++;
+              const r = window.__xQueue.shift() || { text: '', conf: 0 };
+              return { data: { text: r.text, confidence: r.conf } };
+            },
+            terminate: async () => {},
+          }),
+        };
+      });
+
+      const runX = (w, h, queue) =>
+        page.evaluate(
+          async (a) => {
+            window.__xQueue = a.queue;
+            window.__xProbe.blobs = [];
+            window.__xProbe.calls = 0;
+            const cv = document.createElement('canvas');
+            cv.width = a.w;
+            cv.height = a.h;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, a.w, a.h);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(4, 4, Math.min(40, a.w - 8), Math.min(40, a.h - 8));
+            const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
+            const res = await window.__doc2md.convert(new File([blob], 'x.png', { type: 'image/png' }));
+            return {
+              markdown: res.markdown,
+              warnings: res.meta.warnings,
+              error: res.error || null,
+              calls: window.__xProbe.calls,
+              blobs: window.__xProbe.blobs,
+            };
+          },
+          { w, h, queue }
+        );
+
+      const GOOD = '电容式传感器位移特性实验一实验目的了解其结构';
+      const JUNK = 'FS TUE RE UAT IE SLI EES SR FIR';
+      const CJK_MIX = '电容式传感器是将位移压力振动转换成电容量变化的传感器其最常用的形式由平行电极组成';
+
+      await t.test('X1 行为级：首次差（低置信度）→ 须重试一次，且最终取更优的那次', async () => {
+        const res = await runX(1600, 1200, [
+          { text: JUNK, conf: 22 },
+          { text: GOOD, conf: 88 },
+        ]);
+        assert.equal(res.error, null, `转换不应报错：${JSON.stringify(res.error)}`);
+        assert.equal(res.calls, 2, `首次结果差（conf 22）→ 必须重试一次（实际 recognize 次数 ${res.calls}）`);
+        assert.equal(res.markdown, GOOD, `最终应取更优的那次（实际 ${JSON.stringify(res.markdown)}）`);
+      });
+
+      await t.test('X2 守护：首次好 → 恰好 1 次 recognize（成本只在坏例上）', async () => {
+        const res = await runX(1600, 1200, [{ text: GOOD, conf: 88 }]);
+        assert.equal(res.calls, 1, `首次结果好（conf 88）→ 不得重试（实际 recognize 次数 ${res.calls}）`);
+        assert.equal(res.markdown, GOOD, `markdown 应为首次结果：${JSON.stringify(res.markdown)}`);
+      });
+
+      await t.test('X3 行为级：重试的输入必须是旋转过的图（位图宽高互换）', async () => {
+        const res = await runX(1600, 1200, [
+          { text: JUNK, conf: 22 },
+          { text: GOOD, conf: 88 },
+        ]);
+        assert.equal(res.blobs.length, 2, `应有 2 次 recognize 的尺寸记录（实际 ${res.blobs.length}）`);
+        const [a, b] = res.blobs;
+        assert.ok(
+          b.w === a.h && b.h === a.w,
+          `重试输入应为第一次的 90° 旋转（宽高互换）：第一次 ${JSON.stringify(a)} vs 第二次 ${JSON.stringify(b)}`
+        );
+      });
+
+      await t.test('X4 守护：两次都差 → 取分高者、不崩、仍给 warnings', async () => {
+        const res = await runX(1600, 1200, [
+          { text: 'garbage A', conf: 20 },
+          { text: 'garbage B', conf: 25 },
+        ]);
+        assert.equal(res.calls, 2, `两次都差 → 仍只重试一次（实际 ${res.calls}）`);
+        assert.equal(res.markdown, 'garbage B', `应按写死打分取更优（实际 ${JSON.stringify(res.markdown)}）`);
+        assert.ok((res.warnings || []).length > 0, `差结果必须仍给 warnings：${JSON.stringify(res.warnings)}`);
+      });
+
+      await t.test('X5 守护：首次"中文 + 高拉丁占比"（会提示版面/方向）同样触发重试', async () => {
+        const res = await runX(1600, 1200, [
+          { text: `${CJK_MIX}\nSis BE = Faz id ERE a. iB er = Sis BE = Faz id ERE a. iB er`, conf: 85 },
+          { text: GOOD, conf: 88 },
+        ]);
+        assert.equal(res.calls, 2, `中文场景高拉丁占比（= 会提示版面/方向）应触发重试（实际 ${res.calls}）`);
+        assert.equal(res.markdown, GOOD, `最终应取更优的那次（实际 ${JSON.stringify(res.markdown)}）`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});

@@ -7,36 +7,74 @@ import { htmlToMarkdown } from './html2md.js';
 import { docxConvert } from './docx.js';
 import { xlsxConvert } from './xlsx.js';
 import { pdfConvert } from './pdf.js';
-import { getOcrWorker, prepareOcrImage } from './ocr.js';
+import { getOcrWorker, prepareOcrImage, rotateImage90 } from './ocr.js';
 import { collapseCjkSpaces } from './cjk.js';
 
 export const MAX_BYTES = 50 * 1024 * 1024; // 50MB 护栏
 
-/** image 转换器（OCR 域：worker 单例 + 置信度提示；contract §4.5） */
+/* OCR 质量阈值（v0.1.6/v0.1.7，**写死**——用户 2026-09-15 拍板「阈值写死」，不做成可调参数）
+ * 三者同时是「提示判据」与「方向重试触发条件」：口径同一 = 提示即行动。 */
+const OCR_CONF_MIN = 60; // 置信度低于此 → 结果可能不准确（并触发方向重试）
+const OCR_CJK_MIN = 20; // 判「中文场景」的最小汉字数（纯英文图无中文 → 不判版面问题）
+const OCR_LATIN_MAX = 0.4; // 中文场景里拉丁占比高于此 → 疑似版面/方向问题
+
+/** image 转换器（OCR 域：worker 单例 + 置信度提示 + 方向重试；contract §4.5） */
 async function imageConvert(file, buf) {
   const worker = await getOcrWorker();
   const blob = new Blob([buf], { type: file.type || 'image/png' });
   // v0.1.6（2026-09-15 用户拍板）：大图先缩到长边 1500px 再识别（只缩不放；失败回退原图，见 src/ocr.js）
-  const r = await worker.recognize(await prepareOcrImage(blob));
+  const prepared = await prepareOcrImage(blob);
+  let best = await ocrOnce(worker, prepared);
+  // v0.1.7（2026-09-15 用户拍板）：质量差 → **顺时针旋转 90° 重试一次**，取更优的那个。
+  // 动机（产品路径实测）：tesseract 的 AUTO 只认一个旋转方向 —— 同一夹具顺时针转 90° 得 CJK 118/123、
+  // 逆时针转 90° 得 CJK 7（整篇乱码）；对失败结果再顺时针转 90° 即救回。**不引入 OSD 词典资产**（用户否决 +10MB）。
+  // 三条约束：**只重试一次**（无循环）/ **取更优的**（按 ocrScore，不许「后到的赢」）/ **阈值写死**（见上方常量）；
+  // 触发条件与 ocrWarnings 完全同一口径 → **成本只落在坏例上**（好结果不重试）。
+  if (poorOcr(best)) {
+    const retry = await ocrOnce(worker, await rotateImage90(prepared));
+    if (ocrScore(retry) > ocrScore(best)) best = retry;
+  }
   // 2026-09-15（真机验收发现，缺陷修复）：**图片直传**与 PDF OCR 降级是两条独立 OCR 入口——
   // 后者（pdf.js ocrPageToText）早已合并汉字间词分空格，前者漏了 → 用户看到「湖南 新 晃 侗 族 自治 县」。
   // 仅 OCR 路径做后处理；文字层路径的空格是真实排版信息，不动（见 src/cjk.js）。
+  return { markdown: best.text, warnings: ocrWarnings(best.text, best.conf), backend: 'tesseract' };
+}
+
+/** OCR 一次（识别 + CJK 空格后处理；返回 {text, conf}） */
+async function ocrOnce(worker, blob) {
+  const r = await worker.recognize(blob);
   const text = collapseCjkSpaces((((r && r.data) || {}).text || '').trim());
   const conf = typeof (r && r.data && r.data.confidence) === 'number' ? Math.round(r.data.confidence) : null;
-  return { markdown: text, warnings: ocrWarnings(text, conf), backend: 'tesseract' };
+  return { text, conf };
+}
+
+/** CJK / 拉丁计数与占比（提示判据与重试打分共用） */
+function cjkLatin(text) {
+  const cjk = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff]/g) || []).length;
+  const latin = (text.match(/[A-Za-z]/g) || []).length;
+  return { cjk, latin, ratio: latin / Math.max(1, cjk + latin) };
+}
+
+/** 结果质量打分（越大越好）：置信度 − 100 × 拉丁占比（阈值写死，见上方常量） */
+function ocrScore(res) {
+  return (res.conf === null ? 0 : res.conf) - 100 * cjkLatin(res.text).ratio;
+}
+
+/** 是否差到该重试：**与 ocrWarnings 完全同一口径**（会提示 → 就重试；口径同一 = 提示即行动） */
+function poorOcr(res) {
+  return ocrWarnings(res.text, res.conf).length > 0;
 }
 
 /** OCR 结果提示（空结果 / 低置信度 / 疑似版面或方向问题） */
 function ocrWarnings(text, conf) {
   if (!text) return ['OCR 未识别到文字（图片可能过小或模糊）'];
   const list = [];
-  if (conf !== null && conf < 60) list.push(`OCR 置信度较低（${conf}%），结果可能不准确`);
+  if (conf !== null && conf < OCR_CONF_MIN) list.push(`OCR 置信度较低（${conf}%），结果可能不准确`);
   // v0.1.6（2026-09-15 用户拍板）：中文场景里混入高比例拉丁字符 = 版面/方向问题的典型形态
   //（真机实测：崩的配置拉丁占比 0.45–0.63 且置信度 18–41；正常配置 ≤0.2）。
   // 仅当含足量中文时才判——纯英文图（如 sample.png = HELLO DOC2MD 2026）拉丁占比必然高，不得误报。
-  const cjk = (text.match(/[\u3400-\u4dbf\u4e00-\u9fff]/g) || []).length;
-  const latin = (text.match(/[A-Za-z]/g) || []).length;
-  if (cjk >= 20 && latin / Math.max(1, cjk + latin) > 0.4) {
+  const c = cjkLatin(text);
+  if (c.cjk >= OCR_CJK_MIN && c.ratio > OCR_LATIN_MAX) {
     list.push('OCR 结果中非中文字符占比偏高，可能存在版面或方向问题——建议核对原图或调整拍摄角度');
   }
   return list;
