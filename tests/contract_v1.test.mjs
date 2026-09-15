@@ -3057,7 +3057,8 @@ const countFffdChars = (s) => s.split('\uFFFD').length - 1;
 //   ⚠️ **原始字节不可得**（生成脚本在 .tmp/qa-t12/，已被清理）→ 本组是**按配方重建**，
 //   判据值与原值同量级、非同值（例：C1 原 fffd=52800/nonAscii=59200，重建 60000/70000；
 //   C8 的 nonAscii 原 3472 / 重建 1826）——决定性项（fffd 与 floor 的关系）一致。
-//   分组：S4-8/9/10 = 守卫（改门后必须仍绿）；S4-11/12/13 = 缺陷（先红）；S4-14 = 边界登记。
+//   分组：S4-8/9/10 = 守卫（改门后必须仍绿）；S4-11/12/13 = 缺陷（先红）；S4-14 = 边界登记；
+//   S4-15/16 = **极短 GBK 守卫**（E2 双汉字 4 B / E3 三汉字 6 B，2026-09-15 补，U2 闭环）。
 //   依据矩阵（三套阈值 × 17 例实测，脚本 .tmp/s4-gate-probe.mjs）：现门 14/17、
 //   决议候选⑤(f>=5) 13/17（**打破 F6 短 GBK**）、本次采用(f>=3) 16/17（仅牺牲 E1 2 字节单汉字 GBK）。
 // ---------------------------------------------------------------------------
@@ -3227,6 +3228,23 @@ test('契约组 S：S4 编码判定窗口（全篇判定——头部 ASCII + 正
         const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), S4_E1_SINGLE_GBK);
         assert.ok(!actual.includes('中'), `2 字节单汉字 GBK 被回退（边界行为变更——登记口径见 CONTRACT §2 组 S S4-14）：${JSON.stringify(actual)}`);
         assert.equal(countFffdChars(actual), 2, `输出非「2 个 U+FFFD」（实测 ${JSON.stringify(actual)}）`);
+      });
+
+      // U2 闭环（2026-09-15，用户拍板）：把「三套阈值 × 17 例」矩阵里**尚无断言覆盖**的
+      //   E2（双汉字 GBK 4 B）/ E3（三汉字 GBK 6 B）补成守卫 —— 二者是候选⑤（fffd>=5）的
+      //   另两个破例点（fffd=4 < 5）。补上后矩阵每一例都能从仓库断言复算，Linux 侧无需依赖未入库脚本。
+      await t.test('S4-15 守卫（重建 E2）：双汉字 GBK 4 B → 仍回退 gb18030（含「中文」、无 U+FFFD）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4GbkFill(4));
+        const shown = JSON.stringify(actual);
+        assert.ok(actual.includes('中文'), `极短真 GBK（4 B）被 floor 误伤（未回退）：${shown}`);
+        assert.ok(!actual.includes('\uFFFD'), `输出含替换字符 U+FFFD（极短真 GBK 未回退）：${shown}`);
+      });
+
+      await t.test('S4-16 守卫（重建 E3）：三汉字 GBK 6 B → 仍回退 gb18030（含「中文测」、无 U+FFFD）', async () => {
+        const actual = await page.evaluate((bytes) => window.__doc2md.decodeText(new Uint8Array(bytes)), s4GbkFill(6));
+        const shown = JSON.stringify(actual);
+        assert.ok(actual.includes('中文测'), `极短真 GBK（6 B）被 floor 误伤（未回退）：${shown}`);
+        assert.ok(!actual.includes('\uFFFD'), `输出含替换字符 U+FFFD（极短真 GBK 未回退）：${shown}`);
       });
     } finally {
       await browser.close();
