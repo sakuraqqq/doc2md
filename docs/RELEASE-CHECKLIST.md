@@ -37,6 +37,7 @@
 ```bash
 # ① 版本 bump（v1 候选 0.1.0 → 0.1.1；先改后提交）
 #    package.json "version": "0.1.0" → "0.1.1"；index.html footer「v0.1」字样同步（如涉及）
+#    ⚠️ 本项目实测：用 `npm version <ver> --no-git-tag-version` 一次改对 package.json + package-lock.json（不动 git tag）
 
 git add -A
 git commit -m "release: doc2md v0.1.1"
@@ -50,6 +51,13 @@ git push origin v0.1.1             # 单独推 tag
 git push --dry-run origin main
 git push --dry-run origin v0.1.1
 ```
+
+> **⚠️ v0.1.7 实发踩坑（2026-09-15，写死在此防再犯）**：
+> 1. **`gh release create` 需要默认仓库**：未设置时报 `X No default remote repository has been set` 而失败 → 修法 = 加 `--repo <owner>/<repo>`，或先 `gh repo set-default <owner>/<repo>`；
+>    也可以**直接网页发**（本项目 v0.1.7 即网页发布，最省事）。
+> 2. **`--notes-file` 别指向 `docs/RELEASE.md`**（那是**累积**发布史，会把全部版本贴进 Release 页）→ 用**专用说明** `docs/release-notes-v<ver>.md`（先例：`release-notes-v0.1.1.md`）。
+> 3. **网页发布时，tag 必须从下拉里"选中已存在的"**，不要手动输入同名 tag"新建"（可能重复或指错提交）。
+> 4. **发布后自测注意 CDN 缓存窗口**：刚推完可能仍拿到旧构建 —— 等几分钟，或带 `?v=<ver>` query 打开。
 
 ## 3. 发布后验证（Pages 上线后）
 

@@ -166,7 +166,7 @@
   | manifest.json | 730 B | D5B46A975B60640318252A39D4C83D2766A62E9A3E907E182945C7C89B858E98 |
   | sw.js | 4,253 B | FAF9771E1009CD83721116E6AD0D61BB15D644FE061B271D3183B04C312C3F85 |
   - 交付物清单（同源分文件）：`vendor/` 185 文件 / 16,051,845 B · `langs/` 2 文件 / 7,670,131 B · `icons/` 4 文件 / 10,014 B；`sw.js` 的 `CACHE_NAME` 保持 **`doc2md-sw-v4`**（本版未改 `vendor/`、`langs/` 任何文件 → 按发布清单**不需 bump**，组 H3 亦断言 v4）
-- **发布动作**（**待用户在终端执行**；红线 3「发布动作人执」）：
+- **发布动作**（**2026-09-15 已由用户执行完成**）：
   ```bash
   git push origin main            # ① 推本提交（发布准备）到 main
   git tag v0.1.7                  # ② 先 commit 后 tag（顺序反了 tag 指错提交）
@@ -176,6 +176,13 @@
   git push --dry-run origin main
   git push --dry-run origin v0.1.7
   ```
+  **实际执行与回读（2026-09-15 实测）**：
+  - `git push origin main` → `d9f107c..9d2cd9d`（38 objects / 14.84 KiB）；随后 `ecd3f55`（Release 专用说明）亦已推 → `origin/main` = `ecd3f55`，**待推送 0**，工作区 clean
+  - `git tag v0.1.7` → `git push origin v0.1.7` → `* [new tag] v0.1.7 -> v0.1.7`
+  - **GitHub Release 由用户在网页发布**：<https://github.com/sakuraqqq/doc2md/releases/tag/v0.1.7> · 标题 `v0.1.7` · 说明 = `docs/release-notes-v0.1.7.md` 全文 · **附件 0 个** · **标记为 Latest**
+  - **tag SHA 双端逐字核对**：本地 `git rev-parse v0.1.7` = **`9d2cd9d0cec9b1a0a6e57365116b4d367d66e142`**（`git cat-file -t` = `commit`，**lightweight**，与历史 6 个 tag 同型）↔ Release 页显示的 commit 链接 = **同一 SHA** ✅
+  - **Pages 复验（带 cache-bust query 绕开 SW 缓存后实测）**：`index.html` = **120,988 B / `2EE82D47BDAF7CE0CE7034CB49D1C69422EEC1F046EC109AD5AF5640A33E1CBB`**，与发布产物**逐字节一致**；页脚显示 `doc2md v0.1.7`；`rotateImage90`（方向重试）在位
+  - ⚠️ **两条踩坑记录（供后人）**：① `gh release create` 在未设默认仓库时直接失败（`X No default remote repository has been set`）→ 修法 = 加 `--repo sakuraqqq/doc2md`，或先 `gh repo set-default`；② **不要**用 `--notes-file docs/RELEASE.md`（会把**整部发布史**贴进 Release 页）→ 用专用说明文件（`docs/release-notes-v0.1.7.md`，本次即如此）
 - **观察期**：开始 **2026-09-15**（发布日）→ 复盘 **≥2026-09-18**（满 3×24h）；反馈汇总：<待填>
   > 附注：v0.1.4 的观察期（09-14 起 → ≥09-17）**未走完就被本版取代** —— 两批之间线上实际运行的是未发版的中间构建（`3D044AA0…` / `E5037CE1…`）。如实登记，不视为违规（用户拍板按修复优先级连续发布）。
 - **隐私 & 版权审查（发布前强制门禁，2026-09-15 本机实测）**：**通过**
