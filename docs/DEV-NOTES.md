@@ -1093,6 +1093,47 @@ git revert --no-edit 567ff2f         # 生成 faceb9f：6 个文件全部恢复
 
 **纪律沉淀**：① 跨机比对**源码**用 git blob（`git rev-parse :<path>`），**不**用工作区 SHA256（`core.autocrlf=true` 下同内容哈希不同）；② 比对**产物**用字节 + SHA256，且**取历史版本内容必须加 `-c core.autocrlf=false`**，否则检出过滤器引入 CRLF 且被 git 归一化掩盖；③ 跨机验证方「只报告不修改」本轮被双方遵守（Linux 侧未 commit / 未 push / 未改断言，并主动登记未验证项与偏差）。
 
+---
+
+## 2026-09-15 v0.1.5 批：图片 OCR 缺陷修复 + 三项工程口径（独立验收四项全通过）
+
+**批次**（用户「开修」，5 提交，均已推送）：
+
+| 提交 | 内容 |
+|---|---|
+| `3db5788` | **fix**：图片直传路径补 CJK 空格折叠 + 契约组 **R3**（先红后绿）+ 产物重建 |
+| `384308f` | **chore**：`tools/metrics.mjs` 报告路径 POSIX 化 + 遍历序确定化 |
+| `b47e1f2` | **chore**：新增 `.gitattributes`（`* text=auto eol=lf`）+ 7 个 CRLF 工作区文件归一化 |
+| `1847b40` | **docs**：`tests/CONTRACT.md` 回填（组 U 建节 + 组 V 转绿 + R3 入档 + §3 样例 + §7 两相） |
+| `10930d9` | **docs**：`README.md` 补三条真机结论 |
+
+**① 缺陷与修复（真机验收驱动）**：**OCR 有两条入口** —— `src/pdf.js` 的 `ocrPageToText`（扫描页降级）**早已**调用 `collapseCjkSpaces`，而 `src/convert.js` 的 `imageConvert`（**图片直传**）**漏接** → 中文照片 OCR 结果保留 tesseract 的词分空格（用户可见 `湖南 新 晃 侗 族 自治 县`）。**既有断言 R2 是产物级正则、只锁 pdf 路径，图片路径属该组盲区**（R2 属冻结断言 → 本批**只新增 R3、R1/R2 逐字未动**）。
+
+R3 的做法（确定性 + 零真 OCR 成本）：页内把 `window.Tesseract` 换成假 worker（`getOcrWorker()` 在调用时读它）→ canvas 造最小合法 PNG → 走**真实** `convert()`（嗅探 → `imageConvert`）→ 断言输出已合并。
+**两相实测**：先红 = 只跑组 R → `tests 4 / pass 2 / fail 2`（R3 ✖ `actual '湖南 新 晃 侗 族 自治 县'`）；后绿 = **233 tests / 231 pass / 0 fail / 2 skip**，产物 `118,263 B / 200D004B…E4DB0`（blob `0258682558ef`）。
+
+**② metrics 跨平台可重复**（修上一轮由 Linux 侧发现的问题）：报告路径改用既有的 `toRel()`（POSIX 归一）+ `targets.sort()`（`readdirSync` 顺序随平台而异 → 「全量函数清单」行序不稳定）。实测**含反斜杠行数 349 → 0**；Linux 侧复验 `git diff` **仅生成时间一行**（修前为 +350/−350 整表重写）。
+
+**③ `.gitattributes` 治字节陷阱**（根因与实测见本节上一小节）：口径取 `* text=auto eol=lf` —— **比 `-text` 更强**：`-text` 只让检出不过滤（编辑器写出的 CRLF 会原样入库），而 `text=auto eol=lf` **两头都堵**（检出必 LF + 入库归一化），二进制仍按 NUL 探测自动排除。归一化 7 个历史 CRLF 文件（`.gitignore`/`AGENTS.md`/`docs/DEV-NOTES.md`/`docs/HANDOFF-主开发线.md`/`src/docx.js`/`src/pdf.js`/`src/sniff.js`），逐文件 `hash-object == 索引 blob`（7/7）。
+
+**④ 独立验收（Linux 侧，四项全通过；本侧实测核验 21/21 文件字节 + SHA 吻合）**：
+
+| 项 | 结果 |
+|---|---|
+| V-1 全量契约（**真 chromium**，非 msedge 回退） | 233 / 231 pass / 0 fail / 2 skip（原始日志第 289–296 行独立抠出） |
+| **V-2 真 OCR 中文图端到端**（换数据：3 组含中文标点 + 数字混排） | 修复态 **3/3 pass**；**负对照 3/3 FAIL** |
+| V-3 metrics 跨平台 | diff = 1 file changed, ±1 行（唯一差异 = 生成时间） |
+| V-4 `.gitattributes` 生效 | `text:auto`/`eol:lf`；全树 `w/crlf = 0`；`hash-object == blob` 5/5 |
+
+**V-2 的负对照特别值得记**：摘除 `collapseCjkSpaces` 后重建，产物退回 **`118,244 B / 62B8ADA1… / blob 221e60e6…`** —— **正是 v0.1.4（修复前）的产物哈希** → 用哈希证明「摘除该修复 = 回到修复前行为」，比单纯「断言变红」更硬。验完 `git checkout` 完整还原（`status` 0 行）。
+**本侧追加关掉 U6**（他们登记为未验证）：Windows 侧**真删 3 个文件再检出** → 全部 `w/lf`、`hash-object == 索引 blob` 3/3、产物仍 `118,263 B / 200D004B…` ⇒ **该属性在当初咬人的那个平台（Windows + `core.autocrlf=true`）上确已生效**。
+
+**⑤ 新登记（待拍板，本批未修）**：「**半角标点**」折叠缺口 —— V-2 的 g2 暴露：OCR 把全角「：」误识为 ASCII `:` 时输出 `会议纪要 : 项目`（空白未折叠）。根因 = `CJK_PUNCT_CLASS` 只含全角中文标点 + 少数 ASCII（`()[]{}%+`），ASCII `:,.;!?` 不在其中。**属显示级瑕疵**（不产生错误数据），但**修 = 改折叠口径**（铁律 6 → 需用户拍板 + 先补先红断言）。
+
+**⑥ 未验证项（保留登记）**：V-2 轮次 U1 OCR 准确率 / U2 全角半角穷尽 / U3 其他图像条件 / U4 多行 / U5 PDF OCR 路径真 OCR 端到端 / U7 重复取样；v0.1.4 轮次 U1 日志时间戳跳变根因、U4 其他发行版。**另有：真 OCR 的图片端到端未进快契约组**（契约组须保确定性与时长 ~48s），如需入库要先拍板「中文合成样例 + 时间预算」。
+
+**纪律沉淀**：① **修与验必须换环境换数据** —— 本批 R3 是确定性断言（假 worker），真正的保真验证由 Linux 侧用**真 OCR + 自选数据 + 负对照**完成；② **负对照是断言有效性的唯一硬证据**（本轮负对照还额外给出产物哈希旁证）；③ 验证方**主动登记自己脚本的缺陷**（Linux 侧首版 canvas 定宽导致裁切 → 如实标注「非产品缺陷」）—— 这是可信度的来源，不是减分项。
+
 
 
 
