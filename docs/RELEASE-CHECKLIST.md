@@ -12,7 +12,7 @@
 | README 终稿（中英 + 功能 + 口径 + 截图 + 测试 + 许可 + 发展） | ✅ 就绪 | `README.md`；截图 ✅ `assets/screenshot.png`；演示 GIF **已拍板不做**（拖放/上传为直觉操作，2026-09-04） |
 | GitHub Pages workflow | ✅ 就绪 | `.github/workflows/deploy-pages.yml`（照 cola `deploy-pages.yml` 同款；纯静态零构建；Workflow 跑在 checkout 干净树上，`.gitignore` 已排除 node_modules/.tmp/.npm-cache，不会上传 Pages） |
 | `.nojekyll` | ✅ 就绪 | 根目录（Pages 免 Jekyll 处理） |
-| 契约测试 | ✅ **246/244**（2026-09-15 实跑） | `npm test`：全量 **246 tests / 244 pass / 0 fail / 2 skip**（含组 T 产物一致性、组 W OCR 输入质量、组 X 方向重试）；B/C/M 组真实浏览器/手机视口断言全绿；skip = `real-cid-paper`（第三方样例不入库） |
+| 契约测试 | ✅ **253/253**（2026-09-15 实跑） | `npm test`：全量 **255 tests / 253 pass / 0 fail / 2 skip**（含组 T 产物一致性、组 W OCR 输入质量、组 X 方向重试、**组 S S4-8..S4-16 编码判据门**）；B/C/M 组真实浏览器/手机视口断言全绿；skip = `real-cid-paper`（第三方样例不入库） |
 | 产物一致性（本地防线，v0.1.3 纳入） | ✅ 新增 | 契约组 **T**：现场重建产物并比对字节，不一致即 FAIL（治「只改 src 忘 `npm run build` → 本地对着旧产物假绿」）；CI 另有 build-consistency 步骤 |
 | 部署白名单 smoke（v0.1.3 纳入） | ✅ 新增 | `node tools/deploy-smoke.mjs _site`：按「引用即必需」核对 index.html / sw.js 同源引用 + 必需顶层文件/目录（治 cp 白名单静默漏发）；实测正例 PASS、负例 exit 1 |
 | PWA 静态验收 | ✅ 48/48 | `node tests/pwa-audit.mjs`（manifest/SW/图标/触控/对比度 WCAG AA） |
@@ -72,13 +72,14 @@ git push --dry-run origin v0.1.1
 
 ## 4. npm pack 类核对（本项目无 npm 包，等价清单）
 
-- 交付物 = **静态站**（index.html **120,988 B**——**2026-09-15 v0.1.7 实测**；页脚版本串 `v0.1.7` 与 `v0.1.4` 等长 → **字节数不变而 SHA 必变**，核对一律以 SHA256 为准：`2EE82D47BDAF7CE0CE7034CB49D1C69422EEC1F046EC109AD5AF5640A33E1CBB`）+ **vendor/（185 文件 / 16,051,845 B）+ langs/（2 文件 / 7,670,131 B，OCR 语言包）+ manifest.json（730 B）+ sw.js（4,253 B）+ icons/（4 文件 / 10,014 B）**——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
+- 交付物 = **静态站**（index.html **120,987 B**——**2026-09-15 v0.1.8 实测**；页脚版本串等长（`v0.1.7`/`v0.1.8`）→ **字节数不变而 SHA 必变** ⇒ 同长度三哈希：v0.1.8 = `14773E5FFDE3072A33FCD127C1DDA6E8CF739CB8366F4D17BDDED0A5EBF3F178` · S4 批 = `4A15BA51…9EEA6` · v0.1.7 = **120,988 B** / `2EE82D47…1CBB` —— **核对一律以 SHA256 为准**）+ **vendor/（185 文件 / 16,051,845 B）+ langs/（2 文件 / 7,670,131 B，OCR 语言包）+ manifest.json（730 B）+ sw.js（4,253 B）+ icons/（4 文件 / 10,014 B）**——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
 - 等价核对：Pages 部署目录清单（工作流上传根目录；部署后核对 index.html/manifest/sw/icons/vendor/*/langs/* 齐）、发布记录留存：版本 + 测试结果 + 各产物 SIZE + SHA256（见下方记录区）。
 - 若未来发布 npm 包：`npm pack --dry-run --json`（**必须 --json**，plain 输出看不见清单）核对 LICENSE/产物/源码/入口都在清单。
 
 ## 5. 观察期
 
 - **≥3 天**：验证 Pages 在线可玩、手机浏览器可用（阶段 3 验收 #19）。
+- **v0.1.8（2026-09-15 发布）**：观察期 **09-15 起 ≥3 天 → 09-18 复盘**；重点观察 ① 线上**编码判定**对**短文件/微损坏文件**的行为（本版修复面：不再整篇 gb18030 改写）② **2 字节单汉字 GBK 边界**（契约 S4-14，已知取舍）是否出现真实用户影响 ③ Pages CDN 缓存窗口。附注：v0.1.7 观察期**未走完即被本版取代**（线上曾实际运行带三类静默错的构建，如实登记）。
 - **v0.1.7（2026-09-15 发布）**：观察期 **09-15 起 ≥3 天 → 09-18 复盘**；重点观察 ① 线上 **OCR 质量三修 + 方向重试**在真机照片上的表现（坏例耗时 ≈1.3–1.75× 是否可接受）② `.gitattributes`（`* text=auto eol=lf`）在**新克隆**上的效果 ③ Pages CDN 缓存窗口导致的「测试拿到旧构建」现象（本轮踩过 —— 发布后自测请等数分钟或换带 query 的 URL）。
 - **v0.1.4（2026-09-14 发布）**：观察期 09-14 起 → ≥09-17 —— **未走完即被 v0.1.7 取代**（中间线上跑的是未发版构建；如实登记）。
 - **v0.1.3（2026-09-12 发布）**：观察期 **09-12 起 ≥3 天 → 09-15 复盘**；重点观察 ① Pages 上 `deploy-pages` 的**白名单 smoke 步骤**是否存活（新增防线）② OCR/PDF 在线上 http 环境的可用性 ③ 契约组 T 在 CI 的行为（本地/受限环境的 spawn 前置已在 CONTRACT §7 记录）。
