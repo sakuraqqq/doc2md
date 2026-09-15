@@ -175,6 +175,9 @@ const srcDir = path.join(ROOT, 'src');
 const toolsDir = path.join(ROOT, 'tools');
 if (fs.existsSync(srcDir)) targets.push(...walkFiles(srcDir, ['.js'], []).filter((f) => !isIgnored(f)));
 if (fs.existsSync(toolsDir)) targets.push(...walkFiles(toolsDir, ['.mjs'], []).filter((f) => !isIgnored(f)));
+// 文件顺序确定化（2026-09-15）：readdirSync 返回顺序随平台/文件系统而异 → 报告「全量函数清单」的行序
+// 不稳定（同分函数按插入序排），跨平台 diff 会出现无意义重排。排序后两种平台产出同一顺序。
+targets.sort();
 
 function collectFunctions(node, parent, out) {
   if (isFunctionNode(node)) {
@@ -199,13 +202,13 @@ for (const file of targets) {
   try {
     ast = espree.parse(src, { ecmaVersion: 'latest', sourceType: 'module', loc: true });
   } catch (e) {
-    parseErrors.push({ file: path.relative(ROOT, file), error: e.message });
+    parseErrors.push({ file: toRel(file), error: e.message });
     continue;
   }
   const fileFuncs = [];
   collectFunctions(ast, null, fileFuncs);
   for (const f of fileFuncs) {
-    f.file = path.relative(ROOT, file);
+    f.file = toRel(file); // POSIX 分隔符（2026-09-15）：原来直接写 path.relative → 报告里是 src\x.js，跨平台不可重复
     f.overCyc = f.cyclomatic > CYC_MAX;
     f.overCog = f.cognitive > COG_MAX;
     funcs.push(f);
@@ -361,7 +364,7 @@ for (const f of over)
   console.log(
     `[metrics] OVER  ${f.file}:${f.line} ${f.name} cyc=${f.cyclomatic} cog=${f.cognitive}`
   );
-console.log(`[metrics] 报告已写 ${path.relative(ROOT, outPath)}`);
+console.log(`[metrics] 报告已写 ${toRel(outPath)}`);
 if (over.length > 0) process.exitCode = 1; // 超限 → metrics exit 1（CI 硬门禁「超限必须为 0」，2026-09-10 用户拍板）
 if (parseErrors.length > 0) {
   // 解析失败的文件被跳过度量（函数数不计）→「超限 0」不再可信：按门禁失败处理（2026-09-10）
