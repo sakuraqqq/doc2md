@@ -2666,6 +2666,11 @@ test('契约组 Q：预览截断 1MB + 单文件内嵌上限 20MB 自动切 zip 
 // 断言：
 //   R1 纯函数用例表（window.__doc2md.collapseCjkSpaces）——含中英混排保留 / 跨行不合并 / 全角空格。
 //   R2 接入检查（源码级）：OCR 页文本经 collapseCjkSpaces 后处理。
+//   R3 图片路径端到端（2026-09-15 新增；真机验收发现）：**图片直传**是第二条 OCR 入口——
+//      在页面内把 window.Tesseract 换成假 worker（返回带词分空格的 OCR 原文）→ 造最小合法 PNG →
+//      走真实 convert()（类型嗅探 → imageConvert）→ 断言输出已合并。
+//      实际用例：'湖南 新 晃 侗 族 自治 县' → '湖南新晃侗族自治县'。
+//      说明：本断言**只新增、不改 R1/R2**（R2 是产物级正则，锁的是 pdf 路径；图片路径漏接即本组盲区）。
 // 真实样例指标（本地核验；样例含个人信息不入库）：OCR 页空格率 72–82% → 1.4–4.9%；
 //   文字层页 0–1.5% 前后不变（见 docs/DEV-NOTES）。
 // ---------------------------------------------------------------------------
@@ -2725,6 +2730,41 @@ test('契约组 R：OCR 中文空格合并（collapseCjkSpaces）—— 契约�
         assert.ok(
           /collapseCjkSpaces\(text\)/.test(src),
           'OCR 页文本未经 collapseCjkSpaces 后处理（pdf.js ocrPageToText 未接入）'
+        );
+      });
+      await t.test('R3 图片路径端到端（假 OCR worker）：图片 OCR 文本同样合并汉字间空格', async () => {
+        const out = await page.evaluate(async () => {
+          const OCR_RAW = '湖南 新 晃 侗 族 自治 县';
+          // 只替换 OCR 引擎入口（getOcrWorker 在调用时读 window.Tesseract）——不触网、不跑真 OCR
+          window.Tesseract = {
+            createWorker: async () => ({
+              recognize: async () => ({ data: { text: OCR_RAW, confidence: 90 } }),
+              terminate: async () => {},
+            }),
+          };
+          const cv = document.createElement('canvas');
+          cv.width = 8;
+          cv.height = 8;
+          const ctx = cv.getContext('2d');
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, 8, 8);
+          const blob = await new Promise((res) => cv.toBlob(res, 'image/png'));
+          const file = new File([blob], 'cjk-ocr.png', { type: 'image/png' });
+          const r = await window.__doc2md.convert(file);
+          return {
+            type: r.meta.type,
+            backend: r.meta.backend,
+            error: r.error || null,
+            markdown: r.markdown,
+          };
+        });
+        assert.equal(out.error, null, `图片路径应无错误：${JSON.stringify(out)}`);
+        assert.equal(out.type, 'image', `样例应嗅探为 image：${JSON.stringify(out.type)}`);
+        assert.equal(out.backend, 'tesseract', `后端应为 tesseract：${JSON.stringify(out.backend)}`);
+        assert.equal(
+          out.markdown,
+          '湖南新晃侗族自治县',
+          `图片 OCR 文本未经 CJK 空格合并（图片直传是第二条 OCR 入口，漏接则用户看到「湖南 新 晃 侗 族 自治 县」）：${JSON.stringify(out.markdown)}`
         );
       });
     } finally {
