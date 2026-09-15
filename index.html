@@ -2032,7 +2032,7 @@ ${p.text}
     const worker = await getOcrWorker();
     const blob = new Blob([buf], { type: file.type || "image/png" });
     const r = await worker.recognize(blob);
-    const text = ((r && r.data || {}).text || "").trim();
+    const text = collapseCjkSpaces(((r && r.data || {}).text || "").trim());
     const conf = typeof (r && r.data && r.data.confidence) === "number" ? Math.round(r.data.confidence) : null;
     return { markdown: text, warnings: ocrWarnings(text, conf), backend: "tesseract" };
   }

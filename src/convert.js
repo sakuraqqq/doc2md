@@ -8,6 +8,7 @@ import { docxConvert } from './docx.js';
 import { xlsxConvert } from './xlsx.js';
 import { pdfConvert } from './pdf.js';
 import { getOcrWorker } from './ocr.js';
+import { collapseCjkSpaces } from './cjk.js';
 
 export const MAX_BYTES = 50 * 1024 * 1024; // 50MB 护栏
 
@@ -16,7 +17,10 @@ async function imageConvert(file, buf) {
   const worker = await getOcrWorker();
   const blob = new Blob([buf], { type: file.type || 'image/png' });
   const r = await worker.recognize(blob);
-  const text = (((r && r.data) || {}).text || '').trim();
+  // 2026-09-15（真机验收发现，缺陷修复）：**图片直传**与 PDF OCR 降级是两条独立 OCR 入口——
+  // 后者（pdf.js ocrPageToText）早已合并汉字间词分空格，前者漏了 → 用户看到「湖南 新 晃 侗 族 自治 县」。
+  // 仅 OCR 路径做后处理；文字层路径的空格是真实排版信息，不动（见 src/cjk.js）。
+  const text = collapseCjkSpaces((((r && r.data) || {}).text || '').trim());
   const conf = typeof (r && r.data && r.data.confidence) === 'number' ? Math.round(r.data.confidence) : null;
   return { markdown: text, warnings: ocrWarnings(text, conf), backend: 'tesseract' };
 }
