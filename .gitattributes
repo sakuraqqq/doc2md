@@ -1,0 +1,20 @@
+# .gitattributes —— 换行口径（2026-09-15）
+#
+# 为什么需要这个文件
+#   本仓库存在**字节级门禁**：tests/data/manifest.json 锁样例字节、契约组 T 比对构建产物字节、
+#   契约组 U-0/V0 锁新增样例字节。而 `core.autocrlf` 是**每台机器各自的配置**（Windows 侧此前为
+#   true、Linux 侧未设），于是：
+#     ① 检出/还原（git checkout / restore / 重新克隆）会按该机器的配置写入 CRLF；
+#     ② 更隐蔽的是 —— git 的**内容比较会把 CRLF 归一化**，所以 `git status` 看着「干净」，
+#        只有按字节核验的门禁才会红。
+#   实测（2026-09-15）：`git restore --source=HEAD -- index.html` 写出 120,410 B / SHA
+#   `A98CAF31…`，而同一提交的入库 blob 是 118,244 B / SHA `62B8ADA1…`（差 2,166 字节 = 行数）。
+#
+# 口径：全仓 `text=auto` + `eol=lf`
+#   * 检出（含 Windows）一律写 LF → **工作区字节 == blob 字节**，字节级门禁在任何平台一致；
+#   * 入库时归一化为 LF → 编辑器/工具写出的 CRLF 不会污染字节锁文件；
+#   * 二进制按 git 的 NUL 探测自动排除 → PNG/PDF/wasm/traineddata 等不受影响。
+#
+# 备注：若日后确实需要某个二进制文件强制按二进制对待，用 `*.<ext> -text` 单行覆盖，
+#       并同步在 docs/DEV-NOTES.md 记录（改口径 = 拍板）。
+* text=auto eol=lf
