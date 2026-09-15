@@ -12,7 +12,7 @@
 | README 终稿（中英 + 功能 + 口径 + 截图 + 测试 + 许可 + 发展） | ✅ 就绪 | `README.md`；截图 ✅ `assets/screenshot.png`；演示 GIF **已拍板不做**（拖放/上传为直觉操作，2026-09-04） |
 | GitHub Pages workflow | ✅ 就绪 | `.github/workflows/deploy-pages.yml`（照 cola `deploy-pages.yml` 同款；纯静态零构建；Workflow 跑在 checkout 干净树上，`.gitignore` 已排除 node_modules/.tmp/.npm-cache，不会上传 Pages） |
 | `.nojekyll` | ✅ 就绪 | 根目录（Pages 免 Jekyll 处理） |
-| 契约测试 | ✅ **180/180**（2026-09-12 实跑） | `npm test`：全量 **180 tests / pass 180 / fail 0**（含新组 T 产物一致性）；B/C/M 组真实浏览器/手机视口断言全绿 |
+| 契约测试 | ✅ **246/244**（2026-09-15 实跑） | `npm test`：全量 **246 tests / 244 pass / 0 fail / 2 skip**（含组 T 产物一致性、组 W OCR 输入质量、组 X 方向重试）；B/C/M 组真实浏览器/手机视口断言全绿；skip = `real-cid-paper`（第三方样例不入库） |
 | 产物一致性（本地防线，v0.1.3 纳入） | ✅ 新增 | 契约组 **T**：现场重建产物并比对字节，不一致即 FAIL（治「只改 src 忘 `npm run build` → 本地对着旧产物假绿」）；CI 另有 build-consistency 步骤 |
 | 部署白名单 smoke（v0.1.3 纳入） | ✅ 新增 | `node tools/deploy-smoke.mjs _site`：按「引用即必需」核对 index.html / sw.js 同源引用 + 必需顶层文件/目录（治 cp 白名单静默漏发）；实测正例 PASS、负例 exit 1 |
 | PWA 静态验收 | ✅ 48/48 | `node tests/pwa-audit.mjs`（manifest/SW/图标/触控/对比度 WCAG AA） |
@@ -64,19 +64,21 @@ git push --dry-run origin v0.1.1
 
 ## 4. npm pack 类核对（本项目无 npm 包，等价清单）
 
-- 交付物 = **静态站**（index.html **112,194 B（110KB）**——拆分口径（2026-09-12 实测）= esbuild 应用逻辑 bundle **74,174 B**（`src/app.js` IIFE）+ 模板内联 fflate **30,163 B** + 内联 CSS **4,862 B** + HTML 骨架/静态文案 **2,995 B**（逐段相加 = 文件总字节，详见 `docs/architecture.md` §4.5）+ **vendor/（8 个库分文件）+ langs/（OCR 语言包）** + manifest.json + sw.js + icons/——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
+- 交付物 = **静态站**（index.html **120,988 B**——**2026-09-15 v0.1.7 实测**；页脚版本串 `v0.1.7` 与 `v0.1.4` 等长 → **字节数不变而 SHA 必变**，核对一律以 SHA256 为准：`2EE82D47BDAF7CE0CE7034CB49D1C69422EEC1F046EC109AD5AF5640A33E1CBB`）+ **vendor/（185 文件 / 16,051,845 B）+ langs/（2 文件 / 7,670,131 B，OCR 语言包）+ manifest.json（730 B）+ sw.js（4,253 B）+ icons/（4 文件 / 10,014 B）**——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
 - 等价核对：Pages 部署目录清单（工作流上传根目录；部署后核对 index.html/manifest/sw/icons/vendor/*/langs/* 齐）、发布记录留存：版本 + 测试结果 + 各产物 SIZE + SHA256（见下方记录区）。
 - 若未来发布 npm 包：`npm pack --dry-run --json`（**必须 --json**，plain 输出看不见清单）核对 LICENSE/产物/源码/入口都在清单。
 
 ## 5. 观察期
 
 - **≥3 天**：验证 Pages 在线可玩、手机浏览器可用（阶段 3 验收 #19）。
+- **v0.1.7（2026-09-15 发布）**：观察期 **09-15 起 ≥3 天 → 09-18 复盘**；重点观察 ① 线上 **OCR 质量三修 + 方向重试**在真机照片上的表现（坏例耗时 ≈1.3–1.75× 是否可接受）② `.gitattributes`（`* text=auto eol=lf`）在**新克隆**上的效果 ③ Pages CDN 缓存窗口导致的「测试拿到旧构建」现象（本轮踩过 —— 发布后自测请等数分钟或换带 query 的 URL）。
+- **v0.1.4（2026-09-14 发布）**：观察期 09-14 起 → ≥09-17 —— **未走完即被 v0.1.7 取代**（中间线上跑的是未发版构建；如实登记）。
 - **v0.1.3（2026-09-12 发布）**：观察期 **09-12 起 ≥3 天 → 09-15 复盘**；重点观察 ① Pages 上 `deploy-pages` 的**白名单 smoke 步骤**是否存活（新增防线）② OCR/PDF 在线上 http 环境的可用性 ③ 契约组 T 在 CI 的行为（本地/受限环境的 spawn 前置已在 CONTRACT §7 记录）。
 - 汇总反馈 → 拍板 v2 范围（音频/EPUB/批量/OCR 增强）与 Capacitor（可行性记录见 `docs/architecture.md` §8.4，未安装依赖）。
 
 ## 6. ⚠️ 已知不一致（发布前请拍板）
 
-- `package.json` 的 `"test"` 脚本当前为 `node --test`（全仓扫描），而 `tests/CONTRACT.md` §5 记录 `node --test tests/`（拍板点 T-4 = 四脚本语义保留）。**当前行为等价**（唯一匹配的测试文件是 `tests/contract_v1.test.mjs`；`tests/lib/*.mjs`、`tests/pwa-audit.mjs` 不匹配默认扫描模式、不会误跑），但建议发布前恢复为 `node --test tests/` 与 CONTRACT.md 一致（一行改动；若其他线有意为之请补拍板记录）。
+- ~~`package.json` 的 `"test"` 脚本为 `node --test`，与 CONTRACT.md §5 记录的 `node --test tests/` 不一致~~ → **2026-09-15 结案：当前形式为有意为之，无需改动**。依据：`tests/CONTRACT.md` §5 已记录「Node 24 下 `node --test tests/` 目录参数解析失败（用户机复现）；自动发现匹配 `*.test.mjs`，语义与目录参数等价」；实测唯一匹配文件为 `tests/contract_v1.test.mjs`，`tests/lib/*.mjs` 与 `tests/pwa-audit.mjs` 不会被误跑。**本条不再是发布阻塞项。**
 
 ## 7. 环境备注（本工作区实测）
 
