@@ -1403,6 +1403,19 @@ v0.1.7 发布后（tag `v0.1.7` = `9d2cd9d`，已推送）新会话接手，开�
 ### 待用户执行（红线 3：发布动作人执）
 `git push origin main` → `git tag v0.1.8` → `git push origin v0.1.8` → **网页发 Release**（从下拉**选中已存在的 tag**；说明粘贴 `docs/release-notes-v0.1.8.md` 全文）。发布后回读三件套：`git show-ref --tags` ↔ Release 页 tag SHA 逐字核对；Pages 站点拉 `index.html` 实测 SHA（**带 cache-bust query** 绕开 SW/CDN 旧副本）。观察期 ≥3 天 → **≥2026-09-18 复盘**。
 
+### ✅ 发布闭环（2026-09-15 20:30 +08，用户已完成；本机只读回读）
+- `git push origin main` → `dd29252..b3a5387`（快进）；`origin/main` = **`b3a5387e54179d2d06e96b900c06d5273b3deba0`**，**待推送 0**，工作区 clean。
+- **tag 三端逐字一致**：本地 `git show-ref --tags` = 远端 `git ls-remote origin refs/tags/v0.1.8` = Release 页 tag 对象（GitHub API `git/ref/tags/v0.1.8`）= **`b3a5387e…deba0`**；`object.type = commit` → **lightweight**（与历史 7 个 tag 同型）。
+- **Release 页**：<https://github.com/sakuraqqq/doc2md/releases/tag/v0.1.8> · `published_at = 2026-09-15T12:30:53Z`（= 20:30:53 +08）· draft/prerelease = false · **附件 0** · **`/releases/latest` → `v0.1.8`（已标记 Latest）**。
+- **正文 = `docs/release-notes-v0.1.8.md` 全文**：2533 B vs 本地 2501 B，差值**恰为 32 个 `\r`**；**CRLF 归一后逐字相等** ⇒ 仅行尾格式差异（Windows 复制粘贴），**内容一致、不需重发**。
+- **Pages 逐字节复验**：`index.html` = **120,987 B / `14773E5FFDE3072A33FCD127C1DDA6E8CF739CB8366F4D17BDDED0A5EBF3F178`** = 发布产物（页脚 `doc2md v0.1.8`；带 cache-bust query 绕开 SW/CDN 旧副本）。
+
+### 踩坑（发布闭环，防再犯）
+**比对「网页粘贴的正文」必须先做行尾归一**：GitHub Release 正文实测带 CRLF（32 个 `\r`）→ 直接全等比较会得出「内容不一致」的**假警报**。**正确判据** = `body.replace(/\r\n/g,'\n') === local.replace(/\r\n/g,'\n')`，并**核对字节差是否恰等于 `\r` 个数**（本次 `2533 − 2501 = 32` = `\r` 数）。
+
+### 回读方法论（可复用，供下次发布）
+Release 页与 tag 对象走 **GitHub REST**（`releases/tags/<tag>`、`git/ref/tags/<tag>`、`releases/latest`）；Pages 产物走**进程内 `fetch` + sha256 逐字节核**（不派生子进程 → 规避沙箱命名管道限制）；脚本 `.tmp/verify-release-v018.mjs`（已 `script_archive` 存档）。
+
 
 
 
