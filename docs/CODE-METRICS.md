@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-15T08:37:13.288Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-15T11:22:29.943Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -34,14 +34,14 @@
 | src/ui.js | renderResult | 195 | 9 | 10 |
 | src/xlsx.js | xlsxByLib | 531 | 9 | 10 |
 | src/docx.js | ommlParts | 103 | 9 | 9 |
-| src/sniff.js | imageKind | 179 | 9 | 9 |
+| src/sniff.js | imageKind | 185 | 9 | 9 |
 | src/xlsx.js | parseRowCells | 202 | 8 | 14 |
 | src/html2md.js | joinFrags | 25 | 8 | 10 |
 | src/docx.js | ommlScript | 66 | 8 | 9 |
 | src/xlsx.js | cellToString | 419 | 8 | 9 |
 | src/docx.js | docxCollectWarnings | 285 | 8 | 8 |
 | src/ui.js | downloadZip | 54 | 8 | 8 |
-| src/sniff.js | sniff | 156 | 8 | 7 |
+| src/sniff.js | sniff | 162 | 8 | 7 |
 | src/xlsx.js | isBuiltinDateId | 374 | 8 | 7 |
 | src/html2md.js | blockifyContainer | 147 | 7 | 13 |
 | src/docx.js | ommlEnclosingPara | 136 | 7 | 8 |
@@ -51,15 +51,15 @@
 | src/convert.js | ocrOnce | 44 | 7 | 6 |
 | src/html2md.js | linkFrag | 95 | 7 | 6 |
 | src/sniff.js | charsetLabelOf | 77 | 7 | 6 |
-| src/sniff.js | isBmp | 201 | 7 | 6 |
-| src/sniff.js | isGif | 210 | 7 | 6 |
+| src/sniff.js | isBmp | 207 | 7 | 6 |
+| src/sniff.js | isGif | 216 | 7 | 6 |
 | tools/metrics.mjs | countCycPoints | 118 | 7 | 6 |
 | src/xlsx.js | scanSheetRows | 223 | 6 | 13 |
 | src/html2md.js | liToLines | 290 | 6 | 11 |
 | src/xlsx.js | parseSharedStrings | 278 | 6 | 11 |
 | src/html2md.js | blockChildToLines | 247 | 6 | 10 |
 | src/pdf.js | linesToMarkdown | 285 | 6 | 10 |
-| src/sniff.js | gb18030Fallback | 111 | 6 | 10 |
+| src/sniff.js | gb18030Fallback | 117 | 6 | 10 |
 | src/docx.js | docxParseForMd | 232 | 6 | 9 |
 | src/html2md.js | listElToMd | 221 | 6 | 9 |
 | src/ocr.js | getOcrWorker | 41 | 6 | 9 |
@@ -70,7 +70,7 @@
 | src/docx.js | ommlMathEntry | 144 | 6 | 6 |
 | src/ocr.js | prepareOcrImage | 75 | 6 | 6 |
 | src/sniff.js | decodeText | 23 | 6 | 6 |
-| src/sniff.js | ctrlRatio | 240 | 6 | 6 |
+| src/sniff.js | ctrlRatio | 246 | 6 | 6 |
 | src/ui.js | assetsTotalBytes | 104 | 6 | 6 |
 | src/xlsx.js | findEocd | 16 | 6 | 6 |
 | tools/gen-icons.mjs | onTextLine | 67 | 6 | 6 |
@@ -111,8 +111,8 @@
 | src/pdf.js | asciiWordEdge | 154 | 5 | 4 |
 | src/sniff.js | decodeBom | 44 | 5 | 4 |
 | src/sniff.js | trimMetaValue | 91 | 5 | 4 |
-| src/sniff.js | isPdfHead | 219 | 5 | 4 |
-| src/sniff.js | isZipHead | 227 | 5 | 4 |
+| src/sniff.js | isPdfHead | 225 | 5 | 4 |
+| src/sniff.js | isZipHead | 233 | 5 | 4 |
 | src/ui.js | downloadMdEmbedded | 130 | 5 | 4 |
 | src/ui.js | truncatePreview | 159 | 5 | 4 |
 | src/xlsx.js | decodeXmlEntity | 154 | 5 | 4 |
@@ -149,7 +149,7 @@
 | src/pdf.js | (anonymous) | 124 | 4 | 3 |
 | src/pdf.js | (anonymous) | 126 | 4 | 3 |
 | src/pdf.js | pageTextWithOcr | 383 | 4 | 3 |
-| src/sniff.js | zipKind | 232 | 4 | 3 |
+| src/sniff.js | zipKind | 238 | 4 | 3 |
 | src/xlsx.js | inflateEntry | 48 | 4 | 3 |
 | src/xlsx.js | parseDate1904 | 110 | 4 | 3 |
 | src/xlsx.js | parseCellAttrs | 164 | 4 | 3 |
@@ -170,8 +170,8 @@
 | src/html2md.js | fragFor | 134 | 3 | 3 |
 | src/pdf.js | isPdfGarbageCode | 320 | 3 | 3 |
 | src/pdf.js | documentMonospaceFonts | 355 | 3 | 3 |
-| src/sniff.js | countFffd | 125 | 3 | 3 |
-| src/sniff.js | countNonAscii | 131 | 3 | 3 |
+| src/sniff.js | countFffd | 131 | 3 | 3 |
+| src/sniff.js | countNonAscii | 137 | 3 | 3 |
 | src/xlsx.js | parseXfIds | 363 | 3 | 3 |
 | tools/gen-icons.mjs | pngRGBA | 77 | 3 | 3 |
 | src/convert.js | cjkLatin | 52 | 3 | 2 |
@@ -332,10 +332,10 @@
 | src/pdf.js | monospaceFontIds | 261 | 1 | 0 |
 | src/pdf.js | pageLineObjects | 279 | 1 | 0 |
 | src/pdf.js | (anonymous) | 280 | 1 | 0 |
-| src/sniff.js | normWs | 137 | 1 | 0 |
-| src/sniff.js | (anonymous) | 172 | 1 | 0 |
-| src/sniff.js | leU16 | 193 | 1 | 0 |
-| src/sniff.js | leU32 | 196 | 1 | 0 |
+| src/sniff.js | normWs | 143 | 1 | 0 |
+| src/sniff.js | (anonymous) | 178 | 1 | 0 |
+| src/sniff.js | leU16 | 199 | 1 | 0 |
+| src/sniff.js | leU32 | 202 | 1 | 0 |
 | src/ui.js | $ | 6 | 1 | 0 |
 | src/ui.js | (anonymous) | 38 | 1 | 0 |
 | src/ui.js | (anonymous) | 51 | 1 | 0 |
