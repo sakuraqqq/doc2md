@@ -1278,6 +1278,45 @@ R3 的做法（确定性 + 零真 OCR 成本）：页内把 `window.Tesseract` �
 **本轮采纳的工程坑（Linux 侧发现，价值高）**：**`git checkout <commit> -- <path>` 会同时写索引与工作区** → 之后用 `git checkout -- <path>`（语义是"从**索引**取内容到工作区"）**还原无效**（取到的仍是被污染的版本）。**正确做法：`git checkout HEAD -- <path>`**（从 HEAD 取，同时刷新索引与工作区）。本侧此前用 `-c core.autocrlf=false restore` 恰好绕开了该坑，故未暴露。
 **未决细节（登记，不影响判定）**：Linux 侧 v1 夹具（纯 PNG）三态**都未触发重试**（tesseract 自身即处理了该旋转），而本侧夹具（同为纯 canvas PNG，10 行 64px）**逆时针态必败** → 说明"是否触发重试"还依赖**版心/字号/行长与旋转的组合**，不是简单的"合成图 vs 照片"。与出件方 U3/U4 相邻，留待后续。
 
+## 2026-09-15 收尾批：基线漂移核查 + 全局 gitconfig 畸形项修复 + 推送前审查（结论：通过）
+
+### 背景
+v0.1.7 发布后（tag `v0.1.7` = `9d2cd9d`，已推送）新会话接手，开场白与 `docs/HANDOFF-主开发线.md` 均记「基线 HEAD `e573713`、待推送 0、工作区干净」——**现场实测不符**。用户 2026-09-15 拍板选「先清基线账」。
+
+### 实测（磁盘 + 远端 `git ls-remote`，非引用交接文本）
+
+| 项 | 交接文档记 | 实测 | 判定 |
+|---|---|---|---|
+| `HEAD` | `e573713` | `c7b9e68` | **漂移（+2 提交）** |
+| `origin/main`（真远端 `ls-remote`） | 未记 | `447b107` | 已推送 |
+| 待推送 | 0 | **1**（`c7b9e68`） | **漂移** |
+| tag `v0.1.7` | `9d2cd9d` | `9d2cd9d`（lightweight） | 一致 |
+| `package.json` | 0.1.7 | 0.1.7 | 一致 |
+| `index.html` | 120,988 B / `2EE82D47…1CBB` | 同 | 逐字节一致 |
+| `manifest.json` | 730 B | 730 B / `D5B46A97…8E98` | 一致 |
+| 工作区 | 干净 | `git status --porcelain` 0 行 | 一致 |
+
+### 坑 ①：交接文档硬编码 HEAD SHA → 提交即自证过期
+- **现象**：提交 `c7b9e68`（"HANDOFF 新增 §10"）**自身新增**一行 `**2026-09-15 收尾**：HEAD = e573713（…待推送 0）`；而它的**父提交** `447b107` 落地时已让 HEAD ≠ `e573713` → 该行**在写入瞬间即过期**。HANDOFF 文首「基线：HEAD `e573713`」同理。
+- **根因一句话**：`HEAD` / `origin/main` / 「待推送 N」是**提交即失效**的易变量，却被当作状态写进自称「唯一权威源」的文档 —— 文档一提交，值就错；下个会话照抄即误判。
+- **防再犯**：HANDOFF 文首新增「易变量规则」——**本文不缓存**这类值，基线一律现场 `git rev-parse HEAD` + `git ls-remote origin refs/heads/main` 实测；确需记录只写**时点值**并显式标注。**稳定值（tag SHA）仍照常缓存。** 同步修掉文首基线、§9 收尾两处硬编码。**本批收尾提交自身的哈希也不写入本文**（否则重犯坑 ①）→ 以 `git log -1` 实测为准。
+
+### 坑 ②：全局 `~/.gitconfig` 一条畸形 `safe.directory` → 本仓库普通 `git` 全盘 fatal
+- **现象**：不带前缀的 `git rev-parse HEAD` → `fatal: detected dubious ownership in repository`；且每次 git 调用附带 `warning: safe.directory ''<工作区>'' not absolute`。
+- **根因一句话**：`~/.gitconfig` 中该条目**值含字面单引号**（历史 `git config --global --add safe.directory '<路径>'` 把引号写进了值），git 判 `not absolute` 而**丢弃** → 本仓库没有生效的 safe.directory 条目 → dubious ownership。
+- **修复（最小改动；用户授权 + 一次性升权）**：`git config --global --unset safe.directory "'<工作区>'"` → `git config --global --add safe.directory "<工作区>"`（**不带引号**）。备份 `.tmp/gitconfig-bak-20260915-1656`（809 B / SHA256 `B005DF28…B482`）；与备份逐行比对确认**仅 1 行变化**；修后普通 `git` 零告警可用（未扩大为 `safe.directory=*`）。
+- **口径纠偏**：`HANDOFF §1`「本环境全局已配 `safe.directory=*`」**不成立**（实测全局是一串具体路径，doc2md 那条还是畸形值）；`AGENTS.md` 的 `-c safe.directory=*` 前缀**仍须保留**（救的正是"全局没有 `*`"这一事实，本批实测不带前缀必 fatal）；沙箱下更稳的等价形态 = `GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*` 三件套。
+- **附注（沙箱边界，易误判）**：修复需写工作区外文件，`workspace-write` 下 git 报**原生** `could not lock config file …: Permission denied`（**无** harness 的 `[sandbox: …]` 标记）→ 一度疑似 ACL；一次性 `danger-full-access` 后成功，故判定为**沙箱所拦**。
+
+### 推送前强制门禁（对象 = 未推送提交 `c7b9e68`）：**通过**（本节即落盘证据）
+- **源码面**：该提交仅动 `docs/HANDOFF-主开发线.md`（+22 行）；新增行**无 Windows 用户目录形态的绝对路径、无真实邮箱、无手机号**。
+- **全跟踪文件扫描**（含 `vendor`，`git grep -c`）：7 文件命中，逐条判读**全为既有误报** —— `noreply` 身份串（`sakuraqqq@users.noreply.github.com`，合规）+ SHA256 十六进制子串（如 `…19909949931…` 撞手机号正则）+ 2 处 `vendor/pdfjs.*.min.js` 压缩数字常量。
+- **私人材料**：`git ls-files -- .私档 .tmp docs/copyright .script-archive` → **全空**（未跟踪）。
+- **提交身份**：`sakuraqqq <sakuraqqq@users.noreply.github.com>`（noreply）✅。
+- **产物**：`index.html` **120,988 B / `2EE82D47…1CBB`**（未变；docs-only 提交 → 无需重跑门禁）。
+- **dry-run**：`git push --dry-run origin main` → exit 0，`447b107..c7b9e68  main -> main`（快进）。
+- **推送动作**：由用户在桌面终端执行（红线 3「发布动作人执」）。
+
 
 
 
