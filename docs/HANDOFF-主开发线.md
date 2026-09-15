@@ -1,7 +1,8 @@
 # HANDOFF · doc2md 主开发线（2026-09-11 更新）
 
 > 交接对象：新会话（AI 助手）· 项目：doc2md（纯前端离线文档转 Markdown）
-> 基线：**HEAD `4344293`**（2026-09-14 **v0.1.4 缺陷批三提交冻结**：`dd960b1` 提交 A / `fc6cfa8` 提交 B **已推送**，`4344293` 提交 C **待推送**；详 §1 与 `docs/DEV-NOTES.md` 2026-09-14 两节） · 契约：**230/230**（提交 C 时点全量 232 tests / 230 pass / 0 fail / 2 skip，skip = real-cid-paper 第三方样例不入库；历史链：S4/S5 后绿 179/179 → 第八轮 212/212 → v0.1.4 提交 A/B 后 229/229 → **提交 C 后 230/230**） · 门禁全绿（lint 0/0 · metrics 文件 17 / 函数 349 / 超限 0 / **重复率 0.5%** · PWA 48/48 · OCR 93% PASS · 产物 `index.html` **118,244 B** / `087CDB12…BF14B`） · 工作区：与版本库同目录
+> 基线：**HEAD `936518b`**（**已推送**，`origin/main` 与之同步；v0.1.4 缺陷批提交 A–F + 手机同步退场均已在远端） · 契约：**230/230**（全量 232 tests / 230 pass / 0 fail / 2 skip，skip = real-cid-paper 第三方样例不入库；历史链：S4/S5 后绿 179/179 → 第八轮 212/212 → v0.1.4 提交 A/B 后 229/229 → **提交 C 后 230/230**） · 门禁全绿（lint 0/0 · metrics 文件 17 / 函数 349 / 超限 0 / **重复率 0.5%** · PWA 48/48 · OCR 93% PASS · 产物 `index.html` **118,244 B** / `62B8ADA1…786D`） · **跨平台已验（2026-09-15）**：Linux 独立复跑**产物逐字节相同、五项门禁逐项一致**（详 `docs/DEV-NOTES.md` 2026-09-15 节） · 工作区：与版本库同目录
+> ⚠️ **产物哈希勘误（2026-09-15 实测）**：本文原记 `087CDB12…BF14B` —— 实为**提交 C（`4344293`）时点**产物；版本 bump 提交改了产物但**字节数恰好不变**（同 118,244 B），故尺寸核对未暴露。现值以 `62B8ADA1…786D` 为准（= 入库 blob = Linux 构建 = Windows 构建）。详见 §3 F.3。
 > 发布：**v0.1.4 已发布（2026-09-14，tag `v0.1.4` = `cfb20b76374fba384aa37e7c3edc0f9f92a31187`，本机 `git show-ref --tags` 实测回读；lightweight）** · 观察期 2026-09-14 起 → 复盘 **≥2026-09-17** · 上一版 **v0.1.3 已转正**（tag = `d6929e6`，2026-09-12 发布；观察期闭环于 2026-09-14 复盘，生效时点 2026-09-15 01:21 满 3×24h）· v0.1.4 来源 = 真机 7 篇 Chromium 打印 PDF 缺陷批（提交 A–F，详见 `docs/RELEASE.md` v0.1.4 节与 `docs/DEV-NOTES.md` 2026-09-14 两节）
 > ⚠️ **tag SHA 勘误（2026-09-14 Linux 侧实测）**：本文原记 tag = `5683b05`，与**双端实测不符**——本地 `git show-ref --tags` 与远端 `git ls-remote --tags` 均为 **`d6929e6`**；`5683b05` 实为 tag 前一个提交（"feat(ci): 部署白名单 smoke"）。差异成因本次未取证（新克隆无 reflog），**以实测值 `d6929e6` 为准**。
 > 开场白模板：`项目：doc2md 主开发线 · 基线 <HEAD SHA> · 先读本文件 + AGENTS.md + docs/RELEASE.md`
@@ -48,6 +49,7 @@
 | **S4/S5 收口批（9/11-12）** | 交叉审查 3 条 finding → 用户拍板「修完再发」：S4 口径 **A′ 结构判据门**（`fffd*10 ≥ nonAscii`）+ S5 **单正则交替**（替代两遍换序）；新断言 S4-5..S4-7/S5-4/S5-5 先红 **21/5** → 后绿 **179/179**；独立验收双产物 pin 回放 + 负对照 5 处红；t12/t13 交叉审查均 pass | `6a891a2`→`217459f`/`bad086a`→`f54d7a6`（产物 112,194 B） |
 | **第八轮审查修复批（9/12）** | ZCode 报告 6 条新发现全部闭环：html2md 行内代码动态围栏 / 无文本语义元素移除（label 保留）/ li 告警透传 · xlsx 1904 基准 / 实体单遍解码 / 码点 / 科学计数法；另 §2.1 lint 基线 + §3.3 清理；先红 **24 fail**（K2 17 + G7 5 + 2 壳）→ 后绿 **212/212**；t5 独立验收 + t6 交叉审查均 pass | `4329c21`→`82cc702`/`54cfdf8`→`7854023`/`ce4c743`→`fc9efef`（产物 113,561 B） |
 | 隐私清洗 | 全历史重写（5 个真实邮箱→noreply、本地路径脱敏、敏感文档移出）；Actions 旧 run 删除 | 历史重写 + `489b431` |
+| **跨平台一致性验证（9/15）** | Linux 侧（WSL2 + 真 chromium）独立复跑：`npm ci` → `build` → 五项门禁，**产物逐字节相同、门禁逐项与 Windows 基线一致**（含 CRLF 工作区对照组）；**未改任何代码** | —（无代码提交；报告与 10 步原始日志在 `.私档/linux/`） |
 
 **纪律沉淀**（已写进 AGENTS.md / 全局 AGENTS.md）：
 - 红线 9：私人/策略文档永不入公开仓库（`.私档/`，gitignore）
@@ -112,6 +114,11 @@
 2. ~~**部署白名单 smoke**~~ ✅ **已闭环（2026-09-12 纳入 v0.1.3）**：新增 `tools/deploy-smoke.mjs` + `deploy-pages.yml` 接线（部署前按「引用即必需」核对 `_site`）——实测正例 PASS（15 引用）/ 负例 exit 1（精确列出缺失文件）
 3. **测试脚本重复**：口径已定（重复率只看 src+tools），若日后要压 tests 的重复 → 抽 `withPage()` 共享夹具（只动结构、不动断言）。
 
+**F. 跨平台一致性（2026-09-15 新增；结论与证据详见 `docs/DEV-NOTES.md` 2026-09-15 节）**
+1. **`docs/CODE-METRICS.md` 不是跨平台文件**（Linux 侧独立复跑实测）：`tools/metrics.mjs` 输出里的文件路径随平台取分隔符（Windows `src\x.js` / Linux `src/x.js`）→ 换平台跑 `npm run metrics` 会产出**全文件重写** diff（实测 +350/−350）；且该命令**本身就会重写受版本控制文件**。**候选做法**：输出路径按 `path.sep` 归一为 POSIX → 跨平台可重复；顺带评估把报告写到 gitignore 路径。**待拍板**。
+2. **无 `.gitattributes` + `core.autocrlf=true` → 检出即 CRLF（字节级陷阱）**：实测 `git checkout/restore` 把 `index.html` 写成 **120,410 B / `A98CAF31…`**（入库 blob 为 **118,244 B / `62B8ADA1…`**），而 **git 内容比较视为「无差异」** → `git status` 看着正常，**只有按字节核验的门禁（契约组 T、`manifest.json` 字节锁 U-0/V0）会红**；`src/pdf.js` 工作区 `w/crlf` 即此机制。**候选做法**：加 `.gitattributes`（`* -text`）让检出字节 = blob 字节，并归一化现存 CRLF 文件。**待拍板：是否纳入 v0.1.5。**
+3. **陈旧哈希勘误（2026-09-15 已修）**：本文文首原记产物 `087CDB12…BF14B`（118,244 B）—— 实测该哈希 = **提交 C（`4344293`）时点**产物；版本 bump 提交（`1e2377d`）改了产物但**字节数恰好不变**（`v0.1.3`→`v0.1.4` 同长）→ 尺寸核对「看着是对的」、哈希静默过期。**教训：尺寸相同不能当不变量，pin 必须用哈希。**
+
 ## 4. 工作方式（省 token 模式，用户 2026-09-08 拍板）
 
 - **小改动自干**（AI 直接实现 + 用户机验证）；跨模块/高风险才拉 AgentTeams（契约→实现→验收三件套）
@@ -125,7 +132,8 @@
 | 场景 | 做法 |
 |---|---|
 | git log | `git --no-pager log --oneline -N`（PowerShell 下分页器报 `'nutc': unknown terminal type.`） |
-| git 其它命令 | **不加管道/重定向**：`git … \| Select-Object` / `2>&1` / `\| Out-String` → `Program 'git.exe' failed to run: Access is denied`（沙箱禁命名管道，**命令根本没执行**——易误判为 commit 失败）；`-c safe.directory='*'` 在 pwsh 下引号被吞 → 用同进程三件套 `$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*`（§8.1 批实测固化） |
+| git 其它命令 | **不加管道/重定向/表达式**：`git … \| Select-Object` / `2>&1` / `\| Out-String` / `"…" + (git …)` → `Program 'git.exe' failed to run: Access is denied` 或 `StandardOutputEncoding is only supported when standard output is redirected`（沙箱禁命名管道，**命令根本没执行**——易误判为 commit/fetch 失败）；git 输出一律写成**独立语句**。安全目录前缀写 **`-c safe.directory=*`（不带引号）**——`'*'` 在 pwsh 下引号被吞 → `fatal: detected dubious ownership`（2026-09-15 实测；同进程三件套 `$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*` 亦可用） |
+| 版本内容比对（按字节） | 取历史提交的文件内容时**必须加 `-c core.autocrlf=false`**：`git -c safe.directory=* -c core.autocrlf=false restore --source=<commit> --worktree -- <path>`。否则检出过滤器写入 CRLF（`index.html` 118,244 B → **120,410 B**），且 **git 视为无差异**；比完记得还原（同命令 `--source=HEAD`）并核 `git status` 与 SHA256 |
 | git 网络命令（**Linux 侧**） | **必须加 `-c http.sslVerify=false`**：Steam++ 对 `github.com` 做 TLS 中间人（hosts 指向 `127.0.0.1` 反代），其根证书不在 WSL 信任库 → 裸 `git fetch/pull/push` 报 `server certificate verification failed. CAfile: none CRLfile: none`（2026-09-14 实测）；加该参数后 `ls-remote`/`fetch` 实测通。同理 Chromium 需 `--ignore-certificate-errors`（见全局 AGENTS.md「本机浏览器」节） |
 | 提交身份 | **本环境无全局身份**（`.git/config` 无 `[user]`；裸 `git commit` 报 `Author identity unknown` → `fatal: empty ident name`）——一律 `-c user.name=sakuraqqq -c user.email=sakuraqqq@users.noreply.github.com` **局部覆盖**（noreply，防邮箱泄露） |
 | build / test | **用户终端**跑（沙箱禁 esbuild spawn / node --test / 浏览器 spawn）；经用户批准的一次性升权可在会话内实跑（§8.1 批已实证：`npm run build` + `npm test` 145/145） |
@@ -170,7 +178,7 @@
 | 项 | 实测值 |
 |---|---|
 | 检出方式 | **浅克隆**（`.git/shallow` 存在，depth=1）→ 2026-09-14 已 `fetch --unshallow --tags` **恢复完整历史（228 提交）** |
-| 本地 HEAD | **与 `origin/main` 完全同步、工作区干净**（快照值 `efed461`，2026-09-14 收口；随远端前进会变） |
+| 本地 HEAD | **与 `origin/main` 完全同步、工作区干净**（快照值 `936518b`，2026-09-15；随远端前进会变） |
 | tag（4 个，均 lightweight） | `v0.1.0`=`1636027` · `v0.1.1`=`3265b0c` · `v0.1.2`=`f5aed38` · **`v0.1.3`=`d6929e6`** |
 | 产物 | `index.html` **113,561 B** / SHA256 前缀 `22CB96C2…` —— 与第八轮产物记录**一致** ✅ |
 | 依赖 | `node_modules` 就绪（eslint / jscpd / prettier / playwright / tsc） |
@@ -204,3 +212,18 @@
 **遗留（未处理，待拍板）**：
 
 - `.pw-browsers/`（12 KB，已 gitignore）为自 `trial/doc2md` 复制来的废弃残留（真浏览器已在 `~/.cache/ms-playwright`），**可删**。
+
+**2026-09-15 Linux 侧全量复跑（跨平台一致性验证；任务单与产出在 `.私档/linux/`）**：
+
+| 项 | 实测值 |
+|---|---|
+| 环境 | WSL2 Ubuntu 24.04.5 · Node **v24.21.0** · npm 11.19.0 · **playwright 1.62.1 + 真 chromium**（`chromium-1234`，`exists=true`） |
+| 取码 | `b4626f6`（detached；**先 `git status` 确认干净再 checkout**，未用 `reset --hard`；实测 fetch 时 `origin/main` 已前进到 `936518b`，如实登记为偏差） |
+| 构建 | `npm run build` → `index.html` **118,244 B** / `62B8ADA1…786D` = 入库产物（构建后 `git status` **0 行** → 幂等、无需还原） |
+| 契约 | **232 tests / 230 pass / 0 fail / 2 skip**（与 Windows 基线逐项一致，原始日志第 286–293 行） |
+| 其余门禁 | lint 0 warning · metrics 17 文件 / 349 函数 / 超限 0 / 0.5% · pwa-audit 48/48 · verify:ocr PASS(93) |
+| 终态 | `git status --porcelain` **0 行**；**未 commit / 未 push**（只读不推纪律） |
+
+**结论：产物平台无关 + 门禁环境无关。** Windows 侧已逐文件实测核验（**15/15 字节 + SHA256 吻合**）并复核结论；四重证据与三条附带发现见 `docs/DEV-NOTES.md` 2026-09-15 节。
+
+**未验证项（Linux 侧主动登记 7 条 → Windows 侧处置）**：**U5**（Windows 侧 CRLF 工作区能否产出同字节产物）**已由 Windows 侧关闭**（重建结果逐字节相同）；**U7** 部分关闭（构建确定性现有 4 条跨平台证据，门禁仍单次）；**U1** 日志时间戳跳变根因 / **U2** metrics 差异未穷尽 / **U3** 未跑 `test:contract` / **U4** 未验其他发行版 / **U6** 未验 `install-scripts approve` 后行为 —— **保留登记，不编根因**。
