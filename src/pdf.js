@@ -101,9 +101,13 @@ function screenY(st) {
 /** Tj/TJ：按当前文本状态产出一条 run（空串不产出），并把笔位移到 run 末尾。
  * A3：run 带上 fontId / glyph 宽度 / 可见 ASCII glyph 数（等宽判据只消费这三项）。 */
 function showTextRun(st, args, runs) {
-  const { str, w, gw, ascii, letters } = glyphRun(args[0] || [], st.fontSize);
+  /* P1（2026-09-16）：**有效字号 = Tf × 文本矩阵缩放**（真机 WPS 导出：280 × 0.05 = 14）。
+   * 旧实现直接用原始 Tf ⇒ 字形宽度虚高 20× → 一切以字宽/字号为基准的判据（间距规则、行分组容差、
+   * 叠印去重）同时失真。Tm.a = 1 的文档（Chromium 打印、Word/LaTeX 导出等）st.sx 恒为 1 ⇒ 本行行为逐字节不变。 */
+  const fs = st.fontSize * st.sx;
+  const { str, w, gw, ascii, letters } = glyphRun(args[0] || [], fs);
   if (str !== '') {
-    runs.push({ str, x: st.cx, y: st.cy, sy: screenY(st), w, fontSize: st.fontSize, fontId: st.fontId, gw, ascii, letters });
+    runs.push({ str, x: st.cx, y: st.cy, sy: screenY(st), w, fontSize: fs, fontId: st.fontId, gw, ascii, letters });
   }
   st.cx += w;
 }
@@ -119,15 +123,27 @@ function showTextRun(st, args, runs) {
  *（pdf.js getTextContent 复核：x = 72 / 72.3 / 72.6）；用「笔位累加」模型会把三份叠印算成
  * 72 / 206.868 / 341.736 的横向排布，A4 判据（|Δx| < 0.5 字宽）永不命中。 */
 const TEXT_OPS = {
-  [PN.BT]: (st) => { st.cx = st.lx = 0; st.cy = 0; },
+  [PN.BT]: (st) => { st.cx = st.lx = 0; st.cy = 0; st.sx = 1; st.sy = 1; },
   [PN.TF]: (st, args) => { st.fontSize = args[1] || 0; st.fontId = args[0] || ''; },
-  [PN.TM]: (st, args) => { st.cx = st.lx = args[4] || 0; st.cy = args[5] || 0; st.flip = (args[3] || 0) < 0; },
-  [PN.TD_MOVE]: (st, args) => { st.lx += args[0] || 0; st.cx = st.lx; st.cy += args[1] || 0; },
-  [PN.TD_LEAD]: (st, args) => { st.leading = -(args[1] || 0); st.lx += args[0] || 0; st.cx = st.lx; st.cy += args[1] || 0; },
+  [PN.TM]: (st, args) => {
+    st.cx = st.lx = args[4] || 0;
+    st.cy = args[5] || 0;
+    st.flip = (args[3] || 0) < 0;
+    /* P1（2026-09-16）：文本矩阵的**缩放**必须参与——`hypot(a,b)` 为水平缩放、`hypot(c,d)` 为垂直缩放。
+     * 真机 WPS 导出 PDF 为 `Tm = [0.05 0 0 -0.05 …]`（Tf 280 → 真实 14pt；逐字 `TD` 推进 280 → 真实 14）：
+     * 旧实现按原始参数累加 ⇒ ① 同一视觉行的两个文本对象按 x 排序后**交错**（放大 20×）
+     * ② 行分组容差 `fontSize/2` 虚高 ⇒ **多个视觉行被并成一组**。
+     * 用 hypot 而非 `|a|`：旋转 90° 的 PDF（a=0, b=±1）也得到正确的缩放 1。
+     * Tm 的 e/f 是**用户空间**平移，不参与缩放（保持原样）。 */
+    st.sx = Math.hypot(args[0] || 0, args[1] || 0) || 1;
+    st.sy = Math.hypot(args[2] || 0, args[3] || 0) || 1;
+  },
+  [PN.TD_MOVE]: (st, args) => { st.lx += (args[0] || 0) * st.sx; st.cx = st.lx; st.cy += (args[1] || 0) * st.sy; },
+  [PN.TD_LEAD]: (st, args) => { st.leading = -(args[1] || 0) * st.sy; st.lx += (args[0] || 0) * st.sx; st.cx = st.lx; st.cy += (args[1] || 0) * st.sy; },
   // A2（2026-09-14 修复）：TL(36) 此前缺表——leading 恒 0 → T* 不换行，用 TL+T* 定位的文档三行压成一行
   // 且粘连（样例 sample-tl-leading.pdf 实测）。口径：leading 存**规范值**（TL 参数即 leading，不取负，
   // 与 TD 的 `-ty` 同得正值）；nextLine 的推进方向随 flip 定向（翻转矩阵下 cy 递增才是向下）。
-  [PN.TL]: (st, args) => { st.leading = args[0] || 0; },
+  [PN.TL]: (st, args) => { st.leading = (args[0] || 0) * st.sy; },
   [PN.NL]: (st) => { st.cy += st.flip ? st.leading : -st.leading; st.cx = st.lx; },
   [PN.SHOW]: showTextRun,
   [PN.SHOW_SPACED]: showTextRun,
@@ -136,7 +152,7 @@ const TEXT_OPS = {
 async function pdfPageRuns(page) {
   const opList = await page.getOperatorList();
   const runs = [];
-  const st = { fontSize: 0, fontId: '', cx: 0, cy: 0, lx: 0, leading: 0, flip: false };
+  const st = { fontSize: 0, fontId: '', cx: 0, cy: 0, lx: 0, leading: 0, flip: false, sx: 1, sy: 1 };
   for (let i = 0; i < opList.fnArray.length; i++) {
     const op = TEXT_OPS[opList.fnArray[i]];
     if (op) op(st, opList.argsArray[i] || [], runs);

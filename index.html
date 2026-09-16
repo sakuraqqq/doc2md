@@ -1791,9 +1791,10 @@ ${xlsxRowsToMd(kept)}`);
     return st.flip ? -st.cy : st.cy;
   }
   function showTextRun(st, args, runs) {
-    const { str, w, gw, ascii, letters } = glyphRun(args[0] || [], st.fontSize);
+    const fs = st.fontSize * st.sx;
+    const { str, w, gw, ascii, letters } = glyphRun(args[0] || [], fs);
     if (str !== "") {
-      runs.push({ str, x: st.cx, y: st.cy, sy: screenY(st), w, fontSize: st.fontSize, fontId: st.fontId, gw, ascii, letters });
+      runs.push({ str, x: st.cx, y: st.cy, sy: screenY(st), w, fontSize: fs, fontId: st.fontId, gw, ascii, letters });
     }
     st.cx += w;
   }
@@ -1801,6 +1802,8 @@ ${xlsxRowsToMd(kept)}`);
     [PN.BT]: (st) => {
       st.cx = st.lx = 0;
       st.cy = 0;
+      st.sx = 1;
+      st.sy = 1;
     },
     [PN.TF]: (st, args) => {
       st.fontSize = args[1] || 0;
@@ -1810,23 +1813,25 @@ ${xlsxRowsToMd(kept)}`);
       st.cx = st.lx = args[4] || 0;
       st.cy = args[5] || 0;
       st.flip = (args[3] || 0) < 0;
+      st.sx = Math.hypot(args[0] || 0, args[1] || 0) || 1;
+      st.sy = Math.hypot(args[2] || 0, args[3] || 0) || 1;
     },
     [PN.TD_MOVE]: (st, args) => {
-      st.lx += args[0] || 0;
+      st.lx += (args[0] || 0) * st.sx;
       st.cx = st.lx;
-      st.cy += args[1] || 0;
+      st.cy += (args[1] || 0) * st.sy;
     },
     [PN.TD_LEAD]: (st, args) => {
-      st.leading = -(args[1] || 0);
-      st.lx += args[0] || 0;
+      st.leading = -(args[1] || 0) * st.sy;
+      st.lx += (args[0] || 0) * st.sx;
       st.cx = st.lx;
-      st.cy += args[1] || 0;
+      st.cy += (args[1] || 0) * st.sy;
     },
     // A2（2026-09-14 修复）：TL(36) 此前缺表——leading 恒 0 → T* 不换行，用 TL+T* 定位的文档三行压成一行
     // 且粘连（样例 sample-tl-leading.pdf 实测）。口径：leading 存**规范值**（TL 参数即 leading，不取负，
     // 与 TD 的 `-ty` 同得正值）；nextLine 的推进方向随 flip 定向（翻转矩阵下 cy 递增才是向下）。
     [PN.TL]: (st, args) => {
-      st.leading = args[0] || 0;
+      st.leading = (args[0] || 0) * st.sy;
     },
     [PN.NL]: (st) => {
       st.cy += st.flip ? st.leading : -st.leading;
@@ -1838,7 +1843,7 @@ ${xlsxRowsToMd(kept)}`);
   async function pdfPageRuns(page) {
     const opList = await page.getOperatorList();
     const runs = [];
-    const st = { fontSize: 0, fontId: "", cx: 0, cy: 0, lx: 0, leading: 0, flip: false };
+    const st = { fontSize: 0, fontId: "", cx: 0, cy: 0, lx: 0, leading: 0, flip: false, sx: 1, sy: 1 };
     for (let i = 0; i < opList.fnArray.length; i++) {
       const op = TEXT_OPS[opList.fnArray[i]];
       if (op) op(st, opList.argsArray[i] || [], runs);
