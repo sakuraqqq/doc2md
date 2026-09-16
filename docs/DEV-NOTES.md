@@ -1542,6 +1542,38 @@ U1 未重跑 `npm ci` · **U2 函数级等价性台未随出单附上**（我方
 ### 待办（机制层，需用户拍板后再做）
 配额目前**仍靠自觉**。可选轻量自查：加 `tools/quota-check.mjs`（统计「自上次 `refactor` 起改 `src/` 的提交数」，超阈值打印提醒，**不阻断**）。本轮**不动代码**，等用户拍板。
 
+## 2026-09-16 依赖体检批（防屎山 ⑤「依赖更新」：A 契约守卫 + B 制度化 + C 实测不可行）
+
+### 缘起
+用户问「是不是还剩下依赖更新这个防屎山方法」→ 核查：防屎山五项里**只有「依赖更新」零制度化**（无 `.github/dependabot.yml`、CI 无 audit/outdated 步骤、从未跑过）→ 用户拍板 **A + B + C**（D 运行时大版本升级排后）。
+
+### 首次实测（本机）
+- `npm outdated`：8 包可更新，其中 **4 个是大版本跳跃** —— `pdfjs-dist` 3.11.174 → **6.3.289** · `tesseract.js` 6.0.1 → **7.0.0** · `read-excel-file` 5.8.7 → **9.3.10** · `eslint`/`@eslint/js` 9.39.x → **10.x**；其余（playwright / sonarjs / jscpd）为小版本。（`mammoth` 不在列表：**它未在 package.json 声明**，见下。）
+- `npm audit`：**3 漏洞（2 high + 1 critical）**
+
+| 告警 | 判定（实测 + 上游原文） |
+|---|---|
+| `pdfjs-dist ≤4.1.392` **HIGH** · CVE-2024-4367 / GHSA-wgrm-67xf-hhpq | **交付面命中，但已被配置级缓解** —— OSV 原文：仅当 `isEvalSupported` 为 true（**默认值**）时可利用，Workaround = 设为 false；本仓 `src/pdf.js` 早已显式 `false` ⇒ **当前配置不可触发**（`npm audit` 只看版本号，看不出这点） |
+| `tar ≤7.5.20` **CRITICAL** | **非交付面** —— 链路 `pdfjs-dist → canvas@2.11.2`（`package-lock` 标 `"dev": true, "optional": true`）`→ @mapbox/node-pre-gyp@1.0.11 → tar@6.2.1`；`vendor/` 内无 tar |
+
+### A 项：契约守卫 H13/H14（**先绿守卫** + 负对照）
+- **H13**：`src/pdf.js` 的 `getDocument` 必须含 `isEvalSupported: false`，且不得出现 `isEvalSupported: true`；**H14**：`cMapUrl: './vendor/cmaps/'` + `cMapPacked: true`（CID 解析不走外域）。均为**源码级不变量**，故挂在既有「离线源码断言」组 H 下（续号 H13/H14），组头注释同步。
+- **性质**：先绿守卫（无实现改动 ⇒ 无独立实现提交），按纪律做**负对照**取证 —— `.tmp/flip-eval.mjs true` 改坏源码 → 组 H 实测 `# tests 15 / pass 13 / fail 2`，`not ok 13 - H13 …`，诊断原文「未显式设置 isEvalSupported: false —— pdf.js 默认 true 时恶意 PDF 可执行任意 JS（CVE-2024-4367 / GHSA-wgrm-67xf-hhpq，HIGH…）」；还原（`.tmp/pdf-keep.js` 覆回，SHA256 回 `99FA65AA…`）→ `15 / 15 pass / 0 fail`。
+- 全套契约：**258 tests / 256 pass / 0 fail / 2 skip**（基线 256/254 ⇒ +2）。
+
+### B 项：制度化（Dependabot + 交付面审计门禁）
+- **`tools/audit-delivery.mjs`（新增）**：只看**交付面**（`pdfjs-dist` / `tesseract.js` / `tesseract.js-core` / `read-excel-file` / `@tesseract.js-data/{eng,chi_sim}`）的 high/critical，**未豁免即 exit 1**；豁免必须写进脚本内 `ALLOWLIST`（含理由 + 登记日期）。脚本头写明**为什么不直接拿 `npm audit` 当门禁**：① 本仓依赖全在 devDependencies（运行时库内联进 vendor）⇒ `npm audit --omit=dev` 审不到任何东西；② audit 按安装树报，会带 dev/optional 链（拿它当门禁天天红 = 狼来了）；③ 只看版本号，看不懂配置级缓解。
+- **三态实测**：联网 → `PASS`（pdfjs-dist 命中并豁免，`db#1118732`）· 正品夹具（豁免项 + 非交付面 tar）→ `PASS` exit 0 · **负对照夹具**（交付面 `read-excel-file` 未豁免 critical）→ `FAIL` exit 1。数据不可得时 **exit 1（宁可红，不假绿）**。
+- **踩坑（本批）**：registry bulk 接口的 `id` 是**数字 advisory id**（如 `1118732`），GHSA 串只出现在 `url` 里 ⇒ 首次运行豁免对不上号、误报 FAIL；已归一化为「从 `url` 提取 `GHSA-*`」（并保留 `db#数字` 便于回溯）。
+- **`.github/dependabot.yml`（新增）**：npm **weekly** + `github-actions` **月度**；**运行时四件套列入 `ignore`**（升级必须人工立批：重打包 vendor + `docs/licenses.md` 许可复核 + `CACHE_NAME` bump + 契约全绿 + 两台等价性台）；自动 PR 只覆盖工具链。**`mammoth@1.12.2` 未在 `package.json` 声明** ⇒ Dependabot 看不到它 → 登记为**人工跟踪项**。
+- **CI（`.github/workflows/tests.yml`）**：在 lint 之后插入 `node tools/audit-delivery.mjs`（交付面门禁），文件头步骤清单同步。
+- **工具自食其果**：首版提交时 lint **3 error + 2 warning**、metrics **超限 2**（`fetchAdvisories` cyc13 / `readAuditJson` cyc15 + 3 处嵌套模板串）→ 拆 `bulkItem`/`viaItem`/`viaItems`/`itemsFromBulk`/`itemsFromAuditJson` + 字符串拼接 → lint **0**、metrics **18 文件 / 384 函数 / 超限 0 / 重复率 0.4%**（新增代码也不许超限）。
+
+### C 项：`npm audit fix` —— 实测**不可行**（如实登记，不粉饰）
+- 实跑 `npm audit fix`：输出 **「up to date, audited 199 packages」= 零改动**；`git status` 仅剩本批的测试文件改动（`package-lock.json` 未被触碰）。
+- 根因（实测）：`@mapbox/node-pre-gyp@1.0.11` 声明 `tar: ^6.1.11`，而含修复的 tar 在 **7.x** ⇒ **semver 范围内无解**；`npm audit fix --force` 给出的解法是 `pdfjs-dist@6.3.289`（= **D 项**大版本升级）。
+- 三个可选处置（**待用户拍板**）：① `overrides: { "tar": "^7.5.21" }`（超出上游声明范围，但 canvas 是 optional 且其 install script 被 npm allow-scripts 拦下）；② `.npmrc` 设 `omit=optional`（直接不装 canvas 链 ⇒ tar 从安装树消失）；③ 评估后**接受**（dev + optional、非交付面）并在此登记。
+
 
 
 

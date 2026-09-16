@@ -25,6 +25,16 @@
 4. **README 引用**：README.md「许可与合规」节指向本表（不做全文复制，状态性内容以本表为唯一权威源）。
 5. **公开前复核**：阶段 3（GitHub 发布）前再逐条核一遍版本与许可（包版本可能更新，以发布时 lock 为准）。
 
+## 已知漏洞与缓解登记（2026-09-16 新增）
+
+> 缘起：首次「依赖体检」（防屎山 ⑤）。口径 = **只看交付面**（会内联进 `vendor/` 或随 `langs/` 分发的依赖）；
+> 门禁脚本 `tools/audit-delivery.mjs`（CI 已接入），豁免项必须在本节与本脚本 `ALLOWLIST` 同步登记。
+
+| 依赖 | 告警 | 判定 | 缓解 / 处置 |
+|---|---|---|---|
+| `pdfjs-dist@3.11.174`（`vendor/pdfjs.pdf.min.js` + worker） | **HIGH** · CVE-2024-4367 / GHSA-wgrm-67xf-hhpq（恶意 PDF → 任意 JS 执行） | **受影响区间内，但本仓配置不可触发** —— 官方说明：仅当 `isEvalSupported` 为 `true`（默认值）时可利用；Workaround = 设为 `false` | `src/pdf.js` 的 `getDocument` 显式 `isEvalSupported: false`；**契约组 H13 守卫该行**（谁删谁红）。随 pdfjs-dist 大版本升级（需重打包 vendor + 本表复核 + `CACHE_NAME` bump + 等价性台）一并消除 |
+| `tar@6.2.1`（`pdfjs-dist → canvas@2.11.2`（dev + optional）`→ @mapbox/node-pre-gyp@1.0.11`） | CRITICAL（多条 node-tar 路径穿越/DoS） | **非交付面** —— 不进 `vendor/`，且 canvas 的 install script 受 npm allow-scripts 管控 | 未处置（`npm audit fix` 实测零改动：修复版 tar 只在 7.x，而 node-pre-gyp 声明 `^6` ⇒ semver 内无解）；可选处置与遗留见 `docs/DEV-NOTES.md` 2026-09-16「依赖体检批」 |
+
 ## 红线关联
 
 - 所有库均为**本地打包/内联**使用——不存在「运行时从 CDN 拉取」的许可问题（Apache-2.0 允许内联，只需附文本与声明）。
