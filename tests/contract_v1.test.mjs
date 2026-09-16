@@ -3396,10 +3396,11 @@ const U_SAMPLES = [
   'sample-quote-ops.pdf',
   'sample-overprint.pdf',
   'sample-comment-subset.pdf',
+  'sample-scale-td.pdf',
 ];
 
 test('契约组 U：v0.1.4 PDF 缺陷批（翻转 Tm 行序 / TL 算子 / 等宽围栏 / 叠印去重）—— 契约先红', async (t) => {
-  await t.test('U-0 六个样例存在且与 manifest 字节级一致（×6）', () => {
+  await t.test('U-0 七个样例存在且与 manifest 字节级一致（×7）', () => {
     for (const name of U_SAMPLES) {
       const p = nodePath.join(DATA, name);
       assert.ok(fs.existsSync(p), `${name} 缺失——请运行 npm run gen:samples`);
@@ -3537,6 +3538,24 @@ test('契约组 U：v0.1.4 PDF 缺陷批（翻转 Tm 行序 / TL 算子 / 等宽
         );
         assert.ok(inside.includes('import cv2'), `第 2 页代码行未进围栏：${JSON.stringify(bodyLines(md))}`);
         assert.ok(!/^[ \t]*#[ \t]*\d/m.test(outside), `注释裸露在围栏外（会渲染成 H1）：${JSON.stringify(bodyLines(md))}`);
+      });
+
+      /* U9（P1，2026-09-16）：Tm 缩放 ≪1 + 逐字 `TD` 推进（真机 WPS 形态）。
+       * 判据 = **去空白后的顺序**（空格是否插入受字体度量影响，不作判据；顺序才是本缺陷的语义）。 */
+      await t.test('U9 缩放感知：Tm 缩放 0.05 + 逐字 TD 推进（WPS 形态）→ 行内顺序不得交错', async () => {
+        const md = await convert('sample-scale-td.pdf');
+        const flat = md.replace(/\s+/g, '');
+        assert.ok(
+          flat.includes('ONETWO'),
+          `行内顺序错乱（期望 ONETWO：同一视觉行的两个文本对象按书写顺序拼接）：${JSON.stringify(flat.slice(0, 40))}`
+        );
+        assert.ok(
+          !flat.includes('OTNWEO'),
+          `出现旧实现交错序 OTNWEO（文本空间位移未乘 Tm 缩放 ⇒ 逐字推进 280 而非 14）：${JSON.stringify(flat.slice(0, 40))}`
+        );
+        const i2 = flat.indexOf('SECONDLINE');
+        const i3 = flat.indexOf('THIRDLINE');
+        assert.ok(i2 > 0 && i3 > i2, `多行顺序错误（SECONDLINE@${i2} / THIRDLINE@${i3}）：${JSON.stringify(flat.slice(0, 80))}`);
       });
     } finally {
       await browser.close();
