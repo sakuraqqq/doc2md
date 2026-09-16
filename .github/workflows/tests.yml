@@ -1,7 +1,11 @@
 # tests.yml — doc2md CI 质量门（防屎山 ③ 守门）
 # 模板：cola（可乐工厂效率计算器）tests.yml；按任务书扩展为 checks job：
-#   build-consistency → lint → 交付面依赖审计 → metrics（超限必须为 0）→ npm test → pwa-audit → verify:ocr（push/PR 触发）
+#   build-consistency → lint → 守卫自测 → 交付面依赖审计 → metrics（超限必须为 0）
+#   → 站点白名单 smoke（组装临时 _site）→ npm test → pwa-audit → verify:ocr
 # 说明：
+#   - 触发：push main · **push tag `v*`**（2026-09-17 加固：发布 tag 也必须过同款门禁，见第九轮审查 §4.4）
+#     · PR。⚠️ 残留：GitHub 无「workflow 间依赖」，deploy-pages 不会等本 workflow 跑完才开始部署 ——
+#     故发布纪律仍要求 tag 指向**已在 main 过 CI 的提交**（RELEASE-CHECKLIST §2）。
 #   - npm test（node --test）需要 chromium：install 步骤提供（--with-deps 含系统依赖）
 #   - OCR 相关步骤（verify:ocr / image 契约用例）需要 vendor/tessdata 与 langs/（仓库全量检出）
 #   - Lint 对象 = src/**/*.js + tools/**/*.mjs（见 eslint.config.js 白名单策略）
@@ -10,11 +14,16 @@
 #   - 交付面依赖审计（2026-09-16 用户拍板 B 项）：`node tools/audit-delivery.mjs` 只拦
 #     「进入交付产物的依赖」的未豁免 high/critical（dev/optional 链不阻断）；豁免须写进
 #     tools/audit-delivery.mjs 的 ALLOWLIST 并给理由与日期。
+#   - 守卫自测（2026-09-17）：`node tools/guard-selftest.mjs` —— deploy-smoke 与 audit-delivery 的
+#     正例 + **负例必红**（守卫自己也要能被测红；来源：第九轮审查 §2.2/§2.3）。
+#   - 站点白名单 smoke（2026-09-17 前移到 CI）：本地按 deploy-pages 的同款 cp 白名单组装临时 `_site`
+#     再跑 deploy-smoke —— 原先只在部署 workflow 里跑，PR/主干不会提前发现「新增顶层文件漏发」。
 name: tests
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -36,10 +45,18 @@ jobs:
         run: npm run build && git diff --exit-code index.html
       - name: "Lint (ESLint: src/ + tools/)"
         run: npm run lint
+      - name: "Guard selftest (deploy-smoke / audit-delivery 正例 + 负例必红；2026-09-17)"
+        run: node tools/guard-selftest.mjs
       - name: "Delivery-face dependency audit (交付面 high/critical 未豁免即红；2026-09-16 用户拍板 B 项)"
         run: node tools/audit-delivery.mjs
       - name: "Code metrics gate (超限函数必须为 0；2026-09-10 用户拍板)"
         run: npm run metrics
+      - name: "Site whitelist assembly + deploy smoke (与 deploy-pages 同款 cp 白名单)"
+        run: |
+          mkdir -p _site
+          cp index.html manifest.json sw.js .nojekyll _site/
+          cp -r vendor langs icons _site/
+          node tools/deploy-smoke.mjs _site
       - name: Contract tests (node --test)
         run: npm test
       - name: PWA audit (static)
