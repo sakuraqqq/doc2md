@@ -1532,6 +1532,9 @@ test('契约组 G7：第八轮 §1.2/§1.3/§1.6/§3.1（1904 日期系统 / 单
 //     （恶意 PDF → 任意 JS 执行）；官方 Workaround 即设为 false。npm audit 只看版本号 ⇒ 仍报 high，
 //     属「已缓解·不适用」—— 本断言是该缓解的守卫（禁止被重构顺手删除）。
 //   H14 cmaps 必须同源相对路径（`./vendor/cmaps/`）+ `cMapPacked: true`（CID 字体解析不走外域，零外发红线）。
+//   H15 **部署触发口径**（2026-09-16 用户拍板 ②）：deploy-pages.yml 只在 **tag 推送**（`tags: ['v*']`）
+//     与 `workflow_dispatch` 上触发，**禁止** `push: branches: [main]` —— 否则 push main 即上线，
+//     「线上 == 发布物」不再可验证（当日实测：线上变成 121,406 B 的 main 构建 vs 发布物 121,229 B）。
 // ---------------------------------------------------------------------------
 const H_URL_WHITELIST_HOSTS = new Set([
   'schemas.openxmlformats.org', // OOXML 命名空间（wordprocessingml/drawingml/relationship 等 xmlns 标识）
@@ -1676,6 +1679,42 @@ test('契约组 H：corePath 同源 / 零外域 fetchable URL / SW v4 分段缓�
       "src/pdf.js 的 cMapUrl 不是同源相对路径 './vendor/cmaps/'（零外发红线：CMap 资产必须随仓分发，禁外域）"
     );
     assert.match(pdfSrc, /cMapPacked:\s*true/, 'src/pdf.js 未启用 cMapPacked（vendor/cmaps 为 .bcmap 打包格式）');
+  });
+  // H15（2026-09-16 用户拍板 ②，先绿守卫）：部署触发口径 = **只在 tag 推送时部署**（`v*`）+ `workflow_dispatch`，
+  // 禁止 push main 触发。反例（同一日实测）：`push: branches: [main]` 下，依赖批推 main 后线上产物变成
+  // main 构建（121,406 B / 18EA70E4…），与 v0.1.9 发布物（121,229 B / F80E8626…）不再逐字节相同
+  // ⇒ 「线上 == 发布物」这条核对口径失效（行为零变更，但口径不再可验证）。
+  await t.test('H15 deploy-pages.yml 只在 tag 推送时部署（禁 push branches 触发——保住「线上 == 发布物」）', () => {
+    const p = nodePath.join(ROOT, '.github', 'workflows', 'deploy-pages.yml');
+    assert.ok(fs.existsSync(p), '.github/workflows/deploy-pages.yml 缺失');
+    const text = fs.readFileSync(p, 'utf8');
+    /* 只取 `on:` 块（顶格 `on:` 起、到下一个顶格行为止，去掉块内注释行）—— 全文件匹配会把**注释里引用的
+     * 反例写法**当成真配置（本断言首版即因此自指误报，2026-09-16 实测修复）。 */
+    const lines = text.split('\n');
+    const start = lines.findIndex((l) => /^on:\s*$/.test(l));
+    assert.ok(start >= 0, 'deploy-pages.yml 未见顶格 `on:` 块');
+    const block = [];
+    for (let i = start + 1; i < lines.length; i++) {
+      if (lines[i].trim() === '') continue;
+      if (!/^\s/.test(lines[i])) break;
+      if (/^\s*#/.test(lines[i])) continue;
+      block.push(lines[i]);
+    }
+    const onText = block.join('\n');
+    assert.match(
+      onText,
+      /tags:\s*\[\s*'v\*'\s*\]/,
+      "deploy-pages.yml 的 `on:` 未按 `tags: ['v*']` 触发（用户 2026-09-16 拍板：仅 tag 部署；改回 push main 会让线上变成未发版构建）"
+    );
+    assert.match(
+      onText,
+      /workflow_dispatch/,
+      'deploy-pages.yml 的 `on:` 缺 workflow_dispatch —— 未发版改动需要能手动触发一次部署（如上手机试）'
+    );
+    assert.ok(
+      !/branches:/.test(onText),
+      'deploy-pages.yml 的 `on:` 仍含 `branches:` 触发 —— 「线上 == 发布物」会再次失效（用户 2026-09-16 拍板改为仅 tag 部署）'
+    );
   });
 });
 

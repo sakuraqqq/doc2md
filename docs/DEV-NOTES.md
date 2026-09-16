@@ -1613,6 +1613,13 @@ U1 未重跑 `npm ci` · **U2 函数级等价性台未随出单附上**（我方
 - **Pages 部署链反证**：线上 `index.html` 实测 **121,406 B / `18EA70E4…79EB3`**（`Last-Modified: 2026-09-16 06:05:40 GMT` = 14:05:40 +08）⇒ **checkout v7 / configure-pages v6 / upload-pages-artifact v5 / deploy-pages v5 实际跑通**（新 action 组合可用）。
 - ⚠️ **附带发现（口径漂移，待拍板）**：push main 会**自动部署 Pages** ⇒ 线上产物已是 **main 构建**（121,406 B）而非 v0.1.9 发布物（121,229 B / `F80E8626…`）。行为零变更（两台已证），但「**线上 == 发布物**」不再自动成立。两个选项：① 保持现状 + 每次登记漂移；② `deploy-pages.yml` 改为**仅 tag 推送时部署**（`on.push.tags: ['v*']` + `workflow_dispatch`），把该口径变成硬不变量。
 
+### 拍板 ② 落地：Pages 改为「仅 tag 部署」（契约组 **H15** 守卫）
+- **改动**：`deploy-pages.yml` 的 `on.push.branches: [main]` → **`on.push.tags: ['v*']`**（保留 `workflow_dispatch` 供手动触发）；文件头写明口径与反例（push main 曾让线上变成未发版构建）。
+- **契约 H15**（先绿守卫，组 H 续号）：断言 `on:` 块含 `tags: ['v*']` + `workflow_dispatch`，且**不含 `branches:`** ⇒ 「线上 == 发布物」从靠自觉变成 CI 守着。
+- **负对照取证**：临时把 `on:` 改回 `branches: [main]` → 组 H `# tests 16 / pass 14 / fail 2`、`not ok 15 - H15 …`；还原（`on = {'push': {'tags': ['v*']}, 'workflow_dispatch': None}`，YAML 解析复核）→ **16/16 pass**；全量契约 **259 tests / 257 pass / 0 fail / 2 skip**。
+- ⚠️ **踩坑（本批第二次「自指误报」）**：H15 首版用**全文件**正则做负向断言 `!/branches:\s*\[\s*main\s*\]/`，而我在 workflow 注释里**引用了反例写法**（`push: branches: [main]`）→ 注释命中、断言**误红**。**修法**：只取 `on:` 块（顶格 `on:` 起、到下一个顶格行为止，去掉块内注释行）再断言。**推广**：任何「断言某写法不存在」的守卫，先排除**注释/文档自指** —— 本项目已是第二次栽在这上面（上一次：隐私扫描的手机号正则撞 SHA256 十六进制子串）。
+- **线上当前状态**：仍是 main 构建（121,406 B / `18EA70E4…`）—— 改触发口径**不会**回滚已部署内容；要回到「== v0.1.9 发布物」需 Actions → `deploy-pages` → **Run workflow** 选 tag `v0.1.9` 手动跑一次（属用户动作）。
+
 
 
 
