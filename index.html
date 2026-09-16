@@ -1798,6 +1798,17 @@ ${xlsxRowsToMd(kept)}`);
     }
     st.cx += w;
   }
+  var argAt = (args, i) => args[i] || 0;
+  var tdx = (st, v) => v * st.sx;
+  var tdy = (st, v) => v * st.sy;
+  function moveLine(st, dx, dy) {
+    st.lx += tdx(st, dx);
+    st.cx = st.lx;
+    st.cy += tdy(st, dy);
+  }
+  function newTextState() {
+    return { fontSize: 0, fontId: "", cx: 0, cy: 0, lx: 0, leading: 0, flip: false, sx: 1, sy: 1 };
+  }
   var TEXT_OPS = {
     [PN.BT]: (st) => {
       st.cx = st.lx = 0;
@@ -1806,32 +1817,26 @@ ${xlsxRowsToMd(kept)}`);
       st.sy = 1;
     },
     [PN.TF]: (st, args) => {
-      st.fontSize = args[1] || 0;
+      st.fontSize = argAt(args, 1);
       st.fontId = args[0] || "";
     },
     [PN.TM]: (st, args) => {
-      st.cx = st.lx = args[4] || 0;
-      st.cy = args[5] || 0;
-      st.flip = (args[3] || 0) < 0;
-      st.sx = Math.hypot(args[0] || 0, args[1] || 0) || 1;
-      st.sy = Math.hypot(args[2] || 0, args[3] || 0) || 1;
+      st.cx = st.lx = argAt(args, 4);
+      st.cy = argAt(args, 5);
+      st.flip = argAt(args, 3) < 0;
+      st.sx = Math.hypot(argAt(args, 0), argAt(args, 1)) || 1;
+      st.sy = Math.hypot(argAt(args, 2), argAt(args, 3)) || 1;
     },
-    [PN.TD_MOVE]: (st, args) => {
-      st.lx += (args[0] || 0) * st.sx;
-      st.cx = st.lx;
-      st.cy += (args[1] || 0) * st.sy;
-    },
+    [PN.TD_MOVE]: (st, args) => moveLine(st, argAt(args, 0), argAt(args, 1)),
     [PN.TD_LEAD]: (st, args) => {
-      st.leading = -(args[1] || 0) * st.sy;
-      st.lx += (args[0] || 0) * st.sx;
-      st.cx = st.lx;
-      st.cy += (args[1] || 0) * st.sy;
+      st.leading = -tdy(st, argAt(args, 1));
+      moveLine(st, argAt(args, 0), argAt(args, 1));
     },
     // A2（2026-09-14 修复）：TL(36) 此前缺表——leading 恒 0 → T* 不换行，用 TL+T* 定位的文档三行压成一行
     // 且粘连（样例 sample-tl-leading.pdf 实测）。口径：leading 存**规范值**（TL 参数即 leading，不取负，
     // 与 TD 的 `-ty` 同得正值）；nextLine 的推进方向随 flip 定向（翻转矩阵下 cy 递增才是向下）。
     [PN.TL]: (st, args) => {
-      st.leading = (args[0] || 0) * st.sy;
+      st.leading = tdy(st, argAt(args, 0));
     },
     [PN.NL]: (st) => {
       st.cy += st.flip ? st.leading : -st.leading;
@@ -1843,7 +1848,7 @@ ${xlsxRowsToMd(kept)}`);
   async function pdfPageRuns(page) {
     const opList = await page.getOperatorList();
     const runs = [];
-    const st = { fontSize: 0, fontId: "", cx: 0, cy: 0, lx: 0, leading: 0, flip: false, sx: 1, sy: 1 };
+    const st = newTextState();
     for (let i = 0; i < opList.fnArray.length; i++) {
       const op = TEXT_OPS[opList.fnArray[i]];
       if (op) op(st, opList.argsArray[i] || [], runs);
