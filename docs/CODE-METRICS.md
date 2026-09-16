@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-16T06:01:03.754Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-16T17:20:56.156Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：18；函数总数：384；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：19；函数总数：413；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 384 个，超限 0 个。
+重构后当前：函数 413 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -27,6 +27,7 @@
 |---|---|---|---|---|
 | src/xlsx.js | xlsxSelfParse | 485 | 10 | 13 |
 | tools/metrics.mjs | loadIgnoreFilter | 53 | 10 | 13 |
+| tools/deploy-smoke.mjs | checkManifest | 112 | 10 | 12 |
 | src/convert.js | convert | 108 | 10 | 10 |
 | src/xlsx.js | collectTTexts | 250 | 9 | 14 |
 | src/ui.js | buildEmbedMap | 110 | 9 | 13 |
@@ -41,20 +42,23 @@
 | src/xlsx.js | cellToString | 419 | 8 | 9 |
 | src/docx.js | docxCollectWarnings | 285 | 8 | 8 |
 | src/ui.js | downloadZip | 54 | 8 | 8 |
+| tools/audit-delivery.mjs | main | 235 | 8 | 8 |
 | src/sniff.js | sniff | 162 | 8 | 7 |
 | src/xlsx.js | isBuiltinDateId | 374 | 8 | 7 |
 | src/html2md.js | blockifyContainer | 147 | 7 | 13 |
+| tools/deploy-smoke.mjs | checkSite | 135 | 7 | 9 |
 | src/docx.js | ommlEnclosingPara | 136 | 7 | 8 |
 | src/xlsx.js | xlsxWorkbookMap | 117 | 7 | 8 |
 | src/pdf.js | addGlyph | 68 | 7 | 7 |
 | src/pdf.js | pdfConvert | 454 | 7 | 7 |
+| tools/deploy-smoke.mjs | checkOneRef | 86 | 7 | 7 |
 | src/convert.js | ocrOnce | 44 | 7 | 6 |
 | src/html2md.js | linkFrag | 95 | 7 | 6 |
 | src/sniff.js | charsetLabelOf | 77 | 7 | 6 |
 | src/sniff.js | isBmp | 207 | 7 | 6 |
 | src/sniff.js | isGif | 216 | 7 | 6 |
-| tools/audit-delivery.mjs | bulkItem | 63 | 7 | 6 |
-| tools/audit-delivery.mjs | viaItem | 82 | 7 | 6 |
+| tools/audit-delivery.mjs | viaItem | 150 | 7 | 6 |
+| tools/audit-delivery.mjs | bulkItem | 178 | 7 | 6 |
 | tools/metrics.mjs | countCycPoints | 118 | 7 | 6 |
 | src/xlsx.js | scanSheetRows | 223 | 6 | 13 |
 | src/html2md.js | liToLines | 290 | 6 | 11 |
@@ -67,6 +71,7 @@
 | src/ocr.js | getOcrWorker | 41 | 6 | 9 |
 | src/pdf.js | lineText | 240 | 6 | 8 |
 | src/pdf.js | textQualityRatio | 362 | 6 | 8 |
+| tools/audit-delivery.mjs | judged | 189 | 6 | 8 |
 | src/pdf.js | groupRunsIntoLines | 213 | 6 | 7 |
 | src/pdf.js | monospaceFontsOf | 289 | 6 | 7 |
 | src/docx.js | ommlMathEntry | 144 | 6 | 6 |
@@ -75,6 +80,7 @@
 | src/sniff.js | ctrlRatio | 246 | 6 | 6 |
 | src/ui.js | assetsTotalBytes | 104 | 6 | 6 |
 | src/xlsx.js | findEocd | 16 | 6 | 6 |
+| tools/audit-delivery.mjs | report | 220 | 6 | 6 |
 | tools/gen-icons.mjs | onTextLine | 67 | 6 | 6 |
 | src/convert.js | ocrWarnings | 69 | 6 | 5 |
 | src/convert.js | unsupportedError | 137 | 6 | 5 |
@@ -92,6 +98,7 @@
 | src/xlsx.js | zipEntry | 58 | 6 | 5 |
 | src/xlsx.js | parseCellAt | 186 | 6 | 5 |
 | src/xlsx.js | extractInlineText | 267 | 6 | 5 |
+| tools/audit-delivery.mjs | versionErrors | 113 | 6 | 5 |
 | tools/gen-icons.mjs | sample | 28 | 6 | 5 |
 | tools/gen-icons.mjs | maskablePoint | 39 | 6 | 5 |
 | tools/metrics.mjs | fnName | 98 | 6 | 5 |
@@ -99,13 +106,14 @@
 | src/pdf.js | textContentFallback | 373 | 5 | 7 |
 | src/sniff.js | charsetLabels | 62 | 5 | 7 |
 | src/xlsx.js | colIndexOfRef | 439 | 5 | 7 |
-| tools/audit-delivery.mjs | judged | 121 | 5 | 7 |
 | src/docx.js | docxMathFragment | 163 | 5 | 6 |
 | src/docx.js | insideQuotes | 199 | 5 | 6 |
 | src/xlsx.js | findCentralEntry | 25 | 5 | 6 |
+| tools/audit-delivery.mjs | deliveryVersions | 68 | 5 | 6 |
 | src/docx.js | docxInjectLatex | 252 | 5 | 5 |
 | src/docx.js | (anonymous) | 254 | 5 | 5 |
 | src/xlsx.js | parseSheetTags | 82 | 5 | 5 |
+| tools/deploy-smoke.mjs | collectSrcset | 54 | 5 | 5 |
 | src/convert.js | textConvert | 84 | 5 | 4 |
 | src/docx.js | extForContentType | 21 | 5 | 4 |
 | src/docx.js | docxAltFromName | 35 | 5 | 4 |
@@ -120,8 +128,7 @@
 | src/ui.js | truncatePreview | 159 | 5 | 4 |
 | src/xlsx.js | decodeXmlEntity | 154 | 5 | 4 |
 | src/xlsx.js | refLetterValue | 434 | 5 | 4 |
-| tools/audit-delivery.mjs | report | 139 | 5 | 4 |
-| tools/audit-delivery.mjs | main | 154 | 5 | 4 |
+| tools/deploy-smoke.mjs | resolveInSite | 71 | 5 | 4 |
 | tools/metrics.mjs | nodeCogPoints | 154 | 5 | 4 |
 | src/xlsx.js | stripBracketed | 336 | 4 | 7 |
 | src/pdf.js | isCodeLine | 305 | 4 | 6 |
@@ -138,8 +145,8 @@
 | src/sniff.js | startsWith | 11 | 4 | 4 |
 | src/xlsx.js | parseRelsMap | 96 | 4 | 4 |
 | src/xlsx.js | parseNumFmtCodes | 350 | 4 | 4 |
-| tools/audit-delivery.mjs | itemsFromBulk | 74 | 4 | 4 |
-| tools/audit-delivery.mjs | itemsFromAuditJson | 101 | 4 | 4 |
+| tools/audit-delivery.mjs | itemsFromAuditJson | 161 | 4 | 4 |
+| tools/audit-delivery.mjs | itemsFromBulk | 170 | 4 | 4 |
 | src/app.js | handleFiles | 15 | 4 | 3 |
 | src/app.js | (anonymous) | 37 | 4 | 3 |
 | src/bline.js | (anonymous) | 6 | 4 | 3 |
@@ -167,6 +174,7 @@
 | src/xlsx.js | rowToTexts | 455 | 4 | 3 |
 | src/xlsx.js | (anonymous) | 457 | 4 | 3 |
 | src/xlsx.js | xlsxParseSheet | 468 | 4 | 3 |
+| tools/audit-delivery.mjs | viaItems | 132 | 4 | 3 |
 | tools/gen-icons.mjs | inDocRect | 48 | 4 | 3 |
 | tools/metrics.mjs | childNesting | 163 | 4 | 3 |
 | tools/metrics.mjs | collectFunctions | 182 | 4 | 3 |
@@ -178,7 +186,7 @@
 | src/sniff.js | countFffd | 131 | 3 | 3 |
 | src/sniff.js | countNonAscii | 137 | 3 | 3 |
 | src/xlsx.js | parseXfIds | 363 | 3 | 3 |
-| tools/audit-delivery.mjs | deliveryVersions | 51 | 3 | 3 |
+| tools/deploy-smoke.mjs | checkDenyTop | 128 | 3 | 3 |
 | tools/gen-icons.mjs | pngRGBA | 77 | 3 | 3 |
 | src/convert.js | cjkLatin | 52 | 3 | 2 |
 | src/convert.js | guardError | 130 | 3 | 2 |
@@ -206,9 +214,15 @@
 | src/xlsx.js | boolCellText | 411 | 3 | 2 |
 | src/xlsx.js | readSheetSafely | 522 | 3 | 2 |
 | src/xlsx.js | xlsxConvert | 557 | 3 | 2 |
-| tools/audit-delivery.mjs | viaItems | 93 | 3 | 2 |
-| tools/audit-delivery.mjs | fetchAdvisories | 109 | 3 | 2 |
+| tools/audit-delivery.mjs | checkVendorManifest | 81 | 3 | 2 |
+| tools/audit-delivery.mjs | sizeErrors | 104 | 3 | 2 |
+| tools/audit-delivery.mjs | versionNotes | 125 | 3 | 2 |
+| tools/audit-delivery.mjs | fetchAdvisories | 205 | 3 | 2 |
+| tools/deploy-smoke.mjs | extractRefs | 32 | 3 | 2 |
+| tools/deploy-smoke.mjs | pushRef | 45 | 3 | 2 |
+| tools/deploy-smoke.mjs | collectAttr | 50 | 3 | 2 |
 | tools/gen-icons.mjs | inFoldNotch | 60 | 3 | 2 |
+| tools/guard-selftest.mjs | mkSite | 22 | 3 | 2 |
 | tools/metrics.mjs | isNode | 35 | 3 | 2 |
 | tools/metrics.mjs | isFunctionNode | 77 | 3 | 2 |
 | tools/metrics.mjs | identName | 92 | 3 | 2 |
@@ -258,11 +272,18 @@
 | src/xlsx.js | (anonymous) | 302 | 2 | 1 |
 | src/xlsx.js | isoDateOnly | 332 | 2 | 1 |
 | src/xlsx.js | truncationMessage | 478 | 2 | 1 |
-| tools/audit-delivery.mjs | low | 49 | 2 | 1 |
-| tools/audit-delivery.mjs | (anonymous) | 130 | 2 | 1 |
-| tools/audit-delivery.mjs | refTag | 137 | 2 | 1 |
-| tools/audit-delivery.mjs | (anonymous) | 171 | 2 | 1 |
+| tools/audit-delivery.mjs | low | 63 | 2 | 1 |
+| tools/audit-delivery.mjs | licensesText | 93 | 2 | 1 |
+| tools/audit-delivery.mjs | checkOneAsset | 98 | 2 | 1 |
+| tools/audit-delivery.mjs | (anonymous) | 134 | 2 | 1 |
+| tools/audit-delivery.mjs | (anonymous) | 198 | 2 | 1 |
+| tools/audit-delivery.mjs | refTag | 218 | 2 | 1 |
+| tools/audit-delivery.mjs | (anonymous) | 264 | 2 | 1 |
+| tools/deploy-smoke.mjs | extractSwRefs | 61 | 2 | 1 |
+| tools/deploy-smoke.mjs | checkRefs | 106 | 2 | 1 |
 | tools/gen-icons.mjs | crc32 | 123 | 2 | 1 |
+| tools/guard-selftest.mjs | ok | 19 | 2 | 1 |
+| tools/guard-selftest.mjs | (anonymous) | 61 | 2 | 1 |
 | tools/metrics.mjs | (anonymous) | 69 | 2 | 1 |
 | tools/metrics.mjs | (anonymous) | 71 | 2 | 1 |
 | tools/metrics.mjs | (anonymous) | 270 | 2 | 1 |
@@ -382,15 +403,23 @@
 | src/xlsx.js | (anonymous) | 565 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 567 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 567 | 1 | 0 |
-| tools/audit-delivery.mjs | (anonymous) | 94 | 1 | 0 |
-| tools/audit-delivery.mjs | (anonymous) | 98 | 1 | 0 |
-| tools/audit-delivery.mjs | (anonymous) | 140 | 1 | 0 |
-| tools/audit-delivery.mjs | (anonymous) | 170 | 1 | 0 |
+| tools/audit-delivery.mjs | sha256 | 64 | 1 | 0 |
+| tools/audit-delivery.mjs | (anonymous) | 147 | 1 | 0 |
+| tools/audit-delivery.mjs | (anonymous) | 221 | 1 | 0 |
+| tools/audit-delivery.mjs | (anonymous) | 263 | 1 | 0 |
 | tools/build.mjs | (anonymous) | 42 | 1 | 0 |
+| tools/deploy-smoke.mjs | attrRe | 28 | 1 | 0 |
+| tools/deploy-smoke.mjs | isExternalRef | 68 | 1 | 0 |
 | tools/embed-bline.mjs | read | 18 | 1 | 0 |
 | tools/embed-bline.mjs | readB | 19 | 1 | 0 |
 | tools/gen-icons.mjs | inRoundedCorner | 53 | 1 | 0 |
 | tools/gen-icons.mjs | chunk | 96 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 53 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 66 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 69 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 72 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 77 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 120 | 1 | 0 |
 | tools/metrics.mjs | (anonymous) | 43 | 1 | 0 |
 | tools/metrics.mjs | (anonymous) | 58 | 1 | 0 |
 | tools/metrics.mjs | toRel | 75 | 1 | 0 |

@@ -1,0 +1,90 @@
+{
+  "_comment": "vendor/ 内联运行时资产的机器可读清单（第九轮审查 §2.3 要求）。由 tools/audit-delivery.mjs 校验：① 文件存在 + 大小 + SHA256 与下表一致（换库/换代必须同步更新本表 → 门禁红）② version 与 package-lock 一致 ③ version 必须能在 docs/licenses.md 里找到（合规记录漂移即红）。versionSource 说明该版本的证据来源；版本判定不得单凭文件内正则（内嵌依赖的版本串会骗人）。",
+  "generatedAt": "2026-09-17",
+  "assets": [
+    {
+      "file": "vendor/pdfjs.pdf.min.js",
+      "pkg": "pdfjs-dist",
+      "license": "Apache-2.0",
+      "size": 320004,
+      "sha256": "5B5799E6F8C680663207AC5B42EE14EED2A406FA7AF48F50C154F0C0B1566946",
+      "version": "3.11.174",
+      "versionSource": "vendor 文件内自述",
+      "lockVersion": "3.11.174"
+    },
+    {
+      "file": "vendor/pdfjs.pdf.worker.min.js",
+      "pkg": "pdfjs-dist",
+      "license": "Apache-2.0",
+      "size": 1087212,
+      "sha256": "FEABDF309770ED24BBA31A5467836CDC8CF639C705AF27D52B585B041BB8527B",
+      "version": "3.11.174",
+      "versionSource": "同包（与主文件同版本）+ lock 一致",
+      "lockVersion": "3.11.174"
+    },
+    {
+      "file": "vendor/mammoth.browser.min.js",
+      "pkg": "mammoth",
+      "license": "BSD-2-Clause",
+      "size": 636579,
+      "sha256": "E660D427DDB9AAF51CF4CA237512D0776141A58F0DFB0FD58B576721E8195E2B",
+      "version": "1.12.2",
+      "versionSource": "npm tarball 逐字节一致（2026-09-17 实测）",
+      "lockVersion": null
+    },
+    {
+      "file": "vendor/read-excel-file.min.js",
+      "pkg": "read-excel-file",
+      "license": "MIT",
+      "size": 39155,
+      "sha256": "CC087817C7D3EDCC9F643313775BC0246A42CCB3DE60408B03D74E0A66D16FB5",
+      "version": "5.8.7",
+      "versionSource": "npm tarball 逐字节一致（2026-09-17 实测）",
+      "lockVersion": "5.8.7"
+    },
+    {
+      "file": "vendor/tesseract.tesseract.min.js",
+      "pkg": "tesseract.js",
+      "license": "Apache-2.0",
+      "size": 62961,
+      "sha256": "10FFF78484067759C43028A02A72D76D0B90EB17302BB23B58A9EC5410BC928B",
+      "version": "6.0.1",
+      "versionSource": "vendor 文件内自述",
+      "lockVersion": "6.0.1"
+    },
+    {
+      "file": "vendor/tesseract.worker.min.js",
+      "pkg": "tesseract.js",
+      "license": "Apache-2.0",
+      "size": 111162,
+      "sha256": "38645599043239C0EB6DB08A6504A92DCDC292200535F3E9339CD77C4443B842",
+      "version": "6.0.1",
+      "versionSource": "同包（与主文件同版本）+ lock 一致",
+      "lockVersion": "6.0.1"
+    },
+    {
+      "file": "vendor/tesseract-core-lstm.wasm.js",
+      "pkg": "tesseract.js-core",
+      "license": "Apache-2.0",
+      "size": 3954181,
+      "sha256": "775A35DF6F2AE100E02609443E6BD5CAFCD07983DD6175454CA4A432A7730687",
+      "version": "6.1.2",
+      "versionSource": "npm tarball 逐字节一致（2026-09-17 实测）",
+      "lockVersion": "6.1.2"
+    },
+    {
+      "file": "vendor/tesseract-core-simd-lstm.wasm.js",
+      "pkg": "tesseract.js-core",
+      "license": "Apache-2.0",
+      "size": 3954569,
+      "sha256": "9D7C43FB206DC9F48475228B46BF35F888FA9E6259DA2E67D5A75C77049F2DC7",
+      "version": "6.1.2",
+      "versionSource": "npm tarball 逐字节一致（2026-09-17 实测）",
+      "lockVersion": "6.1.2"
+    }
+  ],
+  "cmaps": {
+    "note": "vendor/cmaps/（pdf.js 官方资产，Adobe BSD-3 类）",
+    "entries": 169
+  }
+}
