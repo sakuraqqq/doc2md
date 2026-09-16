@@ -1,12 +1,15 @@
-# deploy-pages.yml — doc2md GitHub Pages 自动部署（照 cola-factory-optimizer 同款结构）
-# 纯静态站（index.html + manifest/sw/icons），零构建步骤：checkout → configure → upload → deploy。
+# deploy-pages.yml — doc2md GitHub Pages 部署（纯静态站，零构建步骤：checkout → configure → upload → deploy）
+# 触发口径（2026-09-16 用户拍板 ②，契约组 **H15** 守卫）：**只在 tag 推送时部署**（`v*`）+ 手动 `workflow_dispatch`。
+#   为什么不再用 `push: branches: [main]`：push main 即上线会让「**线上 == 发布物**」这条核对口径失效 ——
+#   2026-09-16 实测：依赖批推到 main 后，线上产物变成 121,406 B 的 main 构建，而 v0.1.9 发布物是 121,229 B。
+#   想提前上手机试未发版改动 → Actions 页 `Run workflow`（手动触发一次即可，不影响口径）。
 # 注意：workflow 运行于 checkout 后的干净仓库树，.gitignore 已排除 node_modules/.tmp/.npm-cache 等，
 # 不会上传到 Pages。发布动作（push/tag/release）由用户终端执行，本 workflow 只做部署。
 name: deploy-pages
 
 on:
   push:
-    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
