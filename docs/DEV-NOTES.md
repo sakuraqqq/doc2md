@@ -1473,7 +1473,38 @@ Release 页与 tag 对象走 **GitHub REST**（`releases/tags/<tag>`、`git/ref/
 - ⚠️ **Linux 侧计划外发现（§7.1）**：**负对照态产物 ≡ 线上 v0.1.8 发布产物**（`120,987 B / 14773E5F…F3F178`）⇒ U9 的红**等价于「P1 缺陷在线上 v0.1.8 真实存在」**，同时反证构建链跨平台可复现
 - **采纳的夹具保真度教训（§7.2）**：自造件初版渲染**上下颠倒 + 镜像** —— 抄了 `Tm` 负缩放却漏抄配套的 `1 0 0 -1 0 842 cm`（样例靠两次抵消才正常）⇒ **夹具必须先渲染目视确认「它本身视觉正常」再比结论**
 - **未验证项（保留登记）**：**U2 未独立复算「函数级台」**（该台脚本未随单提供 —— 下次出单应一并附上）· U1 未重跑 `npm ci` · U3 未复核 7 份私有语料（含 `real-cid-paper.pdf` 例外拍板）· U4 渲染基准用 pdf.js 替代 `pdftoppm` · U5 未重复取样 · U6 自造件仅 1 份、未覆盖真机中文 WPS 形态
-- **发布状态**：本修复**尚未发布** —— 线上 v0.1.8 仍含该 P1 缺陷（是否发 v0.1.9 待用户拍板）
+- **发布状态**：本修复**尚未发布** —— 线上 v0.1.8 仍含该 P1 缺陷（是否发 v0.1.9 待用户拍板 → **用户当日拍板「发 v0.1.9：把 P1 修复上线」**，见下节）
+
+## 2026-09-16 v0.1.9 发布准备（P1 修复上线；用户「发 v0.1.9：把 P1 修复上线」）
+
+### 本批做了什么
+1. **前提**：P1 修复批（`62f3f84` 先红 → `9b6e9c7` 实现）已在 main，且**独立验收已通过**（Linux 侧五项全绿 + Windows 侧回箱 **34/34 项字节 + SHA 相符**，见上节）；Linux 侧 §7.1 计划外发现「**负对照态产物 ≡ 线上 v0.1.8 发布产物**」⇒ **P1 缺陷在线上真实存在**，用户据此拍板发 v0.1.9。
+2. **v0.1.9 发布准备（本提交）**：版本 bump `0.1.8 → 0.1.9`（`package.json` + `package-lock.json` ×2）+ 页脚 `v0.1.8 → v0.1.9` + 产物重建 + `docs/RELEASE.md` v0.1.9 节 + `docs/release-notes-v0.1.9.md`（Release 页专用）+ `docs/RELEASE-CHECKLIST.md`（§0 契约 **254/254**、§4 产物哈希、§5 观察期）/ `docs/HANDOFF-主开发线.md`（头部产物哈希 + 发布段）同步。
+
+### 门禁（本会话升权实跑）
+契约 **256 tests / 254 pass / 0 fail / 2 skip**（TAP 摘要；含组 U **U9**）· lint **0** · metrics 17 文件 / **361 函数** / 超限 0 / **0.5%** · pwa-audit **48/48** · verify:ocr **PASS(93%)** · build exit 0。
+
+### 产物：同长度多哈希（「尺寸相同不能当不变量」第四次实例）
+| 状态 | 字节 | SHA256 |
+|---|---|---|
+| **v0.1.9（本版）** | **121,229** | `F80E862639708D7C27CCE6C1A3E388298E8ECF01536B6B0F912539BBBE74F04D` |
+| P1 修复态（未发版，`9b6e9c7`） | 121,229 | `9EA390B955BBA9C4E62BD5A58DD78073635575F4779572494C89897D36710A11` |
+| 线上 v0.1.8 | 120,987 | `14773E5FFDE3072A33FCD127C1DDA6E8CF739CB8366F4D17BDDED0A5EBF3F178` |
+| S4 批（v0.1.7 页脚 + 新阈值） | 120,987 | `4A15BA5135D1F7849553BE468BD8E1EF3A43D89D99F6FD8C69E20F1F7979EEA6` |
+| 线上 v0.1.7（旧阈值 + 旧页脚） | 120,988 | `2EE82D47BDAF7CE0CE7034CB49D1C69422EEC1F046EC109AD5AF5640A33E1CBB` |
+
+→ v0.1.9 与 P1 修复态**字节数完全相同**（页脚串 `v0.1.8`/`v0.1.9` 等长），**只有 SHA256 能区分** —— 产物核对一律以 SHA256 为准。
+
+### 发布前隐私 & 版权审查（2026-09-16 实测）：**通过**
+- 非 vendor 命中**逐条判读全为误报/自指，真实命中 0 条**（提交入库后复测）：`@users.noreply.github.com` **14 处**（noreply 提交身份）+ `@tesseract.js` **11 处**（npm 包名，非邮箱）+ **SHA256 十六进制子串撞手机号正则 13 处**（`19909949931` / `17028747829`，落在 `DEV-NOTES` / `RELEASE.md` / `tests/CONTRACT.md` / `tests/data/manifest.json`）+ `C:\Users` **2 处**与 `/home/web_user` **4 处**、`/home/w` **1 处**（全部出现在审查记录**行文自身**，非真实路径）。
+- vendor 面（计数 + 只打印命中子串模式）：`vendor/pdfjs.*.min.js` 的**压缩数值常量**（11 位数字串）+ `vendor/tesseract-core-*.wasm.js` 的 Emscripten 虚拟路径 `/home/w`。
+- 私人目录：`git ls-files -- .私档 .tmp docs/copyright .script-archive` → **全空**；提交身份 **noreply** ✅；`LICENSE` 1,066 B + `docs/licenses.md` 7,060 B 在位；**本版未新增第三方依赖/资产**（`vendor/ langs/ icons/` 实测零改动 → 按清单 **`CACHE_NAME` 不需 bump**，保持 `doc2md-sw-v4`）。
+
+### U 项登记（Linux 侧未验证项，如实带过，不粉饰）
+U1 未重跑 `npm ci` · **U2 函数级等价性台未随出单附上**（我方出单遗漏 → **下次出单必须一并附台脚本**）· U3 7 份私有语料未复核 · U4 渲染基准用 pdf.js 替代 `pdftoppm` · U5 未重复取样 · U6 自造件仅 1 份、未覆盖真机中文 WPS 形态。
+
+### 待用户执行（红线 3：发布动作人执）
+`git push origin main` → `git tag v0.1.9` → `git push origin v0.1.9` → **网页发 Release**（从下拉**选中已存在的 tag** `v0.1.9`；说明粘贴 `docs/release-notes-v0.1.9.md` 全文，**别用累积的 `docs/RELEASE.md`**）。发布后回读三件套：`git show-ref --tags` ↔ Release 页 tag SHA 逐字核对；Pages 站点拉 `index.html` 实测 SHA（**带 cache-bust query** 绕开 SW/CDN 旧副本）。观察期 ≥3 天 → **≥2026-09-19 复盘**。
 
 
 
