@@ -1,0 +1,47 @@
+# .github/dependabot.yml —— 依赖更新（防屎山 ⑤；2026-09-16 用户拍板 B 项）
+#
+# 设计口径（为什么不是「全自动升级」）：
+#   ① 只对**工具链**（eslint / prettier / jscpd / playwright / esbuild / globals 等）自动开 PR
+#      —— 改了只影响 CI 与本地开发，风险可控；
+#   ② **运行时依赖列入 ignore**（`pdfjs-dist` / `tesseract.js` / `read-excel-file` / `@tesseract.js-data/*`）：
+#      它们是**内联进 `vendor/` 或 `langs/` 的交付物成分**，升级必须走人工批次 ——
+#      重打包 vendor + `docs/licenses.md` 许可复核 + `CACHE_NAME` bump + 契约全绿 + 两台等价性台。
+#      （`mammoth@1.12.2` 同样内联在 `vendor/`，但**未在 package.json 声明** ⇒ Dependabot 看不到它，
+#        登记为人工跟踪项；见 docs/licenses.md 与 docs/DEV-NOTES.md。）
+#   ③ 自动 PR 只负责「版本更新」；**安全门禁**由 CI 的 `node tools/audit-delivery.mjs` 负责
+#      （交付面口径：只拦进入交付产物的 high/critical，dev/optional 链不阻断）。
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+    groups:
+      toolchain:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "pdfjs-dist"
+          - "tesseract.js"
+          - "read-excel-file"
+          - "@tesseract.js-data/*"
+    ignore:
+      - dependency-name: "pdfjs-dist"
+      - dependency-name: "tesseract.js"
+      - dependency-name: "read-excel-file"
+      - dependency-name: "@tesseract.js-data/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - dependencies
