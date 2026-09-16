@@ -1606,6 +1606,13 @@ U1 未重跑 `npm ci` · **U2 函数级等价性台未随出单附上**（我方
 3. **同一 workflow 的多个 action PR 不逐个 merge**（互撞文件）→ 统一本地一批落地 + 一次 push；PR 由 Dependabot 后续巡检自动关闭。
 4. **action 大版本先 `git ls-remote` 核实 tag 真实存在**再改，改完 YAML 必须解析校验 + 跑含 H 组的契约。
 
+### 落地后的独立核验（2026-09-16 14:05–14:12 +08，用户 push 后）
+- **远端一致**：本地 `HEAD` = 远端 `refs/heads/main` = **`22185f08f05f79c7dfc633699c95aee48b22ef6c`**，待推送 **0**，工作区 clean。
+- **CI 复核（浏览器直读 Actions 页，不采信转述）**：**Run #88**（`22185f0`，main，14:05）**completed successfully**，1m20s；**Run #87**（Dependabot **PR #7**）**failed** ← **硬证据：eslint 10 那个 PR 直接 merge 必然红**（正是本批先修的 2 处无用初值）；Run #82–#86（PR #2–#6）全成功 ⇒ action 升级本身无问题。
+- **Dependabot 行为**：6 个 PR 在 push 后 **3 分钟内自动关闭**（bot 检出线上已含该更新）。
+- **Pages 部署链反证**：线上 `index.html` 实测 **121,406 B / `18EA70E4…79EB3`**（`Last-Modified: 2026-09-16 06:05:40 GMT` = 14:05:40 +08）⇒ **checkout v7 / configure-pages v6 / upload-pages-artifact v5 / deploy-pages v5 实际跑通**（新 action 组合可用）。
+- ⚠️ **附带发现（口径漂移，待拍板）**：push main 会**自动部署 Pages** ⇒ 线上产物已是 **main 构建**（121,406 B）而非 v0.1.9 发布物（121,229 B / `F80E8626…`）。行为零变更（两台已证），但「**线上 == 发布物**」不再自动成立。两个选项：① 保持现状 + 每次登记漂移；② `deploy-pages.yml` 改为**仅 tag 推送时部署**（`on.push.tags: ['v*']` + `workflow_dispatch`），把该口径变成硬不变量。
+
 
 
 
