@@ -1,12 +1,15 @@
 # tests.yml — doc2md CI 质量门（防屎山 ③ 守门）
 # 模板：cola（可乐工厂效率计算器）tests.yml；按任务书扩展为 checks job：
-#   build-consistency → lint → metrics（超限必须为 0）→ npm test → pwa-audit → verify:ocr（push/PR 触发）
+#   build-consistency → lint → 交付面依赖审计 → metrics（超限必须为 0）→ npm test → pwa-audit → verify:ocr（push/PR 触发）
 # 说明：
 #   - npm test（node --test）需要 chromium：install 步骤提供（--with-deps 含系统依赖）
 #   - OCR 相关步骤（verify:ocr / image 契约用例）需要 vendor/tessdata 与 langs/（仓库全量检出）
 #   - Lint 对象 = src/**/*.js + tools/**/*.mjs（见 eslint.config.js 白名单策略）
 #   - metrics 门禁（2026-09-10 用户拍板）：`npm run metrics` 在「超限函数数 > 0」时 exit 1
 #     ——减脂批后全仓超限已清零，故按「必须为 0」硬门禁接入 CI。
+#   - 交付面依赖审计（2026-09-16 用户拍板 B 项）：`node tools/audit-delivery.mjs` 只拦
+#     「进入交付产物的依赖」的未豁免 high/critical（dev/optional 链不阻断）；豁免须写进
+#     tools/audit-delivery.mjs 的 ALLOWLIST 并给理由与日期。
 name: tests
 
 on:
@@ -33,6 +36,8 @@ jobs:
         run: npm run build && git diff --exit-code index.html
       - name: "Lint (ESLint: src/ + tools/)"
         run: npm run lint
+      - name: "Delivery-face dependency audit (交付面 high/critical 未豁免即红；2026-09-16 用户拍板 B 项)"
+        run: node tools/audit-delivery.mjs
       - name: "Code metrics gate (超限函数必须为 0；2026-09-10 用户拍板)"
         run: npm run metrics
       - name: Contract tests (node --test)

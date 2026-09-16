@@ -1,21 +1,21 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-16T05:18:00.823Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-16T05:39:44.865Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
 ## 1. 重复率（jscpd：src/ + tools/；tests/ 不计入；阈值 <5%）
 
-- **重复率：0.5%**（目标 <5%）
+- **重复率：0.4%**（目标 <5%）
 - 判定：✅ 达标
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：17；函数总数：366；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：18；函数总数：384；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 366 个，超限 0 个。
+重构后当前：函数 384 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -53,6 +53,8 @@
 | src/sniff.js | charsetLabelOf | 77 | 7 | 6 |
 | src/sniff.js | isBmp | 207 | 7 | 6 |
 | src/sniff.js | isGif | 216 | 7 | 6 |
+| tools/audit-delivery.mjs | bulkItem | 63 | 7 | 6 |
+| tools/audit-delivery.mjs | viaItem | 82 | 7 | 6 |
 | tools/metrics.mjs | countCycPoints | 118 | 7 | 6 |
 | src/xlsx.js | scanSheetRows | 223 | 6 | 13 |
 | src/html2md.js | liToLines | 290 | 6 | 11 |
@@ -97,6 +99,7 @@
 | src/pdf.js | textContentFallback | 373 | 5 | 7 |
 | src/sniff.js | charsetLabels | 62 | 5 | 7 |
 | src/xlsx.js | colIndexOfRef | 439 | 5 | 7 |
+| tools/audit-delivery.mjs | judged | 121 | 5 | 7 |
 | src/docx.js | docxMathFragment | 163 | 5 | 6 |
 | src/docx.js | insideQuotes | 199 | 5 | 6 |
 | src/xlsx.js | findCentralEntry | 25 | 5 | 6 |
@@ -117,6 +120,8 @@
 | src/ui.js | truncatePreview | 159 | 5 | 4 |
 | src/xlsx.js | decodeXmlEntity | 154 | 5 | 4 |
 | src/xlsx.js | refLetterValue | 434 | 5 | 4 |
+| tools/audit-delivery.mjs | report | 139 | 5 | 4 |
+| tools/audit-delivery.mjs | main | 154 | 5 | 4 |
 | tools/metrics.mjs | nodeCogPoints | 154 | 5 | 4 |
 | src/xlsx.js | stripBracketed | 336 | 4 | 7 |
 | src/pdf.js | isCodeLine | 305 | 4 | 6 |
@@ -133,6 +138,8 @@
 | src/sniff.js | startsWith | 11 | 4 | 4 |
 | src/xlsx.js | parseRelsMap | 96 | 4 | 4 |
 | src/xlsx.js | parseNumFmtCodes | 350 | 4 | 4 |
+| tools/audit-delivery.mjs | itemsFromBulk | 74 | 4 | 4 |
+| tools/audit-delivery.mjs | itemsFromAuditJson | 101 | 4 | 4 |
 | src/app.js | handleFiles | 15 | 4 | 3 |
 | src/app.js | (anonymous) | 37 | 4 | 3 |
 | src/bline.js | (anonymous) | 6 | 4 | 3 |
@@ -171,6 +178,7 @@
 | src/sniff.js | countFffd | 131 | 3 | 3 |
 | src/sniff.js | countNonAscii | 137 | 3 | 3 |
 | src/xlsx.js | parseXfIds | 363 | 3 | 3 |
+| tools/audit-delivery.mjs | deliveryVersions | 51 | 3 | 3 |
 | tools/gen-icons.mjs | pngRGBA | 77 | 3 | 3 |
 | src/convert.js | cjkLatin | 52 | 3 | 2 |
 | src/convert.js | guardError | 130 | 3 | 2 |
@@ -198,6 +206,8 @@
 | src/xlsx.js | boolCellText | 411 | 3 | 2 |
 | src/xlsx.js | readSheetSafely | 522 | 3 | 2 |
 | src/xlsx.js | xlsxConvert | 557 | 3 | 2 |
+| tools/audit-delivery.mjs | viaItems | 93 | 3 | 2 |
+| tools/audit-delivery.mjs | fetchAdvisories | 109 | 3 | 2 |
 | tools/gen-icons.mjs | inFoldNotch | 60 | 3 | 2 |
 | tools/metrics.mjs | isNode | 35 | 3 | 2 |
 | tools/metrics.mjs | isFunctionNode | 77 | 3 | 2 |
@@ -248,6 +258,10 @@
 | src/xlsx.js | (anonymous) | 302 | 2 | 1 |
 | src/xlsx.js | isoDateOnly | 332 | 2 | 1 |
 | src/xlsx.js | truncationMessage | 478 | 2 | 1 |
+| tools/audit-delivery.mjs | low | 49 | 2 | 1 |
+| tools/audit-delivery.mjs | (anonymous) | 130 | 2 | 1 |
+| tools/audit-delivery.mjs | refTag | 137 | 2 | 1 |
+| tools/audit-delivery.mjs | (anonymous) | 171 | 2 | 1 |
 | tools/gen-icons.mjs | crc32 | 123 | 2 | 1 |
 | tools/metrics.mjs | (anonymous) | 69 | 2 | 1 |
 | tools/metrics.mjs | (anonymous) | 71 | 2 | 1 |
@@ -368,6 +382,10 @@
 | src/xlsx.js | (anonymous) | 565 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 567 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 567 | 1 | 0 |
+| tools/audit-delivery.mjs | (anonymous) | 94 | 1 | 0 |
+| tools/audit-delivery.mjs | (anonymous) | 98 | 1 | 0 |
+| tools/audit-delivery.mjs | (anonymous) | 140 | 1 | 0 |
+| tools/audit-delivery.mjs | (anonymous) | 170 | 1 | 0 |
 | tools/build.mjs | (anonymous) | 42 | 1 | 0 |
 | tools/embed-bline.mjs | read | 18 | 1 | 0 |
 | tools/embed-bline.mjs | readB | 19 | 1 | 0 |
