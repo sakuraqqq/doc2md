@@ -470,6 +470,27 @@ const V014_PDF_STREAMS = {
   'sample-overprint.pdf': ['BT /F1 14 Tf 1 0 0 -1 72 720 Tm', '(OVERPRINT-TOKEN) Tj', '0.3 0 Td', '(OVERPRINT-TOKEN) Tj', '0.3 0 Td', '(OVERPRINT-TOKEN) Tj', 'ET'].join('\n'),
 };
 
+/* ---------------- sample-scale-td.pdf（P1 · 文本空间位移未乘 Tm 缩放；2026-09-16，契约组 U 续号 U9） ----------------
+ * 由来：真机 WPS 导出 PDF（9 页通知）实测「字符全对、顺序错乱、零警告」+ 电脑侧算子级取证
+ *   （`.私档/项目/复盘/20260916-P1根因-电脑侧.md`：故障 PDF 用 `TD`（dy≡0）3229 次、`Td` 0 次、
+ *   `Tm.a ∈ {0.03,0.045,0.05}`；对照 Chromium 打印 PDF 的 `Tm.a` 恒 1、用 `Td`）。
+ * 形态（照抄 WPS 的真实算子形态，缩到最小）：
+ *   页面级 `cm` 翻转 + `Tm` 缩放 0.05（Tf 280 → 真实 14pt）+ **逐字 `TD` 推进**（dx=280 = 1em）
+ *   + **同一视觉行由两个文本对象拼成**（这正是真机「学工〔2026〕151号」被打成「学26〕1号05工21〔」的交错机制）。
+ * 期望（正确几何：位移 ×0.05 ⇒ 每字推进 14）：
+ *   行1 = `ONE`(x 72/86/100) 接 `TWO`(x 114/128/142) ⇒ 行内顺序 **ONETWO**；行2/行3 = SECONDLINE / THIRDLINE。
+ * 修前（位移未缩放 ⇒ 每字推进 280）：行1 两对象按 x 排序后交错 ⇒ `OTNWEO`（同真机形态）。
+ * 断言口径（U9）：按**去空白**后的文本比顺序——空格是否插入受字体度量影响，不作为判据。 */
+const P1_SCALE_TD_GLYPH_DX = 280;
+const tdGlyphs = (word) => word.split('').map((c, i) => (i === 0 ? `(${c}) Tj` : `${P1_SCALE_TD_GLYPH_DX} 0 TD (${c}) Tj`)).join(' ');
+const P1_SCALE_TD_STREAM = [
+  '1 0 0 -1 0 842 cm', // 页面级翻转（真机 WPS 同形态）
+  `BT /F1 280 Tf 0.05 0 0 -0.05 72 720 Tm ${tdGlyphs('ONE')} ET`, // 行1 对象 A
+  `BT /F1 280 Tf 0.05 0 0 -0.05 114 720 Tm ${tdGlyphs('TWO')} ET`, // 行1 对象 B（同一视觉行）
+  `BT /F1 280 Tf 0.05 0 0 -0.05 72 750 Tm ${tdGlyphs('SECONDLINE')} ET`,
+  `BT /F1 280 Tf 0.05 0 0 -0.05 72 780 Tm ${tdGlyphs('THIRDLINE')} ET`,
+].join('\n');
+
 /* ---------------- sample-comment-subset.pdf（F1 回归守护：文档级等宽判据；2026-09-14） ----------------
  * 两页最小复现（qa-dev 在 t6 独立验收中判 F1 不通过时建议的合成回归）：
  *   第 1 页内容 = `# 1. 2. 3. 4. 5.`（Courier 但**只有 `#`/数字/点/空格，无 ASCII 字母**）
@@ -666,6 +687,7 @@ put('sample-truncated.txt', buildTruncatedTxt());
 put('sample-corrupt-xlsx.xlsx', buildCorruptXlsx());
 put('sample-numfmt-date.xlsx', buildNumFmtDateXlsx());
 for (const [name, stream] of Object.entries(V014_PDF_STREAMS)) put(name, buildV014Pdf(stream));
+put('sample-scale-td.pdf', buildV014Pdf(P1_SCALE_TD_STREAM));
 put('sample-comment-subset.pdf', buildCommentSubsetPdf());
 /* 批 3 契约组 V 样例（7 个：3 嗅探负例 + 2 真格式正例 + 1 Big5 大写 META + 1 docx alt） */
 put('sample-bmw-text.txt', Buffer.from(BMW_TEXT, 'utf8'));
@@ -1051,7 +1073,7 @@ function buildNumFmtDateXlsx() {
 const manifest = {
   label: 'doc2md 契约测试固定样例 v1',
   generator: 'tests/gen-samples.mjs（确定性输出，可复现）',
-  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）；sample-truncated.txt 为 UTF-8 末尾截断样例（第五轮审查报告 §1.4 FFFD 过度触发——契约组 F7）；sample-corrupt-xlsx.xlsx 为损坏 xlsx 越界样例（EOCD localOff 越界，第五轮审查报告 §1.5——契约组 G4）；sample-numfmt-date.xlsx 为 numFmt=14 序列号日期样例（45123/45292.75，第六轮审查报告 §2.3——契约组 G5）；sample-rels-dotdot.xlsx 为 rels Target 用 `../` 相对路径样例（第七轮审查报告 §2.2——契约组 G6）；sample-flipped-tm.pdf / sample-monospace-code.pdf / sample-tl-leading.pdf / sample-quote-ops.pdf / sample-overprint.pdf 为 v0.1.4 缺陷批合成样例（契约组 U 先红；由来 = 2026-09-14 真机 7 篇 Chromium 打印 PDF 实测 + 算子级取证：A1 翻转 Tm 行序反向 / A2 缺 `TL`(36) 算子 / A3 等宽代码围栏 / A4 同位置叠印去重；全部自造合成、纯拉丁文本层、确定性字节）；sample-bmw-text.txt / sample-gif8-text.txt / sample-pdf-mention.txt / sample.bmp / sample.gif / sample-big5-upper-meta.html / sample-image-alt.docx 为 v0.1.4 批 3 契约组 V 样例（2026-09-14：B1 `BM*`·`GIF8*` 前缀误判的纯文本负例 + 1×1 真 BMP/GIF 正例、B2 正文提及 `%PDF` 的纯文本负例、B3 大写 `<META CHARSET="big5">` 的 Big5 编码 HTML、C1 docx 图片 alt 取 `descr`；全部自造合成、确定性生成、manifest 字节锁）',
+  note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）；sample-truncated.txt 为 UTF-8 末尾截断样例（第五轮审查报告 §1.4 FFFD 过度触发——契约组 F7）；sample-corrupt-xlsx.xlsx 为损坏 xlsx 越界样例（EOCD localOff 越界，第五轮审查报告 §1.5——契约组 G4）；sample-numfmt-date.xlsx 为 numFmt=14 序列号日期样例（45123/45292.75，第六轮审查报告 §2.3——契约组 G5）；sample-rels-dotdot.xlsx 为 rels Target 用 `../` 相对路径样例（第七轮审查报告 §2.2——契约组 G6）；sample-flipped-tm.pdf / sample-monospace-code.pdf / sample-tl-leading.pdf / sample-quote-ops.pdf / sample-overprint.pdf 为 v0.1.4 缺陷批合成样例（契约组 U 先红；由来 = 2026-09-14 真机 7 篇 Chromium 打印 PDF 实测 + 算子级取证：A1 翻转 Tm 行序反向 / A2 缺 `TL`(36) 算子 / A3 等宽代码围栏 / A4 同位置叠印去重；全部自造合成、纯拉丁文本层、确定性字节）；sample-bmw-text.txt / sample-gif8-text.txt / sample-pdf-mention.txt / sample.bmp / sample.gif / sample-big5-upper-meta.html / sample-image-alt.docx 为 v0.1.4 批 3 契约组 V 样例（2026-09-14：B1 `BM*`·`GIF8*` 前缀误判的纯文本负例 + 1×1 真 BMP/GIF 正例、B2 正文提及 `%PDF` 的纯文本负例、B3 大写 `<META CHARSET="big5">` 的 Big5 编码 HTML、C1 docx 图片 alt 取 `descr`；全部自造合成、确定性生成、manifest 字节锁）；sample-scale-td.pdf 为 **P1（PDF 文本层顺序错乱）**合成样例（契约组 U 续号 **U9**；2026-09-16 真机 WPS 导出 PDF 实测 + 电脑侧算子级取证驱动：文本空间位移未乘 Tm 缩放 ⇒ 同一视觉行的两个文本对象按 x 排序后交错；样例形态 = 页面级 cm 翻转 + Tm 缩放 0.05 + 逐字 TD 推进 + 同一行两对象）',
   files: outFiles,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
