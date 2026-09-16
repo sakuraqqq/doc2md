@@ -419,7 +419,7 @@ function needsOcr(text) {
 
 /** 质量门槛命中 → OCR 降级；返回 { text, ocr }（ocr = 本页走了 OCR），无产出返回 null（warning 已记录） */
 async function pageTextWithOcr(page, idx, pageCount, text, warnings) {
-  let ocrText = null;
+  let ocrText; // eslint 10 `no-useless-assignment`：初值从未被读（try/catch 两条路都赋值）→ 不写初值
   try {
     ocrText = await ocrPageToText(page, idx, pageCount);
   } catch {
