@@ -38,7 +38,7 @@ jobs:
       # 部署前按「引用即必需」核对 index.html / sw.js 的同源引用与必需顶层文件/目录。
       - name: 站点白名单 smoke（引用即必需）
         run: node tools/deploy-smoke.mjs _site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - id: deployment
