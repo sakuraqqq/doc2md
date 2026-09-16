@@ -1527,6 +1527,11 @@ test('契约组 G7：第八轮 §1.2/§1.3/§1.6/§3.1（1904 日期系统 / 单
 //     注：t10 发现 esbuild 常量折叠把 t6 的拆串（'http'+'://schemas…'）折叠回完整 URL 字面量——
 //     语义未变（仍非网络请求），仅源码形态变化 → 白名单定版（域名级判定）。
 //   判定实现：提取全部 `http(s)://` 字面量 → hostname 不在白名单域名集 = fetchable 嫌疑 → 违约。
+//   H13 **供应链安全不变量**（2026-09-16 依赖体检批）：src/pdf.js 的 getDocument 必须
+//     `isEvalSupported: false` —— CVE-2024-4367 / GHSA-wgrm-67xf-hhpq（HIGH）只在默认 true 下可触发
+//     （恶意 PDF → 任意 JS 执行）；官方 Workaround 即设为 false。npm audit 只看版本号 ⇒ 仍报 high，
+//     属「已缓解·不适用」—— 本断言是该缓解的守卫（禁止被重构顺手删除）。
+//   H14 cmaps 必须同源相对路径（`./vendor/cmaps/`）+ `cMapPacked: true`（CID 字体解析不走外域，零外发红线）。
 // ---------------------------------------------------------------------------
 const H_URL_WHITELIST_HOSTS = new Set([
   'schemas.openxmlformats.org', // OOXML 命名空间（wordprocessingml/drawingml/relationship 等 xmlns 标识）
@@ -1645,6 +1650,32 @@ test('契约组 H：corePath 同源 / 零外域 fetchable URL / SW v4 分段缓�
       !text.includes('path: .'),
       'workflow 仍为 `path: .` 整仓部署（未白名单化——tests/data（511KB 真实论文/大样例）与 docs/ 会被公开到 Pages；修复=显式站点白名单：index.html/vendor/langs/icons/manifest/sw/.nojekyll 等必要项）'
     );
+  });
+  // H13/H14（2026-09-16 依赖体检批，用户拍板 A）：供应链安全不变量 —— 首次 `npm audit` 实测暴露
+  // pdfjs-dist 3.11.174 落在 CVE-2024-4367 受影响区间（GHSA-wgrm-67xf-hhpq，HIGH）。
+  // OSV 原文：**仅当 `isEvalSupported` 为 true（默认值）时**，恶意 PDF 可执行任意 JS；
+  // 官方 Workaround = 设为 false —— 本仓 src/pdf.js 的 getDocument 已显式设为 false，
+  // 故当前配置**不可触发**（npm audit 仍报，是因为它只看版本号，不看配置）。
+  // 断言意义：这行缓解是**安全不变量**，不是可随手删的配置 —— 谁删/重构掉就等于重新开洞。
+  const pdfSrc = fs.readFileSync(nodePath.join(ROOT, 'src', 'pdf.js'), 'utf8');
+  await t.test('H13 src/pdf.js getDocument 必须 isEvalSupported:false（CVE-2024-4367 缓解守卫）', () => {
+    assert.match(
+      pdfSrc,
+      /isEvalSupported:\s*false/,
+      'src/pdf.js 的 getDocument 未显式设置 isEvalSupported: false —— pdf.js 默认 true 时恶意 PDF 可执行任意 JS（CVE-2024-4367 / GHSA-wgrm-67xf-hhpq，HIGH；官方 Workaround = 设为 false）。修复=写回该选项'
+    );
+    assert.ok(
+      !/isEvalSupported:\s*true/.test(pdfSrc),
+      'src/pdf.js 出现 isEvalSupported: true —— 重新打开 CVE-2024-4367（任意 JS 执行）'
+    );
+  });
+  await t.test("H14 src/pdf.js cMapUrl 同源相对路径 + cMapPacked（CID 解析不走外域）", () => {
+    assert.match(
+      pdfSrc,
+      /cMapUrl:\s*'\.\/vendor\/cmaps\/'/,
+      "src/pdf.js 的 cMapUrl 不是同源相对路径 './vendor/cmaps/'（零外发红线：CMap 资产必须随仓分发，禁外域）"
+    );
+    assert.match(pdfSrc, /cMapPacked:\s*true/, 'src/pdf.js 未启用 cMapPacked（vendor/cmaps 为 .bcmap 打包格式）');
   });
 });
 
