@@ -51,7 +51,7 @@ function walkFiles(dir, exts, out) {
  * 这里按 .gitignore 的「精确路径」与「目录前缀」两类条目过滤（glob 型条目如 *.log 不涉及扫描目标）。
  */
 function loadIgnoreFilter() {
-  let txt = '';
+  let txt; // eslint 10 `no-useless-assignment`：初值从未被读（成功即赋值，失败即 return）
   try {
     txt = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
   } catch {

@@ -2013,7 +2013,7 @@ ${xlsxRowsToMd(kept)}`);
     return text.length < 10 || textQualityRatio(text) < 0.4;
   }
   async function pageTextWithOcr(page, idx, pageCount, text, warnings) {
-    let ocrText = null;
+    let ocrText;
     try {
       ocrText = await ocrPageToText(page, idx, pageCount);
     } catch {
