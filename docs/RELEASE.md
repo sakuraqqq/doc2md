@@ -302,3 +302,13 @@
   - **方法论沉淀**：① **只查 `includes` 的断言抓不到顺序错乱**（`real-cid-paper.pdf` 的交错输出曾长期被判绿）；② **「参考实现与待测实现输出相同」不等于都对**（需外部基准，如渲染图）；③ **夹具必须先渲染目视确认「它本身视觉正常」再比结论**（Linux 侧 §7.2：抄 `Tm` 负缩放须配 `1 0 0 -1 0 842 cm`）。
   - **已知边界（如实标注）**：逐字 PDF 的**拉丁/数字**会被逐字空格打散（`2 0 2 6` 形态；CJK 有规则C 抑制、拉丁/数字没有）—— **已登记待拍板**，非本版引入；`real-cid-paper.pdf` 一类「逐字 + 缩放」文档的输出与本版之前**不再逐字节相同**（属修复面）。
   - **未验证项（保留登记）**：Linux 侧 U1 未重跑 `npm ci` · **U2 未独立复算函数级台**（该台脚本未随单提供 —— 本侧认领，下次出单补）· U3 未复核 7 份私有语料 · U4 V-4 用 pdf.js 渲染替代 `pdftoppm` · U5 未重复取样 · U6 自造件未覆盖真机中文 WPS 形态。
+
+### ✅ 发布闭环（2026-09-16 12:59:40 +08 发布；本机只读回读 **9/9 PASS**）
+- 用户终端执行：`git push origin main` → `git tag v0.1.9` → `git push origin v0.1.9` → **网页发 Release**（从下拉选中已存在的 tag）。
+- **tag 三端逐字一致**：本地 `git rev-parse v0.1.9` = 远端 `git ls-remote origin refs/tags/v0.1.9` = GitHub API `git/ref/tags/v0.1.9` 的 `object.sha` = **`cc504dadd22f632607b761e87825004784f6731e`**；`object.type = commit` ⇒ **lightweight**（与历史 8 个 tag 同型）。
+- **远端 `main` = 本地 HEAD = tag 指向的提交**（同一 commit `cc504da`）⇒ **待推送 0**，工作区 clean。
+- **Release 页**：<https://github.com/sakuraqqq/doc2md/releases/tag/v0.1.9> · `published_at = 2026-09-16T04:59:40Z`（= 12:59:40 +08）· draft/prerelease = **false** · **附件 0** · **`/releases/latest` → `v0.1.9`（已标记 Latest）**。
+- **正文 = `docs/release-notes-v0.1.9.md` 全文**：3110 B vs 本地 3075 B，差值**恰为 35 个 `\r`**；**CRLF 归一后逐字相等** ⇒ 仅行尾格式差异（Windows 复制粘贴），**内容一致、不需重发**。
+- **Pages 逐字节复验**：`index.html` = **121,229 B / `F80E862639708D7C27CCE6C1A3E388298E8ECF01536B6B0F912539BBBE74F04D`** = 发布产物（页脚 `doc2md v0.1.9`；带 cache-bust query 绕开 SW/CDN 旧副本）。
+- **回读脚本**：`.tmp/verify-release-v019.mjs`（已 `script_archive` 存档，id `mu3muiwj79b2`）—— 进程内 `fetch` + sha256，**不派生子进程**（规避沙箱命名管道限制）。
+- **观察期**：**2026-09-16 起 → ≥2026-09-19 复盘**（重点：手机侧真机 WPS 系 PDF 的**行内顺序**、`Tm.a ≠ 1` 文档的行距/分列、既有正常 PDF 产物应与 v0.1.8 逐字节一致）。
