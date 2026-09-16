@@ -1573,6 +1573,38 @@ U1 未重跑 `npm ci` · **U2 函数级等价性台未随出单附上**（我方
 - 实跑 `npm audit fix`：输出 **「up to date, audited 199 packages」= 零改动**；`git status` 仅剩本批的测试文件改动（`package-lock.json` 未被触碰）。
 - 根因（实测）：`@mapbox/node-pre-gyp@1.0.11` 声明 `tar: ^6.1.11`，而含修复的 tar 在 **7.x** ⇒ **semver 范围内无解**；`npm audit fix --force` 给出的解法是 `pdfjs-dist@6.3.289`（= **D 项**大版本升级）。
 - 三个可选处置（**待用户拍板**）：① `overrides: { "tar": "^7.5.21" }`（超出上游声明范围，但 canvas 是 optional 且其 install script 被 npm allow-scripts 拦下）；② `.npmrc` 设 `omit=optional`（直接不装 canvas 链 ⇒ tar 从安装树消失）；③ 评估后**接受**（dev + optional、非交付面）并在此登记。
+  → **2026-09-16 用户拍板：③ 接受现状**（wontfix；已同步登记到 `docs/licenses.md`「已知漏洞与缓解登记」的复查触发条件）。
+
+## 2026-09-16 依赖 PR 落地批（Dependabot #2–#7 本地统一落地；用户拍板路线 A）
+
+### 缘起
+上一批启用 Dependabot 后 bot 连开 6 个 PR：**#2** checkout v4→v7 · **#3** setup-node v4→v7 · **#4** configure-pages v5→v6 · **#5** deploy-pages v4→v5 · **#6** upload-pages-artifact v3→v5 · **#7** 工具链组（含 **eslint 9→10 大版本**）。用户拍板 **A：本地统一落地 + 逐项验证，不逐个 merge**（#2/#3 同改 `tests.yml`、#4/#5/#6 同改 `deploy-pages.yml`，手机上顺序 merge 必然互撞）。
+
+### 取证（先验证再动手）
+- **action tag 真实性（不采信转述）**：`git ls-remote --tags` 逐个核实 —— checkout `v7 = 3d3c42e5…` · setup-node `v7 = 82076278…` · configure-pages `v6 = 45bfe019…` · deploy-pages `v5 = 368f8252…` · upload-pages-artifact `v5 = fc324d35…`。（`api.github.com` 在本环境被 DNS 解析拦截，故走 git 协议取证。）
+- **eslint 10 兼容性**：本机 `node v24.18.1` / `npm 11.16.0`（满足 eslint 10 的 `engines: ^20.19 || ^22.13 || >=24`）；插件 peer 只读查证 —— `eslint-plugin-sonarjs@4.2.0 → ^8 || ^9 || ^10` ✅、`eslint-config-prettier@10.1.8 → >=7` ✅。
+- **#7 实际内容**：`@eslint/js ^9.39.5→^10.0.1` · `@playwright/test ^1.49.0→^1.63.0` · `eslint ^9.39.4→^10.10.0` · `jscpd ^5.1.2→^5.2.0`（lock：`+326/-375`）。
+
+### 本地实测：eslint 10 抓到 2 处**真**问题（先红）
+`npm install --no-save eslint@^10.10.0 @eslint/js@^10.0.1`（**实测 `package.json` / `package-lock.json` 哈希前后一致** ⇒ 试装未污染仓库）后跑 lint，新 recommended 规则 `no-useless-assignment` 报 2 处：
+- `src/pdf.js:422` `let ocrText = null;` —— 初值从未被读（try/catch 两条路都赋值）
+- `tools/metrics.mjs:54` `let txt = '';` —— 同上（成功即赋值，失败即 return）
+⇒ **不是误报**：两处都是真·无用初值，一行去掉即净。
+
+### 三个提交（一提交一件事）
+| 提交 | 内容 | 证据（本机实测） |
+|---|---|---|
+| `e0bd1de` | `refactor(lint)`：清掉 2 处无用初值（`let ocrText;` / `let txt;`） | 函数级台 **0 差异**（场景 25 + 扫掠 12,992 + 随机 600 + 全 BMP + 11 PDF/12 页 runs）· 产物级台 **19/19 逐字节相同**（真产物 + msedge 真 `convert()`）· 契约 **258 / 256 pass / 0 fail / 2 skip**（exit 0）· lint **0** · metrics 18 文件 / 384 函数 / 超限 0 / 0.4% · 产物 `index.html` **121,406 B / `18EA70E4E2D50403B0134C3543172FCA6F4BDCE14E3277A23CFD11F4FE279EB3`** |
+| `5cc1324` | `chore(deps)`：工具链升到 #7 的版本（eslint **10.10.0** / @eslint/js **10.0.1** / @playwright/test **1.63.0** / jscpd **5.2.1**） | eslint 10 下 lint **0** · metrics（jscpd 5.2.1）18/384/超限 0/0.4% · **交付面审计 PASS** · 契约 **258/256/0/2** |
+| `9b3620f` | `chore(ci)`：5 个 action 升到已核实的 tag（**Pages 三步同批**：configure v6 + upload v5 + deploy v5） | 三个 YAML `yaml.safe_load` 解析 OK · 契约 **H12 白名单守卫仍绿**（`path: .` 未回潮）· 全套 **258/256/0/2** |
+- 备注 ①：本地 `npm install` **保留 lock 里既有的 `registry.npmmirror.com` 解析地址**（实测 176 处），只对新/变更包写 `registry.npmjs.org`（53 处）—— 比 Dependabot 的「整批换源」改动面小得多（它把大量无关条目也换了源）。
+- 备注 ②：`jscpd` 实装 **5.2.1**（PR 里是 5.2.0，同 minor 的后续补丁）；`@playwright/test` 实装 1.63.0 后契约仍全绿（本机走 msedge 通道，playwright chromium 未安装）。
+
+### 机制沉淀（Dependabot PR 处理口径，写死防翻案）
+1. **工具链 PR**：先本地实测（`--no-save` 试装 + 全门禁），绿了才落本地提交（大版本尤其如此 —— 本次 eslint 10 若直接 merge，CI 会红在两处无用赋值上）。
+2. **运行时库恒 ignore**：升级必须人工立批（重打包 vendor + 许可复核 + `CACHE_NAME` bump + 契约 + 两台等价性台）。
+3. **同一 workflow 的多个 action PR 不逐个 merge**（互撞文件）→ 统一本地一批落地 + 一次 push；PR 由 Dependabot 后续巡检自动关闭。
+4. **action 大版本先 `git ls-remote` 核实 tag 真实存在**再改，改完 YAML 必须解析校验 + 跑含 H 组的契约。
 
 
 

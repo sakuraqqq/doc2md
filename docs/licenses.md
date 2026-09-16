@@ -33,7 +33,7 @@
 | 依赖 | 告警 | 判定 | 缓解 / 处置 |
 |---|---|---|---|
 | `pdfjs-dist@3.11.174`（`vendor/pdfjs.pdf.min.js` + worker） | **HIGH** · CVE-2024-4367 / GHSA-wgrm-67xf-hhpq（恶意 PDF → 任意 JS 执行） | **受影响区间内，但本仓配置不可触发** —— 官方说明：仅当 `isEvalSupported` 为 `true`（默认值）时可利用；Workaround = 设为 `false` | `src/pdf.js` 的 `getDocument` 显式 `isEvalSupported: false`；**契约组 H13 守卫该行**（谁删谁红）。随 pdfjs-dist 大版本升级（需重打包 vendor + 本表复核 + `CACHE_NAME` bump + 等价性台）一并消除 |
-| `tar@6.2.1`（`pdfjs-dist → canvas@2.11.2`（dev + optional）`→ @mapbox/node-pre-gyp@1.0.11`） | CRITICAL（多条 node-tar 路径穿越/DoS） | **非交付面** —— 不进 `vendor/`，且 canvas 的 install script 受 npm allow-scripts 管控 | 未处置（`npm audit fix` 实测零改动：修复版 tar 只在 7.x，而 node-pre-gyp 声明 `^6` ⇒ semver 内无解）；可选处置与遗留见 `docs/DEV-NOTES.md` 2026-09-16「依赖体检批」 |
+| `tar@6.2.1`（`pdfjs-dist → canvas@2.11.2`（dev + optional）`→ @mapbox/node-pre-gyp@1.0.11`） | CRITICAL（多条 node-tar 路径穿越/DoS） | **非交付面** —— 不进 `vendor/`，且 canvas 的 install script 受 npm allow-scripts 管控 | **2026-09-16 用户拍板：接受现状（wontfix）** —— `npm audit fix` 实测零改动（修复版 tar 只在 7.x，而 node-pre-gyp 声明 `^6` ⇒ semver 内无解）。**复查触发条件**：pdfjs-dist 大版本升级（届时 canvas 链自然更新）或该链进入交付面时重评 |
 
 ## 红线关联
 
