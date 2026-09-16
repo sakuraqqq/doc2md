@@ -1506,6 +1506,15 @@ U1 未重跑 `npm ci` · **U2 函数级等价性台未随出单附上**（我方
 ### 待用户执行（红线 3：发布动作人执）
 `git push origin main` → `git tag v0.1.9` → `git push origin v0.1.9` → **网页发 Release**（从下拉**选中已存在的 tag** `v0.1.9`；说明粘贴 `docs/release-notes-v0.1.9.md` 全文，**别用累积的 `docs/RELEASE.md`**）。发布后回读三件套：`git show-ref --tags` ↔ Release 页 tag SHA 逐字核对；Pages 站点拉 `index.html` 实测 SHA（**带 cache-bust query** 绕开 SW/CDN 旧副本）。观察期 ≥3 天 → **≥2026-09-19 复盘**。
 
+### ✅ 发布闭环（2026-09-16 12:59:40 +08，用户已完成；本机只读回读 **9/9 PASS**）
+- `git push origin main` → **待推送 0**；本地 HEAD = `origin/main` = **`cc504dadd22f632607b761e87825004784f6731e`**，工作区 clean。
+- **tag 三端逐字一致**：本地 `git rev-parse v0.1.9` = 远端 `git ls-remote origin refs/tags/v0.1.9` = GitHub `git/ref/tags/v0.1.9` 的 `object.sha` = **`cc504dadd22f632607b761e87825004784f6731e`**；`object.type = commit` ⇒ **lightweight**（与历史 8 个 tag 同型）。
+- **Release 页**：<https://github.com/sakuraqqq/doc2md/releases/tag/v0.1.9> · `published_at = 2026-09-16T04:59:40Z`（= 12:59:40 +08）· draft/prerelease **false** · **附件 0** · **`/releases/latest` → `v0.1.9`**。
+- **正文 = `docs/release-notes-v0.1.9.md` 全文**：**CRLF 归一后逐字相等**；字节差 **35 = `\r` 个数 35**（沿用 v0.1.8 立的判据，避免行尾差异造成「内容不一致」假警报）。
+- **Pages 逐字节复验**：`index.html` **121,229 B / `F80E862639708D7C27CCE6C1A3E388298E8ECF01536B6B0F912539BBBE74F04D`** = 发布产物（页脚 `doc2md v0.1.9`）。
+- 回读脚本 `.tmp/verify-release-v019.mjs`（`script_archive` id `mu3muiwj79b2`）—— 进程内 `fetch` + sha256，不派生子进程。
+- **U2 认领留痕**：Linux 侧「函数级等价性台未随单附上」= **我方出单遗漏**，下次出单必须附台脚本（已写入本节 U 项登记）。
+
 
 
 
