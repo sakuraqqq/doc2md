@@ -14,6 +14,7 @@
 | `.nojekyll` | ✅ 就绪 | 根目录（Pages 免 Jekyll 处理） |
 | 契约测试 | ✅ **254/254**（2026-09-16 实跑） | `npm test`：全量 **256 tests / 254 pass / 0 fail / 2 skip**（含组 T 产物一致性、组 W OCR 输入质量、组 X 方向重试、**组 S S4-8..S4-16 编码判据门**、**组 U U9（P1 行内顺序缩放，含负对照必红）**）；B/C/M 组真实浏览器/手机视口断言全绿；skip = `real-cid-paper`（第三方样例不入库） |
 | 产物一致性（本地防线，v0.1.3 纳入） | ✅ 新增 | 契约组 **T**：现场重建产物并比对字节，不一致即 FAIL（治「只改 src 忘 `npm run build` → 本地对着旧产物假绿」）；CI 另有 build-consistency 步骤 |
+| 依赖体检（交付面） | ✅ 已制度化（2026-09-16） | `node tools/audit-delivery.mjs`（CI 已接入：只看 `vendor/`+`langs/` 用到的运行时依赖，**未豁免 high/critical 即红**；豁免须写理由 + 日期）；`.github/dependabot.yml` 负责工具链自动 PR；**运行时库升级走人工批次**（重打包 vendor + 许可复核 + `CACHE_NAME` bump + 契约 + 等价性台） |
 | 部署白名单 smoke（v0.1.3 纳入） | ✅ 新增 | `node tools/deploy-smoke.mjs _site`：按「引用即必需」核对 index.html / sw.js 同源引用 + 必需顶层文件/目录（治 cp 白名单静默漏发）；实测正例 PASS、负例 exit 1 |
 | PWA 静态验收 | ✅ 48/48 | `node tests/pwa-audit.mjs`（manifest/SW/图标/触控/对比度 WCAG AA） |
 | 离线 OCR 实证 | ✅ PASS | `npm run verify:ocr`（置信度 93%，HELLO/DOC2MD/2026 全命中） |
