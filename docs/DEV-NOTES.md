@@ -1644,6 +1644,59 @@ U1 未重跑 `npm ci` · **U2 函数级等价性台未随出单附上**（我方
 - **`AGENTS断言粒度.patch` 未评审**（用户本批只勾了 backlog 并入这一件）—— 仍待做。
 - 未改任何产品代码 / 断言 / 产物：**本批只动 `docs/HANDOFF-主开发线.md` + 本节记录**，契约与 `index.html` 字节零变化。
 
+## 2026-09-17 第九轮审查核验批 + 批 A（守卫加固）：3 P1 / 4 P2 / 4 P3 逐条实测 → 守卫与 CI 落地
+
+### 报告与核验口径
+- 报告：`docs/doc2md-第九轮审查报告-2026-09-17.md`（**Codex 出具，基线 = 我前一笔提交 `25a7266`**，341 行，未改动仓库源码）。按纪律：**第三方只报告 → 我方逐条实测核验**（不采信转述、不预设成立）。
+
+| 报告条目 | 我的核验方式 | 结论 |
+|---|---|---|
+| §2.1 `handleFiles` 单文件读失败中断整批 | 代码事实：`src/convert.js:117-118`（`arrayBuffer`/`sniff`）**在 try 之外**；`src/app.js:20-24` 无逐文件 catch；`:41/:44` 两处调用**无 `.catch`**（`handleFiles` 亦未挂 `__doc2md`） | ✅ 成立 |
+| §2.2 假绿 A（只认双引号） | **动态复现**：临时站点 `src='./vendor/missing.js'` → `同源引用 0 个` **exit 0** | ✅ 成立 |
+| §2.2 假绿 B（`../` 逃逸） | **动态复现**：`src="../outside.js"`（站点内无、父目录有）→ **exit 0** | ✅ 成立 |
+| §2.3 洞1 交付面缺包静默 | 代码事实：`if (version) out.set(...)` 跳过缺失；只有「全缺」才红 | ✅ 成立 |
+| §2.3 洞2 mammoth 不在自动门禁 | 事实（我写脚本时登记为「人工跟踪项」） | ✅ 成立 |
+| §2.3 洞3 离线 `via` 字符串误归因 | **动态复现**：夹具 `via:['tar']` → `[未豁免] pdfjs-dist (transitive)（critical）` **exit 1**（**假红**） | ✅ 成立 |
+| §3.1 docx alt 把 `descr` 去扩展名 | **动态复现**：`Figure 3.1→Figure 3` · `版本 1.2→版本 1` · `Screenshot 2.0→Screenshot 2` · `v1.2→v1` | ✅ 成立 |
+| §3.2 alt 按回调顺序对号 | 机制属实（`imgNames[state.idx]; state.idx++` + 无数量一致性检查） | ⚠️ **风险登记**（真实漂移需 DrawingML+VML 双回退夹具才能确认，未复现） |
+| §3.3 `BT` 不重置 `flip` | **动态复现**（mock 算子流）：两块翻转 CTM，第二块**不写 Tm** → `sy=-100`；写 `1 0 0 1` → `sy=+800` ⇒ 继承成立 | ✅ 成立（**真实 PDF 触发面待夹具**） |
+| §3.4 导出缺图静默 | 代码事实：`src/ui.js:62-64`（zip）与 `:115`（内嵌）静默 `catch`，无计数/无 warning | ✅ 成立 |
+| §4.1 CI Node20 vs 发布 Node24 | 事实 | ✅ 成立 |
+| §4.2 `extForContentType` 非标准扩展名 | **动态复现**：`svg+xml` / `x-emf` / `x-wmf` | ✅ 成立 |
+| §4.3 GIF 尾部填充误判 | **动态复现**：原始 `image/gif` → 追加 1 字节 → `unknown/binary` | ✅ 成立 |
+| §4.4 tag 推送无测试门禁 | 事实（`tests.yml` 只 `push branches main` + PR） | ✅ 成立 |
+
+复现脚本（已存档）：`.tmp/verify-r9.mjs`（GIF/flip/descr/扩展名）· `.tmp/verify-r9-convert.mjs` · `.tmp/mk-r9-fixtures.mjs`（两个假绿站点 + audit 夹具）。
+
+### ⚠️ 报告自身的红线问题（未入库，待拍板）
+报告**第 3 行**含 `C:\Users\测试\dsh-workspace\doc2md`（**本地绝对路径 + Windows 用户名**）→ 属红线 11 / 隐私审查 A.1 禁止项。该文件目前**未跟踪**（`git status = ??`，未泄露）。**我未自行修改**（第三方报告只报告不修改）→ 需要用户点头才能脱敏入库。
+
+### 批 A 落地（用户拍板「观察期内零风险」→ 全不动 `src/`，产物字节不变）
+| 改动 | 内容 |
+|---|---|
+| `tools/deploy-smoke.mjs` 加固 | ① 引用提取支持**单/双引号 + `srcset`** ② 引用按**站点 URL 语义**解析（`../x` 不再命中站点外文件，且错误文案提示「含 `..` 段」）③ 校验 `manifest.json` 的 `icons[].src`/`start_url`/`scope` ④ **反向扫描**禁止公开的顶层条目（tests/docs/.私档/.tmp/node_modules/package*.json/AGENTS.md/README.md …）⑤ 导出 `checkSite()` 供自测 |
+| `tools/audit-delivery.mjs` 加固 | ① 交付面**缺包必红**（`ABSENT_OK` 例外须写理由）② **`tools/vendor-manifest.json` 交叉校验**（存在性 + 大小 + SHA256 + 版本 ↔ lock ↔ `licenses.md`）③ 离线字符串 `via` = 传递链**不再归因父包**（消除假红）④ fetch 加 `AbortSignal.timeout(15s)` |
+| `tools/vendor-manifest.json`（新增） | 8 个内联资产的 size/SHA256/版本/**证据来源**；`version` 判定一律「文件自述 + lock/tarball 双向核对」 |
+| `tools/guard-selftest.mjs`（新增） | **13 条断言**：deploy-smoke 1 正例 + 5 负例（含两个原假绿 + manifest + 禁止路径 + srcset）· audit-delivery 4 正例 + 3 负例（传递链不阻断 / 未豁免必红 / 豁免命中 / 缺包必红 / 清单漂移必红）→ **守卫自己必须能被测红** |
+| CI（`.github/workflows/tests.yml`） | ① 触发加 **`push: tags: ['v*']`**（发布 tag 也过同款门禁）② 新增 **Guard selftest** 步骤 ③ 新增 **站点白名单组装 + deploy-smoke** 步骤（原先只在部署 workflow 里跑）④ 头部注释同步（含「workflow 间无依赖」的残留说明） |
+
+### 交叉校验成果（本批最有价值的一步）
+用 `npm pack <pkg>@<ver>` 拉**官方 tarball**、解包后与 `vendor/` 内联件**逐字节比对**：
+- `mammoth.browser.min.js` ≡ **mammoth@1.12.2** ✅ —— ⚠️ **虚惊一场**：文件内 `VERSION="1.13.1"` 是 bundle 里**内嵌的 underscore** 版本，npm 上**根本不存在 mammoth@1.13.1**（实测 404）。**教训：内嵌依赖的版本串不能当本包版本；单凭正则命中不算证据。**
+- `tesseract-core-{lstm,simd-lstm}.wasm.js` ≡ **tesseract.js-core@6.1.2** ❌→**已订正**：`docs/licenses.md` 原记 **6.0.0 系陈旧**（实际跟的是 lock 的 6.1.2）。
+- `read-excel-file.min.js` ≡ **read-excel-file@5.8.7** ✅
+
+### 门禁（before → after）
+- lint **0 warning → 0 warning**（过程中我的新工具一度有 1 条 complexity 警告 + metrics **超限 3** → 拆 `extractRefs`/`checkRefs`/`checkVendorManifest`/`checkOneAsset` 等函数 → **超限 0**、警告 0；即「新增代码也不许超限」）
+- metrics **19 文件 / 361 → 413 函数 / 超限 0 / 重复率 0.4%**
+- 契约 **259 tests / 257 pass / 0 fail / 2 skip**（exit 0）
+- `node tools/guard-selftest.mjs` **13/13 通过**；`node tools/audit-delivery.mjs` 联网 **PASS**；对真实白名单站点 `deploy-smoke` **PASS**（index 7 / sw 12 / manifest 5 引用全可解析）；对**仓根**跑则是 14 条禁止条目全报（反向扫描有效）
+
+### 未做（下一批，待拍板）
+- **B 批（复盘后，改行为但改动小）**：§2.1 批量失败隔离（须契约先红）· §3.1 descr 去扩展名收窄到「只对 name + 已知图片扩展名」· §3.4 缺图显式提示 · §4.2 SVG/EMF/WMF 扩展名映射 · §4.3 GIF 按块结构解析（顺带做 backlog 那条）
+- **待夹具**：§3.2（alt 顺序一致性检查）· §3.3（多 BT / 仅首块 Tm 的真实 PDF）
+- **报告入库**：待脱敏（见上）
+
 
 
 
