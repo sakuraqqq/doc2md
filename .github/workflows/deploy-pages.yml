@@ -25,8 +25,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
       # t11 §2.2/§2.10 站点白名单部署：只发布站点必要文件（应用壳 + vendor + langs + icons + PWA 资源），
       # 不再整仓上传——tests/data（511KB 真实论文/大样例）与 docs/ 不得公开到 Pages（再分发风险）
       - name: 站点白名单组装
@@ -38,8 +38,8 @@ jobs:
       # 部署前按「引用即必需」核对 index.html / sw.js 的同源引用与必需顶层文件/目录。
       - name: 站点白名单 smoke（引用即必需）
         run: node tools/deploy-smoke.mjs _site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
