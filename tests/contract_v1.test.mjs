@@ -4318,6 +4318,10 @@ test('契约组 X：OCR 方向重试（质量差 → 顺时针 90° 重试一次
 //      且好文件必须出现在输出区
 //   Z4 负对照：只喂好文件（不注入故障）→ 状态栏正常收尾（防「一律不停留在处理中」的假绿）
 // 说明：本组**故意先红**，红 → 实现（R9-1 修法）→ 绿；断言口径不由实现反推。
+// ⚠️ **Z1/Z2/Z3 目前带 `{ todo: … }` 标记**（2026-09-18 用户拍板 B）：node:test 会把"标了 todo 的失败"
+//   记为 TODO 且**不影响退出码** ⇒ CI 保持绿（红态单独推上去会掩盖其他失败）。**断言一字未改**；
+//   **实现 R9-1 时必须摘掉这三处 todo 标记**，它们立刻变回真阻断（本机实测：标 todo 的失败 → exit 0、
+//   `pass 3 / fail 0 / todo 3`；且标记子测试后父组壳不再计 fail）。
 // ---------------------------------------------------------------------------
 test('契约组 Z：R9-1 批量失败隔离（读文件失败不得中断整批）—— 先红用例', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
@@ -4366,7 +4370,7 @@ test('契约组 Z：R9-1 批量失败隔离（读文件失败不得中断整批�
           { name, bytes }
         );
 
-      await t.test('Z1 convert() 在 arrayBuffer 异步失败时不得 reject（应 resolve 且带原因）', async () => {
+      await t.test('Z1 convert() 在 arrayBuffer 异步失败时不得 reject（应 resolve 且带原因）', { todo: 'R9-1 未实现（先红用例）→ 实现时摘掉本标记' }, async () => {
         const res = await callConvert('r9-1-bad.txt', [0x68, 0x69]);
         assert.equal(res.threw, false, `convert() 抛异常（未隔离为 {error}）：${res.message}`);
         assert.ok(res.error, `convert() 未给出错误文案：${JSON.stringify(res)}`);
@@ -4376,13 +4380,13 @@ test('契约组 Z：R9-1 批量失败隔离（读文件失败不得中断整批�
         );
       });
 
-      await t.test('Z2 convert() 在 arrayBuffer 同步 throw 时不得 reject（应 resolve 且带原因）', async () => {
+      await t.test('Z2 convert() 在 arrayBuffer 同步 throw 时不得 reject（应 resolve 且带原因）', { todo: 'R9-1 未实现（先红用例）→ 实现时摘掉本标记' }, async () => {
         const res = await callConvert('r9-1-sync-bad.txt', [0x68, 0x69]);
         assert.equal(res.threw, false, `convert() 抛异常（未隔离为 {error}）：${res.message}`);
         assert.ok(res.error, `convert() 未给出错误文案：${JSON.stringify(res)}`);
       });
 
-      await t.test('Z3 批量隔离：坏文件在前、好文件在后 → 状态栏不停在「正在处理」且好文件有产出', async () => {
+      await t.test('Z3 批量隔离：坏文件在前、好文件在后 → 状态栏不停在「正在处理」且好文件有产出', { todo: 'R9-1 未实现（先红用例）→ 实现时摘掉本标记' }, async () => {
         const tok = 'R9-1-GOOD-MARKER-2026';
         await page.locator('#fileInput').setInputFiles([
           { name: 'r9-1-bad.txt', mimeType: 'text/plain', buffer: Buffer.from('bad') },
