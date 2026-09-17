@@ -491,6 +491,50 @@ const P1_SCALE_TD_STREAM = [
   `BT /F1 280 Tf 0.05 0 0 -0.05 72 780 Tm ${tdGlyphs('THIRDLINE')} ET`,
 ].join('\n');
 
+/* ---------------- sample-scale-multipage.pdf（P1 同构件 · 多页；2026-09-17 用户拍板 D，契约组 U 续号 U10） ----------------
+ * 由来：手机侧整合报告 §5.6 建议把野生素材（真机 WPS 9 页通知）入库当第 20 个对照样例；
+ *   但野生素材是**真实公文**（真实单位名 + 文号 + 个人路径）⇒ 撞隐私红线与 tests/data 公开性（红线 11），
+ *   **不能直接入库**。改为按同一**结构特征**合成同构件（虚构文字、确定性字节、生成而非拷贝）：
+ *   ① 页面级 `cm` 翻转 + `Tm` 缩放**逐页不同**（0.05 / 0.045 / 0.03 —— 照真机实测 `Tm.a ∈ {0.03,0.045,0.05}`）
+ *   ② **逐字 `TD` 推进**（dx = 280 = 1em，与 sample-scale-td.pdf 同形态）
+ *   ③ 每页**首行由两个文本对象拼成**（对象 B 的 x = 对象 A 的名义末尾 —— 缩放是否参与位移的判定点）
+ *   ④ **3 页**（跨页顺序 + 页标记 `<!--pageN/3-->` 齐备）
+ * 期望（正确几何：位移 ×缩放）：
+ *   P1 `NA`(x72→) 接 `NB`(x100) · P2 `QA` 接 `QB`(x97.2) · P3 `RA` 接 `RB`(x88.8)；每页另有 PC/PD、QC/QD、RC/RD。
+ * 修前（位移未缩放 ⇒ 每字推进 280）：同行两对象按 x 排序后**交错**（U10 判据即抓此形态）。
+ * 局限（如实标注）：合成件用 Helvetica ⇒ **不含中文**（中文需内嵌 CID 字体，非本夹具范围）；
+ *   真机那份的中文形态由 `.私档/` 野生素材承担，其**几何特征**由本夹具长期守护。 */
+const multiPageScaled = (scale, x2, tags) =>
+  [
+    '1 0 0 -1 0 842 cm',
+    `BT /F1 280 Tf ${scale} 0 0 -${scale} 72 720 Tm ${tdGlyphs(tags[0])} ET`, // 阅读首行 对象 A（翻转空间：y 递增 = 阅读顺序）
+    `BT /F1 280 Tf ${scale} 0 0 -${scale} ${x2} 720 Tm ${tdGlyphs(tags[1])} ET`, // 首行 对象 B（同一视觉行）
+    `BT /F1 280 Tf ${scale} 0 0 -${scale} 72 750 Tm ${tdGlyphs(tags[2])} ET`,
+    `BT /F1 280 Tf ${scale} 0 0 -${scale} 72 780 Tm ${tdGlyphs(tags[3])} ET`,
+  ].join('\n');
+const P1_MULTIPAGE_STREAMS = [
+  multiPageScaled(0.05, 100, ['NA', 'NB', 'PC', 'PD']),
+  multiPageScaled(0.045, 97.2, ['QA', 'QB', 'QC', 'QD']),
+  multiPageScaled(0.03, 88.8, ['RA', 'RB', 'RC', 'RD']),
+];
+/** 多页版 buildV014Pdf：对象编号 = 1 Catalog · 2 Pages · 3+2i Page · 4+2i Contents · 末尾两个字体 */
+function buildV014PdfPages(streams) {
+  const n = streams.length;
+  const f1 = 3 + 2 * n;
+  const f2 = f1 + 1;
+  const kids = streams.map((_, i) => `${3 + 2 * i} 0 R`).join(' ');
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${kids}] /Count ${n} >>`];
+  streams.forEach((s, i) => {
+    objs.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${4 + 2 * i} 0 R >>`
+    );
+    objs.push(`<< /Length ${Buffer.byteLength(s, 'latin1')} >>\nstream\n${s}\nendstream`);
+  });
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>');
+  return buildPdfShell(objs);
+}
+
 /* ---------------- sample-comment-subset.pdf（F1 回归守护：文档级等宽判据；2026-09-14） ----------------
  * 两页最小复现（qa-dev 在 t6 独立验收中判 F1 不通过时建议的合成回归）：
  *   第 1 页内容 = `# 1. 2. 3. 4. 5.`（Courier 但**只有 `#`/数字/点/空格，无 ASCII 字母**）
@@ -688,6 +732,7 @@ put('sample-corrupt-xlsx.xlsx', buildCorruptXlsx());
 put('sample-numfmt-date.xlsx', buildNumFmtDateXlsx());
 for (const [name, stream] of Object.entries(V014_PDF_STREAMS)) put(name, buildV014Pdf(stream));
 put('sample-scale-td.pdf', buildV014Pdf(P1_SCALE_TD_STREAM));
+put('sample-scale-multipage.pdf', buildV014PdfPages(P1_MULTIPAGE_STREAMS));
 put('sample-comment-subset.pdf', buildCommentSubsetPdf());
 /* 批 3 契约组 V 样例（7 个：3 嗅探负例 + 2 真格式正例 + 1 Big5 大写 META + 1 docx alt） */
 put('sample-bmw-text.txt', Buffer.from(BMW_TEXT, 'utf8'));
