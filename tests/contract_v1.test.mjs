@@ -3661,6 +3661,28 @@ test('契约组 U：v0.1.4 PDF 缺陷批（翻转 Tm 行序 / TL 算子 / 等宽
         const i3 = flat.indexOf('THIRDLINE');
         assert.ok(i2 > 0 && i3 > i2, `多行顺序错误（SECONDLINE@${i2} / THIRDLINE@${i3}）：${JSON.stringify(flat.slice(0, 80))}`);
       });
+
+      /* U10（D 批，2026-09-17 用户拍板）：**多页同构件样例** —— 照真机 WPS 9 页通知的结构特征合成
+       * （逐页不同 `Tm` 缩放 0.05/0.045/0.03 + 逐字 `TD` 推进 + 每页首行两个文本对象 + 3 页）。
+       * 判据 = 去空白后的**行内与跨页顺序** + 3 个页标记齐备。
+       * 局限（如实登记）：合成件为 Helvetica ⇒ 不含中文；中文形态由 `.私档/` 野生素材承担（红线 11 不入库）。 */
+      await t.test('U10 多页 + 逐页缩放：行内/跨页顺序不得交错，3 页页标记齐备', async () => {
+        const md = await convert('sample-scale-multipage.pdf');
+        const flat = md.replace(/\s+/g, '');
+        const seq = ['NA', 'NB', 'PC', 'PD', 'QA', 'QB', 'QC', 'QD', 'RA', 'RB', 'RC', 'RD'];
+        let prev = -1;
+        for (const tok of seq) {
+          const i = flat.indexOf(tok);
+          assert.ok(
+            i > prev,
+            `顺序错误：${tok}@${i}（上一标记 @${prev}）—— 期望每页首行两对象按书写顺序拼接、页序递增：${JSON.stringify(flat.slice(0, 140))}`
+          );
+          prev = i;
+        }
+        for (const p of ['<!--page1/3-->', '<!--page2/3-->', '<!--page3/3-->']) {
+          assert.ok(flat.includes(p), `缺页标记 ${p}：${JSON.stringify(flat.slice(0, 100))}`);
+        }
+      });
     } finally {
       await browser.close();
     }

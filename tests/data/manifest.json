@@ -119,6 +119,10 @@
       "bytes": 1193,
       "sha256": "78d67da8e9e6930872c5e17baf7cdd06a525e0cdd4484d549801bdef01502c11"
     },
+    "sample-scale-multipage.pdf": {
+      "bytes": 1960,
+      "sha256": "c5a00dbea9b78eeb13e581db9b0b190f9fbedfe0462aa5aeeec8c3d698da3f40"
+    },
     "sample-comment-subset.pdf": {
       "bytes": 870,
       "sha256": "efe20796a6a2126b5ed993973db5c4946f94c6e65e7d93d00e50384ba7c0ce95"

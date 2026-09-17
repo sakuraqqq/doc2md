@@ -1,0 +1,70 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 9 0 R /F2 10 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 278 >>
+stream
+1 0 0 -1 0 842 cm
+BT /F1 280 Tf 0.05 0 0 -0.05 72 720 Tm (N) Tj 280 0 TD (A) Tj ET
+BT /F1 280 Tf 0.05 0 0 -0.05 100 720 Tm (N) Tj 280 0 TD (B) Tj ET
+BT /F1 280 Tf 0.05 0 0 -0.05 72 750 Tm (P) Tj 280 0 TD (C) Tj ET
+BT /F1 280 Tf 0.05 0 0 -0.05 72 780 Tm (P) Tj 280 0 TD (D) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 9 0 R /F2 10 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 287 >>
+stream
+1 0 0 -1 0 842 cm
+BT /F1 280 Tf 0.045 0 0 -0.045 72 720 Tm (Q) Tj 280 0 TD (A) Tj ET
+BT /F1 280 Tf 0.045 0 0 -0.045 97.2 720 Tm (Q) Tj 280 0 TD (B) Tj ET
+BT /F1 280 Tf 0.045 0 0 -0.045 72 750 Tm (Q) Tj 280 0 TD (C) Tj ET
+BT /F1 280 Tf 0.045 0 0 -0.045 72 780 Tm (Q) Tj 280 0 TD (D) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 9 0 R /F2 10 0 R >> >> /Contents 8 0 R >>
+endobj
+8 0 obj
+<< /Length 279 >>
+stream
+1 0 0 -1 0 842 cm
+BT /F1 280 Tf 0.03 0 0 -0.03 72 720 Tm (R) Tj 280 0 TD (A) Tj ET
+BT /F1 280 Tf 0.03 0 0 -0.03 88.8 720 Tm (R) Tj 280 0 TD (B) Tj ET
+BT /F1 280 Tf 0.03 0 0 -0.03 72 750 Tm (R) Tj 280 0 TD (C) Tj ET
+BT /F1 280 Tf 0.03 0 0 -0.03 72 780 Tm (R) Tj 280 0 TD (D) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+10 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000127 00000 n 
+0000000264 00000 n 
+0000000593 00000 n 
+0000000730 00000 n 
+0000001068 00000 n 
+0000001205 00000 n 
+0000001535 00000 n 
+0000001605 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+1674
+%%EOF
