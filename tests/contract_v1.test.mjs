@@ -3479,6 +3479,109 @@ test('契约组 S：S5 OOXML 双删除线 w:dstrike 归一（→ ~~；w:val fals
 });
 
 // ---------------------------------------------------------------------------
+// 契约组 S — S1 表格列数对齐（格式规范符合性清单 S1；2026-09-18「纯加断言」A4.5）
+// 口径（既有拍板，见 HANDOFF §3 A4.5）：**一律按最大列宽对齐** —— 表格列数 = 各行最大单元格数，
+//   短行**补空单元格**到同宽；**不是**截断到最窄行（GFM 表格要求各行同列数，否则渲染错位）。
+// 断言：
+//   S1-1 XLSX 表头 3 列 + 数据行仅 1 列 → 数据行补空到 3 列
+//   S1-2 XLSX 最宽行在中间（2/4/1）→ 全表（含分隔行）均为 4 列
+//   S1-3 HTML 不等长行（1 列 + 2 列）→ 同样按最大列宽补齐
+//   S1-4 负对照「不截断」：最宽行第 4 列的内容必须仍在产物里
+// 说明：纯加断言、不改代码不改行为；XLSX 用例页内用 fflate 现造最小包（不入库新样例）。
+// ---------------------------------------------------------------------------
+test('契约组 S：S1 表格列数对齐（最大列宽补齐；纯加断言 A4.5）', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message);
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const convertXlsx = (sheetRows) => {
+        const parts = minimalXlsx(sheetRows);
+        return page.evaluate((p) => {
+          const F = window.fflate;
+          const zip = F.zipSync({
+            '[Content_Types].xml': F.strToU8(p.ct),
+            '_rels/.rels': F.strToU8(p.rels),
+            'xl/workbook.xml': F.strToU8(p.wb),
+            'xl/_rels/workbook.xml.rels': F.strToU8(p.wbRels),
+            'xl/worksheets/sheet1.xml': F.strToU8(p.sheet),
+          });
+          return window.__doc2md
+            .convert(new File([zip], 's1.xlsx'))
+            .then((res) => (res.error ? 'ERROR:' + res.error : res.markdown));
+        }, parts);
+      };
+      // 列数 = `| a | b |` 拆出的段数 − 2（首尾各一个空段）
+      const cols = (line) => line.split('|').length - 2;
+      const tableLines = (md) => md.split('\n').filter((l) => l.trim().startsWith('|'));
+
+      await t.test('S1-1 XLSX 表头 3 列 + 数据行 1 列 → 短行补空到 3 列', async () => {
+        const md = await convertXlsx(
+          xlsxRow(1, [['A1', 'H1'], ['B1', 'H2'], ['C1', 'H3']]) + xlsxRow(2, [['A2', 'A2']])
+        );
+        const row2 = tableLines(md).find((l) => l.includes('A2'));
+        assert.ok(row2, `未找到 A2 数据行：${JSON.stringify(md)}`);
+        assert.equal(cols(row2), 3, `短行未按最大列宽补齐：${JSON.stringify(row2)}`);
+      });
+
+      await t.test('S1-2 XLSX 最宽行在中间（2/4/1）→ 全表含分隔行均为 4 列', async () => {
+        const md = await convertXlsx(
+          xlsxRow(1, [['A1', 'a'], ['B1', 'b']]) +
+            xlsxRow(2, [['A2', 'a2'], ['B2', 'b2'], ['C2', 'c2'], ['D2', 'WIDEST-D4']]) +
+            xlsxRow(3, [['A3', 'a3']])
+        );
+        const rows = tableLines(md);
+        assert.ok(rows.length >= 4, `表格行数不足（应含表头+分隔+2 数据行）：${JSON.stringify(md)}`);
+        for (const l of rows) assert.equal(cols(l), 4, `未按最大列宽对齐到 4 列：${JSON.stringify(l)}`);
+      });
+
+      await t.test('S1-3 HTML 不等长行（1 列 + 2 列）→ 按最大列宽补齐', async () => {
+        const md = await page.evaluate(() =>
+          window.__doc2md.htmlToMarkdown(
+            '<table><tr><td>only</td></tr><tr><td>x</td><td>y</td></tr></table>',
+            { warnings: [] }
+          )
+        );
+        const rows = tableLines(md);
+        assert.ok(rows.length >= 2, `未产出表格：${JSON.stringify(md)}`);
+        for (const l of rows) assert.equal(cols(l), 2, `HTML 不等长行未补齐到 2 列：${JSON.stringify(l)}`);
+      });
+
+      await t.test('S1-4 负对照：不截断——最宽行第 4 列内容必须仍在产物里', async () => {
+        const md = await convertXlsx(
+          xlsxRow(1, [['A1', 'a'], ['B1', 'b']]) +
+            xlsxRow(2, [['A2', 'a2'], ['B2', 'b2'], ['C2', 'c2'], ['D2', 'WIDEST-D4']]) +
+            xlsxRow(3, [['A3', 'a3']])
+        );
+        assert.ok(
+          md.includes('WIDEST-D4'),
+          `最宽行的末列内容丢失（实现可能在截断而不是补齐）：${JSON.stringify(md)}`
+        );
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // 契约组 U：v0.1.4 PDF 缺陷批（A1 翻转 Tm 行序 / A2 缺 TL(36) / A3 等宽代码围栏 / A4 叠印去重）
 // 依据：2026-09-14 真机 7 篇 Chromium 打印 PDF 实测（输出侧：整篇行序反向、代码清单无围栏、页脚三倍）
 //   + node 侧 pdfjs-dist 算子级取证（真实 PDF 的 setTextMatrix 一律 d = −1、阅读顺序对应 cy **递增**；
@@ -4192,6 +4295,141 @@ test('契约组 X：OCR 方向重试（质量差 → 顺时针 90° 重试一次
         ]);
         assert.equal(res.calls, 2, `中文场景高拉丁占比（= 会提示版面/方向）应触发重试（实际 ${res.calls}）`);
         assert.equal(res.markdown, GOOD, `最终应取更优的那次（实际 ${JSON.stringify(res.markdown)}）`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 Z — R9-1 批量失败隔离（第九轮审查报告 §2.1；2026-09-18 用户要求「先红用例」）
+// 现行缺陷：`src/convert.js:117-118` 把 `file.arrayBuffer()` 与 `sniff()` 放在 try **之外**
+//   ⇒ 读文件失败（文件被移走 / 权限拒绝 / IO 错误）时 **convert() 抛异常**而不是返回 {error}；
+//   而 `src/app.js:15-26` 的 handleFiles 是 `for { await convert() }` **无 try** ⇒ 单文件失败会
+//   ① 中断整批（后续文件不再转换）② 状态栏永久停在「正在处理 N 个文件…」。
+// 断言（**先红**；修法 = convert 把 arrayBuffer/sniff 纳入 try + handleFiles 逐文件 catch +
+//   状态文案给出成功/失败计数 + 拖放/选择两个入口 .catch）：
+//   Z1 convert() 不得 reject（arrayBuffer 异步失败）→ resolve、error 非空、**且带底层原因**
+//   Z2 convert() 不得 reject（arrayBuffer 同步 throw）
+//   Z3 批量隔离（真实 UI 路径）：坏文件在前 + 好文件在后 → 状态栏不得停在「正在处理」，
+//      且好文件必须出现在输出区
+//   Z4 负对照：只喂好文件（不注入故障）→ 状态栏正常收尾（防「一律不停留在处理中」的假绿）
+// 说明：本组**故意先红**，红 → 实现（R9-1 修法）→ 绿；断言口径不由实现反推。
+// ---------------------------------------------------------------------------
+test('契约组 Z：R9-1 批量失败隔离（读文件失败不得中断整批）—— 先红用例', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message);
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      // 注入：按文件名让 arrayBuffer 失败（异步 reject / 同步 throw 两种形态）
+      await page.evaluate(() => {
+        const orig = Blob.prototype.arrayBuffer;
+        Blob.prototype.arrayBuffer = function () {
+          if (this.name === 'r9-1-bad.txt') return Promise.reject(new Error('IO 读取失败（R9-1 注入）'));
+          if (this.name === 'r9-1-sync-bad.txt') throw new Error('同步 IO 失败（R9-1 注入）');
+          return orig.apply(this);
+        };
+        return true;
+      });
+
+      const callConvert = (name, bytes) =>
+        page.evaluate(
+          async (arg) => {
+            const f = new File([new Uint8Array(arg.bytes)], arg.name, { type: 'text/plain' });
+            try {
+              const r = await window.__doc2md.convert(f);
+              return { threw: false, error: r.error, hasMarkdown: !!r.markdown };
+            } catch (e) {
+              return { threw: true, message: String((e && e.message) || e) };
+            }
+          },
+          { name, bytes }
+        );
+
+      await t.test('Z1 convert() 在 arrayBuffer 异步失败时不得 reject（应 resolve 且带原因）', async () => {
+        const res = await callConvert('r9-1-bad.txt', [0x68, 0x69]);
+        assert.equal(res.threw, false, `convert() 抛异常（未隔离为 {error}）：${res.message}`);
+        assert.ok(res.error, `convert() 未给出错误文案：${JSON.stringify(res)}`);
+        assert.ok(
+          String(res.error).includes('IO 读取失败'),
+          `错误文案吞掉了底层原因（用户/我们无法定位）：${JSON.stringify(res.error)}`
+        );
+      });
+
+      await t.test('Z2 convert() 在 arrayBuffer 同步 throw 时不得 reject（应 resolve 且带原因）', async () => {
+        const res = await callConvert('r9-1-sync-bad.txt', [0x68, 0x69]);
+        assert.equal(res.threw, false, `convert() 抛异常（未隔离为 {error}）：${res.message}`);
+        assert.ok(res.error, `convert() 未给出错误文案：${JSON.stringify(res)}`);
+      });
+
+      await t.test('Z3 批量隔离：坏文件在前、好文件在后 → 状态栏不停在「正在处理」且好文件有产出', async () => {
+        const tok = 'R9-1-GOOD-MARKER-2026';
+        await page.locator('#fileInput').setInputFiles([
+          { name: 'r9-1-bad.txt', mimeType: 'text/plain', buffer: Buffer.from('bad') },
+          { name: 'r9-1-good.txt', mimeType: 'text/plain', buffer: Buffer.from(tok) },
+        ]);
+        let settled = false;
+        try {
+          await page.waitForFunction(
+            () => {
+              const s = document.querySelector('#status');
+              return !!s && !String(s.textContent || '').includes('正在处理');
+            },
+            null,
+            { timeout: 8000 }
+          );
+          settled = true;
+        } catch {
+          settled = false;
+        }
+        assert.ok(settled, '状态栏停在「正在处理」——单文件失败拖垮整批（R9-1 未修）');
+        const visible = await page.evaluate((token) => {
+          if ((document.body.innerText || '').includes(token)) return true;
+          for (const el of document.querySelectorAll('textarea, input, pre, code')) {
+            if (String(el.value || el.textContent || '').includes(token)) return true;
+          }
+          return false;
+        }, tok);
+        assert.ok(visible, '好文件未被转换（整批在坏文件处中断）——批量隔离未生效');
+      });
+
+      await t.test('Z4 负对照：只喂好文件 → 状态栏正常收尾（防假绿）', async () => {
+        await page.locator('#fileInput').setInputFiles([
+          { name: 'r9-1-plain.txt', mimeType: 'text/plain', buffer: Buffer.from('PLAIN-OK') },
+        ]);
+        const finished = await page
+          .waitForFunction(
+            () => {
+              const s = document.querySelector('#status');
+              const t = String((s && s.textContent) || '');
+              return t.length > 0 && !t.includes('正在处理');
+            },
+            null,
+            { timeout: 8000 }
+          )
+          .then(() => true)
+          .catch(() => false);
+        assert.ok(finished, '正常单文件流程状态栏未收尾（负对照失败：不能靠"永不完结"换假绿）');
       });
     } finally {
       await browser.close();
