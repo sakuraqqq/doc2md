@@ -293,6 +293,19 @@
   - **验收判据设计稿**：`docs/大文件路径专项-验收判据-20260917.md` —— **D1–D6 判据**（产物逐字节不变 / 解析量上界 `meta.scan.bytes ≤ 8 MB` / 绝对耗时 < 5 s / 内存 < 200 MB / 护栏语义 / 负对照必红）+ **契约组 Y 先红断言设计**（Y1 先绿守卫锁 D1 · Y2/Y3 先红 · Y4 负对照）+ **5 个拍板点** + 一条**被否掉的候选判据**（时间比值不变性：实测现状比值 1.48 ≈ 线性，判别力不足）。
   - **手机侧下一轮取证单**：`.私档/手机侧/任务-下一轮取证-20260918/交接单.md`（+ 同名 `.zip`）—— **T1 崩溃归因定论**（不过滤 logcat + dropbox + 崩溃页截图；含"三条通路都没有也算完成"的兜底判据）· **T2「43 秒转完」物证或澄清** · **T3 `4-mid-large` 修前 PSS 基线**。
 
+**A11.7 局域网交换通道（2026-09-17 建立；用户要求「局域网 git：放文件就克隆、做完提交回去」）**
+- ⚠️ **先记一个被实测否掉的方案**：**Windows 上 `git daemon --enable=receive-pack` 的推送必挂** —— `upload-pack`（ls-remote / clone）正常，`receive-pack`（push）在**服务端广播 ref 之后双方僵住**（`GIT_TRACE_PACKET` 佐证：客户端发出 update 命令后无后续；daemon 日志显示 `Request receive-pack` 后无完成）。**结论：Windows 别用 git daemon 做 push**（试过换绑定点亦然）。
+- **采用的方案 = git bundle 双向 + HTTP 上传**（无 daemon、跨平台可靠、仍是真 git 提交）：
+  | 环节 | 做法 |
+  |---|---|
+  | 交换仓 | `.私档/lan-git/doc2md-exchange.git`（裸仓；**LAN-only，永不推 GitHub**）；约定目录 `orders/`（电脑侧放任务）+ `deliveries/`（手机侧放成果）；含 `README-协作协议.md` |
+  | 服务 | `.私档/工具/serve-exchange.py`（GET 目录页 + **表单上传** + `PUT /up/<name>`），端口 **8099**，根 = `.私档/lan-git/exchange-www`（含 `orders-<日期>.bundle` + `手机侧怎么用.txt`） |
+  | 手机侧 | 下载 `orders-*.bundle` → `git clone <bundle>` → 干活 → `git bundle create delivery.bundle main` → 浏览器表单或 `curl -T` 上传 |
+  | 电脑侧收件 | `git fetch <上传的 bundle> refs/heads/main:refs/remotes/phone/main`（再按需 merge/摘取文件） |
+  | 大文件 | 夹具（如 47.4 MB xlsx）**不进 git**，走同一页面直接上传/下载 |
+- **端到端自测（本机实测，2026-09-17）**：HTTP 下载 bundle（5,538 B）→ `git clone`（历史完整）→ 提交 → `git bundle create`（5,957 B）→ `curl -T` 上传（服务端回 `OK … 5957`）→ 电脑侧 `git fetch` **exit 0**，`deliveries/20260918-取证/结果.md` 到位；**自测痕迹已清理**（ref 与上传件均删）。
+- **边界（红线相关）**：该服务**无认证**（HTTP PUT/表单谁都能传）⇒ **仅内网使用**、只承载交换内容（**不含主仓库**、不推公网）；主仓库推送仍走 GitHub（发布动作人执）。
+
 **B. v0.1.2 剩余功能**：~~PDF 图纸页保图（27 页机械指导书实测触发）~~ → **与 A3.3「低质页保图」同一件事，已合并登记于 A3.3**（2026-09-14 去重）｜~~预览 1MB 截断~~ ✅ 已闭环（§8.1 批）
 
 **C. 发版**：~~v0.1.2~~ ✅ 已发布（`f5aed38`）｜~~v0.1.3~~ ✅ **已发布（2026-09-12，tag `v0.1.3` = `d6929e6`；原记 `5683b05` 系误，2026-09-14 实测勘误）**：S4/S5 规范符合性闭环 + 收口批 + 两条新防线（组 T / 部署 smoke）；观察期 09-12 起 ≥3 天 → **09-15 复盘**
