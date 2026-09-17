@@ -337,6 +337,20 @@
   - **端到端核验**：HTTP 下载回来 = **484,277 B / 同 SHA**（与发出版本逐字节一致）。
   - ⚠️ **本轮踩到的沙箱限制（可复用）**：`git bundle create` 内部要 spawn `pack-objects`（stdio 管道）→ workspace-write 下 **`cannot create standard input pipe for pack-objects: Permission denied`**；**重组路径**（无需管道）：`git pack-objects --all <prefix>` 产出**完整非 thin 包** → `node .tmp/lan-incoming/mk-bundle.mjs` 手写 v2 头组装 → `git bundle verify` 通过。附带好处：**无前置** ⇒ 手机侧 clone/fetch 不需要任何本地对象。
 
+**A11.9 T1b 交件（第 2 轮归因）核验 + 通道运维（2026-09-18 夜）**
+- **收件**：`deliveries/20260918-归因定案/`（21 文件；bundle 600,709 B / SHA256 `4F7FF343A0D36D66…`）；**独立核验 19/19 逐文件字节 + SHA256 全对**。
+- **他们是怎么拿到任务的**：**没拉 r2**（提交父节点 = `ae8165c`），**直接从网页上那两份 md 读的交接单** ⇒ 「不装 git 也能读任务」这条通道有效；代价是他们的线与我的 `a8189e8` 在 `ae8165c` 处**分叉** ⇒ **已由我方合并**（porcelain `merge` 内部要 spawn `git stash`，被沙箱拒 ⇒ 改**纯 plumbing**：`read-tree -m <base> <ours> <theirs>` + `commit-tree` + `update-ref`；合并提交 **`37c86b9f`，双父** `a8189e8` + `fcdc0c5`）。工作树核对：`orders/` 2 目录 3 文件、`deliveries/` 2 目录 79 文件、根 `README-协作协议.md`（我方更新版）。
+- **本轮结论：未复现**（渲染进程存活 ≈15 分钟、PSS 峰值 6.95 GB，最终**用户手动关闭**）⇒ 三条判据全未触发：窗口内 `killinfo` 仅 **1** 条且 pid **17188 = `com.android.filemanager`**（非夸克）；`am_kill` **66** 条**无一指向夸克**。
+- ⭐ **上轮"缺证据"那处已撤销**：他们补交了 **`ApplicationExitInfo #13: timestamp=2026-09-17 20:57:24.931 pid=20202 process=com.quark.browser:sandboxed_privilege_process0 reason=2 (SIGNALED) status=9`**。出处 = **他们自己的 DSH 会话记录**（`session.jsonl.zstd` 第 3448 条，2026-09-17 22:09:07 那次 read 的输出）——**原件被他们脚本缺陷覆盖**（`t1e-退出原因.sh` 固定同名文件，22:18:30 的 dump 盖掉了 22:09:07 的）。**他们主动标为「转录（transcript）」并声明"不主张其等价于原始文件"**（比我给的"补交即可恢复为实测"更严格）⇒ 我方按**转录件**采信，**A11.8 §3 那处"缺原始证据"撤销**。
+- ⭐ **由该条目得出的新推论（我方）**：`:push`（pid 26133）是 **lmkd 杀 ⇒ `reason=3 LOW_MEMORY`**（`killinfo` 与 exit-info 两条独立记录相隔 37 ms = 正对照）；而渲染进程 @20:57 是 **`reason=2 SIGNALED`** ⇒ 本机存在正对照「**lmkd 出手 ⇒ 记 LOW_MEMORY**」，故 `SIGNALED/9` **削弱 lmkd 假设**、加强「**宿主（UC/Chromium）主动杀**」或「渲染进程自杀式 SIGKILL」。**仍未定案**（那轮过滤器不含 `killinfo`，缺发送方侧记录）。
+- ⭐ **他们的实质新证据**：`u4native_ThreadWatchdog → JsAnrThreadNotRespondingCallback.showDestroyCurrentWindowDialog / handleJsAnr`（`full-run1.log` 23:01:04.050，pid 29373 = 夸克主进程）⇒ **「页面无响应」弹窗是宿主自己弹的**，且代码路径含「**销毁当前窗口**」⇒ 宿主**具备**杀/销毁渲染进程的能力与代码路径（对"宿主支"是**间接支持，仍属推断**）。
+- **两条硬伤（他们自己写明的）**：① 采集窗被 **23:01:13.470 的 Wi-Fi 断网**截断（无线调试走 Wi-Fi ⇒ adbd 会话结束 ⇒ logcat 子进程被杀），此后到用户关闭 ≈15 分钟**无我方日志** ⇒ **不得当作"没有发生"**；② 他们一度据 PSS 采样判定"渲染进程已死"，被用户证词推翻（真因 = 通道掉线后 `ps` **静默失效**）⇒ 已定纪律：**判"进程死活"必须双通路交叉**（`ps` + `dumpsys meminfo <pid>`）。
+- **另一处通道故障（ADB 侧，与我的服务无关）**：`android_adb_shell_exec` 在 **adbd 已停**时会**退化为以 DSH 应用自身身份（uid 10388）本地执行** ⇒ 缺 `DUMP` 权限、`logcat` 只见自身日志；而 DSH 状态文件仍报 `connected=true` ⇒ **权限静默降级**（"文件生成了"≠"命令以预期身份执行了"）。他们已**作废 run1 全部产物** + 加**身份断言**（非 `uid=2000(shell)` 直接 exit 9）后重跑。
+- **我方缺陷（已修 + 已验证）**：`serve-exchange.py` 的 `list_directory` 误写 `return self.wfile.write(data)`（返回 **int**）⇒ 基类 `do_GET` 把 int 当文件对象 ⇒ **每次目录列表都抛 `AttributeError: 'int' object has no attribute 'read'/'close'`** 并 abrupt close 连接（页面仍能显示，所以一直没暴露）。已改 `return None`；重启后三次目录列表 **200**、日志**零 traceback**。
+- **通道运维**：地址**第二次变更**（`10.131.114.108` → **`10.100.247.108`**，网关 `.183`）—— 服务**无需重建/重启**，只改了页面说明；手机侧（`10.131.114.16`）首发遇两次 401 后 200（口令提示流程正常）。
+- **我方方法论教训（新增两条）**：① **目录级 grep 会静默跳过"二进制特征"的大日志**（rg 把 1–2 MB 的 `crash-full*.log` 当二进制跳过）⇒ 我此前"全包检索"的说法**范围不实**（幸好关键结论都是**单独指定文件** grep 验的，结论未受影响）；**日志取证必须指定文件或 `--text`**。② **`.cmd` 脚本里不能写中文**（cmd 按 GBK 读 UTF-8 ⇒ 乱码行被当命令执行，报 `'�' is not recognized`）⇒ 批处理**只写 ASCII**。
+- **T1 状态：仍开放**（两轮都没取到 sender）。手机侧建议 **Wi-Fi 可用时重跑**，并建议 `setsid` 独立会话起 logcat（避免随 adbd 断线一起死）。**待拍板**：① 是否立刻派第三轮（含"**用不覆盖文件名分次抓 exit-info**"这条已落到他们脚本的改进）；② 还是把 T1 排到观察期/复盘之后；③ backlog 条目 8（**P1**）与 T1 的先后。
+
 **A12 局域网交换页 UI 改版（用户 2026-09-18 要求：「下次网页整好看点」）**
 - 现状：手写裸 HTML，一个 `<form>` + 文件列表；无样式体系、无拖拽、无进度、无移动端适配（手机上是主用场景，尤其该修）。
 - 下次开工先定稿再动手：拖拽上传 + 上传进度 + 文件列表（大小/时间/一键复制 `git bundle` 命令）+ 移动端单列 + 与 doc2md 主站同配色；**仍无认证、仅内网**（红线不变）。
