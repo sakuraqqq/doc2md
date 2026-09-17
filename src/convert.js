@@ -144,6 +144,17 @@ function unsupportedError(type) {
   return null;
 }
 
+/* 截断提示写进产出（2026-09-17 用户拍板 形态①；契约组 G2 L4c/L4c-2 守卫）：
+ * 背景：截断此前**只走界面 warnings**（`meta.warnings`）⇒ 下载/转发的 `.md` 与完整产出**外观无差别**
+ *   （真机实测：3,054 行 xlsx 输入 → 恰好 1000 数据行且零标记）。
+ * 口径：**仅在 truncated 时**于 markdown **首行**插一条单行 HTML 注释 —— 渲染时不可见（不污染正文/表格），
+ *   原文可检索可 grep；内容取转换器的截断原文（保证口径一致，便于复核）。未截断时**不得**插入。 */
+function withTruncationNotice(markdown, warnings) {
+  const note = (warnings || []).find((w) => typeof w === 'string' && w.startsWith('已截断'));
+  const detail = note ? ' —— ' + note.replace(/^已截断：/, '') : '';
+  return '<!-- doc2md: 内容已截断' + detail + ' -->\n\n' + markdown;
+}
+
 /* 转换器调用 + meta 同步（成功路径也要回填耗时——ZCode A 批 ① C7 断言 meta.elapsedMs > 0） */
 async function runConverter(type, file, buf, meta, t0) {
   const res = await registry[type](file, buf);
@@ -152,5 +163,6 @@ async function runConverter(type, file, buf, meta, t0) {
   meta.truncated = !!res.truncated; // 契约字段同步（审查报告 §1.5：转换器截断结果落地）
   if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
   meta.elapsedMs = Math.round(performance.now() - t0);
-  return { markdown: res.markdown || '', meta, error: undefined };
+  const markdown = res.markdown || '';
+  return { markdown: meta.truncated ? withTruncationNotice(markdown, meta.warnings) : markdown, meta, error: undefined };
 }

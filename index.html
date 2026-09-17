@@ -2176,6 +2176,11 @@ ${p.text}
     if (type === "unknown" || !registry[type]) return "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B";
     return null;
   }
+  function withTruncationNotice(markdown, warnings) {
+    const note = (warnings || []).find((w) => typeof w === "string" && w.startsWith("\u5DF2\u622A\u65AD"));
+    const detail = note ? " \u2014\u2014 " + note.replace(/^已截断：/, "") : "";
+    return "<!-- doc2md: \u5185\u5BB9\u5DF2\u622A\u65AD" + detail + " -->\n\n" + markdown;
+  }
   async function runConverter(type, file, buf, meta, t0) {
     const res = await registry[type](file, buf);
     meta.backend = res.backend || null;
@@ -2183,7 +2188,8 @@ ${p.text}
     meta.truncated = !!res.truncated;
     if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
     meta.elapsedMs = Math.round(performance.now() - t0);
-    return { markdown: res.markdown || "", meta, error: void 0 };
+    const markdown = res.markdown || "";
+    return { markdown: meta.truncated ? withTruncationNotice(markdown, meta.warnings) : markdown, meta, error: void 0 };
   }
 
   // src/app.js
