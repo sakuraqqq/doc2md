@@ -1026,6 +1026,40 @@ test('契约组 G2：xlsx 大行数（L4 性能/L4b 护栏/L5 文案）—— L5
         );
       });
 
+      // L4c（2026-09-17 用户拍板 形态①，先红）：**截断提示写进产出** —— 现有截断只走界面 `warnings`，
+      //   下载/转发的 `.md` 与完整产出**外观无差别**（真机实测：3,054 行输入 → 恰好 1000 数据行且零标记；
+      //   手机侧整合报告 §3.7 登记）。口径（形态①）：**仅在 truncated 时**于 `.md` **首行**插一条单行
+      //   HTML 注释（渲染不可见、原文可 grep），内容必须带截断原文；**未截断件不得出现**（防误标）。
+      await t.test('L4c 截断提示写进产出：首行单行 HTML 注释 + 含截断原文', () => {
+        const lines = md.split('\n');
+        assert.ok(
+          lines[0].startsWith('<!-- doc2md: 内容已截断'),
+          `截断产出的首行不是截断注释：${JSON.stringify(lines[0].slice(0, 80))}（形态①：首行应插入 "<!-- doc2md: 内容已截断 …" 注释——下载/转发的 .md 必须看得出被截断）`
+        );
+        assert.ok(lines[0].endsWith('-->'), `首行注释未以 --> 收尾（须单行注释）：${JSON.stringify(lines[0].slice(0, 120))}`);
+        assert.ok(
+          lines[0].includes('每 sheet 保留前 1000 行'),
+          `注释未带截断原文（应含「每 sheet 保留前 1000 行」以便复核口径）：${JSON.stringify(lines[0].slice(0, 160))}`
+        );
+        assert.equal(lines[1], '', '首行注释后应紧跟一个空行再接正文');
+      });
+      // L4c-2 反向守卫：未截断的小 xlsx（sample.xlsx）产出**不得**出现该注释（防误标/防无条件插入）
+      const smallB64 = fs.readFileSync(nodePath.join(DATA, 'sample.xlsx')).toString('base64');
+      const smallRes = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], 'sample.xlsx'));
+        },
+        { b64: smallB64 }
+      );
+      await t.test('L4c-2 未截断产出不得含截断注释（防误标）', () => {
+        const smd = smallRes.markdown || '';
+        assert.ok(
+          !smd.includes('<!-- doc2md:'),
+          `未截断产出（sample.xlsx，meta.truncated=${smallRes.meta && smallRes.meta.truncated}）含截断注释：${JSON.stringify(smd.slice(0, 80))}`
+        );
+      });
+
       // L6：inlineStr 单元格（样例 sample-inlinestr.xlsx；t35 契约先红——t34 发现项）
       // 断言语义：t="inlineStr" 单元格（文本在 <is><t>，不在 <v>）文本不得丢失——输出含
       //   「INLINE-STR-OK-2026」与「内联中文」（当前流式 xlsxParseSheet inlineStr 分支读 c.v → 空 → 红）
