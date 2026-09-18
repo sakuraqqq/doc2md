@@ -2151,15 +2151,27 @@ ${p.text}
     const done = (extra) => ({ markdown: extra && extra.markdown || "", meta: { ...meta, elapsedMs: Math.round(performance.now() - t0) }, error: extra && extra.error });
     const guard = guardError(file);
     if (guard) return done({ error: guard });
-    const buf = new Uint8Array(await file.arrayBuffer());
-    const s = await sniff(buf);
-    meta.type = s.type;
-    const unsupported = unsupportedError(s.type);
+    const read = await readAndSniff(file);
+    if (read.error) return done({ error: read.error });
+    meta.type = read.type;
+    return runOrExplain(file, read.buf, meta, t0, done);
+  }
+  async function runOrExplain(file, buf, meta, t0, done) {
+    const unsupported = unsupportedError(meta.type);
     if (unsupported) return done({ error: unsupported });
     try {
-      return await runConverter(s.type, file, buf, meta, t0);
+      return await runConverter(meta.type, file, buf, meta, t0);
     } catch (e) {
       return done({ error: "\u8F6C\u6362\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF") });
+    }
+  }
+  async function readAndSniff(file) {
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const s = await sniff(buf);
+      return { buf, type: s.type };
+    } catch (e) {
+      return { error: "\u8BFB\u53D6\u6587\u4EF6\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF") };
     }
   }
   function guardError(file) {
@@ -2198,12 +2210,29 @@ ${p.text}
     if (list.length === 0) return;
     hintEl.style.display = "none";
     setStatus("\u6B63\u5728\u5904\u7406 " + list.length + " \u4E2A\u6587\u4EF6\u2026");
-    for (let i = 0; i < list.length; i++) {
-      const file = list[i];
+    let ok = 0;
+    for (const file of list) {
+      if (await processOne(file)) ok++;
+    }
+    const failed = list.length - ok;
+    setStatus(
+      failed === 0 ? "\u5B8C\u6210\uFF1A\u5171 " + list.length + " \u4E2A\u6587\u4EF6\u3002" : "\u5B8C\u6210\uFF1A" + ok + " \u6210\u529F / " + failed + " \u5931\u8D25\uFF08\u5171 " + list.length + " \u4E2A\u6587\u4EF6\uFF09\u3002",
+      failed > 0
+    );
+  }
+  async function processOne(file) {
+    try {
       const result = await convert(file);
       renderResult(file, result);
+      return !(result && result.error);
+    } catch (e) {
+      renderResult(file, {
+        markdown: "",
+        meta: { name: file.name || "\u672A\u547D\u540D\u6587\u4EF6", warnings: [] },
+        error: "\u8F6C\u6362\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF")
+      });
+      return false;
     }
-    setStatus("\u5B8C\u6210\uFF1A\u5171 " + list.length + " \u4E2A\u6587\u4EF6\u3002");
   }
   dropzone.addEventListener("click", () => fileInput.click());
   window.addEventListener("dragover", (e) => {
@@ -2211,14 +2240,20 @@ ${p.text}
     if (dropzone.contains(e.target)) dropzone.classList.add("over");
   });
   window.addEventListener("dragleave", () => dropzone.classList.remove("over"));
+  function safeHandleFiles(files) {
+    const p = handleFiles(files);
+    if (p && typeof p.catch === "function") {
+      p.catch((e) => setStatus("\u5904\u7406\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF"), true));
+    }
+  }
   window.addEventListener("drop", (e) => {
     e.preventDefault();
     dropzone.classList.remove("over");
     const dropped = e.dataTransfer && e.dataTransfer.files;
-    if (dropped && dropped.length) handleFiles(dropped);
+    if (dropped && dropped.length) safeHandleFiles(dropped);
   });
   fileInput.addEventListener("change", () => {
-    handleFiles(fileInput.files);
+    safeHandleFiles(fileInput.files);
     fileInput.value = "";
   });
   window.__doc2md = {

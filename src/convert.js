@@ -114,15 +114,34 @@ export async function convert(file) {
   const done = (extra) => ({ markdown: extra && extra.markdown || '', meta: { ...meta, elapsedMs: Math.round(performance.now() - t0) }, error: extra && extra.error });
   const guard = guardError(file);
   if (guard) return done({ error: guard });
-  const buf = new Uint8Array(await file.arrayBuffer());
-  const s = await sniff(buf);
-  meta.type = s.type;
-  const unsupported = unsupportedError(s.type);
+  const read = await readAndSniff(file);
+  if (read.error) return done({ error: read.error });
+  meta.type = read.type;
+  return runOrExplain(file, read.buf, meta, t0, done);
+}
+
+/* 类型层不支持 → 友好文案；否则执行转换并把异常兜成 { error }
+ * （R9-1 批内童子军重构：抽出本段使 convert 的圈复杂度回到门禁线内 —— metrics 硬要求≤10） */
+async function runOrExplain(file, buf, meta, t0, done) {
+  const unsupported = unsupportedError(meta.type);
   if (unsupported) return done({ error: unsupported });
   try {
-    return await runConverter(s.type, file, buf, meta, t0);
+    return await runConverter(meta.type, file, buf, meta, t0);
   } catch (e) {
     return done({ error: '转换失败：' + (e && e.message ? e.message : '未知错误') });
+  }
+}
+
+/* 读文件 + 类型嗅探（R9-1，2026-09-18）：两者都会失败（文件被移走 / 权限拒绝 / IO 错误），
+ * 失败**不抛**、返回 { error } —— 否则 convert 抛异常会打断 handleFiles 的逐文件循环，
+ * 导致整批中断且状态栏永久停在「正在处理」（契约组 Z 的先红用例 Z1/Z2/Z3 即守此规格）。 */
+async function readAndSniff(file) {
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const s = await sniff(buf);
+    return { buf, type: s.type };
+  } catch (e) {
+    return { error: '读取文件失败：' + (e && e.message ? e.message : '未知错误') };
   }
 }
 
