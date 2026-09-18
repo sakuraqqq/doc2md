@@ -17,12 +17,34 @@ export async function handleFiles(files) {
   if (list.length === 0) return;
   hintEl.style.display = 'none';
   setStatus('正在处理 ' + list.length + ' 个文件…');
-  for (let i = 0; i < list.length; i++) {
-    const file = list[i];
+  let ok = 0;
+  for (const file of list) {
+    if (await processOne(file)) ok++;
+  }
+  const failed = list.length - ok;
+  setStatus(
+    failed === 0
+      ? '完成：共 ' + list.length + ' 个文件。'
+      : '完成：' + ok + ' 成功 / ' + failed + ' 失败（共 ' + list.length + ' 个文件）。',
+    failed > 0
+  );
+}
+
+/* 单文件处理（R9-1，2026-09-18）：失败就地隔离 —— 不许打断整批、不许让状态栏停在「正在处理」。
+ * 返回 true = 成功（供 handleFiles 汇总成功/失败计数）。 */
+async function processOne(file) {
+  try {
     const result = await convert(file);
     renderResult(file, result);
+    return !(result && result.error);
+  } catch (e) {
+    renderResult(file, {
+      markdown: '',
+      meta: { name: file.name || '未命名文件', warnings: [] },
+      error: '转换失败：' + (e && e.message ? e.message : '未知错误'),
+    });
+    return false;
   }
-  setStatus('完成：共 ' + list.length + ' 个文件。');
 }
 
 /* 拖放 + 选择 */
@@ -34,14 +56,22 @@ window.addEventListener('dragover', (e) => {
   if (dropzone.contains(e.target)) dropzone.classList.add('over');
 });
 window.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+/* R9-1（2026-09-18）：两条入口都兜住 —— handleFiles 内部已逐文件隔离，这里是最后一道防线
+ * （防将来改动重新引入 rejection ⇒ 状态栏卡在「正在处理」）。 */
+function safeHandleFiles(files) {
+  const p = handleFiles(files);
+  if (p && typeof p.catch === 'function') {
+    p.catch((e) => setStatus('处理失败：' + (e && e.message ? e.message : '未知错误'), true));
+  }
+}
 window.addEventListener('drop', (e) => {
   e.preventDefault();
   dropzone.classList.remove('over');
   const dropped = e.dataTransfer && e.dataTransfer.files;
-  if (dropped && dropped.length) handleFiles(dropped);
+  if (dropped && dropped.length) safeHandleFiles(dropped);
 });
 fileInput.addEventListener('change', () => {
-  handleFiles(fileInput.files);
+  safeHandleFiles(fileInput.files);
   fileInput.value = '';
 });
 
