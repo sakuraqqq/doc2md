@@ -4441,3 +4441,211 @@ test('契约组 Z：R9-1 批量失败隔离（读文件失败不得中断整批�
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 Y：大文件路径（D1–D3 · 设计见 docs/大文件路径专项-验收判据-20260917.md）
+//
+// 背景（桌面实测，见 docs/大文件路径专项-桌面实测-20260918.md）：
+//   为 **1000 行**的输出，现走「**库回退全量解析**」——35.9 MB 件 55–67 s、47.4 MB 件 69–99 s，
+//   浏览器私有提交**增量 +6.4–7.4 GB**；而 154 KB / 773 KB 两档 22–25 ms 秒过（页面内存 6–7 MB）。
+//
+//   Y1（**先绿守卫**）：产物逐字节不变 —— D1。基线哈希在实现前固化；**只许改实现，不许改断言**。
+//   Y2（**先红**）：解析量 `meta.scan.bytes ≤ 8 MB` 且两档差 ≤ 10%（证明"与规模无关"）—— D2。
+//   Y3（**先红**）：绝对耗时 —— 25 万 / 43.6 万两档均 < 5 s —— D3。
+//   Y4（**手工，无代码**）：负对照 —— 切回旧实现后 Y2/Y3 必红；方法记录在 tests/CONTRACT.md §7。
+//
+// ⚠️ **夹具不入库**（35.9 MB / 47.4 MB；同 real-cid-paper.pdf 先例，2026-09-10 拍板）：
+//    缺失时本组**整体跳过**（**不是失败**）⇒ **CI 不会红，先红的可见性在本机 / 用户机**。
+//    夹具目录可用环境变量 `DOC2MD_BIG_FIXTURES` 覆盖；默认 `.私档/传输-手机-20260918/`。
+// ⚠️ **D4（内存）不在本组**：其指名口径 `performance.measureUserAgentSpecificMemory()` 需
+//    `crossOriginIsolated`（COOP/COEP 响应头），而 `tests/lib/server.mjs` 未开 ⇒ D4 按「修后再测」处理。
+// ⚠️ **Y1 基线为「本构建」产物**：含首行截断注释（L4c 形态①）。实测**跨环境确定**——
+//    手机侧旧构建产物 = 本基线**剥离首行注释后**逐字节相同（115 B 差，已完证）。
+// ---------------------------------------------------------------------------
+const Y_FIXTURES = process.env.DOC2MD_BIG_FIXTURES || nodePath.join(ROOT, '.私档', '传输-手机-20260918');
+const Y_SCAN_LIMIT = 8 * 1024 * 1024; // D2：解析量与 1000 行 × ~390 B × 20× 余量相称
+const Y_SCAN_SPREAD = 0.1; // D2：两档差 ≤ 10%
+const Y_CONVERT_MS = 5000; // D3：绝对耗时上界（与 8 MB 相称）
+// 冻结基线（2026-09-18 实测；小档 2× 复跑、大档 3×/2× 复跑，字节与哈希全同）
+const Y_TIERS = [
+  {
+    key: '1-small',
+    file: '1-small_154KB_3054rows.xlsx',
+    rows: 3054,
+    fileBytes: 154597,
+    mdBytes: 66140,
+    mdSha256: 'A8A777C0A5CF13EDD6FF1EB824609A03F49CE230A3C56B10D553B6A912BF9F91',
+  },
+  {
+    key: '2-mid',
+    file: '2-mid_773KB_50001rows.xlsx',
+    rows: 50001,
+    fileBytes: 773494,
+    mdBytes: 23611,
+    mdSha256: 'BD38B16DFE570EFA811819F4DB7E878EB1CB0E0A7B2BA3C35A5249FEB6661F04',
+  },
+  {
+    key: '4-mid-large',
+    file: '4-mid-large_35.9MB_250000rows.xlsx',
+    rows: 250000,
+    fileBytes: 35856644,
+    mdBytes: 339912,
+    mdSha256: 'F90DCE360064A3FA9375DA58ADCA5888C78CB24CDC889BB7629B6EB159174F17',
+    big: true,
+  },
+  {
+    key: '3-big',
+    file: '3-big_47.4MB_436000rows.xlsx',
+    rows: 436000,
+    fileBytes: 49716718,
+    mdBytes: 352029,
+    mdSha256: 'C2C41F5AFB9105E91616ADD9A686545C00F68936D25E86E672DA99FC29C7ADCB',
+    big: true,
+  },
+];
+
+/** 夹具相对仓库根的 URL 路径（逐段 encode，中文目录可安全同源 fetch） */
+function yFixtureUrl(tier) {
+  const rel = nodePath.relative(ROOT, Y_FIXTURES).split(nodePath.sep).filter(Boolean);
+  return '/' + [...rel, tier.file].map((s) => encodeURIComponent(s)).join('/');
+}
+
+/** 单档：同源 fetch → convert → 页内计时 + 页内算 md 字节与 SHA256（避免把 MB 级字符串传回 Node） */
+function yConvertTier(page, tier) {
+  return page.evaluate(
+    async (arg) => {
+      const api = window.__doc2md;
+      if (!api || typeof api.convert !== 'function') return { error: 'window.__doc2md.convert 不存在（产物未构建？）' };
+      const resp = await fetch(arg.url);
+      if (!resp.ok) return { error: `fetch ${arg.url} → HTTP ${resp.status}` };
+      const buf = await resp.arrayBuffer();
+      const t0 = performance.now();
+      const r = await api.convert(new File([buf], arg.name));
+      const convertMs = performance.now() - t0;
+      const enc = new TextEncoder().encode(r.markdown);
+      const d = await crypto.subtle.digest('SHA-256', enc);
+      const hex = [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      return {
+        fileBytes: buf.byteLength,
+        convertMs: Math.round(convertMs),
+        mdBytes: enc.length,
+        mdSha256: hex,
+        scan: (r.meta && r.meta.scan) || null,
+      };
+    },
+    { url: yFixtureUrl(tier), name: tier.file }
+  );
+}
+
+test('契约组 Y：大文件路径（Y1 产物守卫=先绿 · Y2 解析量/Y3 耗时=先红）', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  const present = Y_TIERS.filter((x) => fs.existsSync(nodePath.join(Y_FIXTURES, x.file)));
+  const absent = Y_TIERS.filter((x) => !fs.existsSync(nodePath.join(Y_FIXTURES, x.file))).map((x) => x.file);
+  if (present.length === 0) {
+    t.skip(
+      `大文件夹具未提供（${nodePath.relative(ROOT, Y_FIXTURES)} 下无档）——夹具不入库（同 real-cid-paper.pdf 先例），` +
+        '本组跳过而非失败；要跑请准备四档或用 DOC2MD_BIG_FIXTURES 指定目录'
+    );
+    return;
+  }
+  if (absent.length) console.log(`    [Y] 缺失档（跳过）：${absent.join(' / ')}`);
+
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  const results = {};
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      // 每档独立 context+page 并跑完即关：避免背靠背残留污染耗时（实测工作集/私有提交不随页重载归还）
+      for (const tier of present) {
+        const page = await (await browser.newContext()).newPage();
+        page.setDefaultTimeout(300000); // 大档单次可达 ~100 s，远超默认 30 s
+        await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 20000 });
+        const rec = await yConvertTier(page, tier);
+        await page.close();
+        assert.equal(rec.error, undefined, `${tier.key} convert 失败：${rec.error}`);
+        results[tier.key] = rec;
+        console.log(
+          `    [Y] ${tier.key}（${tier.rows} 行）：${rec.convertMs} ms · md ${rec.mdBytes} B · scan=${rec.scan ? 'yes' : 'no'}`
+        );
+      }
+
+      await t.test('Y1 产物不变（先绿守卫·D1）：四档 md 字节 + SHA256 = 冻结基线', () => {
+        for (const tier of present) {
+          const rec = results[tier.key];
+          assert.equal(
+            rec.fileBytes,
+            tier.fileBytes,
+            `${tier.key} 输入夹具字节与冻结时不同：${rec.fileBytes} ≠ ${tier.fileBytes}——夹具被换过，先对齐夹具再谈产物`
+          );
+          assert.equal(
+            rec.mdBytes,
+            tier.mdBytes,
+            `${tier.key} md 字节变了：${rec.mdBytes} ≠ 基线 ${tier.mdBytes}（D1：产物必须逐字节不变；基线实现前固化，只许改实现不许改断言）`
+          );
+          assert.equal(rec.mdSha256, tier.mdSha256, `${tier.key} md SHA256 变了：${rec.mdSha256} ≠ 基线 ${tier.mdSha256}`);
+        }
+      });
+
+      await t.test('Y2 解析量（先红·D2）：meta.scan.bytes ≤ 8 MB 且两档差 ≤ 10%', (tt) => {
+        const bigs = present.filter((x) => x.big);
+        if (bigs.length < 2) {
+          tt.skip(`大档不全（需 25 万 + 43.6 万两档），现有：${bigs.map((x) => x.key).join(' / ') || '无'}`);
+          return;
+        }
+        for (const x of bigs) {
+          const scan = results[x.key].scan;
+          assert.ok(
+            scan && typeof scan.bytes === 'number',
+            `${x.key} 未提供 meta.scan.bytes——当前实现无该字段（**本断言先红，属预期**）。实现方向：够 1000 行即停，并记录已扫描的解压字节数`
+          );
+        }
+        for (const x of bigs) {
+          const { bytes } = results[x.key].scan;
+          assert.ok(bytes <= Y_SCAN_LIMIT, `${x.key} meta.scan.bytes = ${bytes} B > 8 MB（须与 1000 行窗口相称，而非与文件规模相称）`);
+        }
+        const [a, b] = bigs.map((x) => ({ key: x.key, bytes: results[x.key].scan.bytes }));
+        const spread = Math.abs(a.bytes - b.bytes) / Math.max(a.bytes, b.bytes);
+        assert.ok(
+          spread <= Y_SCAN_SPREAD,
+          `两档解析量差 ${(spread * 100).toFixed(1)}% > 10%（${a.key}=${a.bytes} B / ${b.key}=${b.bytes} B）——差得小才证明"与规模无关"`
+        );
+      });
+
+      await t.test('Y3 绝对耗时（先红·D3）：25 万 / 43.6 万两档 convert < 5000ms', (tt) => {
+        const bigs = present.filter((x) => x.big);
+        if (bigs.length < 2) {
+          tt.skip(`大档不全（需 25 万 + 43.6 万两档），现有：${bigs.map((x) => x.key).join(' / ') || '无'}`);
+          return;
+        }
+        for (const x of bigs) {
+          const { convertMs } = results[x.key];
+          assert.ok(
+            convertMs < Y_CONVERT_MS,
+            `${x.key} 转换 ${convertMs} ms ≥ ${Y_CONVERT_MS} ms（**本断言先红，属预期**：现走库回退全量解析；目标 = 够 1000 行即停）。` +
+              '注：耗时同档波动可达 1.4×，故本断言只用于量级判定，不比批'
+          );
+        }
+      });
+
+      // Y4（负对照，手工）：切回旧实现（库回退全量 / 无 scan 记录）后，Y2 与 Y3 必须变红，随后完整还原。
+      //   方法沿用既有负对照手法（.tmp/mk-pdf-neg.mjs 模式），记录在 tests/CONTRACT.md §7。
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
