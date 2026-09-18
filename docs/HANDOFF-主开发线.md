@@ -687,7 +687,7 @@
 
 > ⚠️ **补（2026-09-19，比本表更新）：「会话内沙箱起不了浏览器」只对「会话自己 spawn」成立**
 > **插件侧浏览器工具（`chrome_*` / `browser_*`）不受影响** —— 其进程由插件创建，**不经会话文件沙箱**，故在 `read-only` 与 `workspace-write` 下**均零升权可用**。
-> - **来源 1（2026-09-18 晚，Windows 侧，转记）**：`chrome_status` / `browser_navigate` / `browser_eval` / `web_search` 在 `read-only` 下全部可用。原始记录在 `平台/windows.md` §2，该条自标「应回灌本节」。
+> - **来源 1（2026-09-18 晚，Windows 侧，转记）**：`chrome_status` / `browser_navigate` / `browser_eval` / `web_search` 在 `read-only` 下全部可用。原始记录在**调度工作区**的 `..\doc2md-调度\平台\windows.md` §2（路径相对本仓库根），该条自标「应回灌本节」。
 > - **来源 2（2026-09-19 00:50，调度线独立复现，非转述）**：用 `chrome_navigate` + `chrome_evaluate` 成功读取 GitHub Releases 页；**同一时刻** `read_url` 对 `github.com` 报「解析到内网地址已阻止」—— 与 `docs/DEV-NOTES.md` 8.12 记载一致。
 > ⇒ **要真浏览器 / 真页面（查上游 issue、看渲染效果、抓 API、核 Release/Pages）时，先试插件侧工具，别默认外派给 Linux 或用户。**
 > ⇒ 本表 Windows 行「会话内沙箱起不了浏览器」应读作：**起不了「自己 spawn 的」浏览器**。
