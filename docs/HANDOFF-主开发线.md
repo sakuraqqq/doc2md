@@ -679,9 +679,16 @@
 
 | 平台 | 最擅长 | 硬限制（别再派） |
 |---|---|---|
-| **Windows（本机 / 主开发）** | 源码实现 · 构建内联（esbuild）· **产物字节 + SHA256 核验** · npm/lock/vendor 供应链审计 · metrics / lint · git 操作与发布准备（只到 dry-run） | **会话内沙箱起不了浏览器/子进程**（2026-09-18 实测：playwright `spawn EPERM`，`node --test` 亦 EPERM ⇒ 契约测试需一次性 `danger-full-access` 才跑得起来）· 本机 **playwright chromium 未安装**（回退 msedge）· 真机（Android）取证做不了 |
+| **Windows（本机 / 主开发）** | 源码实现 · 构建内联（esbuild）· **产物字节 + SHA256 核验** · npm/lock/vendor 供应链审计 · metrics / lint · git 操作与发布准备（只到 dry-run） | **会话内沙箱起不了浏览器/子进程**（2026-09-18 实测：playwright `spawn EPERM`，`node --test` 亦 EPERM ⇒ 契约测试需一次性 `danger-full-access` 才跑得起来）· 本机 **playwright chromium 未安装**（回退 msedge）· 真机（Android）取证做不了 · ⚠️ **但「起不了浏览器」只对「自己 spawn」成立，见本表下方补注** |
 | **手机（V2573A / Android 16）** | **用户可感行为**的唯一来源：真机 UI 实测 · ADB 只读取证（PSS / swap / 温度 / `exit-info` / 全量 logcat）· 触摸 / 分享 / 系统下载语义 · **真断网 PWA** | 无 root ⇒ 内核日志不可得（`dmesg` / `/dev/kmsg` / `/proc/kmsg` 全被挡）· 无线调试**绑 Wi-Fi**（adbd 随 wlan 起停，**换网需重新配对**）· 发热/充电污染基线（T3 前置：Thermal ≤ 1、SKIN < 40 °C、不边充边跑） |
 | **Linux（WSL2 Ubuntu 24.04 / CI）** | **换环境独立验收** · **真 playwright chromium**（`chromium-1234`，Windows 本机缺）· 负对照必红 · **CI 等价**（两个 workflow 均 `ubuntu-latest`）· 真 OCR 端到端 · bash/`rg` 一行流（隐私扫描、体积分析、跨平台一致性）· 客观资源数（cgroup / `time -v`） | 无 Android 真机 · 造 Office/WPS 对照件不便 · **WSL = 弱独立**（见下） |
+
+> ⚠️ **补（2026-09-19，比本表更新）：「会话内沙箱起不了浏览器」只对「会话自己 spawn」成立**
+> **插件侧浏览器工具（`chrome_*` / `browser_*`）不受影响** —— 其进程由插件创建，**不经会话文件沙箱**，故在 `read-only` 与 `workspace-write` 下**均零升权可用**。
+> - **来源 1（2026-09-18 晚，Windows 侧，转记）**：`chrome_status` / `browser_navigate` / `browser_eval` / `web_search` 在 `read-only` 下全部可用。原始记录在 `平台/windows.md` §2，该条自标「应回灌本节」。
+> - **来源 2（2026-09-19 00:50，调度线独立复现，非转述）**：用 `chrome_navigate` + `chrome_evaluate` 成功读取 GitHub Releases 页；**同一时刻** `read_url` 对 `github.com` 报「解析到内网地址已阻止」—— 与 `docs/DEV-NOTES.md` 8.12 记载一致。
+> ⇒ **要真浏览器 / 真页面（查上游 issue、看渲染效果、抓 API、核 Release/Pages）时，先试插件侧工具，别默认外派给 Linux 或用户。**
+> ⇒ 本表 Windows 行「会话内沙箱起不了浏览器」应读作：**起不了「自己 spawn 的」浏览器**。
 
 **WSL 的定位（2026-09-18 用户拍板）**：**合格的「弱独立」环境** —— 能验证**跨平台行为**（路径 / 权限 / 换行 / 构建一致性 / 真实 chromium 与 OCR），**不能替代跨机器硬件验证**（同机同内核，硬件、电源、热、驱动层面同源）。⇒ **验收报告必须写明档位**（弱独立 / 强独立）；**将来有第二台物理机时升格**为强独立。
 
