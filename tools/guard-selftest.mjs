@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkSite } from './deploy-smoke.mjs';
 import { checkVendorManifest, deliveryVersions, DELIVERY_FACE, itemsFromAuditJson, judged } from './audit-delivery.mjs';
-import { checkBaseline, loadActual, BASELINE_NEGATIVES } from './baseline-check.mjs';
+import { checkBaseline, loadActual, BASELINE_NEGATIVES, reconcileTap } from './baseline-check.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = path.join(ROOT, '.tmp', 'guard-selftest');
@@ -131,6 +131,32 @@ for (const neg of BASELINE_NEGATIVES) {
   const r = checkBaseline(neg.mutate(structuredClone(baseline)), baselineActual);
   ok(`baseline 负例：${neg.name} 必红`, r.errors.some((e) => neg.expect.test(e)), JSON.stringify(r.errors));
 }
+
+/* ---------- baseline · TAP 对账（卡 003 A6：负例必红） ----------
+ * 合成 TAP 摘要取自 JSON 本机口径（不写死数字 ⇒ JSON 变了也不会假红）；
+ * reporter 不依赖默认值（Node 20 默认 tap / Node 24 默认 spec，2026-09-19 实测）。 */
+const tapCounts = baseline.contract.local_with_fixtures.counts;
+const tapOK = `# tests ${tapCounts.total}\n# pass ${tapCounts.pass}\n# fail ${tapCounts.fail}\n# skipped ${tapCounts.skip}\n`;
+let rt = reconcileTap(tapOK, baseline, 'local_with_fixtures');
+ok('baseline 正例：TAP 摘要与 contract 口径一致', rt.errors.length === 0, JSON.stringify(rt.errors));
+
+rt = reconcileTap(tapOK.replace(`# pass ${tapCounts.pass}`, `# pass ${tapCounts.pass - 1}`), baseline, 'local_with_fixtures');
+ok(
+  'baseline 负例：TAP 摘要被篡改（pass −1）必红',
+  rt.errors.some((e) => e.includes(`TAP pass = ${tapCounts.pass - 1}`)),
+  JSON.stringify(rt.errors)
+);
+
+const tamperedCounts = structuredClone(baseline);
+const tc = tamperedCounts.contract.local_with_fixtures.counts;
+tc.total += 1;
+tc.pass += 1; // 仍自洽（pass+fail+skip==total）但与 TAP 不符 ⇒ 只有 TAP 对账抓得住
+rt = reconcileTap(tapOK, tamperedCounts, 'local_with_fixtures');
+ok(
+  'baseline 负例：JSON 契约数被改（自洽但与 TAP 不符）必红',
+  rt.errors.some((e) => e.includes(`counts.pass = ${tc.pass}`)),
+  JSON.stringify(rt.errors)
+);
 
 /* ---------- 汇总 ---------- */
 let failed = 0;
