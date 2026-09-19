@@ -1041,14 +1041,17 @@
     const ridToTarget = parseRelsMap(new TextDecoder().decode(rels.data));
     const map = [];
     for (const s of sheets) {
-      let target = ridToTarget.get(s.rid);
+      const target = normalizeSheetTarget(ridToTarget.get(s.rid));
       if (!target) throw new Error("workbook.xml.rels \u7F3A r:id \u6620\u5C04\uFF08" + s.rid + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
-      target = target.replace(/^\/+/, "");
-      target = target.replace(/^(?:\.{1,2}\/)+/, "");
-      if (!target.startsWith("xl/")) target = "xl/" + target;
       map.push({ name: s.name, target });
     }
     return map;
+  }
+  function normalizeSheetTarget(raw) {
+    if (!raw) return null;
+    let target = raw.replace(/^\/+/, "");
+    target = target.replace(/^(?:\.{1,2}\/)+/, "");
+    return target.startsWith("xl/") ? target : "xl/" + target;
   }
   var XML_NAMED_ENTITIES = { amp: "&", quot: '"', lt: "<", gt: ">", apos: "'" };
   var XML_ENTITY_RE = /&(amp|quot|lt|gt|apos);|&#x([0-9a-fA-F]+);|&#(\d+);/g;
@@ -1437,13 +1440,137 @@ ${xlsxRowsToMd(sheet.rows)}`);
       throw new Error("\u6587\u4EF6\u5DF2\u635F\u574F\u6216\u4E0D\u662F\u6709\u6548\u7684 Excel \u6587\u6863\uFF08zip/\u89E3\u6790\u5931\u8D25\uFF09\uFF0C\u8BF7\u7528 Excel/WPS \u53E6\u5B58\u540E\u91CD\u8BD5");
     }
   }
-  async function xlsxByLib(file, buf, readNames, names) {
+  var SHEET_NAME_RE = /name\s*=\s*["']([^"']*)["']/;
+  var SHEET_RID_RE = /r:id\s*=\s*["']([^"']*)["']/;
+  function parseSheetTagsLoose(wbText) {
+    const out = [];
+    const re = /<sheet\s[^>]*>/g;
+    let m;
+    while (m = re.exec(wbText)) {
+      const nm = SHEET_NAME_RE.exec(m[0]);
+      if (!nm) continue;
+      const rid = SHEET_RID_RE.exec(m[0]);
+      out.push({ name: decodeXml(nm[1]), rid: rid ? rid[1] : "" });
+    }
+    return out;
+  }
+  async function xlsxFallbackSheets(buf) {
+    const wb = await zipEntry(buf, "xl/workbook.xml");
+    if (!wb) return [];
+    const sheets = parseSheetTagsLoose(new TextDecoder().decode(wb.data));
+    if (sheets.length === 0) return [];
+    const rels = await zipEntry(buf, "xl/_rels/workbook.xml.rels");
+    const ridToTarget = rels ? parseRelsMap(new TextDecoder().decode(rels.data)) : /* @__PURE__ */ new Map();
+    return sheets.map((s) => ({ name: s.name, target: normalizeSheetTarget(ridToTarget.get(s.rid)) }));
+  }
+  function dimCorner(text) {
+    const m = /^\$?([A-Za-z]+)\$?(\d+)?$/.exec(String(text || "").trim());
+    if (!m) return null;
+    const col = colIndexOfRef(m[1]);
+    if (col < 0) return null;
+    return { cols: col + 1, rows: m[2] ? parseInt(m[2], 10) : 1 };
+  }
+  function parseDimensionRef(ref) {
+    const parts = String(ref || "").split(":");
+    const a = dimCorner(parts[0]);
+    const b = parts.length > 1 ? dimCorner(parts[1]) : a;
+    if (!a || !b) return null;
+    return { cols: Math.max(a.cols, b.cols), rows: Math.max(a.rows, b.rows) };
+  }
+  function rowColCount(body) {
+    if (!body) return 0;
+    const { cells } = parseRowCells(body, -1);
+    let max = cells.length;
+    for (const c of cells) {
+      const col = colIndexOfRef(c.r || "");
+      if (col >= 0 && col + 1 > max) max = col + 1;
+    }
+    return max;
+  }
+  function takeDimension(text, probe) {
+    const m = /<dimension\s[^>]*ref\s*=\s*"([^"]*)"/.exec(text);
+    if (!m) return false;
+    probe.declared = parseDimensionRef(m[1]);
+    return true;
+  }
+  var DIM_SCAN_BYTES = 256 * 1024;
+  async function readDeclaredArea(p, probe) {
+    while (p.bytes < DIM_SCAN_BYTES) {
+      if (takeDimension(p.pending, probe) || p.pending.includes("<sheetData")) return;
+      if (!await p.more()) return;
+    }
+  }
+  async function pullRowUnit(p) {
+    while (true) {
+      const unit = takeRowUnit(p.pending);
+      if (unit.kind === "row") return unit;
+      if (unit.keepFrom) p.consume(unit.keepFrom);
+      if (!await p.more()) return null;
+    }
+  }
+  async function probeSheetArea(buf, target, rowLimit) {
+    const meta = zipEntryMeta(buf, target);
+    const stream = meta && entryStream(buf, meta);
+    if (!stream) return null;
+    const p = textPuller(stream);
+    const probe = { declared: null, cols: 0, rows: 0 };
+    await readDeclaredArea(p, probe);
+    while (probe.rows < rowLimit) {
+      const unit = await pullRowUnit(p);
+      if (!unit) break;
+      probe.rows += 1;
+      probe.cols = Math.max(probe.cols, rowColCount(unit.body));
+      p.consume(unit.next);
+    }
+    await p.cancel();
+    return probe;
+  }
+  function areaLossWarning(name, probe) {
+    if (!probe || !probe.declared) return null;
+    const d = probe.declared;
+    const lostCols = Math.max(0, probe.cols - d.cols);
+    const lostRows = Math.max(0, probe.rows - d.rows);
+    if (lostCols === 0 && lostRows === 0) return null;
+    const head = "\u5DE5\u4F5C\u8868\u300C" + (name === null ? "Sheet1" : name) + "\u300D\uFF1A\u6587\u4EF6\u58F0\u660E\u7684";
+    if (lostCols > 0 && lostRows > 0) {
+      return head + `\u533A\u57DF\uFF08${d.cols} \u5217 \xD7 ${d.rows} \u884C\uFF09\u5C0F\u4E8E\u5B9E\u9645\u6570\u636E\uFF08${probe.cols} \u5217 \xD7 ${probe.rows} \u884C\uFF09\u2014\u2014 \u901A\u7528\u89E3\u6790\u6309\u58F0\u660E\u533A\u57DF\u8F93\u51FA\uFF0C\u53F3\u4FA7 ${lostCols} \u5217\u3001\u4E0B\u65B9 ${lostRows} \u884C\u5DF2\u88AB\u4E22\u5F03`;
+    }
+    if (lostCols > 0) {
+      return head + `\u8868\u5BBD\uFF08${d.cols} \u5217\uFF09\u5C0F\u4E8E\u5B9E\u9645\u6570\u636E\uFF08${probe.cols} \u5217\uFF09\u2014\u2014 \u901A\u7528\u89E3\u6790\u6309\u58F0\u660E\u5BBD\u5EA6\u8F93\u51FA\uFF0C\u53F3\u4FA7 ${lostCols} \u5217\u5DF2\u88AB\u4E22\u5F03`;
+    }
+    return head + `\u8868\u9AD8\uFF08${d.rows} \u884C\uFF09\u5C0F\u4E8E\u5B9E\u9645\u6570\u636E\uFF08${probe.rows} \u884C\uFF09\u2014\u2014 \u901A\u7528\u89E3\u6790\u6309\u58F0\u660E\u9AD8\u5EA6\u8F93\u51FA\uFF0C\u4E0B\u65B9 ${lostRows} \u884C\u5DF2\u88AB\u4E22\u5F03`;
+  }
+  async function stylesDateRisk(buf) {
+    const st = await zipEntry(buf, "xl/styles.xml");
+    if (!st) return false;
+    const xml = new TextDecoder().decode(st.data);
+    return !(xml.includes("<cellXfs") && xml.includes("</cellXfs>"));
+  }
+  async function xlsxDegradeWarnings(buf, sheets) {
+    const out = [];
+    const noStream = typeof DecompressionStream === "undefined";
+    if (noStream) {
+      out.push("\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u6D41\u5F0F\u89E3\u6790\uFF08\u7F3A\u5C11 DecompressionStream\uFF09\uFF1A\u5DF2\u56DE\u9000\u901A\u7528\u89E3\u6790\uFF0C\u5927\u6587\u4EF6\u4F1A\u660E\u663E\u66F4\u6162\u3001\u5360\u7528\u5185\u5B58\u66F4\u591A");
+    }
+    if (await stylesDateRisk(buf)) {
+      out.push("\u8BE5\u6587\u4EF6\u7684\u6837\u5F0F\u8868\uFF08xl/styles.xml\uFF09\u7F3A <cellXfs>\uFF1A\u65E5\u671F\u5355\u5143\u683C\u53EF\u80FD\u6309\u5E8F\u5217\u53F7\u663E\u793A\uFF08\u5982 45678 \u800C\u4E0D\u662F\u65E5\u671F\uFF09");
+    }
+    if (!noStream) {
+      for (const s of sheets.slice(0, XLSX_SHEET_LIMIT)) {
+        if (!s.target) continue;
+        const w = areaLossWarning(s.name, await probeSheetArea(buf, s.target, XLSX_ROW_LIMIT));
+        if (w) out.push(w);
+      }
+    }
+    return out;
+  }
+  async function xlsxByLib(file, buf, readNames, names, degrade) {
     const RX = window.readXlsxFile;
     if (!RX) throw new Error("read-excel-file \u5E93\u672A\u52A0\u8F7D");
     const readXlsx = typeof RX === "function" ? RX : RX.default || RX;
     const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
     const parts = [];
-    const warnings = [];
+    const warnings = Array.isArray(degrade) ? degrade.slice() : [];
     let truncated = false;
     let totalRows = 0;
     for (const name of readNames) {
@@ -1466,10 +1593,16 @@ ${xlsxRowsToMd(kept)}`);
   async function xlsxConvert(file, buf) {
     const wbMeta = {};
     const map = await xlsxWorkbookMap(buf, wbMeta).catch(() => null);
-    if (!map || map.length === 0) return xlsxByLib(file, buf, [null], [null]);
+    if (!map || map.length === 0) {
+      const fb = await xlsxFallbackSheets(buf);
+      const all = fb.map((s) => s.name);
+      const readNames = all.length > 0 ? all.slice(0, XLSX_SHEET_LIMIT) : [null];
+      const degrade = await xlsxDegradeWarnings(buf, fb);
+      return xlsxByLib(file, buf, readNames, all.length > 0 ? all : [null], degrade);
+    }
     const readMap = map.slice(0, XLSX_SHEET_LIMIT);
     const names = map.map((s) => s.name);
-    return await xlsxSelfParse(buf, readMap, names, wbMeta.date1904 === true).catch(() => xlsxByLib(file, buf, readMap.map((s) => s.name), names));
+    return await xlsxSelfParse(buf, readMap, names, wbMeta.date1904 === true).catch(async () => xlsxByLib(file, buf, readMap.map((s) => s.name), names, await xlsxDegradeWarnings(buf, readMap)));
   }
 
   // src/bline.js

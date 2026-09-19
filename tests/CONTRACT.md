@@ -284,6 +284,27 @@ v1 范围不含 .doc（拍板红线 6 = PDF/DOCX/XLSX/图片/TXT·HTML 5 类）�
 | G6-2 | `backend='xlsx-self'`（../ 归一化后走自解析） | 严格相等 | 🔴 红（**先红实测**：`backend=null`——`xlsxWorkbookMap` 拼成 `xl/../worksheets/sheet1.xml` → zip 精确匹配失败 → 抛错 → 回退库路径同样失败 → 整篇失败） |
 | G6-3 | 无 error/warnings | deepEqual [] | 🟢 绿（失败路径下 `meta.warnings` 仍为 `[]`——本条不区分红绿，仅守「正常文件无提示」） |
 
+### 契约组 G8 — 库回退路径「降级可见性」+ sheet 名退化（卡 005；2026-09-19 用户拍板三条口径；2026-09-20 契约先红）
+
+口径（写死）：① **静默降级 → 明确警告**，且必须进 **`meta.warnings`**（机器可判通道，不是只在 UI/console）；② `<cellXfs>` 缺失相关的**日期**问题**只加 warning、不改回退逻辑**（用户原话：别用隐蔽的病换明显的病）；③ sheet 名（007）与丢列可见（004-b）**同批**。
+
+依据（卡 004 只读调查，见 `docs/任务台账.md` §004）：回退到 `read-excel-file` 后，输出表宽由 **`<dimension ref>`** 决定 —— 库内按其后角开网格、越界单元格静默丢弃（`b<u&&m<a&&(l[m][b]=y.value)`）⇒ 真 6 列只出 3 列；且 `map` 失败分支传 `[null]` ⇒ **sheet 名一并丢失**（输出 `### Sheet: Sheet1`）。
+
+样例：**无新增入库样例** —— 用例**页内现造**（`window.fflate.zipSync`，与 G7/S3 同构）；数据面 = 真 **6 列 × 3 行**（值 = 行*10+列 ⇒ 11..16 / 21..26 / 31..36 —— 哪一列被丢一眼可见）。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| G8-1 | 窄 `<dimension>`（A1:C3，真数据 6 列）+ 回退触发（styles 缺 `<cellXfs>`）⇒ 必须说清「表宽被裁剪」 | 含「表宽」+「3 列」+「6 列」+「丢弃」 | ✅ 绿（**先红实测**：`warnings=[]` —— 静默丢列） |
+| G8-2 | **负对照 + 口径②**：`<dimension>` 正确（A1:F3）⇒ **不得**报表宽损失；但缺 `<cellXfs>` 须照报日期风险 | 不含「表宽」+ 含「cellXfs/日期」 | ✅ 绿（先红：日期提示亦缺） |
+| G8-3 | 单引号 `<sheet>`（map 失败分支）+ 窄 `<dimension>` ⇒ ① sheet 名不丢 ② 表宽提示在 ③ 不误报日期 | md 含 `### Sheet: S1` | ✅ 绿（**先红实测**：`### Sheet: Sheet1` = 名字丢了） |
+| G8-4 | 环境线：删 `window.DecompressionStream` ⇒ 必须提示「不支持流式解析 / 已回退通用解析」 | 含「流式解析」+「回退」 | ✅ 绿（先红：`warnings=[]`） |
+| G8-5 | **负对照**：无 `<dimension>` 元素 + 同触发 ⇒ 不得报表宽损失（无从判定即不报） | 不含「表宽」 | 🟢 绿（先红阶段即绿 —— 防「见回退就报警」的误报） |
+| G8-6 | 用例自净：`DecompressionStream` 已还原（不得污染后续组） | `typeof === 'function'` | 🟢 绿（先红阶段即绿） |
+
+**两相实测（本机 · 卡 005）**：**先红** = `node --test --test-name-pattern="契约组 G8"` → `tests 7 / pass 2 / fail 5`（exit 1）；**后绿** = 全量 **283 tests / 281 pass / 0 fail / 2 skip**、组 G8 **6/6**。
+
+⚠️ 本组**不依赖大文件夹具** ⇒ 两个口径（本机带夹具 / CI 干净检出）**都会跑** —— 这正是卡 005 的 +7 在两口径上一致的原因。
+
 ### 契约组 R — OCR 中文空格合并（2026-09-09；真实样例驱动：PPT 导出图片型 PDF 无文字层 → OCR）
 
 口径：**仅对 OCR 文本**做行内空白合并（文字层路径的排版空格不动）——CJK↔CJK / CJK↔中文标点（含 ASCII 括号、`%+`）/ CJK↔数字；CJK↔拉丁字母保留（中英混排不被打散）、数字↔数字保留、不跨行。实现 = `src/cjk.js`（零依赖纯函数）；**两条 OCR 入口都要接**——`src/pdf.js` `ocrPageToText`（扫描页降级）与 `src/convert.js` `imageConvert`（图片直传，**2026-09-15 补接**，见 R3）。
@@ -654,10 +675,18 @@ npm run gen:samples           # 重新生成样例（确定性）
 
 ## 7. 红绿状态与转绿路径（如实）
 
+- **2026-09-20 库回退路径「降级可见性」（卡 005：004-b + 007 同批）**：目标 = 卡 004 判定的两类**静默**降级**不再静默**，且**不动回退逻辑**。
+  - **实现**（只动 `src/xlsx.js`，+199/−12）：`readDeclaredArea`（阶段①读 `<dimension>`）+ `probeSheetArea`（阶段②扫前 1000 行取实际列/行）+ `areaLossWarning`（**只有真的少才报**）+ `stylesDateRisk`（口径②）+ `parseSheetTagsLoose` / `xlsxFallbackSheets`（**007：回退也不再丢 sheet 名**）+ `normalizeSheetTarget` 抽出（童子军重构，行为逐字不变）。**`src/convert.js` / `src/ui.js` 未动**（`meta.warnings` 汇总与 `.warnings` 渲染早已具备 ⇒ 提示自动到 UI）。
+  - **先红 → 后绿**：新增**契约组 G8**（见 §2）。**先红** = `tests 7 / pass 2 / fail 5`；**后绿** = 全量 **283 / 281 / 0 / 2**、G8 6/6。
+  - **产物不变**：四档 Y1 基线（`66140` / `23611` / `352755` / `352759`）**逐字节 + SHA256 不变**（离线核对台 4/4 + 浏览器组 Y1 绿）—— 本批只改「提示」与「sheet 名」，**不碰 markdown**。
+  - **A8 闸（不碰 T6）**：`parseStylesDateFormats` / `parseXfIds` / `xlsxSelfParse` 的 styles 调用点 / `xlsxParseSheetStream` 与基线 `9965d08` **函数级 byte-identical**。
+  - **契约数（人工同步，nonGoal 5）**：`local_with_fixtures` → **`283 / 281 / 0 / 2`**；`ci_clean_checkout` → **`280 / 277 / 0 / 3`**（后者本机复现 CI 口径实测；CI runner 真实值待推送后自动对账）。
+  - **坑（一手，进 `DEV-NOTES`）**：为过 `metrics` 拆函数时吃掉了「循环 `continue` 的二次检查机会」⇒ `<dimension>` 永远扫不到；**lint / 单测 / 离线核对台全绿，只有 G8 先红断言抓到** ⇒ 已改为**显式两阶段探针**（先读声明、再扫行，互不消费）。
+
 - **2026-09-19 契约数自动对账（卡 003：把最弱的字段变成最强的）**：`docs/BASELINE.json` 的 `contract.*` 由「文字溯源」升级为「**机器现算比对**」。
   - **机制**：`node tools/baseline-check.mjs --from-tap <tap 文件> --scope <口径>` 解析 **TAP 摘要**（`# tests / # pass / # fail / # skipped`）并与 JSON 的 `contract[scope].counts` **逐项比对**；**不一致即 exit 1**，文案写明「哪一侧该改 + 改应然值需拍板」；**守卫绝不自动改写 JSON**（自动改写 = 把"数字漂移"变成"数字静默跟随"）。
   - **不依赖默认 reporter（实测）**：**Node 20（CI）默认 `tap`**、**Node 24（本机）默认 `spec`** ⇒ CI 与本地一律显式 `npm test -- --test-reporter=tap`；`--from-tap` 对**非 TAP 输入明确报错**（不静默当 0）。
-  - **按口径分列**：CI 只校 `ci_clean_checkout`（干净检出无 `.私档/` ⇒ 组 Y 整组 skip）；`local_with_fixtures` **只能在有夹具的机器上校**。2026-09-19 本机实测**两口径双双 PASS**：`276 / 274 / 0 / 2` 与 `273 / 270 / 0 / 3`（**未改任何应然值**）。
+  - **按口径分列**：CI 只校 `ci_clean_checkout`（干净检出无 `.私档/` ⇒ 组 Y 整组 skip）；`local_with_fixtures` **只能在有夹具的机器上校**。2026-09-19（卡 003）本机实测两口径双双 PASS：`276 / 274 / 0 / 2` 与 `273 / 270 / 0 / 3`（**未改任何应然值**）；**2026-09-20（卡 005）新增组 G8 后两口径各 +7 ⇒ `283 / 281 / 0 / 2` 与 `280 / 277 / 0 / 3`，双双对账 exit 0**（`BASELINE.json` 由人工同步 —— 守卫查不出自洽但陈旧的契约数）。
   - **负例必红**：`tools/guard-selftest.mjs` **19/19**（新增：① TAP 摘要被篡改 ⇒ 红；② JSON 契约数被改**但仍自洽** ⇒ 红 —— 这一条只有 TAP 对账抓得住）。
 - **2026-09-19 大文件流式化批（卡 002：P1 流式 + A9/A10 预检提示）**：目标 = 大 xlsx 峰值内存由 **O(文件)** 变 **O(窗口)**（设计见 `docs/大文件路径专项-验收判据-20260917.md`）。
   - **实现**（两提交、顺序写死：**先流式化 → 再撤护栏**；中间态未上线）：`src/xlsx.js` 三处流式化（工作表 XML / `sharedStrings` 逐块解压 + 增量 `decode({stream:true})` + 跨块续接缓冲）+ 内部 `meta.scan = { bytes, rows }`；随后**撤除** t33 的 `sharedStrings` **4 MB 护栏**（判据错位：`compSize` 是压缩率、与内存无关；回退的库路径本身才是内存大户）+ `src/convert.js` **A9 预检**（**只读 ZIP 中央目录 offset+24**，不解压）+ `src/ui.js` **A10 解析前提示 + 双让帧**。
@@ -1026,7 +1055,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 - **2026-09-19（卡 002）**：**Y1 🟢**（小档沿用原基线、实测不变；**大档重冻**，理由见 §2 的「口径变更登记」）· **Y2 🟢**（`802,816 B` ≤ 8 MB、两档差 **0%**）· **Y3 🟢**（浏览器 **441–535 ms** ≪ 5 s；旧值 55–99 s）· **Y4** = 已并入 **Linux 独立验收单**（做法见下）。
 - **实现口径**：**够 `XLSX_ROW_LIMIT`(1000) 行即停**（工作表 XML 逐块解压、边解边停）+ `sharedStrings` **只解到被引用的 `maxS`**；`meta.scan = { bytes, rows }` **只进 meta**，**绝不写进用户下载的 `.md`**（2026-09-18 用户拍板 ④）。
 - **Y4 负对照做法（写死，供 Linux 侧复跑）**：`git checkout ed183ab -- src index.html`（= 本批前的实现与产物）⇒ 复跑组 Y：**Y2 必红**（无 `meta.scan`）· **Y3 必红**（55–99 s）· **大档 Y1 也会红**（回库路径 ⇒ 变回旧库路径字节，正好反证「重冻后的基线 = 快路径产物」）；随后 `git checkout HEAD -- src index.html` **完整还原**并复跑确认回到本节基线与 `0 fail`。
-- ⚠️ **本组在 CI 上整体跳过**（夹具不入库）⇒ **不要用 CI 绿灯推断 Y2/Y3 已达标**；判定必须在**有夹具的机器**上跑。两个口径：**本机带夹具 = `276 / 274 pass / 0 fail / 2 skip`** vs **CI 干净检出 = `273 / 270 / 0 / 3`**（见 `docs/BASELINE.json`）。
+- ⚠️ **本组在 CI 上整体跳过**（夹具不入库）⇒ **不要用 CI 绿灯推断 Y2/Y3 已达标**；判定必须在**有夹具的机器**上跑。两个口径（2026-09-20 卡 005 后）：**本机带夹具 = `283 / 281 pass / 0 fail / 2 skip`** vs **CI 干净检出 = `280 / 277 / 0 / 3`**（见 `docs/BASELINE.json`）。
 
 ## 8. 精确输出快照清单（契约组 D/E；2026-09-05 契约先红 t1 登记）
 
