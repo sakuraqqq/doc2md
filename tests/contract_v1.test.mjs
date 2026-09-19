@@ -82,9 +82,14 @@ const CASES = [
     file: 'sample.png',
     keyTokens: ['HELLO', 'DOC2MD', '2026'],
     format: 'image',
-    // T-1 冷启动豁免（拍板点 T-1 + DD-14 调整）：lazy-init 冷启动（本地 WASM/模型加载）不计入 500ms 主口径
-    // ——外部计时无法分离冷启动段，本用例以 5000ms 为豁免窗口；主口径 <500ms 保留（预热后/二次 OCR 计时）
-    thresholdMs: 5000,
+    // T-1 冷启动口径（2026-09-19 用户拍板 **B′**；登记见 CONTRACT.md 拍板点 T-1 追加条 + C3 行）：
+    //   lazy-init 冷启动（本地 WASM + 语言包载入）**不计入性能口径** ⇒ 本用例同页跑两次：
+    //   第 1 次 = 冷启动，只判「没卡死」（防呆上限 `coldCeilingMs`，**非性能判据**）；
+    //   第 2 次 = 预热后，按 **T-1 主口径 `< 500ms`** 断言（「预热后/二次 OCR 计时」这句终于落地）。
+    //   ⚠️ 旧做法（per-case `thresholdMs: 5000` 豁免窗口）**已作废、保留作历史**：2026-09-18 实测偶发
+    //      超时 10,194 ms（Linux 侧控制变量实验证明与补丁无关）⇒ 那只是把 flaky 留在门禁里。
+    warmup: true,
+    coldCeilingMs: 20000,
   },
 ];
 
@@ -327,15 +332,21 @@ async function runConvertCase(chromium, base, c, viewport) {
     const hasHook = await page.evaluate(() => typeof window.__doc2md === 'object' && typeof window.__doc2md.convert === 'function');
     assert.ok(hasHook, '页面未暴露契约挂钩 window.__doc2md.convert（见 docs/architecture.md §7）');
     const b64 = fs.readFileSync(nodePath.join(DATA, c.file)).toString('base64');
-    const t0 = Date.now();
-    const res = await page.evaluate(
-      async (arg) => {
-        const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
-        return window.__doc2md.convert(new File([bytes], arg.name));
-      },
-      { b64, name: c.file }
-    );
-    elapsedMs = Date.now() - t0;
+    // 同页单次转换（外部计时 = convert 调用起止）。warmup 用例会跑第二次，并以**第二次**的计时做性能判据。
+    const convertOnce = async () => {
+      const t0 = Date.now();
+      const r = await page.evaluate(
+        async (arg) => {
+          const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+          return window.__doc2md.convert(new File([bytes], arg.name));
+        },
+        { b64, name: c.file }
+      );
+      return { res: r, ms: Date.now() - t0 };
+    };
+    const first = await convertOnce();
+    const res = first.res;
+    elapsedMs = first.ms;
     assert.equal(res.error, undefined, `convert 返回错误: ${res.error}`);
     assert.equal(typeof res.markdown, 'string', 'markdown 非字符串');
     // ZCode ①（1.1 先红）：成功路径 meta.elapsedMs 必须 > 0——convert.js 成功 return 的 meta
@@ -360,11 +371,29 @@ async function runConvertCase(chromium, base, c, viewport) {
     }
     assert.deepEqual(consoleErrors, [], `console error 非零：${consoleErrors.join(' | ')}`);
     assert.deepEqual(externalRequests, [], `非本地网络请求（零外发红线）：${externalRequests.join(', ')}`);
-    assert.ok(elapsedMs < (c.thresholdMs || 500), `转换耗时 ${elapsedMs}ms ≥ ${c.thresholdMs || 500}ms 契约阈值（口径见 CONTRACT.md 拍板点 T-1${c.thresholdMs ? '——image 冷启动豁免窗口 5000ms' : ''}）`);
-    if (res.meta && typeof res.meta.elapsedMs === 'number') {
-      console.log(`    [${c.id}@${viewport.name}] 转换 ${res.meta.elapsedMs}ms（外部计时 ${elapsedMs}ms），关键内容命中`);
+    if (c.warmup) {
+      // T-1 B′（2026-09-19 拍板）：冷启动**只判「没卡死」**（防呆，非性能口径）
+      assert.ok(
+        elapsedMs < c.coldCeilingMs,
+        `冷启动 ${elapsedMs}ms ≥ 防呆上限 ${c.coldCeilingMs}ms（**非性能判据**：lazy-init 冷启动不计入 T-1 性能口径；先查是不是页面/模型加载卡死）`
+      );
+      // 「预热后计时」——同页第二次调用（WASM/语言包已加载）⇒ 走 <500ms 主口径
+      const warm = await convertOnce();
+      assert.equal(warm.res.error, undefined, `预热后 convert 返回错误: ${warm.res.error}`);
+      assert.ok(
+        warm.ms < 500,
+        `预热后转换耗时 ${warm.ms}ms ≥ 500ms 契约阈值（T-1 主口径：lazy-init 冷启动不计入，**预热后计时**；见 CONTRACT.md 拍板点 T-1 2026-09-19 追加条）`
+      );
+      console.log(
+        `    [${c.id}@${viewport.name}] 冷启动 ${elapsedMs}ms（防呆上限 ${c.coldCeilingMs}ms，不计性能）· 预热后 ${warm.ms}ms（主口径 <500ms），关键内容命中`
+      );
     } else {
-      console.log(`    [${c.id}@${viewport.name}] 转换（外部计时）${elapsedMs}ms，关键内容命中`);
+      assert.ok(elapsedMs < (c.thresholdMs || 500), `转换耗时 ${elapsedMs}ms ≥ ${c.thresholdMs || 500}ms 契约阈值（口径见 CONTRACT.md 拍板点 T-1）`);
+      if (res.meta && typeof res.meta.elapsedMs === 'number') {
+        console.log(`    [${c.id}@${viewport.name}] 转换 ${res.meta.elapsedMs}ms（外部计时 ${elapsedMs}ms），关键内容命中`);
+      } else {
+        console.log(`    [${c.id}@${viewport.name}] 转换（外部计时）${elapsedMs}ms，关键内容命中`);
+      }
     }
   } finally {
     await browser.close();
@@ -4466,7 +4495,16 @@ const Y_FIXTURES = process.env.DOC2MD_BIG_FIXTURES || nodePath.join(ROOT, '.私�
 const Y_SCAN_LIMIT = 8 * 1024 * 1024; // D2：解析量与 1000 行 × ~390 B × 20× 余量相称
 const Y_SCAN_SPREAD = 0.1; // D2：两档差 ≤ 10%
 const Y_CONVERT_MS = 5000; // D3：绝对耗时上界（与 8 MB 相称）
-// 冻结基线（2026-09-18 实测；小档 2× 复跑、大档 3×/2× 复跑，字节与哈希全同）
+// 冻结基线（**2026-09-19 两档大夹具重冻**；小档沿用 2026-09-18 原值、实测不变）
+//   ⚠️ **口径变更登记**（用户 2026-09-19 拍板「选项 1」；同条登记于 tests/CONTRACT.md §7 + 契约组 Y）：
+//   大档**原冻结值 = 库回退路径（read-excel-file）产物** —— 撤护栏前 `sharedStrings` compSize 16.4 / 10.4 MB
+//   > 4 MB ⇒ 自解析路径直接 throw ⇒ 走库路径。本批撤护栏后大档改走**流式快路径**，而两条路径对这些文件
+//   **本来就不等价**：`4-mid-large` 表宽 **18 → 22 列**（1001 行里 **951 行前 18 列逐字符相同**，另有 3 行在
+//   20+ 列有真实数据；成因 = 快路径按 **`c@r` 列号归位**，2026-09-10 拍板、契约组 S3 守着）。
+//   **流式化本身零字节变化**（等价性台：旧快路径（仅关护栏）vs 新流式 ⇒ **四档 markdown 逐字节相同**，已证）；
+//   变的是**走哪条路径**，而「撤护栏」正是本卡明文要求 ⇒ 大档基线按快路径重冻。
+//   **旧值（库路径产物，保留作历史，勿再当基线引用）**：`4-mid-large` 339,912 B / `F90DCE36…F4F17` ·
+//   `3-big` 352,029 B / `C2C41F5A…7ADCB`（与归档的手机侧旧构建产物一致：剥离首行截断注释后差 115 B）。
 const Y_TIERS = [
   {
     key: '1-small',
@@ -4489,8 +4527,8 @@ const Y_TIERS = [
     file: '4-mid-large_35.9MB_250000rows.xlsx',
     rows: 250000,
     fileBytes: 35856644,
-    mdBytes: 339912,
-    mdSha256: 'F90DCE360064A3FA9375DA58ADCA5888C78CB24CDC889BB7629B6EB159174F17',
+    mdBytes: 352755,
+    mdSha256: '96127CB737C520C6BDFC34BA0D3E8942BA60B16DCA3800A6C64C8658917A120D',
     big: true,
   },
   {
@@ -4498,8 +4536,8 @@ const Y_TIERS = [
     file: '3-big_47.4MB_436000rows.xlsx',
     rows: 436000,
     fileBytes: 49716718,
-    mdBytes: 352029,
-    mdSha256: 'C2C41F5AFB9105E91616ADD9A686545C00F68936D25E86E672DA99FC29C7ADCB',
+    mdBytes: 352759,
+    mdSha256: '519D58AAA964F7D893D629B2604A4D25CB2CBB4E40EFB678EBC5C97EA3F9281D',
     big: true,
   },
 ];
