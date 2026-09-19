@@ -66,7 +66,13 @@
 ## 本地命令约定
 
 - git 操作一律加前缀 `git -c safe.directory=*`（**不带引号**）—— pwsh 下 `'*'` 的引号会被吞成非法值，报 `fatal: detected dubious ownership`（2026-09-15 实测：不带引号可用；同进程三件套 `$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*` 亦可用。全局 gitconfig 沙箱写不了，别试写全局配置）。
-- **native 命令禁止进 PS 管道 / 表达式 / 变量捕获**（2026-09-15 再次踩到）：`git … | Select-Object`、`2>&1`、`"…" + (git …)` → `Access is denied` 或 `StandardOutputEncoding is only supported when standard output is redirected`，且**命令根本没执行**（易误判为 fetch/commit 失败）。git 输出一律写成**独立语句**。
+- **native 命令一律独立语句 —— 禁止进 PS 管道 / 表达式 / 变量捕获 / 重定向**（2026-09-15 首记 `git`；2026-09-19 卡 004 **本会话自测复现**后推广到全部 native 命令）：
+  - **范围 = 任何 native 命令**，不止 `git`/`node`/`curl`/`wsl` —— `python` / `npm` / `npx` / `gh` … 只要是被 PS 当外部程序启动的都同罪。
+  - **触发写法**：`… | Select-Object` · `… | Out-String` · `2>&1` · `$x = python …` · `"…" + (python …)`，以及**任何重定向** —— `> 文件` · `>> 文件` · **`> $null`**（`$null` 也是重定向目标，不是「丢弃输出」的语法糖）。
+  - **报错原文**（2026-09-19 自测，PS 7.6.6）：`python -c … > $null` → `程序'python.exe'运行失败： StandardOutputEncoding is only supported when standard output is redirected.`；`python -c … | Select-Object -First 1` → `程序'python.exe'运行失败： 拒绝访问。`（另有 `git` 变体 `Access is denied`）。错误记录 `FullyQualifiedErrorId=NativeCommandFailed` / `CategoryInfo=ResourceUnavailable`，且是**非终止错误**（脚本会继续往下跑，更易误判）。
+  - ⚠️ **命令根本没执行**（副作用探针实证：`python -c 'open("f","w")…' > $null` 不留文件；去掉重定向即成功创建）⇒ **失败后的 `$LASTEXITCODE` 是上一项的残留值，一律不可采信** —— 它甚至可能是上一项成功留下的 **0**（自测：先 `git --version`(0) 再撞坑 → `$LASTEXITCODE=0`，看着像"成功"）。
+  - ⚠️ **`> 文件` 还会留下 0 字节的假产物**（自测复现两次）：重定向目标文件**由 PS 先建好**，进程却没起来 ⇒ **"文件存在"不等于"命令跑了"**，要看**大小/内容**（0 字节 = 没跑）。
+  - **替代**：要输出 → 直接打印（statement 级）；要落盘 → 用 PS cmdlet 承接（`Set-Content`）或让命令自己写文件；要判成败 → 看**副作用**（文件/引用是否出现**且非空**），不看 `$LASTEXITCODE`。
 - **手机侧不同步本仓库**（2026-09-14 起；用户已卸载 gitsync，原话「不好用」）：**规则** = 手机侧**只读** —— ① 看/用产品走 Pages 站点 `https://sakuraqqq.github.io/doc2md/`；② 浏览代码/Release 走 GitHub App 或网页版；③ 要本地副本用 `git clone --depth 1`（≈30 MB，可再配 `git sparse-checkout`）；④ **任何推送一律经桌面终端**（与红线 3「发布动作人执」同源）。
   - 成因（`.git` 31 MB + 工作树 29.2 MB + 历史两次重写 ⇒ 旧克隆与远端**无共同祖先** ⇒ 只能全量重拉；且该工具曾**清零 6 个二进制**：4 个 PWA 图标 + 2 个测试样例 PNG）与完整替代路径见 `docs/DEV-NOTES.md` **2026-09-14 事故节**。
 - 提交身份用 `-c user.name=... -c user.email=...` 局部覆盖（基线 commit 同款），以仓库历史既有身份为准，不猜。
