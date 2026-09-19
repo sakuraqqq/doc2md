@@ -404,7 +404,7 @@
     return { t: "[" + inner.replace(/\]/g, "\\]") + "](" + escUrl(href) + ")", lead: /^\s/.test(raw), trail: /\s$/.test(raw) };
   }
   function imgFrag(el) {
-    const alt = el.getAttribute("alt") || "";
+    const alt = (el.getAttribute("alt") || "").replace(/\s+/g, " ");
     const src = el.getAttribute("src") || "";
     return { t: "![" + alt.replace(/\]/g, "%5D") + "](" + escUrl(src) + ")", lead: false, trail: false };
   }
@@ -662,8 +662,11 @@
     const b = String(name || "doc").replace(/\.docx$/i, "");
     return b.replace(/[\\/:*?"<>|\s]+/g, "-").slice(0, 64) || "doc";
   }
+  function docxCollapseWs(s) {
+    return String(s || "").replace(/\s+/g, " ").trim();
+  }
   function docxAltFromName(entry) {
-    const n = String(entry.descr || "").trim() || String(entry.name || "").trim();
+    const n = docxCollapseWs(entry.descr) || docxCollapseWs(entry.name);
     if (!n) return "";
     return n.replace(/\.[A-Za-z0-9]{1,8}$/, "");
   }
