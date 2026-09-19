@@ -814,6 +814,10 @@
 3. **设计先定**（零成本）：U1 一键下载的交互/重名规则 · A7.3 内存三条的拍板点清单
 4. **机制项【需拍板】**：重构配额自查 `tools/quota-check.mjs`（可选，只提醒不阻断）
 5. **R9-6（第九轮 §4.1）【需拍板】**：`package.json` 加 `engines` + CI Node 版本与发布/验收运行时对齐（现 CI 20 / 本机 24）—— 纯配置，不动 `src/`
+6. **CI 加固（2026-09-20 事故驱动）【需拍板】—— 待立卡材料**：`tests` run **`35458379084`**（提交 `0d4f039`）红在第 8 步 `Delivery-face dependency audit`：`registry advisories HTTP 503`，body 自述 **maintenance**（npm 官方 **Scheduled maintenance 2026-09-19 17:00–19:00 UTC**，该 run 在 17:32Z）；**同服务商 `/-/npm/v1/security/audits/quick` 此刻 200 且数据同源** ⇒ 是**端点级维护**，非整站/非我方网络。**后果**：其后 6 步（metrics / site smoke / **Contract tests** / TAP 对账 / PWA / OCR）**全部被跳过** —— 该 run **从未执行测试**。**与卡 005 代码无关**（硬证据：`git diff --stat 9965d08..HEAD -- tools/` 空 + `tools/audit-delivery.mjs` blob 前后同一份 `dbae1d16…` + 本机现在跑同一步同样 503）。详见 `docs/DEV-NOTES.md` **2026-09-20 事故节**。三条候选（**全部属 `tools/**` / `.github/**`，卡 005 范围外 ⇒ 本卡未动**）：
+   1. **步序后移**【零风险·推荐】：把 `Delivery-face dependency audit` 挪到 `Contract tests` **之后** —— 判据一字不改，只保证**外部故障不再遮蔽测试信号**（本次真正的教训是"红的位置让人误判成自己改坏了"，而不是"审计太严"）。
+   2. **退避重试**【需拍板】：503/超时按 2–3 次指数退避重试；**保留**「数据不可得 ⇒ 宁可红，不假绿」的立场（2026-09-16 用户拍板），只削瞬时抖动。
+   3. **端点降级**【需拍板】：bulk 端点不可用时改用 `/-/npm/v1/security/audits/quick`（实测此刻 200 且返回 advisory 数据）；需先确认两端口径等价（findings 结构不同 ⇒ 要写映射 + 断言），且**降级本身要留痕**（否则等于把"数据不可得"悄悄变成"没问题"）。
 
 **B. 复盘后第一批（09-19 起；高概率 × 低成本）**
 5. **A7.1 预览截断提示挪到 textarea 外**（XS）**【需拍板：改契约组 Q 断言】**
