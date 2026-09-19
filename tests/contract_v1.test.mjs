@@ -4868,3 +4868,183 @@ test('契约组 G8：库回退路径降级可见性（窄 <dimension> 丢列 / �
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 I2：图片 alt 的连续空白折叠（卡 006；2026-09-20 契约先红）
+// 来源：**用户 2026-09-20 实测**（观察期「去用」）—— 原话「我自己试了一下，我看这**括号**有问题啊」。
+// 现象：alt 里的空行让 `![alt](src)` 跨行 ⇒ 渲染器断在空行处 ⇒ 页面上只剩**裸的 `![` / `](`**；
+//   实测（markdown md2html，6 图切片）**0/6 变成 `<img>`**（每张图的 alt 都带空行时比出卡人报的 2/6 更差）。
+// 根因（两条入口都要治，**不许只测一条**）：
+//   ① `src/docx.js` `docxAltFromName`（L33-38）只有 `.trim()`（只削首尾）⇒ 内部 `\n\n` 原样进 `![alt](src)`；
+//   ② `src/html2md.js` `imgFrag`（L110-115）只把 `]` 转义成 `%5D`，**同样没处理空白** —— 且 docx 路径的
+//      alt 最终也**经它**产出（mammoth → HTML → htmlToMarkdown）⇒ 两条入口是同一条链。
+// 口径（用户 2026-09-20 拍板，写死）：连续空白（含 `\n` / `\r\n` / `\t` / 多空格）**压成单个空格** ——
+//   ① **不删除**（保住无障碍信息）② **不留多个** ③ 产物里 `![alt](src)` **必须单行**。
+// 用例 = **测试内现造**（页内 `window.fflate.zipSync`，与 G7/G8/S3 同构）⇒ **不动既有夹具的字节锁**
+//   （`tests/data/manifest.json` 一个字节不改；`sample-image-alt.docx` 只用作 V4 的回归对照组）。
+// 先红预期（实现前）：I2-1/I2-2/I2-3/I2-4/I2-5 红（alt 跨行/空白未折叠）；I2-6 控制组现绿（无连续空白者一字不变）。
+// ---------------------------------------------------------------------------
+const I2_MAIN = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const I2_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const I2_WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+const I2_A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+const I2_PIC = 'http://schemas.openxmlformats.org/drawingml/2006/picture';
+const I2_XMLDECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+/** 1×1 透明 PNG（67 B；mammoth 只透传字节，不解码） */
+const I2_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+/** 一个 `<w:drawing>`：wp:docPr + pic:cNvPr 都带 name/descr（与真实 Word 同形；docx.js 读 PIC 命名空间的 cNvPr） */
+function i2Drawing(id, rid, name, descr) {
+  const attrs = `id="${id}" name="${name}" descr="${descr}"`;
+  return (
+    '<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+    `<wp:extent cx="3600000" cy="1200000"/><wp:docPr ${attrs}/>` +
+    `<a:graphic><a:graphicData uri="${I2_PIC}"><pic:pic><pic:nvPicPr><pic:cNvPr ${attrs}/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="3600000" cy="1200000"/></a:xfrm>' +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>' +
+    '</wp:inline></w:drawing></w:r></w:p>'
+  );
+}
+/** docx 包（parts = 条目名 → 字符串；`*.png` 由调用方换成字节） */
+function i2DocxParts(images) {
+  const body = images.map((im, i) => i2Drawing(i + 1, im.rid, im.name, im.descr)).join('');
+  return {
+    '[Content_Types].xml':
+      I2_XMLDECL +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Default Extension="png" ContentType="image/png"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>',
+    '_rels/.rels':
+      I2_XMLDECL +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      `<Relationship Id="rId1" Type="${I2_REL}/officeDocument" Target="word/document.xml"/></Relationships>`,
+    'word/document.xml':
+      I2_XMLDECL +
+      `<w:document xmlns:w="${I2_MAIN}" xmlns:r="${I2_REL}" xmlns:wp="${I2_WP}" xmlns:a="${I2_A}" xmlns:pic="${I2_PIC}">` +
+      `<w:body>${body}</w:body></w:document>`,
+    'word/_rels/document.xml.rels':
+      I2_XMLDECL +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      images.map((im) => `<Relationship Id="${im.rid}" Type="${I2_REL}/image" Target="${im.target}"/>`).join('') +
+      '</Relationships>',
+  };
+}
+/** 单图 parts 便捷构造（descr/name 里用 `&#10;` / `&#9;` 写字符引用 —— 字面换行会被 XML 属性值归一化成空格） */
+function i2One(descr, name) {
+  const parts = i2DocxParts([{ rid: 'rId11', target: 'media/image1.png', name, descr }]);
+  parts['word/media/image1.png'] = '(PNG)';
+  return parts;
+}
+test('契约组 I2：图片 alt 的连续空白折叠（docx descr/name + html2md <img alt> 两条入口）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const fixtures = {
+        i2DescNl: i2One('文本, 信件&#10;&#10;AI 生成的内容可能不正确。', '图片 1.png'),
+        i2NameNl: i2One('', '图片&#10;&#10;2057007599.png'),
+        i2Ws: i2One('A&#9;B   C&#10;D', '图.png'),
+        i2Clean: i2One('干净说明 1（含单个空格）', '图.png'),
+      };
+      const recs = await page.evaluate(async (arg) => {
+        const F = window.fflate;
+        const png = Uint8Array.from(atob(arg.png), (c) => c.charCodeAt(0));
+        const out = {};
+        for (const key of Object.keys(arg.parts)) {
+          const entries = {};
+          for (const name of Object.keys(arg.parts[key])) {
+            entries[name] = name.endsWith('.png') ? png : F.strToU8(arg.parts[key][name]);
+          }
+          const zip = F.zipSync(entries);
+          const r = await window.__doc2md.convert(new File([zip], key + '.docx'));
+          out[key] = {
+            error: r.error ? String(r.error.message || r.error) : null,
+            assets: (r.meta.assets || []).length,
+            md: String(r.markdown || ''),
+          };
+        }
+        const hm = (html) => window.__doc2md.htmlToMarkdown(html, { warnings: [] });
+        out.__html = {
+          lf: hm('<img alt="a\n\nb" src="x.png">'),
+          crlf: hm('<img alt="a&#13;&#10;b" src="x.png">'),
+          tab: hm('<img alt="a\tb" src="x.png">'),
+          twoSpace: hm('<img alt="a  b" src="x.png">'),
+          bracket: hm('<img alt="a\n\nb]c" src="x.png">'),
+          control: hm('<img alt="plain alt" src="x.png">'),
+        };
+        return out;
+      }, { parts: fixtures, png: I2_PNG_B64 });
+
+      const caseOf = (k) => {
+        assert.equal(recs[k].error, null, `${k} convert 失败：${recs[k].error}`);
+        return recs[k];
+      };
+
+      await t.test('I2-1 docx descr 含空行 ⇒ 产物 `![alt](src)` 单行，空行压成**恰好一个空格**', () => {
+        const rec = caseOf('i2DescNl');
+        assert.equal(rec.assets, 1, `assets=${rec.assets}（期望 1 张）`);
+        assert.equal(
+          rec.md,
+          '![文本, 信件 AI 生成的内容可能不正确。](assets/i2DescNl-1.png)',
+          `产物不是「空行→单空格」的逐字符期望：${JSON.stringify(rec.md)}`
+        );
+        assert.ok(!/!\[[^\]]*[\r\n][^\]]*\]/.test(rec.md), `图片语法仍跨行：${JSON.stringify(rec.md)}`);
+      });
+
+      await t.test('I2-2 docx name 回落路径（descr 空）同样折叠，去扩展名口径不变', () => {
+        const rec = caseOf('i2NameNl');
+        assert.equal(rec.md, '![图片 2057007599](assets/i2NameNl-1.png)', `name 回落路径未折叠：${JSON.stringify(rec.md)}`);
+      });
+
+      await t.test('I2-3 docx 制表符 / 连续空格 / 换行 ⇒ 各自压成一个空格（不是删除、不留多个）', () => {
+        const rec = caseOf('i2Ws');
+        assert.equal(rec.md, '![A B C D](assets/i2Ws-1.png)', `多形态空白未折叠成单空格：${JSON.stringify(rec.md)}`);
+      });
+
+      await t.test('I2-4 html2md 侧：`\\n\\n` / CRLF / 制表 / 双空格全部折叠；`]`→`%5D` 口径保留', () => {
+        const h = recs.__html;
+        assert.equal(h.lf, '![a b](x.png)', `字面换行未折叠：${JSON.stringify(h.lf)}`);
+        assert.equal(h.crlf, '![a b](x.png)', `CRLF 未折叠：${JSON.stringify(h.crlf)}`);
+        assert.equal(h.tab, '![a b](x.png)', `制表符未折叠：${JSON.stringify(h.tab)}`);
+        assert.equal(h.twoSpace, '![a b](x.png)', `连续空格未折叠：${JSON.stringify(h.twoSpace)}`);
+        assert.equal(h.bracket, '![a b%5Dc](x.png)', `折叠与既有 %5D 转义未同时成立：${JSON.stringify(h.bracket)}`);
+      });
+
+      await t.test('I2-5 A3 无障碍信息保住：清洗前后「去空白」逐字符相等（不丢字，含中文标点）', () => {
+        const src = '文本, 信件\n\nAI 生成的内容可能不正确。';
+        const alt = (/^!\[([^\]]*)\]/.exec(caseOf('i2DescNl').md) || [])[1] || '';
+        assert.equal(alt.replace(/\s+/g, ''), src.replace(/\s+/g, ''), `清洗丢字：alt=${JSON.stringify(alt)}`);
+        assert.ok(!/[\r\n\t]/.test(alt), `alt 里仍残留换行/制表：${JSON.stringify(alt)}`);
+        assert.ok(!/ {2,}/.test(alt), `alt 里仍残留连续空格：${JSON.stringify(alt)}`);
+      });
+
+      await t.test('I2-6 控制组（A4 回归护栏）：无连续空白的 descr **一字不变**', () => {
+        const rec = caseOf('i2Clean');
+        assert.equal(rec.md, '![干净说明 1（含单个空格）](assets/i2Clean-1.png)', `无空白可折叠者被改动：${JSON.stringify(rec.md)}`);
+        assert.equal(recs.__html.control, '![plain alt](x.png)', `html2md 控制组被改动：${JSON.stringify(recs.__html.control)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
