@@ -73,8 +73,10 @@ git push --dry-run origin v0.1.1
 
 ## 4. npm pack 类核对（本项目无 npm 包，等价清单）
 
-- 交付物 = **静态站**（index.html **121,229 B**——**2026-09-16 v0.1.9 实测**；页脚版本串 `v0.1.7`/`v0.1.8`/`v0.1.9` **等长** → **字节数不变而 SHA 必变** ⇒ 同长度多哈希：v0.1.9 = `F80E862639708D7C27CCE6C1A3E388298E8ECF01536B6B0F912539BBBE74F04D` · P1 修复态（**未发版**，同 121,229 B）= `9EA390B955BBA9C4E62BD5A58DD78073635575F4779572494C89897D36710A11` · v0.1.8 = `14773E5FFDE3072A33FCD127C1DDA6E8CF739CB8366F4D17BDDED0A5EBF3F178` · S4 批 = `4A15BA51…9EEA6` · v0.1.7 = **120,988 B** / `2EE82D47…1CBB` —— **核对一律以 SHA256 为准**）+ **vendor/（185 文件 / 16,051,845 B）+ langs/（2 文件 / 7,670,131 B，OCR 语言包）+ manifest.json（730 B）+ sw.js（4,253 B）+ icons/（4 文件 / 10,014 B）**——全部同源分文件，T9′）；`package.json` 保持 `private: true`，**不发布 npm 包**。
-- 等价核对：Pages 部署目录清单（工作流上传根目录；部署后核对 index.html/manifest/sw/icons/vendor/*/langs/* 齐）、发布记录留存：版本 + 测试结果 + 各产物 SIZE + SHA256（见下方记录区）。
+- **现值快照（2026-09-19，卡 001-C 起）**：交付物 = **静态站**（`index.html` + `vendor/` + `langs/`(OCR 语言包) + `manifest.json` + `sw.js` + `icons/`——全部同源分文件，T9′）。**具体字节 / SHA / 文件数一律以 `docs/BASELINE.json` 为准**（`released` / `online` / `delivery` 三段；由 `tools/baseline-check.mjs` 按 git blob 与磁盘**现算比对**，漂移即 CI 红）—— 本节**不再缓存**具体数字。`package.json` 保持 `private: true`，**不发布 npm 包**。
+- ⚠️ **核对一律以 SHA256 为准（不是字节数）**：页脚版本串 `v0.1.7`/`v0.1.8`/`v0.1.9` **等长** ⇒ **字节数不变而哈希必变**（2026-09-15 曾因此**静默过期**）。
+- **历史哈希（保留作历史，勿再当现值引用）**：v0.1.9 = `121,229 B` / `F80E862639708D7C27CCE6C1A3E388298E8ECF01536B6B0F912539BBBE74F04D` · P1 修复态（**未发版**，同 121,229 B）= `9EA390B955BBA9C4E62BD5A58DD78073635575F4779572494C89897D36710A11` · v0.1.8 = `14773E5FFDE3072A33FCD127C1DDA6E8CF739CB8366F4D17BDDED0A5EBF3F178` · S4 批 = `4A15BA51…9EEA6` · v0.1.7 = **120,988 B** / `2EE82D47…1CBB`。
+- 等价核对：Pages 部署目录清单（工作流上传根目录；部署后核对 index.html/manifest/sw/icons/vendor/*/langs/* 齐 —— **清单齐备性另有 `node tools/deploy-smoke.mjs _site` 守卫**）、发布记录留存：版本 + 测试结果 + 各产物 SIZE + SHA256（见下方记录区）。
 - 若未来发布 npm 包：`npm pack --dry-run --json`（**必须 --json**，plain 输出看不见清单）核对 LICENSE/产物/源码/入口都在清单。
 
 ## 5. 观察期

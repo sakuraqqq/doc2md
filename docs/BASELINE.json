@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "_comment": "doc2md 数字型易变量的唯一真相源（2026-09-19 立，卡 001-C）。规则：① 只放「会漂移的数字」，不放规则/口径文字；② 每个数字须被带 measured（时点+来源）与 scope（口径）的节点覆盖 —— 缺即红；③ 能现算的绝不写死：released/online 的 index.html 由 tools/baseline-check.mjs 从 git blob 现算比对，交付面按磁盘现算；④ HEAD / 远端 / 待推数不入本文件（「产物与 src 一致」由契约组 T 守卫）；⑤ 契约数是实跑数据，守卫只做溯源 + 自洽（pass+fail+skip==total），真实性由跑测试保证。",
+  "contract": {
+    "local_with_fixtures": {
+      "counts": { "total": 276, "pass": 271, "fail": 3, "skip": 2 },
+      "measured": {
+        "at": "2026-09-18",
+        "source": "npm test（本机 · 升权实跑，TAP 摘要）—— 记录见 HANDOFF A11.10/A11.11 与顶部基线行"
+      },
+      "scope": "本机口径：.私档/传输-手机-20260918 四档夹具在位 ⇒ 组 Y 真跑（4 条：组壳+Y1+Y2+Y3）；3 fail = 组 Y 预期先红（Y2 无 meta.scan · Y3 超 5s · 组壳），非回归。与 CI 口径不可混用"
+    },
+    "ci_clean_checkout": {
+      "counts": { "total": 273, "pass": 270, "fail": 0, "skip": 3 },
+      "measured": {
+        "at": "2026-09-18T18:53:16Z",
+        "source": "GitHub Actions run 35382665936（main @ 41d4203）npm test 的 TAP 摘要：# tests 273 / # pass 270 / # fail 0 / # skipped 3"
+      },
+      "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip（CI 日志实见 `ok 39 - 契约组 Y … # SKIP 大文件夹具未提供`）⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −1 / fail −3 / skip +1。故 CI 绿 ≠ 组 Y 绿"
+    }
+  },
+  "released": {
+    "version": "0.1.9",
+    "tag": "v0.1.9",
+    "tag_sha": "cc504dadd22f632607b761e87825004784f6731e",
+    "index_html": {
+      "bytes": 121229,
+      "sha256": "F80E862639708D7C27CCE6C1A3E388298E8ECF01536B6B0F912539BBBE74F04D"
+    },
+    "measured": {
+      "at": "2026-09-16",
+      "source": "发行记录（docs/RELEASE.md v0.1.9 节 / RELEASE-CHECKLIST §3 Pages 复验）；2026-09-19 由 tools/baseline-check.mjs 从 tag 的 blob 现算复核一致"
+    },
+    "scope": "已发布产物 = tag 指向提交的 index.html blob；守卫现算比对 tag_sha / 字节 / SHA256 三者（页脚串等长 ⇒ 字节数不变而哈希必变，一律以 SHA256 为准）"
+  },
+  "online": {
+    "url": "https://sakuraqqq.github.io/doc2md/",
+    "index_html": {
+      "bytes": 121406,
+      "sha256": "18EA70E4E2D50403B0134C3543172FCA6F4BDCE14E3277A23CFD11F4FE279EB3"
+    },
+    "source_commit": "e0bd1de",
+    "divergence_reason": "线上 = main 构建（依赖 PR 落地批）：push main 曾触发 Pages 自动部署；用户 2026-09-17 拍板接受现状（该批行为零变更，两台已证），等下次推 tag 被发布物覆盖，不手动 dispatch",
+    "measured": {
+      "at": "2026-09-17",
+      "source": "RELEASE-CHECKLIST §5 v0.1.9 附注 / HANDOFF 顶部「Pages 部署口径已改」行；2026-09-19 现算复核 source_commit 的 blob 与该值一致"
+    },
+    "scope": "线上现状（外部状态）：脚本不联网核对现状，只现算 source_commit 的 blob 以证明该数字来自真实提交；线上现状由 RELEASE-CHECKLIST §3/§4 人工核对，与 released 不一致时 divergence_reason 必填"
+  },
+  "delivery": {
+    "vendor_dir": { "files": 185, "bytes": 16051845 },
+    "langs_dir": { "files": 2, "bytes": 7670131 },
+    "icons_dir": { "files": 4, "bytes": 10014 },
+    "manifest_json": { "bytes": 730 },
+    "sw_js": { "bytes": 4253 },
+    "measured": {
+      "at": "2026-09-19",
+      "source": "本机磁盘实测（文件数 + 总字节汇总）；守卫每次按磁盘现算比对"
+    },
+    "scope": "交付面清单：文件数 + 总字节（不含 SHA —— SHA 由 deploy-smoke / vendor-manifest 各自守卫）；vendor 含 cmaps/tessdata"
+  }
+}

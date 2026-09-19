@@ -1,6 +1,6 @@
 # tests.yml — doc2md CI 质量门（防屎山 ③ 守门）
 # 模板：cola（可乐工厂效率计算器）tests.yml；按任务书扩展为 checks job：
-#   build-consistency → lint → 守卫自测 → 交付面依赖审计 → metrics（超限必须为 0）
+#   build-consistency → lint → 守卫自测 → baseline 守卫 → 交付面依赖审计 → metrics（超限必须为 0）
 #   → 站点白名单 smoke（组装临时 _site）→ npm test → pwa-audit → verify:ocr
 # 说明：
 #   - 触发：push main · **push tag `v*`**（2026-09-17 加固：发布 tag 也必须过同款门禁，见第九轮审查 §4.4）
@@ -16,6 +16,10 @@
 #     tools/audit-delivery.mjs 的 ALLOWLIST 并给理由与日期。
 #   - 守卫自测（2026-09-17）：`node tools/guard-selftest.mjs` —— deploy-smoke 与 audit-delivery 的
 #     正例 + **负例必红**（守卫自己也要能被测红；来源：第九轮审查 §2.2/§2.3）。
+#   - baseline 守卫（2026-09-19，卡 001-C）：`node tools/baseline-check.mjs` —— `docs/BASELINE.json`
+#     的数字型易变量（契约数 / 发布物与线上产物 / 交付面清单）按仓库实际**现算比对**，漂移即红；
+#     负例 3 条（产物哈希 / 契约数 / tag_sha）并入上面的守卫自测。**需要 tag 及其对象** ⇒ checkout
+#     用 `fetch-depth: 0`（action 契约：0 = 全历史 + 全部 tag；默认 1 不含 tag）。
 #   - 站点白名单 smoke（2026-09-17 前移到 CI）：本地按 deploy-pages 的同款 cp 白名单组装临时 `_site`
 #     再跑 deploy-smoke —— 原先只在部署 workflow 里跑，PR/主干不会提前发现「新增顶层文件漏发」。
 name: tests
@@ -33,6 +37,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          # baseline 守卫要按 tag 现算发布物 blob（tag 及其对象必须到本地）：默认 fetch-depth: 1 不含 tag
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -45,8 +52,10 @@ jobs:
         run: npm run build && git diff --exit-code index.html
       - name: "Lint (ESLint: src/ + tools/)"
         run: npm run lint
-      - name: "Guard selftest (deploy-smoke / audit-delivery 正例 + 负例必红；2026-09-17)"
+      - name: "Guard selftest (deploy-smoke / audit-delivery / baseline 正例 + 负例必红；2026-09-17)"
         run: node tools/guard-selftest.mjs
+      - name: "Baseline guard (docs/BASELINE.json 数字真相源：契约数溯源 + 发布物/线上/交付面现算比对；2026-09-19 卡 001-C)"
+        run: node tools/baseline-check.mjs
       - name: "Delivery-face dependency audit (交付面 high/critical 未豁免即红；2026-09-16 用户拍板 B 项)"
         run: node tools/audit-delivery.mjs
       - name: "Code metrics gate (超限函数必须为 0；2026-09-10 用户拍板)"
