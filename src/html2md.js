@@ -108,8 +108,12 @@ function linkFrag(el, mode) {
 }
 
 // <img>：alt 内 ] 转义 + src URL 转义（审查报告 §1.3；k4b 口径：alt 的 ] 以 %5D 转义——契约正则定版）
+// 卡 006（2026-09-20 用户实测）：alt 里的**连续空白**（`\n` / `\r\n` / 制表符 / 多空格）压成**单个空格** ——
+//   否则 `![alt](src)` 跨行 ⇒ 渲染器断在空行处 ⇒ 页面只剩裸 `![` / `](`（docx 路径的 alt 最终也走这里：
+//   mammoth → HTML `<img alt>` → 本函数）。⚠️ **只折叠、不裁剪首尾**（保持既有行为；裁剪会动到"无换行输入"
+//   的字节，而 docx 侧的首尾 trim 是它本来就有的口径）。
 function imgFrag(el) {
-  const alt = el.getAttribute('alt') || '';
+  const alt = (el.getAttribute('alt') || '').replace(/\s+/g, ' ');
   const src = el.getAttribute('src') || '';
   return { t: '![' + alt.replace(/\]/g, '%5D') + '](' + escUrl(src) + ')', lead: false, trail: false };
 }

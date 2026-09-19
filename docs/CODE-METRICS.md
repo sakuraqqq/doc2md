@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-19T17:21:10.124Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-19T18:25:42.770Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：21；函数总数：524；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：21；函数总数：525；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 524 个，超限 0 个。
+重构后当前：函数 525 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -37,7 +37,7 @@
 | tools/baseline-check.mjs | checkProvenance | 136 | 9 | 11 |
 | tools/measure-xlsx-peak.mjs | startPssSampler | 175 | 9 | 11 |
 | src/ui.js | renderResult | 218 | 9 | 10 |
-| src/docx.js | ommlParts | 103 | 9 | 9 |
+| src/docx.js | ommlParts | 110 | 9 | 9 |
 | src/sniff.js | imageKind | 185 | 9 | 9 |
 | src/xlsx.js | areaLossWarning | 794 | 9 | 8 |
 | src/xlsx.js | parseRowCells | 268 | 8 | 14 |
@@ -45,19 +45,19 @@
 | tools/baseline-check.mjs | checkContract | 155 | 8 | 10 |
 | tools/baseline-check.mjs | runSelftest | 387 | 8 | 10 |
 | tools/measure-xlsx-peak.mjs | (anonymous) | 179 | 8 | 10 |
-| src/docx.js | ommlScript | 66 | 8 | 9 |
+| src/docx.js | ommlScript | 73 | 8 | 9 |
 | src/xlsx.js | cellToString | 548 | 8 | 9 |
 | tools/measure-xlsx-peak.mjs | measureTier | 234 | 8 | 9 |
-| src/docx.js | docxCollectWarnings | 285 | 8 | 8 |
+| src/docx.js | docxCollectWarnings | 292 | 8 | 8 |
 | src/ui.js | downloadZip | 77 | 8 | 8 |
 | tools/audit-delivery.mjs | main | 235 | 8 | 8 |
 | src/convert.js | runConverter | 222 | 8 | 7 |
 | src/sniff.js | sniff | 162 | 8 | 7 |
 | src/xlsx.js | isBuiltinDateId | 503 | 8 | 7 |
-| src/html2md.js | blockifyContainer | 147 | 7 | 13 |
+| src/html2md.js | blockifyContainer | 151 | 7 | 13 |
 | src/xlsx.js | xlsxDegradeWarnings | 824 | 7 | 12 |
 | tools/deploy-smoke.mjs | checkSite | 135 | 7 | 9 |
-| src/docx.js | ommlEnclosingPara | 136 | 7 | 8 |
+| src/docx.js | ommlEnclosingPara | 143 | 7 | 8 |
 | src/xlsx.js | zipDirectory | 58 | 7 | 8 |
 | src/xlsx.js | xlsxSelfParse | 628 | 7 | 8 |
 | src/pdf.js | addGlyph | 68 | 7 | 7 |
@@ -78,12 +78,12 @@
 | tools/baseline-check.mjs | checkDelivery | 242 | 7 | 6 |
 | tools/metrics.mjs | countCycPoints | 118 | 7 | 6 |
 | src/xlsx.js | scanSheetRowsStream | 330 | 6 | 13 |
-| src/html2md.js | liToLines | 290 | 6 | 11 |
-| src/html2md.js | blockChildToLines | 247 | 6 | 10 |
+| src/html2md.js | liToLines | 294 | 6 | 11 |
+| src/html2md.js | blockChildToLines | 251 | 6 | 10 |
 | src/pdf.js | linesToMarkdown | 323 | 6 | 10 |
 | src/sniff.js | gb18030Fallback | 117 | 6 | 10 |
-| src/docx.js | docxParseForMd | 232 | 6 | 9 |
-| src/html2md.js | listElToMd | 221 | 6 | 9 |
+| src/docx.js | docxParseForMd | 239 | 6 | 9 |
+| src/html2md.js | listElToMd | 225 | 6 | 9 |
 | src/ocr.js | getOcrWorker | 41 | 6 | 9 |
 | src/xlsx.js | takeSiUnit | 387 | 6 | 9 |
 | tools/measure-xlsx-peak.mjs | parseArgs | 42 | 6 | 9 |
@@ -98,7 +98,7 @@
 | src/app.js | handleFiles | 15 | 6 | 6 |
 | src/app.js | processOne | 35 | 6 | 6 |
 | src/convert.js | runOrExplain | 168 | 6 | 6 |
-| src/docx.js | ommlMathEntry | 144 | 6 | 6 |
+| src/docx.js | ommlMathEntry | 151 | 6 | 6 |
 | src/ocr.js | prepareOcrImage | 75 | 6 | 6 |
 | src/sniff.js | decodeText | 23 | 6 | 6 |
 | src/sniff.js | ctrlRatio | 246 | 6 | 6 |
@@ -110,12 +110,12 @@
 | tools/gen-icons.mjs | onTextLine | 67 | 6 | 6 |
 | src/convert.js | ocrWarnings | 69 | 6 | 5 |
 | src/convert.js | unsupportedError | 200 | 6 | 5 |
-| src/docx.js | ommlDelim | 84 | 6 | 5 |
-| src/docx.js | dstrikeAttrPlan | 189 | 6 | 5 |
-| src/docx.js | docxImageElement | 268 | 6 | 5 |
-| src/docx.js | docxConvert | 295 | 6 | 5 |
+| src/docx.js | ommlDelim | 91 | 6 | 5 |
+| src/docx.js | dstrikeAttrPlan | 196 | 6 | 5 |
+| src/docx.js | docxImageElement | 275 | 6 | 5 |
+| src/docx.js | docxConvert | 302 | 6 | 5 |
 | src/html2md.js | codeFrag | 77 | 6 | 5 |
-| src/html2md.js | liTailToLines | 269 | 6 | 5 |
+| src/html2md.js | liTailToLines | 273 | 6 | 5 |
 | src/pdf.js | countAsciiGlyph | 59 | 6 | 5 |
 | src/pdf.js | isCjkChar | 186 | 6 | 5 |
 | src/pdf.js | needsSpace | 203 | 6 | 5 |
@@ -136,8 +136,8 @@
 | src/sniff.js | charsetLabels | 62 | 5 | 7 |
 | src/xlsx.js | colIndexOfRef | 568 | 5 | 7 |
 | src/xlsx.js | pullRowUnit | 764 | 5 | 7 |
-| src/docx.js | docxMathFragment | 163 | 5 | 6 |
-| src/docx.js | insideQuotes | 199 | 5 | 6 |
+| src/docx.js | docxMathFragment | 170 | 5 | 6 |
+| src/docx.js | insideQuotes | 206 | 5 | 6 |
 | src/xlsx.js | findCentralEntry | 44 | 5 | 6 |
 | src/xlsx.js | readDeclaredArea | 755 | 5 | 6 |
 | src/xlsx.js | probeSheetArea | 775 | 5 | 6 |
@@ -145,17 +145,16 @@
 | tools/audit-delivery.mjs | deliveryVersions | 68 | 5 | 6 |
 | tools/baseline-check.mjs | parseTapSummary | 284 | 5 | 6 |
 | src/app.js | safeHandleFiles | 61 | 5 | 5 |
-| src/docx.js | docxInjectLatex | 252 | 5 | 5 |
-| src/docx.js | (anonymous) | 254 | 5 | 5 |
+| src/docx.js | docxInjectLatex | 259 | 5 | 5 |
+| src/docx.js | (anonymous) | 261 | 5 | 5 |
 | src/xlsx.js | parseSheetTags | 137 | 5 | 5 |
 | tools/baseline-check.mjs | checkBaseline | 259 | 5 | 5 |
 | tools/deploy-smoke.mjs | collectSrcset | 54 | 5 | 5 |
 | src/convert.js | textConvert | 84 | 5 | 4 |
 | src/convert.js | xlsxPreflight | 151 | 5 | 4 |
 | src/docx.js | extForContentType | 21 | 5 | 4 |
-| src/docx.js | docxAltFromName | 35 | 5 | 4 |
-| src/html2md.js | liChildToLines | 280 | 5 | 4 |
-| src/html2md.js | cellToMd | 343 | 5 | 4 |
+| src/html2md.js | liChildToLines | 284 | 5 | 4 |
+| src/html2md.js | cellToMd | 347 | 5 | 4 |
 | src/pdf.js | asciiWordEdge | 192 | 5 | 4 |
 | src/sniff.js | decodeBom | 44 | 5 | 4 |
 | src/sniff.js | trimMetaValue | 91 | 5 | 4 |
@@ -184,7 +183,7 @@
 | tools/metrics.mjs | walkFiles | 39 | 4 | 5 |
 | src/convert.js | imageConvert | 22 | 4 | 4 |
 | src/convert.js | readAndSniff | 182 | 4 | 4 |
-| src/docx.js | ommlConcat | 112 | 4 | 4 |
+| src/docx.js | ommlConcat | 119 | 4 | 4 |
 | src/html2md.js | collectFrags | 38 | 4 | 4 |
 | src/html2md.js | (anonymous) | 39 | 4 | 4 |
 | src/ocr.js | (anonymous) | 48 | 4 | 4 |
@@ -198,13 +197,13 @@
 | src/bline.js | (anonymous) | 6 | 4 | 3 |
 | src/convert.js | done | 114 | 4 | 3 |
 | src/convert.js | withTruncationNotice | 215 | 4 | 3 |
-| src/docx.js | texText | 43 | 4 | 3 |
-| src/docx.js | ommlIs | 49 | 4 | 3 |
-| src/docx.js | ommlRad | 76 | 4 | 3 |
-| src/docx.js | docxImageNames | 128 | 4 | 3 |
-| src/docx.js | (anonymous) | 288 | 4 | 3 |
-| src/html2md.js | pushMarkerLine | 237 | 4 | 3 |
-| src/html2md.js | spanOf | 337 | 4 | 3 |
+| src/docx.js | texText | 50 | 4 | 3 |
+| src/docx.js | ommlIs | 56 | 4 | 3 |
+| src/docx.js | ommlRad | 83 | 4 | 3 |
+| src/docx.js | docxImageNames | 135 | 4 | 3 |
+| src/docx.js | (anonymous) | 295 | 4 | 3 |
+| src/html2md.js | pushMarkerLine | 241 | 4 | 3 |
+| src/html2md.js | spanOf | 341 | 4 | 3 |
 | src/ocr.js | rotateImage90 | 102 | 4 | 3 |
 | src/pdf.js | ocrPageToText | 21 | 4 | 3 |
 | src/pdf.js | pageTextWithOcr | 421 | 4 | 3 |
@@ -230,8 +229,8 @@
 | tools/metrics.mjs | childNesting | 163 | 4 | 3 |
 | tools/metrics.mjs | collectFunctions | 182 | 4 | 3 |
 | src/pdf.js | glyphRun | 84 | 3 | 4 |
-| src/docx.js | ommlChild | 50 | 3 | 3 |
-| src/html2md.js | fragFor | 134 | 3 | 3 |
+| src/docx.js | ommlChild | 57 | 3 | 3 |
+| src/html2md.js | fragFor | 138 | 3 | 3 |
 | src/pdf.js | isPdfGarbageCode | 358 | 3 | 3 |
 | src/pdf.js | documentMonospaceFonts | 393 | 3 | 3 |
 | src/sniff.js | countFffd | 131 | 3 | 3 |
@@ -245,17 +244,18 @@
 | src/convert.js | cjkLatin | 52 | 3 | 2 |
 | src/convert.js | guardError | 193 | 3 | 2 |
 | src/docx.js | docxSafeBase | 29 | 3 | 2 |
-| src/docx.js | ommlFracTex | 60 | 3 | 2 |
-| src/docx.js | docxParseDoc | 120 | 3 | 2 |
-| src/docx.js | dstrikeIsOff | 182 | 3 | 2 |
-| src/docx.js | dstrikeReplace | 217 | 3 | 2 |
+| src/docx.js | docxAltFromName | 42 | 3 | 2 |
+| src/docx.js | ommlFracTex | 67 | 3 | 2 |
+| src/docx.js | docxParseDoc | 127 | 3 | 2 |
+| src/docx.js | dstrikeIsOff | 189 | 3 | 2 |
+| src/docx.js | dstrikeReplace | 224 | 3 | 2 |
 | src/html2md.js | brFrag | 55 | 3 | 2 |
 | src/html2md.js | emphasisFrag | 64 | 3 | 2 |
-| src/html2md.js | imgFrag | 111 | 3 | 2 |
-| src/html2md.js | wrapBlock | 180 | 3 | 2 |
-| src/html2md.js | quoteElToMd | 318 | 3 | 2 |
-| src/html2md.js | (anonymous) | 321 | 3 | 2 |
-| src/html2md.js | htmlToMarkdown | 391 | 3 | 2 |
+| src/html2md.js | imgFrag | 115 | 3 | 2 |
+| src/html2md.js | wrapBlock | 184 | 3 | 2 |
+| src/html2md.js | quoteElToMd | 322 | 3 | 2 |
+| src/html2md.js | (anonymous) | 325 | 3 | 2 |
+| src/html2md.js | htmlToMarkdown | 395 | 3 | 2 |
 | src/pdf.js | showTextRun | 103 | 3 | 2 |
 | src/pdf.js | (anonymous) | 150 | 3 | 2 |
 | src/pdf.js | runsToPageText | 344 | 3 | 2 |
@@ -302,23 +302,24 @@
 | src/convert.js | preflightHooks | 140 | 2 | 1 |
 | src/convert.js | setPreflightHook | 146 | 2 | 1 |
 | src/convert.js | (anonymous) | 216 | 2 | 1 |
-| src/docx.js | ommlChildren | 56 | 2 | 1 |
-| src/docx.js | normalizeDstrikeXml | 225 | 2 | 1 |
-| src/html2md.js | flush | 150 | 2 | 1 |
-| src/html2md.js | headingBlock | 174 | 2 | 1 |
-| src/html2md.js | preBlock | 185 | 2 | 1 |
-| src/html2md.js | blockOfEl | 211 | 2 | 1 |
-| src/html2md.js | (anonymous) | 254 | 2 | 1 |
-| src/html2md.js | nestedListToLines | 261 | 2 | 1 |
-| src/html2md.js | (anonymous) | 323 | 2 | 1 |
-| src/html2md.js | warnMerged | 329 | 2 | 1 |
-| src/html2md.js | rowCells | 351 | 2 | 1 |
-| src/html2md.js | (anonymous) | 353 | 2 | 1 |
-| src/html2md.js | rowsToMd | 361 | 2 | 1 |
-| src/html2md.js | (anonymous) | 363 | 2 | 1 |
-| src/html2md.js | tableToMd | 370 | 2 | 1 |
-| src/html2md.js | isPreBlock | 380 | 2 | 1 |
-| src/html2md.js | (anonymous) | 397 | 2 | 1 |
+| src/docx.js | docxCollapseWs | 39 | 2 | 1 |
+| src/docx.js | ommlChildren | 63 | 2 | 1 |
+| src/docx.js | normalizeDstrikeXml | 232 | 2 | 1 |
+| src/html2md.js | flush | 154 | 2 | 1 |
+| src/html2md.js | headingBlock | 178 | 2 | 1 |
+| src/html2md.js | preBlock | 189 | 2 | 1 |
+| src/html2md.js | blockOfEl | 215 | 2 | 1 |
+| src/html2md.js | (anonymous) | 258 | 2 | 1 |
+| src/html2md.js | nestedListToLines | 265 | 2 | 1 |
+| src/html2md.js | (anonymous) | 327 | 2 | 1 |
+| src/html2md.js | warnMerged | 333 | 2 | 1 |
+| src/html2md.js | rowCells | 355 | 2 | 1 |
+| src/html2md.js | (anonymous) | 357 | 2 | 1 |
+| src/html2md.js | rowsToMd | 365 | 2 | 1 |
+| src/html2md.js | (anonymous) | 367 | 2 | 1 |
+| src/html2md.js | tableToMd | 374 | 2 | 1 |
+| src/html2md.js | isPreBlock | 384 | 2 | 1 |
+| src/html2md.js | (anonymous) | 401 | 2 | 1 |
 | src/pdf.js | screenY | 97 | 2 | 1 |
 | src/pdf.js | argAt | 116 | 2 | 1 |
 | src/pdf.js | (anonymous) | 149 | 2 | 1 |
@@ -369,21 +370,17 @@
 | src/app.js | (anonymous) | 100 | 1 | 0 |
 | src/app.js | (anonymous) | 101 | 1 | 0 |
 | src/convert.js | poorOcr | 64 | 1 | 0 |
-| src/docx.js | (anonymous) | 92 | 1 | 0 |
-| src/docx.js | (anonymous) | 96 | 1 | 0 |
-| src/docx.js | (anonymous) | 97 | 1 | 0 |
-| src/docx.js | (anonymous) | 98 | 1 | 0 |
 | src/docx.js | (anonymous) | 99 | 1 | 0 |
-| src/docx.js | ommlPlaceholderRun | 153 | 1 | 0 |
-| src/docx.js | (anonymous) | 274 | 1 | 0 |
-| src/docx.js | convertImage | 314 | 1 | 0 |
+| src/docx.js | (anonymous) | 103 | 1 | 0 |
+| src/docx.js | (anonymous) | 104 | 1 | 0 |
+| src/docx.js | (anonymous) | 105 | 1 | 0 |
+| src/docx.js | (anonymous) | 106 | 1 | 0 |
+| src/docx.js | ommlPlaceholderRun | 160 | 1 | 0 |
+| src/docx.js | (anonymous) | 281 | 1 | 0 |
+| src/docx.js | convertImage | 321 | 1 | 0 |
 | src/html2md.js | escUrl | 16 | 1 | 0 |
 | src/html2md.js | (anonymous) | 82 | 1 | 0 |
 | src/html2md.js | strikeFrag | 90 | 1 | 0 |
-| src/html2md.js | (anonymous) | 120 | 1 | 0 |
-| src/html2md.js | (anonymous) | 121 | 1 | 0 |
-| src/html2md.js | (anonymous) | 122 | 1 | 0 |
-| src/html2md.js | (anonymous) | 123 | 1 | 0 |
 | src/html2md.js | (anonymous) | 124 | 1 | 0 |
 | src/html2md.js | (anonymous) | 125 | 1 | 0 |
 | src/html2md.js | (anonymous) | 126 | 1 | 0 |
@@ -391,12 +388,12 @@
 | src/html2md.js | (anonymous) | 128 | 1 | 0 |
 | src/html2md.js | (anonymous) | 129 | 1 | 0 |
 | src/html2md.js | (anonymous) | 130 | 1 | 0 |
-| src/html2md.js | inlineTrim | 144 | 1 | 0 |
-| src/html2md.js | (anonymous) | 188 | 1 | 0 |
-| src/html2md.js | (anonymous) | 194 | 1 | 0 |
-| src/html2md.js | (anonymous) | 195 | 1 | 0 |
-| src/html2md.js | (anonymous) | 196 | 1 | 0 |
-| src/html2md.js | (anonymous) | 197 | 1 | 0 |
+| src/html2md.js | (anonymous) | 131 | 1 | 0 |
+| src/html2md.js | (anonymous) | 132 | 1 | 0 |
+| src/html2md.js | (anonymous) | 133 | 1 | 0 |
+| src/html2md.js | (anonymous) | 134 | 1 | 0 |
+| src/html2md.js | inlineTrim | 148 | 1 | 0 |
+| src/html2md.js | (anonymous) | 192 | 1 | 0 |
 | src/html2md.js | (anonymous) | 198 | 1 | 0 |
 | src/html2md.js | (anonymous) | 199 | 1 | 0 |
 | src/html2md.js | (anonymous) | 200 | 1 | 0 |
@@ -408,16 +405,20 @@
 | src/html2md.js | (anonymous) | 206 | 1 | 0 |
 | src/html2md.js | (anonymous) | 207 | 1 | 0 |
 | src/html2md.js | (anonymous) | 208 | 1 | 0 |
-| src/html2md.js | (anonymous) | 215 | 1 | 0 |
-| src/html2md.js | (anonymous) | 234 | 1 | 0 |
-| src/html2md.js | (anonymous) | 265 | 1 | 0 |
-| src/html2md.js | (anonymous) | 319 | 1 | 0 |
-| src/html2md.js | (anonymous) | 362 | 1 | 0 |
-| src/html2md.js | (anonymous) | 365 | 1 | 0 |
+| src/html2md.js | (anonymous) | 209 | 1 | 0 |
+| src/html2md.js | (anonymous) | 210 | 1 | 0 |
+| src/html2md.js | (anonymous) | 211 | 1 | 0 |
+| src/html2md.js | (anonymous) | 212 | 1 | 0 |
+| src/html2md.js | (anonymous) | 219 | 1 | 0 |
+| src/html2md.js | (anonymous) | 238 | 1 | 0 |
+| src/html2md.js | (anonymous) | 269 | 1 | 0 |
+| src/html2md.js | (anonymous) | 323 | 1 | 0 |
 | src/html2md.js | (anonymous) | 366 | 1 | 0 |
-| src/html2md.js | (anonymous) | 374 | 1 | 0 |
-| src/html2md.js | (anonymous) | 374 | 1 | 0 |
-| src/html2md.js | (anonymous) | 393 | 1 | 0 |
+| src/html2md.js | (anonymous) | 369 | 1 | 0 |
+| src/html2md.js | (anonymous) | 370 | 1 | 0 |
+| src/html2md.js | (anonymous) | 378 | 1 | 0 |
+| src/html2md.js | (anonymous) | 378 | 1 | 0 |
+| src/html2md.js | (anonymous) | 397 | 1 | 0 |
 | src/ocr.js | (anonymous) | 26 | 1 | 0 |
 | src/ocr.js | (anonymous) | 28 | 1 | 0 |
 | src/ocr.js | (anonymous) | 30 | 1 | 0 |

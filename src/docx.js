@@ -32,8 +32,15 @@ function docxSafeBase(name) {
 }
 // alt 口径（C1，v0.1.4 批 3，2026-09-14）：Word「可选文字」docPr descr 优先；descr 为空/纯空白则回落
 // docPr name（旧行为）；取值去扩展名；两者都空 → 空 alt（仍禁 AI 生成描述——descr 是文档自带属性）
+// 卡 006（2026-09-20 用户实测）：alt 里的**连续空白**（`\n` / `\r\n` / 制表符 / 多空格）必须**压成单个空格** ——
+//   否则 `![alt](src)` 跨行 ⇒ 渲染器断在空行处 ⇒ 页面只剩**裸 `![` / `](`**（用户原话「我看这括号有问题啊」）。
+//   Word 的多行「可选文字」用字符引用 `&#10;` 存换行（字面换行会被 XML 属性值归一化成空格），DOM 解析后就是
+//   真换行 ⇒ 必须在拼进 markdown **之前**折叠。**只折叠空白，不删字**（保住无障碍信息）。
+function docxCollapseWs(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim();
+}
 function docxAltFromName(entry) {
-  const n = String(entry.descr || '').trim() || String(entry.name || '').trim();
+  const n = docxCollapseWs(entry.descr) || docxCollapseWs(entry.name);
   if (!n) return '';
   return n.replace(/\.[A-Za-z0-9]{1,8}$/, '');
 }
