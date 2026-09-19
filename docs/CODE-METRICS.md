@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-19T14:35:50.989Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-09-19T17:21:10.124Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：21；函数总数：509；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：21；函数总数：524；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 509 个，超限 0 个。
+重构后当前：函数 524 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -27,41 +27,42 @@
 |---|---|---|---|---|
 | tools/metrics.mjs | loadIgnoreFilter | 53 | 10 | 13 |
 | tools/deploy-smoke.mjs | checkManifest | 112 | 10 | 12 |
+| src/xlsx.js | xlsxByLib | 845 | 10 | 11 |
 | tools/measure-xlsx-peak.mjs | main | 276 | 10 | 10 |
 | tools/baseline-check.mjs | runFromTap | 411 | 10 | 9 |
-| src/xlsx.js | collectTTexts | 354 | 9 | 14 |
+| src/xlsx.js | collectTTexts | 358 | 9 | 14 |
 | src/ui.js | buildEmbedMap | 133 | 9 | 13 |
 | tools/measure-xlsx-peak.mjs | launchBrowser | 117 | 9 | 12 |
 | src/ocr.js | ocrAssetsWarm | 22 | 9 | 11 |
 | tools/baseline-check.mjs | checkProvenance | 136 | 9 | 11 |
 | tools/measure-xlsx-peak.mjs | startPssSampler | 175 | 9 | 11 |
 | src/ui.js | renderResult | 218 | 9 | 10 |
-| src/xlsx.js | xlsxByLib | 668 | 9 | 10 |
 | src/docx.js | ommlParts | 103 | 9 | 9 |
 | src/sniff.js | imageKind | 185 | 9 | 9 |
-| src/xlsx.js | parseRowCells | 264 | 8 | 14 |
+| src/xlsx.js | areaLossWarning | 794 | 9 | 8 |
+| src/xlsx.js | parseRowCells | 268 | 8 | 14 |
 | src/html2md.js | joinFrags | 25 | 8 | 10 |
 | tools/baseline-check.mjs | checkContract | 155 | 8 | 10 |
 | tools/baseline-check.mjs | runSelftest | 387 | 8 | 10 |
 | tools/measure-xlsx-peak.mjs | (anonymous) | 179 | 8 | 10 |
 | src/docx.js | ommlScript | 66 | 8 | 9 |
-| src/xlsx.js | cellToString | 544 | 8 | 9 |
+| src/xlsx.js | cellToString | 548 | 8 | 9 |
 | tools/measure-xlsx-peak.mjs | measureTier | 234 | 8 | 9 |
 | src/docx.js | docxCollectWarnings | 285 | 8 | 8 |
 | src/ui.js | downloadZip | 77 | 8 | 8 |
 | tools/audit-delivery.mjs | main | 235 | 8 | 8 |
 | src/convert.js | runConverter | 222 | 8 | 7 |
 | src/sniff.js | sniff | 162 | 8 | 7 |
-| src/xlsx.js | isBuiltinDateId | 499 | 8 | 7 |
+| src/xlsx.js | isBuiltinDateId | 503 | 8 | 7 |
 | src/html2md.js | blockifyContainer | 147 | 7 | 13 |
+| src/xlsx.js | xlsxDegradeWarnings | 824 | 7 | 12 |
 | tools/deploy-smoke.mjs | checkSite | 135 | 7 | 9 |
 | src/docx.js | ommlEnclosingPara | 136 | 7 | 8 |
 | src/xlsx.js | zipDirectory | 58 | 7 | 8 |
-| src/xlsx.js | xlsxWorkbookMap | 172 | 7 | 8 |
-| src/xlsx.js | xlsxSelfParse | 624 | 7 | 8 |
+| src/xlsx.js | xlsxSelfParse | 628 | 7 | 8 |
 | src/pdf.js | addGlyph | 68 | 7 | 7 |
 | src/pdf.js | pdfConvert | 454 | 7 | 7 |
-| src/xlsx.js | xlsxParseSheetStream | 594 | 7 | 7 |
+| src/xlsx.js | xlsxParseSheetStream | 598 | 7 | 7 |
 | tools/deploy-smoke.mjs | checkOneRef | 86 | 7 | 7 |
 | src/convert.js | ocrOnce | 44 | 7 | 6 |
 | src/convert.js | convert | 108 | 7 | 6 |
@@ -76,7 +77,7 @@
 | tools/baseline-check.mjs | checkOnline | 213 | 7 | 6 |
 | tools/baseline-check.mjs | checkDelivery | 242 | 7 | 6 |
 | tools/metrics.mjs | countCycPoints | 118 | 7 | 6 |
-| src/xlsx.js | scanSheetRowsStream | 326 | 6 | 13 |
+| src/xlsx.js | scanSheetRowsStream | 330 | 6 | 13 |
 | src/html2md.js | liToLines | 290 | 6 | 11 |
 | src/html2md.js | blockChildToLines | 247 | 6 | 10 |
 | src/pdf.js | linesToMarkdown | 323 | 6 | 10 |
@@ -84,7 +85,7 @@
 | src/docx.js | docxParseForMd | 232 | 6 | 9 |
 | src/html2md.js | listElToMd | 221 | 6 | 9 |
 | src/ocr.js | getOcrWorker | 41 | 6 | 9 |
-| src/xlsx.js | takeSiUnit | 383 | 6 | 9 |
+| src/xlsx.js | takeSiUnit | 387 | 6 | 9 |
 | tools/measure-xlsx-peak.mjs | parseArgs | 42 | 6 | 9 |
 | tools/measure-xlsx-peak.mjs | stageSite | 86 | 6 | 9 |
 | tools/measure-xlsx-peak.mjs | listRendererPids | 144 | 6 | 9 |
@@ -103,6 +104,8 @@
 | src/sniff.js | ctrlRatio | 246 | 6 | 6 |
 | src/ui.js | assetsTotalBytes | 127 | 6 | 6 |
 | src/xlsx.js | findEocd | 19 | 6 | 6 |
+| src/xlsx.js | xlsxWorkbookMap | 172 | 6 | 6 |
+| src/xlsx.js | rowColCount | 730 | 6 | 6 |
 | tools/audit-delivery.mjs | report | 220 | 6 | 6 |
 | tools/gen-icons.mjs | onTextLine | 67 | 6 | 6 |
 | src/convert.js | ocrWarnings | 69 | 6 | 5 |
@@ -118,8 +121,8 @@
 | src/pdf.js | needsSpace | 203 | 6 | 5 |
 | src/ui.js | buildActions | 190 | 6 | 5 |
 | src/xlsx.js | zipEntryMeta | 94 | 6 | 5 |
-| src/xlsx.js | parseCellAt | 248 | 6 | 5 |
-| src/xlsx.js | extractInlineText | 371 | 6 | 5 |
+| src/xlsx.js | parseCellAt | 252 | 6 | 5 |
+| src/xlsx.js | extractInlineText | 375 | 6 | 5 |
 | tools/audit-delivery.mjs | versionErrors | 113 | 6 | 5 |
 | tools/baseline-check.mjs | checkMeasuredNode | 121 | 6 | 5 |
 | tools/baseline-check.mjs | compareArtifact | 175 | 6 | 5 |
@@ -127,14 +130,18 @@
 | tools/gen-icons.mjs | sample | 28 | 6 | 5 |
 | tools/gen-icons.mjs | maskablePoint | 39 | 6 | 5 |
 | tools/metrics.mjs | fnName | 98 | 6 | 5 |
-| src/xlsx.js | parseSharedStringsStream | 401 | 5 | 11 |
+| src/xlsx.js | parseSharedStringsStream | 405 | 5 | 11 |
 | src/pdf.js | addFontStats | 273 | 5 | 8 |
 | src/pdf.js | textContentFallback | 373 | 5 | 7 |
 | src/sniff.js | charsetLabels | 62 | 5 | 7 |
-| src/xlsx.js | colIndexOfRef | 564 | 5 | 7 |
+| src/xlsx.js | colIndexOfRef | 568 | 5 | 7 |
+| src/xlsx.js | pullRowUnit | 764 | 5 | 7 |
 | src/docx.js | docxMathFragment | 163 | 5 | 6 |
 | src/docx.js | insideQuotes | 199 | 5 | 6 |
 | src/xlsx.js | findCentralEntry | 44 | 5 | 6 |
+| src/xlsx.js | readDeclaredArea | 755 | 5 | 6 |
+| src/xlsx.js | probeSheetArea | 775 | 5 | 6 |
+| src/xlsx.js | xlsxConvert | 871 | 5 | 6 |
 | tools/audit-delivery.mjs | deliveryVersions | 68 | 5 | 6 |
 | tools/baseline-check.mjs | parseTapSummary | 284 | 5 | 6 |
 | src/app.js | safeHandleFiles | 61 | 5 | 5 |
@@ -156,18 +163,21 @@
 | src/sniff.js | isZipHead | 233 | 5 | 4 |
 | src/ui.js | downloadMdEmbedded | 153 | 5 | 4 |
 | src/ui.js | truncatePreview | 182 | 5 | 4 |
-| src/xlsx.js | decodeXmlEntity | 209 | 5 | 4 |
-| src/xlsx.js | takeRowUnit | 312 | 5 | 4 |
-| src/xlsx.js | refLetterValue | 559 | 5 | 4 |
+| src/xlsx.js | decodeXmlEntity | 213 | 5 | 4 |
+| src/xlsx.js | takeRowUnit | 316 | 5 | 4 |
+| src/xlsx.js | refLetterValue | 563 | 5 | 4 |
+| src/xlsx.js | dimCorner | 712 | 5 | 4 |
+| src/xlsx.js | parseDimensionRef | 721 | 5 | 4 |
 | tools/baseline-check.mjs | runCheck | 373 | 5 | 4 |
 | tools/deploy-smoke.mjs | resolveInSite | 71 | 5 | 4 |
 | tools/measure-xlsx-peak.mjs | convertInPage | 201 | 5 | 4 |
 | tools/measure-xlsx-peak.mjs | (anonymous) | 203 | 5 | 4 |
 | tools/metrics.mjs | nodeCogPoints | 154 | 5 | 4 |
-| src/xlsx.js | stripBracketed | 461 | 4 | 7 |
+| src/xlsx.js | stripBracketed | 465 | 4 | 7 |
 | src/pdf.js | isCodeLine | 305 | 4 | 6 |
+| src/xlsx.js | parseSheetTagsLoose | 685 | 4 | 6 |
 | tools/gen-icons.mjs | (anonymous) | 114 | 4 | 6 |
-| src/xlsx.js | findTagStartInfo | 230 | 4 | 5 |
+| src/xlsx.js | findTagStartInfo | 234 | 4 | 5 |
 | tools/baseline-check.mjs | walkDir | 83 | 4 | 5 |
 | tools/measure-xlsx-peak.mjs | mirrorDir | 70 | 4 | 5 |
 | tools/metrics.mjs | childNodes | 25 | 4 | 5 |
@@ -181,7 +191,7 @@
 | src/pdf.js | pdfPageRuns | 174 | 4 | 4 |
 | src/sniff.js | startsWith | 11 | 4 | 4 |
 | src/xlsx.js | parseRelsMap | 151 | 4 | 4 |
-| src/xlsx.js | parseNumFmtCodes | 475 | 4 | 4 |
+| src/xlsx.js | parseNumFmtCodes | 479 | 4 | 4 |
 | tools/audit-delivery.mjs | itemsFromAuditJson | 161 | 4 | 4 |
 | tools/audit-delivery.mjs | itemsFromBulk | 170 | 4 | 4 |
 | src/app.js | (anonymous) | 67 | 4 | 3 |
@@ -202,15 +212,16 @@
 | src/xlsx.js | inflateEntry | 82 | 4 | 3 |
 | src/xlsx.js | entryStream | 118 | 4 | 3 |
 | src/xlsx.js | parseDate1904 | 165 | 4 | 3 |
-| src/xlsx.js | parseCellAttrs | 219 | 4 | 3 |
-| src/xlsx.js | xlsxCellText | 419 | 4 | 3 |
-| src/xlsx.js | xlsxRowsToMd | 424 | 4 | 3 |
-| src/xlsx.js | excelSerialToDate | 449 | 4 | 3 |
-| src/xlsx.js | isDateFormat | 503 | 4 | 3 |
-| src/xlsx.js | parseStylesDateFormats | 512 | 4 | 3 |
-| src/xlsx.js | serialDateOrRaw | 529 | 4 | 3 |
-| src/xlsx.js | rowToTexts | 580 | 4 | 3 |
-| src/xlsx.js | (anonymous) | 582 | 4 | 3 |
+| src/xlsx.js | parseCellAttrs | 223 | 4 | 3 |
+| src/xlsx.js | xlsxCellText | 423 | 4 | 3 |
+| src/xlsx.js | xlsxRowsToMd | 428 | 4 | 3 |
+| src/xlsx.js | excelSerialToDate | 453 | 4 | 3 |
+| src/xlsx.js | isDateFormat | 507 | 4 | 3 |
+| src/xlsx.js | parseStylesDateFormats | 516 | 4 | 3 |
+| src/xlsx.js | serialDateOrRaw | 533 | 4 | 3 |
+| src/xlsx.js | rowToTexts | 584 | 4 | 3 |
+| src/xlsx.js | (anonymous) | 586 | 4 | 3 |
+| src/xlsx.js | xlsxFallbackSheets | 701 | 4 | 3 |
 | tools/audit-delivery.mjs | viaItems | 132 | 4 | 3 |
 | tools/baseline-check.mjs | attempt | 98 | 4 | 3 |
 | tools/baseline-check.mjs | divergedFromReleased | 197 | 4 | 3 |
@@ -225,7 +236,7 @@
 | src/pdf.js | documentMonospaceFonts | 393 | 3 | 3 |
 | src/sniff.js | countFffd | 131 | 3 | 3 |
 | src/sniff.js | countNonAscii | 137 | 3 | 3 |
-| src/xlsx.js | parseXfIds | 488 | 3 | 3 |
+| src/xlsx.js | parseXfIds | 492 | 3 | 3 |
 | tools/baseline-check.mjs | checkNumberLeaf | 147 | 3 | 3 |
 | tools/baseline-check.mjs | tapDiffs | 309 | 3 | 3 |
 | tools/deploy-smoke.mjs | checkDenyTop | 128 | 3 | 3 |
@@ -253,12 +264,13 @@
 | src/ui.js | fmtSize | 40 | 3 | 2 |
 | src/ui.js | downloadMd | 63 | 3 | 2 |
 | src/ui.js | embedImagesIntoMd | 147 | 3 | 2 |
-| src/xlsx.js | xlsxSheetNames | 197 | 3 | 2 |
-| src/xlsx.js | textPuller | 288 | 3 | 2 |
-| src/xlsx.js | (anonymous) | 292 | 3 | 2 |
-| src/xlsx.js | boolCellText | 536 | 3 | 2 |
-| src/xlsx.js | readSheetSafely | 659 | 3 | 2 |
-| src/xlsx.js | xlsxConvert | 694 | 3 | 2 |
+| src/xlsx.js | normalizeSheetTarget | 193 | 3 | 2 |
+| src/xlsx.js | xlsxSheetNames | 201 | 3 | 2 |
+| src/xlsx.js | textPuller | 292 | 3 | 2 |
+| src/xlsx.js | (anonymous) | 296 | 3 | 2 |
+| src/xlsx.js | boolCellText | 540 | 3 | 2 |
+| src/xlsx.js | readSheetSafely | 663 | 3 | 2 |
+| src/xlsx.js | stylesDateRisk | 816 | 3 | 2 |
 | tools/audit-delivery.mjs | checkVendorManifest | 81 | 3 | 2 |
 | tools/audit-delivery.mjs | sizeErrors | 104 | 3 | 2 |
 | tools/audit-delivery.mjs | versionNotes | 125 | 3 | 2 |
@@ -324,10 +336,11 @@
 | src/ui.js | (anonymous) | 148 | 2 | 1 |
 | src/ui.js | (anonymous) | 210 | 2 | 1 |
 | src/xlsx.js | zipEntry | 111 | 2 | 1 |
-| src/xlsx.js | decodeXml | 214 | 2 | 1 |
-| src/xlsx.js | (anonymous) | 427 | 2 | 1 |
-| src/xlsx.js | isoDateOnly | 457 | 2 | 1 |
-| src/xlsx.js | truncationMessage | 613 | 2 | 1 |
+| src/xlsx.js | decodeXml | 218 | 2 | 1 |
+| src/xlsx.js | (anonymous) | 431 | 2 | 1 |
+| src/xlsx.js | isoDateOnly | 461 | 2 | 1 |
+| src/xlsx.js | truncationMessage | 617 | 2 | 1 |
+| src/xlsx.js | takeDimension | 742 | 2 | 1 |
 | tools/audit-delivery.mjs | low | 63 | 2 | 1 |
 | tools/audit-delivery.mjs | licensesText | 93 | 2 | 1 |
 | tools/audit-delivery.mjs | checkOneAsset | 98 | 2 | 1 |
@@ -455,25 +468,27 @@
 | src/xlsx.js | centralEntryAt | 28 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 86 | 1 | 0 |
 | src/xlsx.js | start | 122 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 198 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 199 | 1 | 0 |
-| src/xlsx.js | findTagStart | 241 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 303 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 306 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 306 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 426 | 1 | 0 |
-| src/xlsx.js | esc | 428 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 202 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 203 | 1 | 0 |
+| src/xlsx.js | findTagStart | 245 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 307 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 310 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 310 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 430 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 431 | 1 | 0 |
-| src/xlsx.js | serialToYmd | 441 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 519 | 1 | 0 |
-| src/xlsx.js | isDateStyle | 521 | 1 | 0 |
-| src/xlsx.js | isDateStyle | 524 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 608 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 699 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 702 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 704 | 1 | 0 |
-| src/xlsx.js | (anonymous) | 704 | 1 | 0 |
+| src/xlsx.js | esc | 432 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 434 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 435 | 1 | 0 |
+| src/xlsx.js | serialToYmd | 445 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 523 | 1 | 0 |
+| src/xlsx.js | isDateStyle | 525 | 1 | 0 |
+| src/xlsx.js | isDateStyle | 528 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 612 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 708 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 878 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 882 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 888 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 891 | 1 | 0 |
+| src/xlsx.js | (anonymous) | 891 | 1 | 0 |
 | tools/audit-delivery.mjs | sha256 | 64 | 1 | 0 |
 | tools/audit-delivery.mjs | (anonymous) | 147 | 1 | 0 |
 | tools/audit-delivery.mjs | (anonymous) | 221 | 1 | 0 |

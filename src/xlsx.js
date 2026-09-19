@@ -180,17 +180,21 @@ export async function xlsxWorkbookMap(buf, meta) {
   const ridToTarget = parseRelsMap(new TextDecoder().decode(rels.data));
   const map = [];
   for (const s of sheets) {
-    let target = ridToTarget.get(s.rid);
+    const target = normalizeSheetTarget(ridToTarget.get(s.rid));
     if (!target) throw new Error('workbook.xml.rels 缺 r:id 映射（' + s.rid + '），回退库解析');
-    target = target.replace(/^\/+/, ''); // 允许绝对路径形态（/xl/worksheets/…）
-    // 第七轮审查 §2.2：Target 允许相对形态（`../worksheets/sheet1.xml`——OOXML rels Target 以 xl/ 为
-    // 基准，部分第三方工具会多带一层 `../`）。先剥 ./ 与 ../ 段，再按 xl/ 前缀补全；仍命不中 zip
-    // 条目时由 xlsxConvert 的 .catch 回退库路径（不静默错位、不张冠李戴）。
-    target = target.replace(/^(?:\.{1,2}\/)+/, '');
-    if (!target.startsWith('xl/')) target = 'xl/' + target;
     map.push({ name: s.name, target });
   }
   return map;
+}
+
+/* 关系 Target 归一（t8 起内联于 xlsxWorkbookMap；2026-09-19 卡 005 抽出供回退分支复用——行为逐字不变）：
+ * ① 允许绝对路径形态（/xl/worksheets/…）② 剥 `./` / `../` 段（第七轮审查 §2.2：OOXML rels Target 以
+ * xl/ 为基准，部分第三方工具会多带一层 `../`）③ 仍命不中 zip 条目的情况由调用方回退库路径。 */
+function normalizeSheetTarget(raw) {
+  if (!raw) return null;
+  let target = raw.replace(/^\/+/, '');
+  target = target.replace(/^(?:\.{1,2}\/)+/, '');
+  return target.startsWith('xl/') ? target : 'xl/' + target;
 }
 
 /* xlsx sheet 名称列表（t4 兼容导出：tab 顺序；解析失败返回 null——调用方回退单 sheet 语义不变） */
@@ -664,14 +668,187 @@ async function readSheetSafely(readXlsx, ab, name) {
   }
 }
 
-/* read-excel-file 库解析路径（回退；backend 不变） */
-async function xlsxByLib(file, buf, readNames, names) {
+/* ---------- 卡 005（2026-09-19）：库回退路径的「降级可见性」 ----------
+ * 背景（卡 004 只读调查，结论见 docs/任务台账.md §004）：撤 4 MB 护栏后回退路径仍可达，且**静默**降级 ——
+ *   ① 丢列：库按 `<dimension ref>` 的后角开网格、越界单元格直接丢弃 ⇒ 我方拿不到真列数；
+ *   ② 丢 sheet 名：map 失败分支传 `[null]` ⇒ 输出退化成 `### Sheet: Sheet1`。
+ * 口径（用户 2026-09-19 拍板）：① 明确警告，且进 `meta.warnings`（机器可判通道）
+ *   ② 日期问题**只加 warning、不改回退逻辑**（原话：别用隐蔽的病换明显的病）③ sheet 名与丢列可见同批。
+ * ⚠️ 本段**只在回退分支调用**（正常路径零开销）；任何观测失败 = 少一条提示，**绝不改变转换结果**。 */
+
+const SHEET_NAME_RE = /name\s*=\s*["']([^"']*)["']/;
+const SHEET_RID_RE = /r:id\s*=\s*["']([^"']*)["']/;
+
+/* 宽松 sheet 标签解析（只取 name/r:id；缺 r:id **不抛**——缺映射时名字仍要保住）。
+ * ⚠️ 主路径判定**不得**宽松化：`parseSheetTags` 只认双引号正是卡 004 的 T1 触发线，
+ * 宽松化会消灭该触发线 = 改口径（需拍板），故宽松版只服务回退分支。 */
+function parseSheetTagsLoose(wbText) {
+  const out = [];
+  const re = /<sheet\s[^>]*>/g;
+  let m;
+  while ((m = re.exec(wbText))) {
+    const nm = SHEET_NAME_RE.exec(m[0]);
+    if (!nm) continue;
+    const rid = SHEET_RID_RE.exec(m[0]);
+    out.push({ name: decodeXml(nm[1]), rid: rid ? rid[1] : '' });
+  }
+  return out;
+}
+
+/* 回退分支的 sheet 名单（A5/007）：workbook.xml 可读即取回**真名** —— 旧实现无条件传 `[null]` ⇒ 名字必丢。
+ * 名字同时用于「按名读取」与 `### Sheet:` 标题，二者不可分（只改标题会让内容与名字张冠李戴）。
+ * workbook.xml 不可读（缺部件 / 无 DecompressionStream）→ []，此时名字无从得知，只能回落 `[null]`。 */
+async function xlsxFallbackSheets(buf) {
+  const wb = await zipEntry(buf, 'xl/workbook.xml');
+  if (!wb) return [];
+  const sheets = parseSheetTagsLoose(new TextDecoder().decode(wb.data));
+  if (sheets.length === 0) return [];
+  const rels = await zipEntry(buf, 'xl/_rels/workbook.xml.rels');
+  const ridToTarget = rels ? parseRelsMap(new TextDecoder().decode(rels.data)) : new Map();
+  return sheets.map((s) => ({ name: s.name, target: normalizeSheetTarget(ridToTarget.get(s.rid)) }));
+}
+
+/* `<dimension ref>` 单角 → { cols, rows }（1 基）；无法解析 → null */
+function dimCorner(text) {
+  const m = /^\$?([A-Za-z]+)\$?(\d+)?$/.exec(String(text || '').trim());
+  if (!m) return null;
+  const col = colIndexOfRef(m[1]);
+  if (col < 0) return null;
+  return { cols: col + 1, rows: m[2] ? parseInt(m[2], 10) : 1 };
+}
+
+/* `<dimension ref="A1:C3">` → { cols, rows }（两角取最大）；缺元素/不可解析 → null */
+function parseDimensionRef(ref) {
+  const parts = String(ref || '').split(':');
+  const a = dimCorner(parts[0]);
+  const b = parts.length > 1 ? dimCorner(parts[1]) : a;
+  if (!a || !b) return null;
+  return { cols: Math.max(a.cols, b.cols), rows: Math.max(a.rows, b.rows) };
+}
+
+/* 行内实际列数（有 c@r 按列号取最大，无 r 退回单元格个数——与 rowToTexts 同口径） */
+function rowColCount(body) {
+  if (!body) return 0;
+  const { cells } = parseRowCells(body, -1);
+  let max = cells.length;
+  for (const c of cells) {
+    const col = colIndexOfRef(c.r || '');
+    if (col >= 0 && col + 1 > max) max = col + 1;
+  }
+  return max;
+}
+
+/* 取工作表头部声明的 `<dimension>`（位于 `<sheetData>` 之前；已过该位置或元素缺失 ⇒ 视为无声明） */
+function takeDimension(text, probe) {
+  const m = /<dimension\s[^>]*ref\s*=\s*"([^"]*)"/.exec(text);
+  if (!m) return false;
+  probe.declared = parseDimensionRef(m[1]);
+  return true;
+}
+
+/* 阶段①：读工作表头部声明的 `<dimension>`（位于 `<sheetData>` 之前）。
+ * ⚠️ **必须独立成阶段**：`<dimension>` 会被后面的"取行单元 → 消费前缀"一并吃掉 —— 若把这段检查塞进
+ * 行循环的循环头，只要行单元是一次拉取到的（小文件必如此），第二次检查时声明已被消费 ⇒ 永远扫不到
+ * （2026-09-19 卡 005 实测：metrics 驱动的拆函数正好制造了这个坑，靠 G8 断言才发现）。
+ * 不消费任何缓冲（只 `more()` 追加）；窗口 256 KB 封顶，防无 `<sheetData>` 的畸形件把整个表拉完。 */
+const DIM_SCAN_BYTES = 256 * 1024;
+async function readDeclaredArea(p, probe) {
+  while (p.bytes < DIM_SCAN_BYTES) {
+    if (takeDimension(p.pending, probe) || p.pending.includes('<sheetData')) return;
+    if (!(await p.more())) return;
+  }
+}
+
+/* 拉取下一个完整 `<row>` 单元：窗口内取不到就先丢弃无望前缀、继续拉块；流结束仍取不到 → null。
+ * （2026-09-19 卡 005：由 probeSheetArea 抽出——原先内联在同一循环里，认知复杂度 16 触 metrics 硬门禁） */
+async function pullRowUnit(p) {
+  while (true) {
+    const unit = takeRowUnit(p.pending);
+    if (unit.kind === 'row') return unit;
+    if (unit.keepFrom) p.consume(unit.keepFrom);
+    if (!(await p.more())) return null;
+  }
+}
+
+/* 区域观测（A3）：只读工作表流 —— 头部取 `<dimension>`（阶段①）、再扫前 rowLimit 行取实际列/行数（阶段②）。
+ * 窗口与输出窗口一致（`XLSX_ROW_LIMIT`）⇒ 报出来的差额就是**用户实际少看到的那部分**。 */
+async function probeSheetArea(buf, target, rowLimit) {
+  const meta = zipEntryMeta(buf, target);
+  const stream = meta && entryStream(buf, meta);
+  if (!stream) return null;
+  const p = textPuller(stream);
+  const probe = { declared: null, cols: 0, rows: 0 };
+  await readDeclaredArea(p, probe);
+  while (probe.rows < rowLimit) {
+    const unit = await pullRowUnit(p);
+    if (!unit) break;
+    probe.rows += 1;
+    probe.cols = Math.max(probe.cols, rowColCount(unit.body));
+    p.consume(unit.next);
+  }
+  await p.cancel();
+  return probe;
+}
+
+/* 区域损失文案（A3：说清「发生了什么 + 后果」）——**只有真的少才报**（误报比不报更糟） */
+function areaLossWarning(name, probe) {
+  if (!probe || !probe.declared) return null;
+  const d = probe.declared;
+  const lostCols = Math.max(0, probe.cols - d.cols);
+  const lostRows = Math.max(0, probe.rows - d.rows);
+  if (lostCols === 0 && lostRows === 0) return null;
+  const head = '工作表「' + (name === null ? 'Sheet1' : name) + '」：文件声明的';
+  if (lostCols > 0 && lostRows > 0) {
+    return head + `区域（${d.cols} 列 × ${d.rows} 行）小于实际数据（${probe.cols} 列 × ${probe.rows} 行）`
+      + `—— 通用解析按声明区域输出，右侧 ${lostCols} 列、下方 ${lostRows} 行已被丢弃`;
+  }
+  if (lostCols > 0) {
+    return head + `表宽（${d.cols} 列）小于实际数据（${probe.cols} 列）`
+      + `—— 通用解析按声明宽度输出，右侧 ${lostCols} 列已被丢弃`;
+  }
+  return head + `表高（${d.rows} 行）小于实际数据（${probe.rows} 行）`
+    + `—— 通用解析按声明高度输出，下方 ${lostRows} 行已被丢弃`;
+}
+
+/* 日期风险（口径②：只加 warning、**不改回退逻辑**）：styles.xml 存在但缺 `<cellXfs>` ⇒ 样式索引表不可得，
+ * **任何实现**都拿不到日期格式（库侧同为 `e ? $(e,"xf") : []` ⇒ 空样式表），日期会按序列号（如 45678）输出。
+ * 判据与 `parseStylesDateFormats` 的 throw 条件对齐（`<cellXfs` 与 `</cellXfs>` 同时缺失才算）。 */
+async function stylesDateRisk(buf) {
+  const st = await zipEntry(buf, 'xl/styles.xml');
+  if (!st) return false;
+  const xml = new TextDecoder().decode(st.data);
+  return !(xml.includes('<cellXfs') && xml.includes('</cellXfs>'));
+}
+
+/* 降级告警汇总（A2：进 meta.warnings —— 机器可判通道，不是只在 UI/console） */
+async function xlsxDegradeWarnings(buf, sheets) {
+  const out = [];
+  const noStream = typeof DecompressionStream === 'undefined';
+  if (noStream) {
+    out.push('当前浏览器不支持流式解析（缺少 DecompressionStream）：已回退通用解析，大文件会明显更慢、占用内存更多');
+  }
+  if (await stylesDateRisk(buf)) {
+    out.push('该文件的样式表（xl/styles.xml）缺 <cellXfs>：日期单元格可能按序列号显示（如 45678 而不是日期）');
+  }
+  if (!noStream) {
+    for (const s of sheets.slice(0, XLSX_SHEET_LIMIT)) {
+      if (!s.target) continue;
+      const w = areaLossWarning(s.name, await probeSheetArea(buf, s.target, XLSX_ROW_LIMIT));
+      if (w) out.push(w);
+    }
+  }
+  return out;
+}
+
+/* read-excel-file 库解析路径（回退；backend 不变）。degrade = 降级告警（卡 005）——调用方在**回退时**给出，
+ * 与截断文案合并进同一个 warnings 通道（顺序：降级在前、截断在后）。 */
+async function xlsxByLib(file, buf, readNames, names, degrade) {
   const RX = window.readXlsxFile;
   if (!RX) throw new Error('read-excel-file 库未加载');
   const readXlsx = typeof RX === 'function' ? RX : (RX.default || RX);
   const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   const parts = [];
-  const warnings = [];
+  const warnings = Array.isArray(degrade) ? degrade.slice() : [];
   let truncated = false;
   let totalRows = 0;
   for (const name of readNames) {
@@ -695,11 +872,21 @@ export async function xlsxConvert(file, buf) {
   // t8：workbook 映射（tab 顺序 name + rels r:id→Target）为一等公民——自解析按 target 读；
   // 映射失败（损坏/无 workbook.xml 或 rels）→ 直接回退库路径（不静默错位/不静默单 sheet）
   // 第八轮 §1.2：日期系统随映射一并取出（date1904 命中 → 1904 基准；缺省/假值 → 1900 基准）
+  // 卡 005：回退**不再静默** —— 两条回退分支都先取「降级观测」（真 sheet 名 + 表宽/表高损失）随 warnings 返回；
+  //   观测失败只等于少一条提示，不改变结果（口径 ① 明确警告 / ② 日期只加 warning 不改回退逻辑）。
   const wbMeta = {};
   const map = await xlsxWorkbookMap(buf, wbMeta).catch(() => null);
-  if (!map || map.length === 0) return xlsxByLib(file, buf, [null], [null]);
+  if (!map || map.length === 0) {
+    // A5/007：旧实现此处传 `[null]` ⇒ sheet 名必丢。先取回真名（含单引号属性等宽松形态），取不到才回落 `[null]`
+    const fb = await xlsxFallbackSheets(buf);
+    const all = fb.map((s) => s.name);
+    const readNames = all.length > 0 ? all.slice(0, XLSX_SHEET_LIMIT) : [null];
+    const degrade = await xlsxDegradeWarnings(buf, fb);
+    return xlsxByLib(file, buf, readNames, all.length > 0 ? all : [null], degrade);
+  }
   const readMap = map.slice(0, XLSX_SHEET_LIMIT);
   const names = map.map((s) => s.name); // 全量名（截断计数用）
   // 首选：t33 流式自解析（线性扫描 ≤ROW_LIMIT+1 行即停）；任何异常/护栏 → .catch 回退库路径（无 try/catch 吞异常）
-  return await xlsxSelfParse(buf, readMap, names, wbMeta.date1904 === true).catch(() => xlsxByLib(file, buf, readMap.map((s) => s.name), names));
+  return await xlsxSelfParse(buf, readMap, names, wbMeta.date1904 === true)
+    .catch(async () => xlsxByLib(file, buf, readMap.map((s) => s.name), names, await xlsxDegradeWarnings(buf, readMap)));
 }
