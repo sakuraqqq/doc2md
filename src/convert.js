@@ -5,7 +5,7 @@
 import { sniff, decodeText } from './sniff.js';
 import { htmlToMarkdown } from './html2md.js';
 import { docxConvert } from './docx.js';
-import { xlsxConvert } from './xlsx.js';
+import { xlsxConvert, zipDirectory } from './xlsx.js';
 import { pdfConvert } from './pdf.js';
 import { getOcrWorker, prepareOcrImage, rotateImage90 } from './ocr.js';
 import { collapseCjkSpaces } from './cjk.js';
@@ -120,12 +120,56 @@ export async function convert(file) {
   return runOrExplain(file, read.buf, meta, t0, done);
 }
 
+/* ---------- A9 预检 + A10 解析前提示（2026-09-19 卡 002） ----------
+ * 目的：把「要等多久 / 页面会暂时无响应」说在**解析开始之前**，而不是让用户对着冻住的界面猜。
+ * 口径（写死）：规模一律按**解压后规模**（ZIP 中央目录 offset+24，**只读不解压**）——与撤除的旧护栏同一判据。
+ *  - 触发 = 规模 ≥ PREFLIGHT_MIN_BYTES（**规模判据**：设备无关、可判、可演示；两档大夹具 379 / 383 MB
+ *    命中，2-mid 6.3 MB 不命中）。不用「预计耗时 > N 秒」触发：流式化后大档实测已 <3 s ⇒ 那样的判据
+ *    会**永不触发**（等于死代码），而手机档确实可能等更久。
+ *  - 「最坏约 M 秒」= 规模 ÷ 保守吞吐（慢机档）——**上界，不是预期值**：流式后实际只读「1000 行窗口 +
+ *    被引用的字符串」，通常远低于此（本机实测见 docs/任务台账.md 卡 002 回执）。
+ *  - 提示**只进状态栏**：不进 markdown、不进 meta（卡面 #9；Y1 产物逐字节不变）。 */
+const PREFLIGHT_MIN_BYTES = 32 * 1024 * 1024;
+const PREFLIGHT_BYTES_PER_SEC = 4 * 1024 * 1024;
+
+/* ⚠️ 钩子槽**不能**写成顶层变量（2026-09-19 实测踩坑）：
+ * 打包（esbuild bundle，format=iife）会把各模块展平进同一个 IIFE 作用域，**模块顶层语句的执行顺序**
+ * 与 import 图不保证一致 —— 实测本文件（convert.js）的顶层语句排在 ui.js **之后**执行，
+ * 于是 `let preflightHook = null;` 把 ui.js 刚注册的钩子**擦成 null**：提示从不出现，且**零报错**。
+ * ⇒ 状态挂在（会被提升的）函数对象上、首次访问时懒创建：读写都走 preflightHooks()，与语句顺序无关。 */
+function preflightHooks() {
+  if (!preflightHooks.slot) preflightHooks.slot = { fn: null };
+  return preflightHooks.slot;
+}
+
+/** 由 UI 层注册解析前提示钩子（未注册 = 静默跳过：Node/纯转换场景不涉及界面） */
+export function setPreflightHook(fn) {
+  preflightHooks().fn = typeof fn === 'function' ? fn : null;
+}
+
+/** xlsx 预检（A9）：只读中央目录估规模 → 命中阈值则「提示 + 双让帧」后再解析；任何失败静默（预检不得影响转换） */
+async function xlsxPreflight(buf) {
+  try {
+    const hook = preflightHooks().fn;
+    const dir = zipDirectory(buf);
+    if (!hook || !dir || dir.uncompBytes < PREFLIGHT_MIN_BYTES) return;
+    const mb = (dir.uncompBytes / (1024 * 1024)).toFixed(1);
+    const worstSec = Math.max(1, Math.round(dir.uncompBytes / PREFLIGHT_BYTES_PER_SEC));
+    await hook(
+      `大文件：解压后约 ${mb} MB；最坏约 ${worstSec} 秒（按慢机档估算），解析期间页面可能暂时无响应 —— 请勿关闭`
+    );
+  } catch {
+    /* 预检失败不影响转换（结构问题由转换器自己报；此处不吞转换异常） */
+  }
+}
+
 /* 类型层不支持 → 友好文案；否则执行转换并把异常兜成 { error }
  * （R9-1 批内童子军重构：抽出本段使 convert 的圈复杂度回到门禁线内 —— metrics 硬要求≤10） */
 async function runOrExplain(file, buf, meta, t0, done) {
   const unsupported = unsupportedError(meta.type);
   if (unsupported) return done({ error: unsupported });
   try {
+    if (meta.type === 'xlsx') await xlsxPreflight(buf);
     return await runConverter(meta.type, file, buf, meta, t0);
   } catch (e) {
     return done({ error: '转换失败：' + (e && e.message ? e.message : '未知错误') });

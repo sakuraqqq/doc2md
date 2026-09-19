@@ -1,8 +1,11 @@
 /* ui.js —— UI 域（t8 重构：由 index.html 迁移，行为不变）
  * 决策史（保留）：DD-11（输出匹配面 textarea 值）、DD-12（file input hidden 标准设计）、
  * 2026-09-04 A线遗留 bug 修复（live FileList 快照化）、t6 ⑨a（.md+图片 zip 下载，fflate 内联打包）。
- * 依赖：零（DOM 元素在此模块顶层查询——bundle 注入 body 尾部，DOM 已就绪）。
+ * 依赖：零 DOM 之外的依赖（DOM 元素在此模块顶层查询——bundle 注入 body 尾部，DOM 已就绪）；
+ *   仅向 convert.js **注册**一个钩子（注入方向：ui → convert，convert 不反向依赖 DOM 域）。
  */
+import { setPreflightHook } from './convert.js';
+
 export const $ = (sel) => document.querySelector(sel);
 const dropzone = $('#dropzone');
 const fileInput = $('#fileInput');
@@ -14,6 +17,26 @@ export function setStatus(msg, isError) {
   statusEl.textContent = msg || '';
   statusEl.className = isError ? 'error' : '';
 }
+
+/* A10（2026-09-19 卡 002）：**解析前先画提示 → 双让帧 → 再开始解析**。
+ * 为什么需要：大文件解析期间主线程被占，界面不刷新 ⇒ 用户看不到任何反馈，容易以为卡死。
+ * 双让帧 = 先让浏览器画完这一帧（提示真的上屏，而不是排在解析之后），再让出一个宏任务，
+ * 然后才把主线程交给解析 —— 顺序反了（先解析后提示）等于没提示。 */
+export function nextPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => setTimeout(resolve, 0));
+  });
+}
+
+/** 解析前提示（只改状态栏；**不进产物** —— 卡面 #9） */
+export function preflightNotice(msg) {
+  setStatus(msg);
+}
+
+setPreflightHook(async (msg) => {
+  preflightNotice(msg);
+  await nextPaint();
+});
 export function fmtSize(n) {
   if (n < 1024) return n + ' B';
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
