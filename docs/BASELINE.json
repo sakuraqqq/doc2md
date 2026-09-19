@@ -6,7 +6,7 @@
       "counts": { "total": 283, "pass": 281, "fail": 0, "skip": 2 },
       "measured": {
         "at": "2026-09-20",
-        "source": "npm test（本机 · 升权实跑，TAP 摘要）：# tests 283 / # pass 281 / # fail 0 / # skipped 2 —— 卡 005 批后实测（新增契约组 G8 共 7 条：组壳 + G8-1..G8-6，全绿）；`node tools/baseline-check.mjs --from-tap .tmp/card005/tap-green.txt --scope local_with_fixtures` 对账 exit 0。上一值 276/274/0/2（卡 002 批后）"
+        "source": "npm test（本机 · 升权实跑，TAP 摘要）：# tests 283 / # pass 281 / # fail 0 / # skipped 2 —— 卡 005 批后实测（新增契约组 G8 共 7 条：组壳 + G8-1..G8-6，全绿）；`node tools/baseline-check.mjs --from-tap .tmp/card005/tap-green.txt --scope local_with_fixtures` 对账 exit 0；**并经 Linux 弱独立验收复核一致**（换机 WSL2 + 真 chromium 151.0.7922.34，对账 exit 0，原始日志 `.私档/linux/20260920-库回退降级可见性/原始日志/对账-local_with_fixtures.log`）。上一值 276/274/0/2（卡 002 批后）"
       },
       "scope": "本机口径：.私档/传输-手机-20260918 四档夹具在位 ⇒ 组 Y 真跑（组壳+Y1+Y2+Y3，全绿）；卡 002 前为 271/3（组 Y 预期先红：Y2 无 meta.scan · Y3 超 5s · 组壳）。与 CI 口径不可混用"
     },
@@ -14,7 +14,7 @@
       "counts": { "total": 280, "pass": 277, "fail": 0, "skip": 3 },
       "measured": {
         "at": "2026-09-20",
-        "source": "本机复现 CI 口径实测（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：# tests 280 / # pass 277 / # fail 0 / # skipped 3。⚠️ **CI runner 上的真实值待推送后由 CI 步现算对账**（`--from-tap tap.txt --scope ci_clean_checkout`）—— 不符即红、不静默；上一值 273/270/0/3 来自 2026-09-18 真实 CI run 35382665936"
+        "source": "① 本机复现 CI 口径实测（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：# tests 280 / # pass 277 / # fail 0 / # skipped 3；② **真实 CI runner 已确认**：run `35458379084`（提交 `0d4f039`，2026-09-20 重跑后 **success 1m20s**）的 `Contract ↔ BASELINE.json reconciliation` 步 **✓ 逐项一致**；③ Linux 弱独立验收同样一致。⇒ **三方吻合**。⚠️ 该 run **首次**为 failure（44 s）：红在第 8 步 `registry advisories HTTP 503`（npm 计划维护 17:00–19:00 UTC），**其后 6 步含 `npm test` 全被跳过** —— 首次那次**不代表本口径**。上一值 273/270/0/3（2026-09-18 真实 CI run 35382665936）"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005 新增的组 G8 不依赖大夹具 ⇒ 两个口径都会跑**（这正是 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }
