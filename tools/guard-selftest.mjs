@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkSite } from './deploy-smoke.mjs';
 import { checkVendorManifest, deliveryVersions, DELIVERY_FACE, itemsFromAuditJson, judged } from './audit-delivery.mjs';
+import { checkBaseline, loadActual, BASELINE_NEGATIVES } from './baseline-check.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = path.join(ROOT, '.tmp', 'guard-selftest');
@@ -120,6 +121,16 @@ let v = checkVendorManifest(tampered, real.lock);
 ok('audit-delivery 负例：vendor 清单大小漂移必红', v.errors.some((e) => e.includes('大小漂移')), JSON.stringify(v.errors));
 v = checkVendorManifest(manifest, real.lock);
 ok('audit-delivery 正例：vendor 清单与实际一致', v.errors.length === 0, JSON.stringify(v.errors));
+
+/* ---------- baseline（docs/BASELINE.json · 2026-09-19 卡 001-C） ----------
+ * 三个负例 = 卡 001 C6 点名的三种篡改：产物哈希改一位 / 契约数改一个 / tag_sha 改一位。
+ * **守卫自己必须能被测红** —— 不加负例的守卫等于没有守卫。 */
+const baseline = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs', 'BASELINE.json'), 'utf8'));
+const baselineActual = loadActual(baseline);
+for (const neg of BASELINE_NEGATIVES) {
+  const r = checkBaseline(neg.mutate(structuredClone(baseline)), baselineActual);
+  ok(`baseline 负例：${neg.name} 必红`, r.errors.some((e) => neg.expect.test(e)), JSON.stringify(r.errors));
+}
 
 /* ---------- 汇总 ---------- */
 let failed = 0;
