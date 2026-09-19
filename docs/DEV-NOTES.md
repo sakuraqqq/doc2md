@@ -1788,6 +1788,28 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 - 「同一文件三种命运（43 s 完成 / 20 s 崩 / 磨 20 min 无果）」⇒ **天花板随可用内存浮动**，**印证不必追精确阈值**；
 - 与 **A9/A10**（预检 + 进度 + 超时）方向一致 —— 手机侧结论与我方独立收敛到同一处：**降低单次分配量**。
 
+## 2026-09-19 · 卡 004（执行线）：库回退路径「丢列」调查（只读）+ native 命令坑推广
+
+> 完整回执（A1–A8 逐条 · Q1–Q5 · 11 变体实测表 · 原始输出 · 三重对账脚本 · 第 7 条对表 · Linux 豁免理由）见 `docs/任务台账.md` **卡 004** 节；本节只留**一手坑与结论**。
+
+### 结论：三个候选里的**第 ① 个** —— 确有其事，且**撤护栏后现在仍可达**
+- **可达性**：撤 4 MB `sharedStrings` 护栏**没有**关掉回退路径。实测**三条可达触发线**：① `xl/styles.xml` 存在但缺 `<cellXfs>`（`src/xlsx.js:515`）② `workbook.xml` 的 `<sheet>` 用**单引号属性**（合法 XML，我方 L145 正则只认双引号）③ **环境无 `DecompressionStream`**（我方 L598／L84——老浏览器；库自带解压，**不受影响**）。
+- **丢列仍在，且完全静默**：三条线实测输出 **3 列 / 真数据 6 列**，`meta.warnings=[]`、`meta.truncated=false`、无任何提示。
+- **归属 = 库内部**（`vendor/read-excel-file.min.js`；**不是我方代码**）：调用点（@22520）`l = wr(u) || fromCells(cells)` —— **优先信 `<dimension ref>`**，只有该元素缺失时才用真实单元格反推边界；`wr`（@14661）读 `documentElement` 的 `dimension@ref`；`xr`（@17595）按 dimension **后角**开 `rows×cols` 网格，填充时**越界单元格被静默丢弃**：`b<u&&m<a&&(l[m][b]=y.value)`。我方 `git grep -n dimension -- src/` **零命中（exit 1）**，且 `xlsxRowsToMd` 的行宽 = `Math.max(...rows.map(r=>r.length))`（按**实际返回行宽**）⇒ **我方结构上不可能自己丢列**。
+- **因果已隔离**（对照实验，非推断）：同触发点 + dimension 改对 ⇒ **恢复 6 列**；同触发点 + **整段删掉 `<dimension>`** ⇒ **恢复 6 列**；同 dimension（窄）+ 无触发点 ⇒ 自解析 **6 列**。⇒ 丢列 = 「**走库路径**」×「**`<dimension>` 声明宽度 < 真数据宽度**」两条件**同时**成立。
+- **附带发现（同一分支的第二个静默降级）**：`xlsxConvert` 的 `map` 失败分支调 `xlsxByLib(file, buf, [null], [null])` ⇒ **sheet 名一并丢掉**（输出 `### Sheet: Sheet1`，真名是 `S1`；L704 的 catch 分支则保留真名）。数据不错，只是名字退化 —— 但同样是**静默**。
+
+### 坑（现象 → 根因 → 防再犯）
+1. ⭐ **native 命令的重定向与管道都会被 PS 拒绝，且命令根本没执行**（卡 004「顺手做」——**本会话自测复现**，非转记）：
+   - **原始输出（PS 7.6.6）**：`python -c 'print("PROBE-RAW")' > $null` ⇒ `ResourceUnavailable: 程序'python.exe'运行失败： StandardOutputEncoding is only supported when standard output is redirected.`；`python -c … | Select-Object -First 1` ⇒ `程序'python.exe'运行失败： 拒绝访问。`（`FullyQualifiedErrorId=NativeCommandFailed`、`CategoryInfo=ResourceUnavailable`，且是**非终止错误**——脚本继续往下跑，更易误判）。
+   - **根因**：PS 给 native 命令接管道/重定向时要建 stdio 句柄，受限沙箱禁命名管道 ⇒ 进程**从未启动**（不是"启动了但输出被吞"）。
+   - ⭐ **比"残留 1"更毒的一条（本次新发现）**：残留值也可能是**上一项成功留下的 0** ⇒ **失败看着像成功**。自测：先 `git --version`（0），再撞 `> $null` ⇒ `$LASTEXITCODE=0`。
+   - **防再犯**：规则已**推广到任何 native 命令**（不止 `git`/`node`/`curl`/`wsl`，**含 `python`/`npm`/`npx`/`gh`**）并**点名 `> 文件` / `>> 文件` / `> $null` 同罪**，写进 `AGENTS.md`「本地命令约定」与 `HANDOFF §5` 坑表；判成败**只看副作用**（文件/引用有没有出现），**不看 `$LASTEXITCODE`**。证据 = 副作用探针：带 `> $null` 时 `python -c 'open("f","w")'` **不留文件**，**同一条命令去掉重定向即成功创建**（exit 0）。
+2. **"我复现的" ≠ "转记的"（口径必须分开标）**：调度线转记的两条报错里，`> $null` 那条与我实测**逐字相同**；但管道那条转记写 `StandardOutputEncoding…`，我实测到的是 **`拒绝访问`（Access is denied）** ⇒ 同一根因（PS 建不了 stdio）在**不同写法/不同环境**下文案不同。
+   - **防再犯**：写进文档的报错文本一律**标来源**（转记／实测），实测的附**环境 + 命令原文**（本卡回执即按此办）。
+3. **"列出全部触发点"不能靠注释**：`src/xlsx.js:619` 的注释只写"异常即 throw → 外层 .catch 回退"，实际回退触发点有 **7 条**（L145/148/174/179/184/515/598），散在 4 个函数里；另有**两个 `.catch` 落点**（L198 只返回 null 不回退；L699/L704 才回退）。
+   - **防再犯**：凡"全部 X"类判据，一律**用 grep 命令 + 行号落表**（命令原文与退出码进回执），不靠通读印象。
+
 ## 2026-09-19 · 卡 003（执行线）：`contract.*` 自动对账 TAP
 
 > 完整回执（A1–A11 逐条 · 命令原文与退出码 · 负例证据 · 第 7 条对表 · Linux 豁免理由）见 `docs/任务台账.md` 卡 003 节；本节只留**一手坑与结论**。
