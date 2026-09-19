@@ -1788,6 +1788,44 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 - 「同一文件三种命运（43 s 完成 / 20 s 崩 / 磨 20 min 无果）」⇒ **天花板随可用内存浮动**，**印证不必追精确阈值**；
 - 与 **A9/A10**（预检 + 进度 + 超时）方向一致 —— 手机侧结论与我方独立收敛到同一处：**降低单次分配量**。
 
+## 2026-09-20 · CI 红线事故（卡 005 的提交）：npm 计划维护 ⇒ bulk advisories 503（**非代码问题**）
+
+> 结论先行：**这条红与卡 005 的代码无关**，是 npm **计划维护窗口**内一个端点返 503。完整诊断与处置见下；加固建议落在 `HANDOFF §8`（待立卡）。
+
+### 事实链（每一条都有原始输出）
+
+| 环节 | 证据 |
+|---|---|
+| 失败 run | `tests` **#119** · run id **`35458379084`** · 提交 `0d4f039` · **44 s** · 触发 push main（2026-09-19T17:32:00Z） |
+| 失败步原文 | `[audit-delivery] FAIL —— 审计数据不可得：registry advisories HTTP 503（**宁可红，不假绿**：请检查网络/registry，不要跳过本门禁）` |
+| 端点回包 | `POST registry.npmjs.org/-/npm/v1/security/advisories/bulk` → **503** + body `{"error":"We are currently performing maintenance. For more info go to https://status.npmjs.org"}` |
+| 对照端点 | `registry.npmjs.org/` → **200**；`/-/npm/v1/security/audits/quick`（`npm audit` 用的那个）→ **200 且正常返回 advisory 数据** ⇒ **只有 bulk 端点受影响** |
+| 官方状态页 | **Scheduled maintenance：Sep 19, 2026 17:00–19:00 UTC** —— run 在 17:32Z、本机复现探测在 17:36Z，**都在窗口内** |
+| 与提交无关（硬证据） | `git diff --stat 9965d08..HEAD -- tools/` **空**；`tools/audit-delivery.mjs` 的 blob 前后同一份 `dbae1d169bd82fa8526be01b71bb79ebbcf38b`；**本机现在跑同一步同样 503/exit 1**（任何提交都一样） |
+| 步骤级结果 | ✓ Set up job / checkout / setup-node / Install dependencies / Install Playwright / **Build consistency** / **Lint** / **Guard selftest** / **Baseline guard** → ✗ Delivery-face dependency audit → 其后 **metrics / site smoke / Contract tests / TAP 对账 / PWA / OCR 全部被跳过（`-`）** |
+
+### 坑（现象 → 根因 → 防再犯）
+
+1. ⭐ **外部服务的 503 会把整条门禁变红，并把它之后的所有步骤一起遮蔽**（本次连 `npm test` 都没跑）：
+   - **现象**：红在 `audit-delivery`（第 8 步），后面 8 步全是 `-`（skipped）。**只看"CI 红了"会直接误判成"这次提交改坏了东西"** —— 实际测试压根没执行。
+   - **根因**：① 审计步**排在测试步之前**；② 该步的数据源是**网络端点**（npm registry），而它的设计立场是「**数据不可得 ⇒ 宁可红，不假绿**」（用户 2026-09-16 拍板）⇒ 外部故障与"真发现漏洞"在**退出码上不可区分**。
+   - **防再犯**：① 看到 CI 红**先看步骤级结果**（`gh run view <id>` 的 ✓/✗ 列表），**别直接怀疑自己**；② 给出「该步是否与本次改动相关」的**硬证据**（本例：`tools/**` 零改动 + blob 同一份 + 本机复现同错）；③ 加固候选见 `HANDOFF §8`（步序后移 / 退避重试 / 端点降级）。
+2. **`gh` 在本会话沙箱里有两种被拒方式（都不是网络问题）**：
+   - `gh run list` → `failed to determine base repo: failed to run git: pipe: Access is denied.` —— gh 内部调 `git` 探测仓库，**踩的是"native 进管道"那个坑**。
+   - `gh run view <id> --log` → `creating cache entry: open C:\Users\…\AppData\Local\GitHub CLI\run-log-….zip: Access is denied` —— 日志缓存**在工作区外**。
+   - **可用写法**：`gh -R <owner>/<repo> run list`（显式仓库，跳过 git 探测）+ 一次性升权让 gh 写自己的缓存目录；`$env:GH_REPO` 亦可。
+3. **判「第三方故障 vs 自身回归」的最低成本取证法**（本次三步定案，值得复用）：
+   - ① **端点级**：直接打那个 URL，把 **status + body** 打出来（本次 body 自带「maintenance」字样 ⇒ 一句话定案）；
+   - ② **对照端点**：同一服务商的**另一个端点**（本例 `audits/quick`）—— 它活着 ⇒ 排除"整站挂了/我方网络挂了"；
+   - ③ **本地复现**：在**未受影响的提交**上跑同一步（本例 `tools/**` 零改动 ⇒ 直接本机跑同一步即可）⇒ 同样报错 = 与我方改动无关。
+   - ⚠️ **别用"等一会儿再试"当结论**：本次本机复现依然是 503 ⇒ 仅凭一次重试就断言"瞬时抖动"会得出错误处置（正确处置是等维护窗口结束）。
+
+### 处置（用户 2026-09-20 拍板）
+
+- **等维护窗口（19:00 UTC = 03:00 本地）结束后重跑失败作业**：`gh -R sakuraqqq/doc2md run rerun 35458379084 --failed`（由执行线代跑；**这是唯一能拿到卡 005 真 CI 结果的路径** —— 该 run 的测试步从未执行）。
+- **加固建议**：写进 `HANDOFF §8`（**待立卡材料**）；`tools/**` 与 `.github/**` 都在卡 005 范围外 ⇒ **本卡不动**。
+- **本回执（`docs/任务台账.md` §005）不改**：卡面已归档，事故与结论落本节 + `HANDOFF §8` 即可（避免"状态两处维护"）。
+
 ## 2026-09-20 · 卡 005（执行线）：库回退路径「降级可见性」（004-b + 007 同批）
 
 > 完整回执（A1–A13 逐条 · 先红/后绿原始输出 · 两口径契约数 · 第 7 条对表 · Linux 出单）见 `docs/任务台账.md` **卡 005** 节；本节只留**一手坑与结论**。
