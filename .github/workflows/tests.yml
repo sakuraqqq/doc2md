@@ -1,7 +1,8 @@
 # tests.yml — doc2md CI 质量门（防屎山 ③ 守门）
 # 模板：cola（可乐工厂效率计算器）tests.yml；按任务书扩展为 checks job：
 #   build-consistency → lint → 守卫自测 → baseline 守卫 → 交付面依赖审计 → metrics（超限必须为 0）
-#   → 站点白名单 smoke（组装临时 _site）→ npm test → pwa-audit → verify:ocr
+#   → 站点白名单 smoke（组装临时 _site）→ npm test（显式 TAP reporter）→ **TAP ↔ BASELINE.json 对账**
+#   → pwa-audit → verify:ocr
 # 说明：
 #   - 触发：push main · **push tag `v*`**（2026-09-17 加固：发布 tag 也必须过同款门禁，见第九轮审查 §4.4）
 #     · PR。⚠️ 残留：GitHub 无「workflow 间依赖」，deploy-pages 不会等本 workflow 跑完才开始部署 ——
@@ -22,6 +23,11 @@
 #     用 `fetch-depth: 0`（action 契约：0 = 全历史 + 全部 tag；默认 1 不含 tag）。
 #   - 站点白名单 smoke（2026-09-17 前移到 CI）：本地按 deploy-pages 的同款 cp 白名单组装临时 `_site`
 #     再跑 deploy-smoke —— 原先只在部署 workflow 里跑，PR/主干不会提前发现「新增顶层文件漏发」。
+#   - **契约数对账（2026-09-19 卡 003）**：`npm test` **显式** `--test-reporter=tap`（**不依赖默认 reporter**：
+#     Node 20 默认 tap、Node 24 默认 spec —— 2026-09-19 实测），输出落 `tap.txt`；紧随其后跑
+#     `baseline-check --from-tap tap.txt --scope ci_clean_checkout`：**实跑 TAP 与 docs/BASELINE.json
+#     的 contract 不一致即红**（本步必须排在 npm test **之后** —— 前面拿不到测试结果）。
+#     ⚠️ `set -o pipefail` 不能省：否则 `npm test | tee` 会把失败吞成 tee 的退出码。
 name: tests
 
 on:
@@ -66,8 +72,13 @@ jobs:
           cp index.html manifest.json sw.js .nojekyll _site/
           cp -r vendor langs icons _site/
           node tools/deploy-smoke.mjs _site
-      - name: Contract tests (node --test)
-        run: npm test
+      - name: Contract tests (node --test · **显式 TAP reporter**；输出同时落 tap.txt 供对账)
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test -- --test-reporter=tap 2>&1 | tee tap.txt
+      - name: "Contract ↔ BASELINE.json reconciliation (TAP 摘要 ↔ contract.ci_clean_checkout；2026-09-19 卡 003)"
+        run: node tools/baseline-check.mjs --from-tap tap.txt --scope ci_clean_checkout
       - name: PWA audit (static)
         run: node tests/pwa-audit.mjs
       - name: OCR verification (offline tesseract)

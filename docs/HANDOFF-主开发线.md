@@ -654,6 +654,14 @@
   - ⏳ **三条待拍板（均超本卡范围，未实施）**：① **内存判据口径**（保留量 +0.2 MB 强证 vs 窄窗口 +468 MB 达标 vs 宽窗口 +646 MB 超阈 ⇒ 建议写死"转换边际"）② **浮点显示**（`34.200000000000003` 是否在渲染层格式化）③ **A10 在秒级时代读不到**（sticky / 阈值化 / 移除）。
   - ⚠️ **我方单据一处口径错（Linux 发现）**：`DOC2MD_BIG_FIXTURES` 指到**仓库外**会让组 Y 变红（`yFixtureUrl()` 用 `path.relative(ROOT,…)` ⇒ URL 带 `..`）⇒ 须**软链到仓库内**；已落 `DEV-NOTES`。
 
+**A11.28 卡 003：契约数自动对账 TAP（2026-09-19）**
+- **目标达成**：`docs/BASELINE.json` 的 `contract.*` 从「文字溯源」升级为「**机器现算比对**」⇒ **四个数字块（released / online / delivery / contract）全部可被守卫独立验证**，不再有"只能靠人写一句话证明"的字段。
+- **机制**：`tools/baseline-check.mjs` 新增 `--from-tap <tap 文件> --scope <口径>`（解析 TAP 摘要 ↔ JSON `counts` 逐项比对；不符 **exit 1**、**绝不自动改写 JSON**）；`tools/guard-selftest.mjs` **16 → 19/19**（新增 2 条负例 + 1 条正例）；`.github/workflows/tests.yml`：`npm test` **显式** `--test-reporter=tap` 并落 `tap.txt`，**紧随其后**加对账步（`--scope ci_clean_checkout`）。
+- ⭐ **A3 实测结论（卡面标的「待实测」）**：**两版本默认 reporter 不一致** —— Node 24（本机，stdout 重定向到文件 = 非 TTY）默认 = **spec**（`ℹ tests …`）；Node 20（CI/Actions 日志，非 TTY）默认 = **tap**（`# tests …`）⇒ **必须显式指定**（CI 与本地流程已落地；`--from-tap` 对非 TAP 输入直接报错）。
+- **本机实跑（有夹具）**：`--from-tap tap-local.txt --scope local_with_fixtures` → **PASS（276/274/0/2 逐项一致，exit 0）**；CI 口径本机复现（`DOC2MD_BIG_FIXTURES` 指向**仓库内不存在**目录）→ **PASS（273/270/0/3，exit 0）**。**未改任何应然值**（A9）。
+- **门禁**：lint **0/0** · metrics 21 文件 / **509 函数** / 超限 **0** / 0.4% · `baseline-check`（原模式）**PASS** · `guard-selftest` **19/19**。
+- **Linux 配额**：本批**纯工具 / 纯 CI**（零产品行为变更）⇒ 按 §3.5 **豁免**，理由与判据见 `docs/任务台账.md` 卡 003 回执（含"CI 本身跑在 ubuntu-latest"这一层）。
+
 **A12 局域网交换页 UI 改版（用户 2026-09-18 要求：「下次网页整好看点」）**
 - 现状：手写裸 HTML，一个 `<form>` + 文件列表；无样式体系、无拖拽、无进度、无移动端适配（手机上是主用场景，尤其该修）。
 - 下次开工先定稿再动手：拖拽上传 + 上传进度 + 文件列表（大小/时间/一键复制 `git bundle` 命令）+ 移动端单列 + 与 doc2md 主站同配色。

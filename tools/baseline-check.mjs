@@ -7,12 +7,15 @@
 //      线上值的**出处** = `online.source_commit` 的 blob（证明该数字来自真实提交 —— **不代表线上现状**，
 //      线上现状只能由 RELEASE-CHECKLIST §3/§4 的人工核对确认：本脚本不联网）；
 //   ② HEAD 现值**不入 JSON**（"产物与 src 一致"由契约组 T 守卫）—— 发现即红；
-//   ③ 契约数是**实跑数据**（脚本无法重算）⇒ 守卫做两道：**溯源**（每个数字须被带 measured/scope 的
-//      节点覆盖）+ **自洽**（pass + fail + skip == total）；两个口径分行（本机带夹具 / CI 干净检出）。
+//   ③ 契约数是**实跑数据**（脚本无法重算）⇒ 守卫做三道：**溯源**（每个数字须被带 measured/scope 的
+//      节点覆盖）+ **自洽**（pass + fail + skip == total）+ **与实跑 TAP 对账**（`--from-tap`，卡 003）；
+//      两个口径分行（本机带夹具 / CI 干净检出）。
 // 用法：
 //   node tools/baseline-check.mjs              → 全量校验（不符 exit 1）
 //   node tools/baseline-check.mjs --selftest   → 负例必红自测（3 条变异，全红才 exit 0）
-// 判定：exit 0 = 通过；exit 1 = 有漂移 / 缺溯源 / 取不到 git。
+//   node tools/baseline-check.mjs --from-tap <tap 文件> --scope <口径>
+//                                              → **契约数 ↔ 实跑 TAP 对账**（卡 003；不符 exit 1）
+// 判定：exit 0 = 通过；exit 1 = 有漂移 / 缺溯源 / 与 TAP 不符；exit 2 = 用法或读文件错误。
 //
 // ⚠️ 沙箱口径：本脚本要 spawn git，但**不使用管道 stdio**（会话沙箱禁管道 ⇒ `encoding` 捕获得
 //    `spawnSync … EPERM`）；改为把子进程 stdout 直接写进临时文件（stdio: ['ignore', fd, 'inherit']）。
@@ -269,6 +272,63 @@ export function checkBaseline(data, actual) {
   return { ok: errors.length === 0, errors, checks };
 }
 
+/* ---------- TAP 对账（卡 003，2026-09-19）：把 `contract.*` 从「文字溯源」升级为「机器现算比对」 ----------
+ * 口径：`node --test --test-reporter=tap` 尾部摘要（`# tests/# pass/# fail/# skipped`）↔
+ *   `docs/BASELINE.json` 的 `contract[scope].counts`。**不一致即 exit 1**，并且**只报「哪一侧该改 + 需要拍板」**，
+ *   **绝不自动改写 JSON** —— 自动改写会把"数字漂移"变成"数字静默跟随"（卡 003 A5/A9）。
+ * ⚠️ **不依赖默认 reporter**：2026-09-19 实测 —— Node 20（CI）默认 **tap**、Node 24（本机）默认 **spec**
+ *   ⇒ CI 与本地的对账流程一律显式 `--test-reporter=tap`；本模块对"不是 TAP"的输入**明确报错**（不静默当 0）。 */
+const TAP_REQUIRED = ['tests', 'pass', 'fail', 'skipped'];
+
+/** 解析 TAP 摘要 → { tests, pass, fail, skipped }；四行缺任一 → null（调用方报"不是 TAP"） */
+export function parseTapSummary(text) {
+  const got = {};
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = /^#\s*(tests|pass|fail|skipped)\s+(\d+)\s*$/.exec(line.trim());
+    if (m) got[m[1]] = Number(m[2]);
+  }
+  for (const k of TAP_REQUIRED) if (!Number.isInteger(got[k])) return null;
+  return got;
+}
+
+/** TAP 摘要 ↔ JSON 应然值对账（纯函数）→ { ok, errors, checks } */
+const TAP_PAIRS = [
+  ['total', 'tests'],
+  ['pass', 'pass'],
+  ['fail', 'fail'],
+  ['skip', 'skipped'],
+];
+const TAP_HINT =
+  '（两侧都可能该改：① 测试确实增减 ⇒ 改 JSON 应然值 = **改口径 ⇒ 需用户拍板**（本守卫不自动改）；' +
+  '② 测试未变 ⇒ 查 reporter / 口径是否用对 —— CI 干净检出无 `.私档/` ⇒ 组 Y 整体 skip）';
+const TAP_NOT_TAP =
+  'TAP 摘要解析失败：未找到 `# tests/# pass/# fail/# skipped` 四行 —— 请确认用了 `node --test --test-reporter=tap`' +
+  '（**不要依赖默认 reporter**：Node 20 默认 tap、Node 24 默认 spec，2026-09-19 实测）';
+
+/** 逐项比对 → 不一致项的错误文案（全一致 = 空数组） */
+function tapDiffs(want, got, scope) {
+  const out = [];
+  for (const [jsonKey, tapKey] of TAP_PAIRS) {
+    if (want[jsonKey] !== got[tapKey]) {
+      out.push(`口径 ${scope}：TAP ${tapKey} = ${got[tapKey]} ≠ JSON contract.${scope}.counts.${jsonKey} = ${want[jsonKey]}${TAP_HINT}`);
+    }
+  }
+  return out;
+}
+
+export function reconcileTap(tapText, data, scope) {
+  const got = parseTapSummary(tapText);
+  if (!got) return { ok: false, checks: [], errors: [TAP_NOT_TAP] };
+  const want = data?.contract?.[scope]?.counts;
+  if (!want) {
+    const have = Object.keys(data?.contract ?? {}).join(' / ') || '（无）';
+    return { ok: false, checks: [], errors: [`docs/BASELINE.json 缺 contract.${scope}.counts —— 口径名写错了？现有口径：${have}`] };
+  }
+  const errors = tapDiffs(want, got, scope);
+  const checks = errors.length ? [] : [`TAP ↔ contract.${scope}：${got.tests} / ${got.pass} / ${got.fail} / ${got.skipped} 逐项一致`];
+  return { ok: errors.length === 0, errors, checks };
+}
+
 /* ---------- C6 点名的三种篡改（负例必红；guard-selftest 与 --selftest 共用同一份定义） ---------- */
 const flipChar = (s, i) => s.slice(0, i) + (s[i] === 'A' ? 'B' : 'A') + s.slice(i + 1);
 export const BASELINE_NEGATIVES = [
@@ -341,6 +401,42 @@ function runSelftest() {
   return missed ? 1 : 0;
 }
 
+/** `--flag value` 取参（缺省 null） */
+function argValue(flag) {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : null;
+}
+
+/** 契约数 ↔ 实跑 TAP 对账（卡 003 A1/A5）；exit 0 一致 / 1 不一致 / 2 用法或读取错误 */
+function runFromTap() {
+  const file = argValue('--from-tap');
+  const scope = argValue('--scope');
+  if (!file || !scope) {
+    console.error('[baseline] 用法：--from-tap <tap 文件> --scope <口径>（口径见 docs/BASELINE.json 的 contract.*）');
+    return 2;
+  }
+  let text;
+  try {
+    text = fs.readFileSync(path.resolve(file), 'utf8');
+  } catch (e) {
+    console.error(`[baseline] 无法读取 TAP 文件 ${file}：${(e && e.message) || e}`);
+    return 2;
+  }
+  const data = readBaseline();
+  if (!data) return 2;
+  const { errors, checks } = reconcileTap(text, data, scope);
+  for (const c of checks) console.log('  ok  ' + c);
+  if (!errors.length) {
+    console.log(`[baseline] PASS —— 实跑 TAP 与 docs/BASELINE.json 的 contract.${scope} 一致（来源 ${file}）`);
+    return 0;
+  }
+  console.error(`[baseline] 失败 —— 实跑 TAP 与 contract.${scope} 不一致（**本守卫不会自动改写 JSON**）：`);
+  for (const e of errors) console.error('  ✗ ' + e);
+  return 1;
+}
+
 if (invokedDirectly) {
-  process.exit(process.argv.includes('--selftest') ? runSelftest() : runCheck());
+  if (process.argv.includes('--selftest')) process.exit(runSelftest());
+  else if (process.argv.includes('--from-tap')) process.exit(runFromTap());
+  else process.exit(runCheck());
 }
