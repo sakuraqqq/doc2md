@@ -929,6 +929,7 @@
         return {
           method: dv.getUint16(off + 10, true),
           compSize: dv.getUint32(off + 20, true),
+          uncompSize: dv.getUint32(off + 24, true),
           localOff: dv.getUint32(off + 42, true)
         };
       }
@@ -943,7 +944,7 @@
     const out = await new Response(stream).arrayBuffer().catch(() => null);
     return out ? { data: new Uint8Array(out), compSize } : null;
   }
-  async function zipEntry(buf, wantedName) {
+  function zipEntryMeta(buf, wantedName) {
     const n = buf.byteLength;
     if (n < 22) return null;
     const eocd = findEocd(buf, n);
@@ -951,13 +952,30 @@
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
     const entry = findCentralEntry(buf, dv, n, eocd, wantedName);
     if (!entry) return null;
-    const { method, compSize, localOff } = entry;
+    const { method, compSize, uncompSize, localOff } = entry;
     if (localOff + 30 > n) return null;
     const ln = dv.getUint16(localOff + 26, true);
     const le = dv.getUint16(localOff + 28, true);
     if (localOff + 30 + ln + le + compSize > n) return null;
-    const start = localOff + 30 + ln + le;
-    return inflateEntry(buf.subarray(start, start + compSize), compSize, method);
+    return { method, compSize, uncompSize, start: localOff + 30 + ln + le };
+  }
+  async function zipEntry(buf, wantedName) {
+    const meta = zipEntryMeta(buf, wantedName);
+    if (!meta) return null;
+    return inflateEntry(buf.subarray(meta.start, meta.start + meta.compSize), meta.compSize, meta.method);
+  }
+  function entryStream(buf, meta) {
+    if (!meta) return null;
+    const slice = buf.subarray(meta.start, meta.start + meta.compSize);
+    const src = new ReadableStream({
+      start(c) {
+        c.enqueue(slice);
+        c.close();
+      }
+    });
+    if (meta.method === 0) return src;
+    if (typeof DecompressionStream === "undefined") return null;
+    return src.pipeThrough(new DecompressionStream("deflate-raw"));
   }
   function parseSheetTags(wbText) {
     const sheets = [];
@@ -1028,14 +1046,17 @@
     const rMatch = / r="([^"]*)"/.exec(attrs);
     return { t: tMatch ? tMatch[1] : "", s: sMatch ? sMatch[1] : "", r: rMatch ? rMatch[1] : "" };
   }
-  function findTagStart(s, tag, p, valid) {
-    let i = p;
+  function findTagStartInfo(s, tag, valid, from = 0) {
+    let i = from;
     while (true) {
       const cs = s.indexOf(tag, i);
-      if (cs < 0) return -1;
-      if (valid.includes(s[cs + tag.length])) return cs;
+      if (cs < 0) return { start: -1, end: Math.max(from, s.length - tag.length + 1) };
+      if (valid.includes(s[cs + tag.length])) return { start: cs, end: cs };
       i = cs + tag.length + 1;
     }
+  }
+  function findTagStart(s, tag, p, valid) {
+    return findTagStartInfo(s, tag, valid, p).start;
   }
   function parseCellAt(body, cs) {
     const ct = body.indexOf(">", cs);
@@ -1068,28 +1089,62 @@
     }
     return { cells, maxS: max };
   }
-  function scanSheetRows(xml, rowLimit) {
+  function textPuller(stream) {
+    const reader = stream.getReader();
+    const dec = new TextDecoder();
+    const p = { pending: "", bytes: 0, ended: false };
+    p.more = async () => {
+      if (p.ended) return false;
+      const { done, value } = await reader.read();
+      if (done) {
+        p.ended = true;
+        return false;
+      }
+      p.bytes += value.byteLength;
+      p.pending += dec.decode(value, { stream: true });
+      return true;
+    };
+    p.consume = (n) => {
+      p.pending = p.pending.slice(n);
+    };
+    p.cancel = () => Promise.resolve(reader.cancel()).catch(() => {
+    });
+    return p;
+  }
+  function takeRowUnit(text) {
+    const { start, end } = findTagStartInfo(text, "<row", " >/");
+    if (start < 0) return { kind: "none", keepFrom: end };
+    const tagEnd = text.indexOf(">", start);
+    if (tagEnd < 0) return { kind: "partial", keepFrom: start };
+    if (text.slice(start, tagEnd + 1).endsWith("/>")) return { kind: "row", body: null, next: tagEnd + 1 };
+    const re = text.indexOf("</row>", tagEnd);
+    if (re < 0) return { kind: "partial", keepFrom: start };
+    return { kind: "row", body: text.slice(tagEnd + 1, re), next: re + 6 };
+  }
+  async function scanSheetRowsStream(stream, rowLimit) {
+    const p = textPuller(stream);
     const rawRows = [];
     let maxS = -1;
-    let pos = 0;
     while (rawRows.length <= rowLimit) {
-      const rs = findTagStart(xml, "<row", pos, " >/");
-      if (rs < 0) break;
-      const tagEnd = xml.indexOf(">", rs);
-      if (tagEnd < 0) break;
-      if (xml.slice(rs, tagEnd + 1).endsWith("/>")) {
+      const unit = takeRowUnit(p.pending);
+      if (unit.kind !== "row") {
+        if (unit.keepFrom) p.consume(unit.keepFrom);
+        if (!await p.more()) break;
+        continue;
+      }
+      if (unit.body === null) {
         rawRows.push([]);
-        pos = tagEnd + 1;
       } else {
-        const re = xml.indexOf("</row>", tagEnd);
-        if (re < 0) break;
-        const scanned = parseRowCells(xml.slice(tagEnd + 1, re), maxS);
+        const scanned = parseRowCells(unit.body, maxS);
         maxS = scanned.maxS;
         rawRows.push(scanned.cells);
-        pos = re + 6;
       }
+      p.consume(unit.next);
     }
-    return { rawRows: rawRows.slice(0, rowLimit), maxS, more: rawRows.length > rowLimit };
+    const bytes = p.bytes;
+    const more = rawRows.length > rowLimit;
+    await p.cancel();
+    return { rawRows: rawRows.slice(0, rowLimit), maxS, more, bytes };
   }
   function collectTTexts(s, from, to) {
     let out = "";
@@ -1118,22 +1173,36 @@
     if (gt < 0 || isEnd < 0) return "";
     return collectTTexts(inner, gt + 1, isEnd);
   }
-  function parseSharedStrings(xml, maxS) {
-    const out = [];
+  function takeSiUnit(text) {
     let pos = 0;
-    while (out.length <= maxS) {
-      const si = xml.indexOf("<si", pos);
-      if (si < 0) break;
-      if (xml[si + 3] !== " " && xml[si + 3] !== ">") {
+    while (true) {
+      const si = text.indexOf("<si", pos);
+      if (si < 0) return { kind: "none", keepFrom: Math.max(0, text.length - 3) };
+      if (text[si + 3] !== " " && text[si + 3] !== ">") {
         pos = si + 4;
         continue;
       }
-      const se = xml.indexOf("</si>", si);
-      if (se < 0) break;
-      out.push(decodeXml(collectTTexts(xml, si + 3, se)));
-      pos = se + 5;
+      const se = text.indexOf("</si>", si);
+      if (se < 0) return { kind: "partial", keepFrom: si };
+      return { kind: "si", from: si + 3, to: se, next: se + 5 };
     }
-    return out;
+  }
+  async function parseSharedStringsStream(stream, maxS) {
+    const p = textPuller(stream);
+    const out = [];
+    while (out.length <= maxS) {
+      const unit = takeSiUnit(p.pending);
+      if (unit.kind !== "si") {
+        if (unit.keepFrom) p.consume(unit.keepFrom);
+        if (!await p.more()) break;
+        continue;
+      }
+      out.push(decodeXml(collectTTexts(p.pending, unit.from, unit.to)));
+      p.consume(unit.next);
+    }
+    const bytes = p.bytes;
+    await p.cancel();
+    return { list: out, bytes };
   }
   function xlsxCellText(v) {
     if (v === null || v === void 0) return "";
@@ -1286,12 +1355,21 @@
     });
     return out;
   }
-  function xlsxParseSheet(xml, rowLimit, strings, dateStyles, date1904) {
+  async function xlsxParseSheetStream(buf, target, rowLimit, dateStyles, date1904) {
     const styles = dateStyles || NO_DATE_STYLES;
-    const { rawRows, maxS, more } = scanSheetRows(xml, rowLimit);
-    const ss = maxS >= 0 ? parseSharedStrings(strings || "", maxS) : [];
-    const rows = rawRows.map((cells) => rowToTexts(cells, ss, styles, date1904));
-    return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more };
+    const sheetMeta = zipEntryMeta(buf, target);
+    const sheetStream = sheetMeta && entryStream(buf, sheetMeta);
+    if (!sheetStream) throw new Error("\u7F3A\u5DE5\u4F5C\u8868 XML\uFF08" + target + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
+    const { rawRows, maxS, more, bytes } = await scanSheetRowsStream(sheetStream, rowLimit);
+    let strings = [];
+    let strBytes = 0;
+    if (maxS >= 0) {
+      const sMeta = zipEntryMeta(buf, "xl/sharedStrings.xml");
+      const sStream = sMeta && entryStream(buf, sMeta);
+      if (sStream) ({ list: strings, bytes: strBytes } = await parseSharedStringsStream(sStream, maxS));
+    }
+    const rows = rawRows.map((cells) => rowToTexts(cells, strings, styles, date1904));
+    return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more, bytes: bytes + strBytes };
   }
   function truncationMessage(readCount, totalRows, skipped) {
     let msg = `\u5DF2\u622A\u65AD\uFF1A\u5DF2\u8BFB\u53D6\u524D ${readCount} \u4E2A sheet \u5171 ${totalRows} \u884C\uFF08\u6BCF sheet \u4FDD\u7559\u524D ${XLSX_ROW_LIMIT} \u884C`;
@@ -1299,13 +1377,9 @@
     return msg + "\uFF09";
   }
   async function xlsxSelfParse(buf, readMap, names, date1904) {
-    const stringsEntry = await zipEntry(buf, "xl/sharedStrings.xml");
-    let stringsXml = null;
-    if (stringsEntry) {
-      if (stringsEntry.compSize > XLSX_STRINGS_GUARD_BYTES) {
-        throw new Error("sharedStrings \u8FC7\u5927\uFF08" + stringsEntry.compSize + "B\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
-      }
-      stringsXml = new TextDecoder().decode(stringsEntry.data);
+    const stringsMeta = zipEntryMeta(buf, "xl/sharedStrings.xml");
+    if (stringsMeta && stringsMeta.compSize > XLSX_STRINGS_GUARD_BYTES) {
+      throw new Error("sharedStrings \u8FC7\u5927\uFF08" + stringsMeta.compSize + "B\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
     }
     const stylesEntry = await zipEntry(buf, "xl/styles.xml");
     const dateStyles = stylesEntry ? parseStylesDateFormats(new TextDecoder().decode(stylesEntry.data)) : null;
@@ -1313,17 +1387,16 @@
     const warnings = [];
     let truncated = false;
     let totalRows = 0;
+    let scanBytes = 0;
     for (let i = 0; i < readMap.length; i++) {
       const s = readMap[i];
-      const entry = await zipEntry(buf, s.target);
-      if (!entry) throw new Error("\u7F3A\u5DE5\u4F5C\u8868 XML\uFF08" + s.target + "\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
-      const xml = new TextDecoder().decode(entry.data);
-      const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml, dateStyles, date1904);
-      totalRows += scanned;
-      if (sheetTrunc) truncated = true;
+      const sheet = await xlsxParseSheetStream(buf, s.target, XLSX_ROW_LIMIT, dateStyles, date1904);
+      totalRows += sheet.scanned;
+      scanBytes += sheet.bytes;
+      if (sheet.truncated) truncated = true;
       parts.push(`### Sheet: ${s.name === null ? "Sheet1" : s.name}
 
-${xlsxRowsToMd(rows)}`);
+${xlsxRowsToMd(sheet.rows)}`);
     }
     const skipped = names.length - readMap.length;
     if (skipped > 0) {
@@ -1331,7 +1404,14 @@ ${xlsxRowsToMd(rows)}`);
       truncated = true;
     }
     if (truncated) warnings.push(truncationMessage(readMap.length, totalRows, skipped));
-    return { markdown: parts.join("\n\n").trim(), warnings, truncated, backend: "xlsx-self" };
+    return {
+      markdown: parts.join("\n\n").trim(),
+      // t11 §1.7：自解析路径报实际引擎（G4-2 契约；库路径仍 'read-excel-file'）
+      warnings,
+      truncated,
+      backend: "xlsx-self",
+      scan: { bytes: scanBytes, rows: totalRows }
+    };
   }
   async function readSheetSafely(readXlsx, ab, name) {
     try {
@@ -2199,6 +2279,7 @@ ${p.text}
     meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
     meta.truncated = !!res.truncated;
     if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
+    if (res.scan) meta.scan = res.scan;
     meta.elapsedMs = Math.round(performance.now() - t0);
     const markdown = res.markdown || "";
     return { markdown: meta.truncated ? withTruncationNotice(markdown, meta.warnings) : markdown, meta, error: void 0 };

@@ -21,7 +21,9 @@ function findEocd(buf, n) {
 }
 
 /* 中央目录条目定位（t8 重构：从 zipEntry 抽出）——遍历 EOCD 声明的条目找 wantedName；
- * 返回 { method, compSize, localOff }；签名/边界异常 → null（调用方按「无此条目」回退） */
+ * 返回 { method, compSize, uncompSize, localOff }；签名/边界异常 → null（调用方按「无此条目」回退）
+ * t33+（2026-09-19 流式化）：多取 **uncompSize（中央目录 offset+24 = 解压后规模）** ——
+ * 护栏/预检一律按解压后规模判（口径拍板：台账/拍板.md 第 1 行；compSize 与内存无关）。 */
 function findCentralEntry(buf, dv, n, eocd, wantedName) {
   const count = dv.getUint16(eocd + 10, true);
   let off = dv.getUint32(eocd + 16, true);
@@ -35,6 +37,7 @@ function findCentralEntry(buf, dv, n, eocd, wantedName) {
       return {
         method: dv.getUint16(off + 10, true),
         compSize: dv.getUint32(off + 20, true),
+        uncompSize: dv.getUint32(off + 24, true),
         localOff: dv.getUint32(off + 42, true),
       };
     }
@@ -43,8 +46,10 @@ function findCentralEntry(buf, dv, n, eocd, wantedName) {
   return null;
 }
 
-/* 条目数据解压（t8 重构：从 zipEntry 抽出）——method 0 = 原样；否则 deflate-raw；
- * 无 DecompressionStream / 解压失败 → null（按「无此条目」处理，调用方回退；t12 线性无吞异常） */
+/* 条目数据**整段**解压（t8 重构：从 zipEntry 抽出）——method 0 = 原样；否则 deflate-raw；
+ * 无 DecompressionStream / 解压失败 → null（按「无此条目」处理，调用方回退；t12 线性无吞异常）
+ * ⚠️ t33+（2026-09-19 流式化）：整段解压**只用于小条目**（workbook/rels/styles）——
+ * 大条目（worksheet / sharedStrings，实测解压后 168 / 214 / 87 / 291 MB）一律走 entryStream 逐块读。 */
 async function inflateEntry(data, compSize, method) {
   if (method === 0) return { data, compSize };
   if (typeof DecompressionStream === 'undefined') return null; // 极端环境：无法解压
@@ -53,9 +58,11 @@ async function inflateEntry(data, compSize, method) {
   return out ? { data: new Uint8Array(out), compSize } : null;
 }
 
-/* ZIP 中央目录读取指定条目（零依赖：浏览器内置 DecompressionStream('deflate-raw')；用于 xlsx 自解析）
- * 返回 { data, compSize }（compSize 用于 sharedStrings 等大条目的护栏预判——不先解压） */
-export async function zipEntry(buf, wantedName) {
+/* 条目元数据（**只读中央目录，不解压**）→ { method, compSize, uncompSize, start } 或 null。
+ * - 边界防护与旧 zipEntry 逐条一致（localOff 越界 → null，不透 DataView 裸异常：G4-1 契约）
+ * - uncompSize = 中央目录 offset+24 = **解压后规模**（2026-09-19 拍板：护栏/预检一律按它判，
+ *   compSize 只反映压缩率、与内存无关——旧护栏用 compSize 是「按体积猜内存」的口径错） */
+export function zipEntryMeta(buf, wantedName) {
   const n = buf.byteLength;
   if (n < 22) return null;
   const eocd = findEocd(buf, n);
@@ -63,15 +70,34 @@ export async function zipEntry(buf, wantedName) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const entry = findCentralEntry(buf, dv, n, eocd, wantedName);
   if (!entry) return null;
-  // t11 §1.5 边界防护：localOff 越界（损坏 zip 中央目录被篡改指向界外）→ 按「无此条目」返回 null
-  // （调用方回退库/单 sheet），不透 DataView/typed array 裸异常给用户（G4-1 契约）
-  const { method, compSize, localOff } = entry;
+  const { method, compSize, uncompSize, localOff } = entry;
   if (localOff + 30 > n) return null;
   const ln = dv.getUint16(localOff + 26, true);
   const le = dv.getUint16(localOff + 28, true);
   if (localOff + 30 + ln + le + compSize > n) return null;
-  const start = localOff + 30 + ln + le;
-  return inflateEntry(buf.subarray(start, start + compSize), compSize, method);
+  return { method, compSize, uncompSize, start: localOff + 30 + ln + le };
+}
+
+/* ZIP 中央目录读取指定条目（**整段**解压；小条目用）—— 返回 { data, compSize }，语义与 t33 前一致 */
+export async function zipEntry(buf, wantedName) {
+  const meta = zipEntryMeta(buf, wantedName);
+  if (!meta) return null;
+  return inflateEntry(buf.subarray(meta.start, meta.start + meta.compSize), meta.compSize, meta.method);
+}
+
+/* 条目解压**流**（逐块；不整段 materialize）—— 大条目流式解析用；不可用 → null（与 zipEntry 同语义）。 */
+export function entryStream(buf, meta) {
+  if (!meta) return null;
+  const slice = buf.subarray(meta.start, meta.start + meta.compSize);
+  const src = new ReadableStream({
+    start(c) {
+      c.enqueue(slice);
+      c.close();
+    },
+  });
+  if (meta.method === 0) return src;
+  if (typeof DecompressionStream === 'undefined') return null;
+  return src.pipeThrough(new DecompressionStream('deflate-raw'));
 }
 
 /* xlsx workbook 映射（t8 · 第五轮审查 §1.1）：解析 xl/workbook.xml（<sheet> 按 tab 顺序，含 name + r:id）
@@ -169,15 +195,22 @@ function parseCellAttrs(attrs) {
 }
 
 /* 标签起始位置（t1 重构：前缀守卫——标签名后必须是 valid 中任一字符（如 ' >/'），防 <cols/<col、
- * <rowBreak/<rowPath 误匹配；-1 = 无更多）。行级与单元格级共用，消除重复守卫逻辑。 */
-function findTagStart(s, tag, p, valid) {
-  let i = p;
+ * <rowBreak/<rowPath 误匹配）。**流式版**（2026-09-19 卡 002）额外返回 end =「已检查到的安全位置」：
+ * 它之前不可能再出现合法起始 ⇒ 调用方可丢弃这段前缀，续接缓冲不随输入无界增长；
+ * start = -1 = 本窗口内无合法起始（end = 尾部保留点，跨块的半个标签由它兜住）。 */
+function findTagStartInfo(s, tag, valid, from = 0) {
+  let i = from;
   while (true) {
     const cs = s.indexOf(tag, i);
-    if (cs < 0) return -1;
-    if (valid.includes(s[cs + tag.length])) return cs;
+    if (cs < 0) return { start: -1, end: Math.max(from, s.length - tag.length + 1) };
+    if (valid.includes(s[cs + tag.length])) return { start: cs, end: cs };
     i = cs + tag.length + 1;
   }
+}
+
+/* 行级与单元格级共用（旧签名：只取起始位置） */
+function findTagStart(s, tag, p, valid) {
+  return findTagStartInfo(s, tag, valid, p).start;
 }
 
 /* 单个 <c> 解析（t1 重构：属性 + <v>/<is> 文本；结构损坏 → null）。自闭合单元格不含 isText 键
@@ -218,31 +251,73 @@ function parseRowCells(body, maxS) {
   return { cells, maxS: max };
 }
 
-/* 线性扫描 sheet XML 的行（t33 流式）：最多解析 ROW_LIMIT+1 个 <row> 即停——绝不读完整个 sheet。
- * 返回 { rawRows: [{ cells: [{t,s,v}] }], maxS, more }：more = 存在第 ROW_LIMIT+1 行之后的更多行（截断判定） */
-function scanSheetRows(xml, rowLimit) {
+/* ---------- 逐块流式读取（2026-09-19 卡 002）：内存 O(窗口)，不再整段 materialize ---------- */
+
+/** 逐块解压 → 增量 decode（`{stream:true}`：跨块 UTF-8 多字节序列自动续接）→ 解析器按需取文本。
+ * 跨块「续接缓冲」= `pending`：解析器只在窗口里取**完整单元**，取不到就再拉一块；
+ * **消费即裁剪**（只保留未消费尾部）⇒ 内存与「被使用的数据量」相称，与条目规模无关。 */
+function textPuller(stream) {
+  const reader = stream.getReader();
+  const dec = new TextDecoder();
+  const p = { pending: '', bytes: 0, ended: false };
+  p.more = async () => {
+    if (p.ended) return false;
+    const { done, value } = await reader.read();
+    if (done) {
+      p.ended = true;
+      return false;
+    }
+    p.bytes += value.byteLength; // 实际拉取的**解压后**字节数（meta.scan.bytes 口径）
+    p.pending += dec.decode(value, { stream: true });
+    return true;
+  };
+  p.consume = (n) => {
+    p.pending = p.pending.slice(n);
+  };
+  p.cancel = () => Promise.resolve(reader.cancel()).catch(() => {});
+  return p;
+}
+
+/** 窗口内取第一个完整 `<row>` 单元（前缀守卫与旧 scanSheetRows 逐字一致）：
+ * `{kind:'row', body, next}`；`body = null` = 自闭合空行。取不到 → `{kind:'none'|'partial', keepFrom}`（需再拉数据）。 */
+function takeRowUnit(text) {
+  const { start, end } = findTagStartInfo(text, '<row', ' >/');
+  if (start < 0) return { kind: 'none', keepFrom: end };
+  const tagEnd = text.indexOf('>', start);
+  if (tagEnd < 0) return { kind: 'partial', keepFrom: start };
+  if (text.slice(start, tagEnd + 1).endsWith('/>')) return { kind: 'row', body: null, next: tagEnd + 1 };
+  const re = text.indexOf('</row>', tagEnd);
+  if (re < 0) return { kind: 'partial', keepFrom: start };
+  return { kind: 'row', body: text.slice(tagEnd + 1, re), next: re + 6 };
+}
+
+/** 流式线性扫描 sheet XML 的行：最多解析 ROW_LIMIT+1 个 `<row>` 即停——**绝不读完整个 sheet**。
+ * 返回 { rawRows, maxS, more, bytes }：语义与旧 scanSheetRows 逐字对齐
+ * （more = 第 ROW_LIMIT+1 行之后仍有行；bytes = 本次实际解压量）。 */
+async function scanSheetRowsStream(stream, rowLimit) {
+  const p = textPuller(stream);
   const rawRows = [];
   let maxS = -1;
-  let pos = 0;
   while (rawRows.length <= rowLimit) {
-    // 前缀守卫（findTagStart）：'<row' 后必须是空白/'>'/'/'（防 <rowBreak/<rowPath 等误匹配）
-    const rs = findTagStart(xml, '<row', pos, ' >/');
-    if (rs < 0) break;
-    const tagEnd = xml.indexOf('>', rs);
-    if (tagEnd < 0) break;
-    if (xml.slice(rs, tagEnd + 1).endsWith('/>')) { // 自闭合空行（如 <row r="N"/>）
-      rawRows.push([]);
-      pos = tagEnd + 1;
+    const unit = takeRowUnit(p.pending);
+    if (unit.kind !== 'row') {
+      if (unit.keepFrom) p.consume(unit.keepFrom); // 丢弃无望前缀（保 O(窗口)）
+      if (!(await p.more())) break; // 流已结束且无完整行
+      continue;
+    }
+    if (unit.body === null) {
+      rawRows.push([]); // 自闭合空行（如 <row r="N"/>）
     } else {
-      const re = xml.indexOf('</row>', tagEnd);
-      if (re < 0) break;
-      const scanned = parseRowCells(xml.slice(tagEnd + 1, re), maxS);
+      const scanned = parseRowCells(unit.body, maxS);
       maxS = scanned.maxS;
       rawRows.push(scanned.cells);
-      pos = re + 6;
     }
+    p.consume(unit.next);
   }
-  return { rawRows: rawRows.slice(0, rowLimit), maxS, more: rawRows.length > rowLimit };
+  const bytes = p.bytes;
+  const more = rawRows.length > rowLimit;
+  await p.cancel(); // 够 ROW_LIMIT+1 行即停：不再解压余下的几十/几百 MB
+  return { rawRows: rawRows.slice(0, rowLimit), maxS, more, bytes };
 }
 
 /* <t> 文本线性提取（t11 小重构：extractInlineText / parseSharedStrings 同构段共用——t12 indexOf 纪律，
@@ -274,21 +349,42 @@ function extractInlineText(inner) {
   return collectTTexts(inner, gt + 1, isEnd);
 }
 
-/* sharedStrings 惰性解析（t33）：仅解到被引用的最大索引（maxS）即停——巨量字符串表不打爆内存 */
-function parseSharedStrings(xml, maxS) {
-  const out = [];
+/** 窗口内取第一个完整 `<si>` 单元（含 `<sig` 类误匹配的跳过——与旧 parseSharedStrings 逐字一致）。
+ * 取不到 → `{kind:'none'|'partial', keepFrom}`（需再拉数据；`from/to` 为 `<si>` 体内边界，供 collectTTexts）。 */
+function takeSiUnit(text) {
   let pos = 0;
-  while (out.length <= maxS) {
-    const si = xml.indexOf('<si', pos);
-    if (si < 0) break;
+  while (true) {
+    const si = text.indexOf('<si', pos);
+    if (si < 0) return { kind: 'none', keepFrom: Math.max(0, text.length - 3) }; // 尾部半个 <si 必须留
     // 前缀守卫：'<si' 后必须是空白/'>'（防 <sig 等误匹配）
-    if (xml[si + 3] !== ' ' && xml[si + 3] !== '>') { pos = si + 4; continue; }
-    const se = xml.indexOf('</si>', si);
-    if (se < 0) break;
-    out.push(decodeXml(collectTTexts(xml, si + 3, se)));
-    pos = se + 5;
+    if (text[si + 3] !== ' ' && text[si + 3] !== '>') {
+      pos = si + 4;
+      continue;
+    }
+    const se = text.indexOf('</si>', si);
+    if (se < 0) return { kind: 'partial', keepFrom: si };
+    return { kind: 'si', from: si + 3, to: se, next: se + 5 };
   }
-  return out;
+}
+
+/** 流式 sharedStrings 惰性解析（t33 口径不变）：仅解到被引用的最大索引（maxS）即停——
+ * 巨量字符串表不再整段解压/解码进内存。返回 { list, bytes }（bytes = 本次实际解压量）。 */
+async function parseSharedStringsStream(stream, maxS) {
+  const p = textPuller(stream);
+  const out = [];
+  while (out.length <= maxS) {
+    const unit = takeSiUnit(p.pending);
+    if (unit.kind !== 'si') {
+      if (unit.keepFrom) p.consume(unit.keepFrom);
+      if (!(await p.more())) break;
+      continue;
+    }
+    out.push(decodeXml(collectTTexts(p.pending, unit.from, unit.to)));
+    p.consume(unit.next);
+  }
+  const bytes = p.bytes;
+  await p.cancel();
+  return { list: out, bytes };
 }
 
 function xlsxCellText(v) {
@@ -463,15 +559,25 @@ function rowToTexts(cells, ss, styles, date1904) {
   return out;
 }
 
-/* t33 自解析单 sheet：流式读取前 ROW_LIMIT 行（扫描到 ROW_LIMIT+1 个即判定截断），行内单元格映射为字符串数组。
- * 类型口径见 cellToString。返回 { rows, scanned, truncated } */
-function xlsxParseSheet(xml, rowLimit, strings, dateStyles, date1904) {
+/* 流式自解析单 sheet：逐块读前 ROW_LIMIT 行（扫描到 ROW_LIMIT+1 个即判定截断），行内单元格映射为字符串数组。
+ * 类型口径见 cellToString；**语义与旧 xlsxParseSheet 逐字对齐**，仅把「先整段解压再扫」换成「边解压边扫」。
+ * 返回 { rows, scanned, truncated, bytes }——bytes = 工作表 + sharedStrings 的实际解压量（meta.scan 口径）。 */
+async function xlsxParseSheetStream(buf, target, rowLimit, dateStyles, date1904) {
   const styles = dateStyles || NO_DATE_STYLES;
-  const { rawRows, maxS, more } = scanSheetRows(xml, rowLimit);
-  // 共享字符串按需解析：maxS 已知后再解（守卫已在外层基于 compSize 判定，此处仅截断索引）
-  const ss = maxS >= 0 ? parseSharedStrings(strings || '', maxS) : [];
-  const rows = rawRows.map((cells) => rowToTexts(cells, ss, styles, date1904));
-  return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more };
+  const sheetMeta = zipEntryMeta(buf, target);
+  const sheetStream = sheetMeta && entryStream(buf, sheetMeta);
+  if (!sheetStream) throw new Error('缺工作表 XML（' + target + '），回退库解析');
+  const { rawRows, maxS, more, bytes } = await scanSheetRowsStream(sheetStream, rowLimit);
+  // 共享字符串按需解析：maxS 已知后再流式解（护栏已在 xlsxSelfParse 前置判定，此处仅截断索引）
+  let strings = [];
+  let strBytes = 0;
+  if (maxS >= 0) {
+    const sMeta = zipEntryMeta(buf, 'xl/sharedStrings.xml');
+    const sStream = sMeta && entryStream(buf, sMeta);
+    if (sStream) ({ list: strings, bytes: strBytes } = await parseSharedStringsStream(sStream, maxS));
+  }
+  const rows = rawRows.map((cells) => rowToTexts(cells, strings, styles, date1904));
+  return { rows: rows.slice(0, rowLimit), scanned: rows.length, truncated: more, bytes: bytes + strBytes };
 }
 
 /* 统一截断文案（L5：仅 skipped>0 才带「另有 N 个」段） */
@@ -481,15 +587,15 @@ function truncationMessage(readCount, totalRows, skipped) {
   return msg + '）';
 }
 
-/* t33 流式自解析路径（异常/护栏触发即 throw → 外层 .catch 回退库解析）；t8：按 workbook 映射（name+target）读表 */
+/* t33 流式自解析路径（异常/护栏触发即 throw → 外层 .catch 回退库解析）；t8：按 workbook 映射（name+target）读表
+ * t33+（2026-09-19 卡 002）：**三处流式化** —— ① 工作表 XML 逐块解压 + 增量解析（够 ROW_LIMIT+1 行即停）
+ * ② sharedStrings 逐块解压 + 增量解析（够 maxS 即停）③ 跨块续接缓冲（textPuller.pending）。
+ * ⇒ 峰值内存 O(窗口)，不再 O(文件)；**产物口径一字不改**（D1「逐字节不变」是硬约束）。 */
 async function xlsxSelfParse(buf, readMap, names, date1904) {
-  const stringsEntry = await zipEntry(buf, 'xl/sharedStrings.xml');
-  let stringsXml = null;
-  if (stringsEntry) {
-    if (stringsEntry.compSize > XLSX_STRINGS_GUARD_BYTES) {
-      throw new Error('sharedStrings 过大（' + stringsEntry.compSize + 'B），回退库解析'); // 内存保护
-    }
-    stringsXml = new TextDecoder().decode(stringsEntry.data);
+  // 旧护栏（t33 内存保护，按**压缩**体积预判）：本提交（① 流式化）保持行为不变，② 提交里撤除
+  const stringsMeta = zipEntryMeta(buf, 'xl/sharedStrings.xml');
+  if (stringsMeta && stringsMeta.compSize > XLSX_STRINGS_GUARD_BYTES) {
+    throw new Error('sharedStrings 过大（' + stringsMeta.compSize + 'B），回退库解析'); // 内存保护
   }
   // t15 §2.3：styles.xml → 日期样式判定表（缺失 = 无格式化；结构损坏 → throw 回退库路径——不静默错值）
   const stylesEntry = await zipEntry(buf, 'xl/styles.xml');
@@ -498,15 +604,14 @@ async function xlsxSelfParse(buf, readMap, names, date1904) {
   const warnings = [];
   let truncated = false;
   let totalRows = 0;
+  let scanBytes = 0;
   for (let i = 0; i < readMap.length; i++) {
     const s = readMap[i];
-    const entry = await zipEntry(buf, s.target);
-    if (!entry) throw new Error('缺工作表 XML（' + s.target + '），回退库解析');
-    const xml = new TextDecoder().decode(entry.data);
-    const { rows, scanned, truncated: sheetTrunc } = xlsxParseSheet(xml, XLSX_ROW_LIMIT, stringsXml, dateStyles, date1904);
-    totalRows += scanned;
-    if (sheetTrunc) truncated = true;
-    parts.push(`### Sheet: ${s.name === null ? 'Sheet1' : s.name}\n\n${xlsxRowsToMd(rows)}`);
+    const sheet = await xlsxParseSheetStream(buf, s.target, XLSX_ROW_LIMIT, dateStyles, date1904);
+    totalRows += sheet.scanned;
+    scanBytes += sheet.bytes;
+    if (sheet.truncated) truncated = true;
+    parts.push(`### Sheet: ${s.name === null ? 'Sheet1' : s.name}\n\n${xlsxRowsToMd(sheet.rows)}`);
   }
   const skipped = names.length - readMap.length;
   if (skipped > 0) {
@@ -514,7 +619,14 @@ async function xlsxSelfParse(buf, readMap, names, date1904) {
     truncated = true;
   }
   if (truncated) warnings.push(truncationMessage(readMap.length, totalRows, skipped));
-  return { markdown: parts.join('\n\n').trim(), warnings, truncated, backend: 'xlsx-self' }; // t11 §1.7：自解析路径报实际引擎（G4-2 契约；库路径仍 'read-excel-file'）
+  // scan = 解析量埋点（D2/Y2 白盒判据）：**只供内部 UI / 测试诊断**，绝不进用户下载的 .md（2026-09-18 拍板 ④）
+  return {
+    markdown: parts.join('\n\n').trim(), // t11 §1.7：自解析路径报实际引擎（G4-2 契约；库路径仍 'read-excel-file'）
+    warnings,
+    truncated,
+    backend: 'xlsx-self',
+    scan: { bytes: scanBytes, rows: totalRows },
+  };
 }
 
 /* readSheetSafely：库读取单 sheet（t11 缺陷修复——损坏 zip 在库内部抛裸实现异常（DataView/typed

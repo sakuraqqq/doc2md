@@ -181,6 +181,9 @@ async function runConverter(type, file, buf, meta, t0) {
   meta.warnings = Array.isArray(res.warnings) ? res.warnings : [];
   meta.truncated = !!res.truncated; // 契约字段同步（审查报告 §1.5：转换器截断结果落地）
   if (Array.isArray(res.assets) && res.assets.length > 0) meta.assets = res.assets;
+  // t33+（2026-09-19 卡 002）：解析量埋点（xlsx 流式路径回传）——**只进 meta**（内部 UI/测试诊断），
+  // 绝不进 markdown（用户 2026-09-18 拍板 ④；Y1 产物逐字节不变是硬约束）
+  if (res.scan) meta.scan = res.scan;
   meta.elapsedMs = Math.round(performance.now() - t0);
   const markdown = res.markdown || '';
   return { markdown: meta.truncated ? withTruncationNotice(markdown, meta.warnings) : markdown, meta, error: undefined };
