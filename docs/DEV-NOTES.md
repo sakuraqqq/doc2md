@@ -1788,6 +1788,22 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 - 「同一文件三种命运（43 s 完成 / 20 s 崩 / 磨 20 min 无果）」⇒ **天花板随可用内存浮动**，**印证不必追精确阈值**；
 - 与 **A9/A10**（预检 + 进度 + 超时）方向一致 —— 手机侧结论与我方独立收敛到同一处：**降低单次分配量**。
 
+## 2026-09-19 · 卡 001（执行线）：权威源清理 + 观察期新规落盘 + 基线 JSON
+
+> 完整回执（三阶段逐条验收 A1–A4 / B1–B5 / C1–C9 · 第 7 条对表 · 证据字节+SHA · 残留）见 `docs/任务台账.md`；本节只留**一手坑与结论**。
+
+### 交付（未推送 —— 发布动作人执）
+- 三阶段一次会话完成（顺序写死 A→B→C：三者改同两个文件）：`14d5bda`（A，前序会话）+ `6a48de5`（A1 收口）+ `22ba21e`（B）+ `1b4307b`（C）。
+- 新增 `docs/BASELINE.json`（数字型易变量唯一真相源）+ `tools/baseline-check.mjs`（守卫：发布物按 tag blob **现算** / 线上值按"出处提交" blob 现算 / 交付面按磁盘现算 / 契约数**溯源+自洽**）+ CI 步骤（checkout 改 `fetch-depth: 0` 以取 tag）+ **3 条负例**（`guard-selftest` 13 → **16/16**）。
+- **CI 口径契约数是实测的**：从真实 CI run `35382665936` 日志逐字取 `# tests 273 / # pass 270 / # fail 0 / # skipped 3`（组 Y 因干净检出缺 `.私档/` 整体 SKIP）—— 不是推算；本机口径 `276/271/3/2` 仍为 2026-09-18 实测（未复跑，理由见回执）。
+
+### 坑（现象 → 根因 → 防再犯）
+1. **"判据" ≠ "施工清单" 的粒度**：卡面 A1 = 全局 `grep "R9-1"`「无一处列为待做」，而前序按《回填文本·四条》的 4 条锚点施工 ⇒ A8 backlog 表状态列与 §3.5 范例行仍写"待办"。**根因 = 同一事实两处维护**（§8 排期栏 + A8 表状态列）。**防再犯** = 状态只留一处权威写法、另一处指路；收尾**先跑判据命令**再对清单。
+2. **守卫负例"错得不对"（差点假绿）**：`guard-selftest` 首跑 14/16，两条 baseline 负例 detail 全是 `released.tag 无法解析` —— **根因 = `loadActual()` 漏传 JSON** ⇒ `actual.released = null`，"接线 bug"伪装成"守卫有效"。**防再犯** = 负例断言必须匹配**预期错误文本**，禁止只断言 `errors.length > 0`。
+3. **lint 绿 ≠ metrics 绿**：`npm run lint` exit 0 的同时，`npm run metrics` 报 **超限 1**（`checkDelivery` cyc=12 / cog=19）—— eslint `complexity` 与 metrics 的近似认知复杂度**两套实现**。**防再犯** = 改 `tools/**` 必跑 `npm run metrics`（硬门禁）；另两条会直接报 error 的 sonarjs 规则：`no-os-command-from-path`（`execFileSync('git')`）、`no-nested-assignment`（`(i += 1)` 内联自增）。
+4. **沙箱禁"管道 stdio"（本轮第三次撞）**：`execFileSync('git', …, {encoding})` → `spawnSync git EPERM`；`tools/metrics.mjs` 的 jscpd 被拒 ⇒ 只能写「重复率 **N/A**」（**入库版本正带着这个 N/A**，本卡已刷新为 **0.3%**）。**根因 = 受限模式只禁管道、不禁 spawn**。**防再犯** = 子进程输出走 `fs.openSync(tmp,'w')` + `stdio: ['ignore', fd, 'inherit']` **落文件再读**（已写进 `tools/baseline-check.mjs` 头注释）；要管道的门禁（jscpd / `npm test`）走一次性升权或 Linux 侧。
+
+
 
 
 
