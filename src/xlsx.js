@@ -9,8 +9,11 @@
 
 const XLSX_SHEET_LIMIT = 5;
 const XLSX_ROW_LIMIT = 1000;
-// sharedStrings 解压后大小护栏（t33 内存保护）：超限 → 回退 read-excel-file 库解析路径
-const XLSX_STRINGS_GUARD_BYTES = 4 * 1024 * 1024;
+// t33 的 sharedStrings 护栏（按**压缩**体积 >4 MB 即回退库解析）已于 2026-09-19 卡 002 **撤除**：
+//   ① 判据错位——compSize 反映压缩率，与内存无关（两档大夹具 comp 10.4/16.4 MB，解压后 87/214 MB）；
+//   ② 作用已消失——流式化后 sharedStrings 只解到被引用的 maxS 即停，峰值内存 O(窗口) 而非 O(条目)；
+//   ③ 回退路径本身才是内存大户（库解析实测 12.63 GiB / 369×）⇒ 保留护栏 = 只提供更差的路径。
+//   ⇒ 大文件一律走流式快路径；「要等多久」由 A9 预检（只读中央目录，按解压后规模）在解析前告知。
 
 /* EOCD 定位（t8 重构：从 zipEntry 抽出）——尾部向前最多 65557 字节搜 0x06054b50；-1 = 未找到 */
 function findEocd(buf, n) {
@@ -20,30 +23,56 @@ function findEocd(buf, n) {
   return -1;
 }
 
+/* 中央目录条目头（46 字节固定区）解析 —— findCentralEntry / zipDirectory 共用（避免两处走目录的重复实现）。
+ * 调用方负责 `off + 46 <= n` 与签名检查。 */
+function centralEntryAt(buf, dv, off) {
+  const nameLen = dv.getUint16(off + 28, true);
+  const extraLen = dv.getUint16(off + 30, true);
+  const commentLen = dv.getUint16(off + 32, true);
+  return {
+    name: new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen)),
+    span: 46 + nameLen + extraLen + commentLen,
+    method: dv.getUint16(off + 10, true),
+    compSize: dv.getUint32(off + 20, true),
+    uncompSize: dv.getUint32(off + 24, true),
+    localOff: dv.getUint32(off + 42, true),
+  };
+}
+
 /* 中央目录条目定位（t8 重构：从 zipEntry 抽出）——遍历 EOCD 声明的条目找 wantedName；
- * 返回 { method, compSize, uncompSize, localOff }；签名/边界异常 → null（调用方按「无此条目」回退）
- * t33+（2026-09-19 流式化）：多取 **uncompSize（中央目录 offset+24 = 解压后规模）** ——
- * 护栏/预检一律按解压后规模判（口径拍板：台账/拍板.md 第 1 行；compSize 与内存无关）。 */
+ * 返回 { method, compSize, uncompSize, localOff }；签名/边界异常 → null（调用方按「无此条目」回退） */
 function findCentralEntry(buf, dv, n, eocd, wantedName) {
   const count = dv.getUint16(eocd + 10, true);
   let off = dv.getUint32(eocd + 16, true);
   for (let k = 0; k < count; k++) {
     if (off + 46 > n || dv.getUint32(off, true) !== 0x02014b50) return null;
-    const nameLen = dv.getUint16(off + 28, true);
-    const extraLen = dv.getUint16(off + 30, true);
-    const commentLen = dv.getUint16(off + 32, true);
-    const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
-    if (name === wantedName) {
-      return {
-        method: dv.getUint16(off + 10, true),
-        compSize: dv.getUint32(off + 20, true),
-        uncompSize: dv.getUint32(off + 24, true),
-        localOff: dv.getUint32(off + 42, true),
-      };
-    }
-    off += 46 + nameLen + extraLen + commentLen;
+    const entry = centralEntryAt(buf, dv, off);
+    if (entry.name === wantedName) return entry;
+    off += entry.span;
   }
   return null;
+}
+
+/** ZIP 中央目录总览（**只读，不解压**）—— A9 预检的唯一数据源（2026-09-19 卡 002）。
+ * 返回 { entries: [{name, compSize, uncompSize}], uncompBytes }（uncompBytes = 解压后规模之和）；不可用 → null。 */
+export function zipDirectory(buf) {
+  const n = buf.byteLength;
+  if (n < 22) return null;
+  const eocd = findEocd(buf, n);
+  if (eocd < 0) return null;
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const count = dv.getUint16(eocd + 10, true);
+  const entries = [];
+  let uncompBytes = 0;
+  let off = dv.getUint32(eocd + 16, true);
+  for (let k = 0; k < count; k++) {
+    if (off + 46 > n || dv.getUint32(off, true) !== 0x02014b50) break;
+    const e = centralEntryAt(buf, dv, off);
+    entries.push({ name: e.name, compSize: e.compSize, uncompSize: e.uncompSize });
+    uncompBytes += e.uncompSize;
+    off += e.span;
+  }
+  return entries.length > 0 ? { entries, uncompBytes } : null;
 }
 
 /* 条目数据**整段**解压（t8 重构：从 zipEntry 抽出）——method 0 = 原样；否则 deflate-raw；
@@ -587,16 +616,12 @@ function truncationMessage(readCount, totalRows, skipped) {
   return msg + '）';
 }
 
-/* t33 流式自解析路径（异常/护栏触发即 throw → 外层 .catch 回退库解析）；t8：按 workbook 映射（name+target）读表
+/* t33 流式自解析路径（异常即 throw → 外层 .catch 回退库解析）；t8：按 workbook 映射（name+target）读表
  * t33+（2026-09-19 卡 002）：**三处流式化** —— ① 工作表 XML 逐块解压 + 增量解析（够 ROW_LIMIT+1 行即停）
  * ② sharedStrings 逐块解压 + 增量解析（够 maxS 即停）③ 跨块续接缓冲（textPuller.pending）。
- * ⇒ 峰值内存 O(窗口)，不再 O(文件)；**产物口径一字不改**（D1「逐字节不变」是硬约束）。 */
+ * ⇒ 峰值内存 O(窗口)，不再 O(文件)；**产物口径一字不改**（D1「逐字节不变」是硬约束）。
+ * ⚠️ 同批**撤除** t33 的 sharedStrings 4 MB 护栏（理由见文件头常量处）⇒ 大文件也走本路径（流式）。 */
 async function xlsxSelfParse(buf, readMap, names, date1904) {
-  // 旧护栏（t33 内存保护，按**压缩**体积预判）：本提交（① 流式化）保持行为不变，② 提交里撤除
-  const stringsMeta = zipEntryMeta(buf, 'xl/sharedStrings.xml');
-  if (stringsMeta && stringsMeta.compSize > XLSX_STRINGS_GUARD_BYTES) {
-    throw new Error('sharedStrings 过大（' + stringsMeta.compSize + 'B），回退库解析'); // 内存保护
-  }
   // t15 §2.3：styles.xml → 日期样式判定表（缺失 = 无格式化；结构损坏 → throw 回退库路径——不静默错值）
   const stylesEntry = await zipEntry(buf, 'xl/styles.xml');
   const dateStyles = stylesEntry ? parseStylesDateFormats(new TextDecoder().decode(stylesEntry.data)) : null;

@@ -909,33 +909,54 @@
   // src/xlsx.js
   var XLSX_SHEET_LIMIT = 5;
   var XLSX_ROW_LIMIT = 1e3;
-  var XLSX_STRINGS_GUARD_BYTES = 4 * 1024 * 1024;
   function findEocd(buf, n) {
     for (let i = n - 22; i >= Math.max(0, n - 65557); i--) {
       if (buf[i] === 80 && buf[i + 1] === 75 && buf[i + 2] === 5 && buf[i + 3] === 6) return i;
     }
     return -1;
   }
+  function centralEntryAt(buf, dv, off) {
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const commentLen = dv.getUint16(off + 32, true);
+    return {
+      name: new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen)),
+      span: 46 + nameLen + extraLen + commentLen,
+      method: dv.getUint16(off + 10, true),
+      compSize: dv.getUint32(off + 20, true),
+      uncompSize: dv.getUint32(off + 24, true),
+      localOff: dv.getUint32(off + 42, true)
+    };
+  }
   function findCentralEntry(buf, dv, n, eocd, wantedName) {
     const count = dv.getUint16(eocd + 10, true);
     let off = dv.getUint32(eocd + 16, true);
     for (let k = 0; k < count; k++) {
       if (off + 46 > n || dv.getUint32(off, true) !== 33639248) return null;
-      const nameLen = dv.getUint16(off + 28, true);
-      const extraLen = dv.getUint16(off + 30, true);
-      const commentLen = dv.getUint16(off + 32, true);
-      const name = new TextDecoder().decode(buf.subarray(off + 46, off + 46 + nameLen));
-      if (name === wantedName) {
-        return {
-          method: dv.getUint16(off + 10, true),
-          compSize: dv.getUint32(off + 20, true),
-          uncompSize: dv.getUint32(off + 24, true),
-          localOff: dv.getUint32(off + 42, true)
-        };
-      }
-      off += 46 + nameLen + extraLen + commentLen;
+      const entry = centralEntryAt(buf, dv, off);
+      if (entry.name === wantedName) return entry;
+      off += entry.span;
     }
     return null;
+  }
+  function zipDirectory(buf) {
+    const n = buf.byteLength;
+    if (n < 22) return null;
+    const eocd = findEocd(buf, n);
+    if (eocd < 0) return null;
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const count = dv.getUint16(eocd + 10, true);
+    const entries = [];
+    let uncompBytes = 0;
+    let off = dv.getUint32(eocd + 16, true);
+    for (let k = 0; k < count; k++) {
+      if (off + 46 > n || dv.getUint32(off, true) !== 33639248) break;
+      const e = centralEntryAt(buf, dv, off);
+      entries.push({ name: e.name, compSize: e.compSize, uncompSize: e.uncompSize });
+      uncompBytes += e.uncompSize;
+      off += e.span;
+    }
+    return entries.length > 0 ? { entries, uncompBytes } : null;
   }
   async function inflateEntry(data, compSize, method) {
     if (method === 0) return { data, compSize };
@@ -1377,10 +1398,6 @@
     return msg + "\uFF09";
   }
   async function xlsxSelfParse(buf, readMap, names, date1904) {
-    const stringsMeta = zipEntryMeta(buf, "xl/sharedStrings.xml");
-    if (stringsMeta && stringsMeta.compSize > XLSX_STRINGS_GUARD_BYTES) {
-      throw new Error("sharedStrings \u8FC7\u5927\uFF08" + stringsMeta.compSize + "B\uFF09\uFF0C\u56DE\u9000\u5E93\u89E3\u6790");
-    }
     const stylesEntry = await zipEntry(buf, "xl/styles.xml");
     const dateStyles = stylesEntry ? parseStylesDateFormats(new TextDecoder().decode(stylesEntry.data)) : null;
     const parts = [];
@@ -1514,6 +1531,18 @@ ${xlsxRowsToMd(kept)}`);
     statusEl.textContent = msg || "";
     statusEl.className = isError ? "error" : "";
   }
+  function nextPaint() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+    });
+  }
+  function preflightNotice(msg) {
+    setStatus(msg);
+  }
+  setPreflightHook(async (msg) => {
+    preflightNotice(msg);
+    await nextPaint();
+  });
   function fmtSize(n) {
     if (n < 1024) return n + " B";
     if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
@@ -2236,10 +2265,33 @@ ${p.text}
     meta.type = read.type;
     return runOrExplain(file, read.buf, meta, t0, done);
   }
+  var PREFLIGHT_MIN_BYTES = 32 * 1024 * 1024;
+  var PREFLIGHT_BYTES_PER_SEC = 4 * 1024 * 1024;
+  function preflightHooks() {
+    if (!preflightHooks.slot) preflightHooks.slot = { fn: null };
+    return preflightHooks.slot;
+  }
+  function setPreflightHook(fn) {
+    preflightHooks().fn = typeof fn === "function" ? fn : null;
+  }
+  async function xlsxPreflight(buf) {
+    try {
+      const hook = preflightHooks().fn;
+      const dir = zipDirectory(buf);
+      if (!hook || !dir || dir.uncompBytes < PREFLIGHT_MIN_BYTES) return;
+      const mb = (dir.uncompBytes / (1024 * 1024)).toFixed(1);
+      const worstSec = Math.max(1, Math.round(dir.uncompBytes / PREFLIGHT_BYTES_PER_SEC));
+      await hook(
+        `\u5927\u6587\u4EF6\uFF1A\u89E3\u538B\u540E\u7EA6 ${mb} MB\uFF1B\u6700\u574F\u7EA6 ${worstSec} \u79D2\uFF08\u6309\u6162\u673A\u6863\u4F30\u7B97\uFF09\uFF0C\u89E3\u6790\u671F\u95F4\u9875\u9762\u53EF\u80FD\u6682\u65F6\u65E0\u54CD\u5E94 \u2014\u2014 \u8BF7\u52FF\u5173\u95ED`
+      );
+    } catch {
+    }
+  }
   async function runOrExplain(file, buf, meta, t0, done) {
     const unsupported = unsupportedError(meta.type);
     if (unsupported) return done({ error: unsupported });
     try {
+      if (meta.type === "xlsx") await xlsxPreflight(buf);
       return await runConverter(meta.type, file, buf, meta, t0);
     } catch (e) {
       return done({ error: "\u8F6C\u6362\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF") });
