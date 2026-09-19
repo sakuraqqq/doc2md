@@ -4575,7 +4575,7 @@ function yConvertTier(page, tier) {
   );
 }
 
-test('契约组 Y：大文件路径（Y1 产物守卫=先绿 · Y2 解析量/Y3 耗时=先红）', async (t) => {
+test('契约组 Y：大文件路径（Y1 产物守卫=先绿 · Y2 解析量/Y3 耗时 原先红，2026-09-19 已转绿）', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
   const present = Y_TIERS.filter((x) => fs.existsSync(nodePath.join(Y_FIXTURES, x.file)));
   const absent = Y_TIERS.filter((x) => !fs.existsSync(nodePath.join(Y_FIXTURES, x.file))).map((x) => x.file);
