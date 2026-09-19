@@ -4687,3 +4687,184 @@ test('契约组 Y：大文件路径（Y1 产物守卫=先绿 · Y2 解析量/Y3 
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 G8：库回退路径「降级可见性」（卡 005；2026-09-19 用户拍板三条口径）
+// 依据（卡 004 只读调查，结论见 docs/任务台账.md §004）：
+//   ① 回退到 read-excel-file 后，输出表宽由 `<dimension ref>` 决定 —— 库内按其后角开网格、
+//      越界单元格静默丢弃（`b<u&&m<a&&(l[m][b]=y.value)`），我方拿不到真列数；
+//   ② `map` 失败分支传 `[null]` ⇒ **sheet 名一并丢失**（输出 `### Sheet: Sheet1`）。
+//   两条都是**静默**降级 —— 本组即"让它可见"的规格。
+// 口径（写死，用户 2026-09-19 拍板）：
+//   ① 静默降级 → **明确警告**，且必须进 `meta.warnings`（机器可判通道，不是只在 UI/console）；
+//   ② `<cellXfs>` 缺失相关的**日期**问题**只加 warning、不改回退逻辑**（原话：别用隐蔽的病换明显的病）；
+//   ③ 007（sheet 名）与 004-b（丢列可见）同批。
+// 用例包 = **测试内现造**（页内 `window.fflate.zipSync`，与 G7/S3 同构；不入库样例）。
+//   数据面 = 真 **6 列 × 3 行**（值 = 行*10+列 ⇒ 11..16 / 21..26 / 31..36 —— 哪一列被丢一眼可见）。
+// 先红预期（实现前）：G8-1（无表宽提示）/ G8-2（无日期提示）/ G8-3（名字丢 + 无表宽提示）/ G8-4（无环境提示）红；
+//   G8-5（无 `<dimension>` 元素 ⇒ 不得报表宽）现绿 —— 它是**负对照**，防"见回退就报警"的误报。
+// ---------------------------------------------------------------------------
+const G8_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+const G8_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const G8_PKG = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const G8_COLS = ['A', 'B', 'C', 'D', 'E', 'F'];
+/** 真数据行：6 列 × 3 行，值 = 行*10+列 */
+function g8SheetRows() {
+  let rows = '';
+  for (let r = 1; r <= 3; r++) {
+    let cells = '';
+    for (let c = 1; c <= G8_COLS.length; c++) cells += `<c r="${G8_COLS[c - 1]}${r}"><v>${r * 10 + c}</v></c>`;
+    rows += `<row r="${r}">${cells}</row>`;
+  }
+  return rows;
+}
+/** opt: { dim: 'A1:C3' | null, cellXfs: boolean, sheetQuote?: '"' | "'" } */
+function g8Parts(opt) {
+  const q = opt.sheetQuote || '"';
+  const dim = opt.dim ? `<dimension ref="${opt.dim}"/>` : '';
+  const xfs = opt.cellXfs ? '<cellXfs count="1"><xf numFmtId="0" xfId="0"/></cellXfs>' : '';
+  return {
+    '[Content_Types].xml':
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
+    '_rels/.rels':
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="' + G8_PKG + '">' +
+      `<Relationship Id="rId1" Type="${G8_REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    'xl/workbook.xml':
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="' + G8_MAIN + '" xmlns:r="' + G8_REL + '">' +
+      `<sheets><sheet name=${q}S1${q} sheetId=${q}1${q} r:id=${q}rId1${q}/></sheets></workbook>`,
+    'xl/_rels/workbook.xml.rels':
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="' + G8_PKG + '">' +
+      `<Relationship Id="rId1" Type="${G8_REL}/worksheet" Target="worksheets/sheet1.xml"/>` +
+      `<Relationship Id="rId2" Type="${G8_REL}/styles" Target="styles.xml"/></Relationships>`,
+    'xl/styles.xml':
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="' + G8_MAIN + '">' +
+      '<fonts count="1"><font/></fonts><fills count="1"><fill/></fills><borders count="1"><border/></borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0"/></cellStyleXfs>' + xfs + '</styleSheet>',
+    'xl/worksheets/sheet1.xml':
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="' + G8_MAIN + '">' + dim +
+      '<sheetData>' + g8SheetRows() + '</sheetData></worksheet>',
+  };
+}
+test('契约组 G8：库回退路径降级可见性（窄 <dimension> 丢列 / 单引号 sheet 丢名 / 无 DecompressionStream）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const fixtures = {
+        g8Narrow: g8Parts({ dim: 'A1:C3', cellXfs: false }),
+        g8Wide: g8Parts({ dim: 'A1:F3', cellXfs: false }),
+        g8SingleQuote: g8Parts({ dim: 'A1:C3', cellXfs: true, sheetQuote: "'" }),
+        g8NoDim: g8Parts({ dim: null, cellXfs: false }),
+        g8NoStream: g8Parts({ dim: 'A1:C3', cellXfs: false }),
+      };
+      const recs = await page.evaluate(async (all) => {
+        const F = window.fflate;
+        const out = {};
+        for (const key of Object.keys(all)) {
+          const entries = {};
+          for (const name of Object.keys(all[key])) entries[name] = F.strToU8(all[key][name]);
+          const zipped = F.zipSync(entries);
+          // g8NoStream：页内临时置空 DecompressionStream（模拟老浏览器），跑完**立即还原**
+          const mutate = key === 'g8NoStream';
+          const saved = window.DecompressionStream;
+          if (mutate) {
+            try { Object.defineProperty(window, 'DecompressionStream', { value: undefined, configurable: true, writable: true }); } catch (e) { /* ignore */ }
+          }
+          let rec;
+          try {
+            const r = await window.__doc2md.convert(new File([zipped], key + '.xlsx'));
+            rec = {
+              error: r.error || null,
+              backend: r.meta.backend,
+              warnings: (r.meta.warnings || []).map(String),
+              md: String(r.markdown || ''),
+            };
+          } catch (e) {
+            rec = { error: String((e && e.message) || e), backend: null, warnings: [], md: '' };
+          }
+          if (mutate) {
+            try { Object.defineProperty(window, 'DecompressionStream', { value: saved, configurable: true, writable: true }); } catch (e) { /* ignore */ }
+          }
+          out[key] = rec;
+        }
+        out.__dsAfter = typeof window.DecompressionStream;
+        return out;
+      }, fixtures);
+
+      const caseOf = (k) => {
+        assert.equal(recs[k].error, null, `${k} convert 失败：${recs[k].error}`);
+        return recs[k];
+      };
+      const warnOf = (k) => (recs[k].warnings || []).join(' ');
+
+      await t.test('G8-1 窄 <dimension>（A1:C3，真数据 6 列）+ 回退触发（styles 缺 <cellXfs>）⇒ warnings 必须说清表宽被裁剪', () => {
+        const rec = caseOf('g8Narrow');
+        assert.equal(rec.backend, 'read-excel-file', `backend=${rec.backend}（本用例须走库回退路径才谈得上"降级"）`);
+        const w = warnOf('g8Narrow');
+        assert.ok(/表宽/.test(w), `无表宽降级提示——回退路径按 <dimension> 静默丢列（卡 004 实测：真 6 列 → 输出 3 列）；warnings=${JSON.stringify(rec.warnings)}`);
+        assert.ok(/3 列/.test(w), `提示未给"声明 3 列"：${JSON.stringify(rec.warnings)}`);
+        assert.ok(/6 列/.test(w), `提示未给"实际 6 列"：${JSON.stringify(rec.warnings)}`);
+        assert.ok(/丢弃/.test(w), `提示未说清后果（右侧列被丢弃）：${JSON.stringify(rec.warnings)}`);
+      });
+
+      await t.test('G8-2 负对照 + 口径②：<dimension> 正确（A1:F3）不得报表宽损失，但「日期可能未格式化」须照报', () => {
+        const rec = caseOf('g8Wide');
+        const w = warnOf('g8Wide');
+        assert.ok(!/表宽/.test(w), `dimension 正确却报了表宽丢失（误报）：${JSON.stringify(rec.warnings)}`);
+        assert.ok(/cellXfs|日期/.test(w), `缺 <cellXfs> 却无日期降级提示（口径②：只加 warning、不改回退逻辑）：${JSON.stringify(rec.warnings)}`);
+      });
+
+      await t.test('G8-3 单引号 <sheet>（map 失败分支）+ 窄 <dimension> ⇒ sheet 名不丢 + 表宽提示在', () => {
+        const rec = caseOf('g8SingleQuote');
+        assert.ok(
+          rec.md.includes('### Sheet: S1'),
+          `sheet 名丢失（期望 ### Sheet: S1，实际 md 首段=${JSON.stringify(rec.md.slice(0, 60))}）——根因 = xlsxByLib 的 [null] 参数（007）`
+        );
+        const w = warnOf('g8SingleQuote');
+        assert.ok(/表宽/.test(w), `无表宽降级提示：${JSON.stringify(rec.warnings)}`);
+        assert.ok(!/cellXfs/.test(w), `styles.xml 完好却报了日期风险（误报）：${JSON.stringify(rec.warnings)}`);
+      });
+
+      await t.test('G8-4 环境线：无 DecompressionStream ⇒ 必须提示"已回退通用解析"（A4）', () => {
+        const rec = caseOf('g8NoStream');
+        const w = warnOf('g8NoStream');
+        assert.ok(/流式解析/.test(w), `无"不支持流式解析"提示：${JSON.stringify(rec.warnings)}`);
+        assert.ok(/回退/.test(w), `提示未说明"已回退"：${JSON.stringify(rec.warnings)}`);
+      });
+
+      await t.test('G8-5 负对照：无 <dimension> 元素 + 同触发 ⇒ 不得报表宽损失（无从判定即不报）', () => {
+        const rec = caseOf('g8NoDim');
+        assert.ok(!/表宽/.test(warnOf('g8NoDim')), `无 <dimension> 却报表宽丢失（误报）：${JSON.stringify(rec.warnings)}`);
+      });
+
+      await t.test('G8-6 用例自净：DecompressionStream 已还原（不得污染后续组）', () => {
+        assert.equal(recs.__dsAfter, 'function', `DecompressionStream 未还原：typeof=${recs.__dsAfter}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
