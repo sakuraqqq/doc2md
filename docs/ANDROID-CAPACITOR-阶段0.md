@@ -42,8 +42,46 @@ Test-Path "$env:ProgramFiles\Android\Android Studio"
 where.exe adb
 ```
 
-**工具链结论**：官方 Android 路线 = **Android Studio（≥ 2024.2.1）+ 一个 Android SDK 平台包**。
-⚠️ **第 1–4 步（`npm i` / `cap doctor` / 暂存 `www` / `cap add android`）不依赖 SDK/JDK** ⇒ **可以先跑，A7 不被它阻塞**。
+**工具链结论（2026-09-20 更新，按磁盘真值）**：
+
+| 事实 | 实测值 | 判定 |
+|---|---|---|
+| Capacitor 版本 | **8.5.2**（不是文档里的 v7） | 依赖已入 `package.json`（inScope） |
+| Gradle（模板自带） | **8.14.3** | 支持 Java 17–24 |
+| AGP | **8.13.0** | **要 JDK 17** |
+| `JAVA_HOME` | **`C:\Program Files\Java\jdk-17`** | ✅ **JDK 这关本来就是通的** —— PATH 上的 JDK 24 不参与（`gradlew` 只认 `JAVA_HOME`） |
+| `compileSdk` / `targetSdk` / `minSdk` | **36 / 36 / 24** | 有 Android 16 的真机跑得了 |
+| Android SDK | **不存在**（`ANDROID_HOME`/`ANDROID_SDK_ROOT` 空 · `%LOCALAPPDATA%\Android\Sdk` 无 · `adb` 不在 PATH） | ⚠️ **唯一缺口就是它** |
+
+⇒ **既然 JDK 17 已有，就不必装 1 GB 的 Android Studio**：只装 **SDK 命令行工具**即可（见 §1.2）。
+
+### 1.2 补 Android SDK（用户终端 · 当前唯一缺口）
+
+```powershell
+# ① 去官方页下「Command line tools only」的 Windows 包：
+#    https://developer.android.com/studio#command-tools
+#    文件名形如 commandlinetools-win-<build>_latest.zip —— 从页面取最新，别抄旧号
+
+# ② 解压到固定位置（SDK 根**不要**放在仓库里）
+$sdk = "$env:LOCALAPPDATA\Android\Sdk"
+New-Item -ItemType Directory -Force "$sdk\cmdline-tools" | Out-Null
+Expand-Archive "$env:USERPROFILE\Downloads\commandlinetools-win-<build>_latest.zip" -DestinationPath "$env:TEMP\clt" -Force
+Move-Item "$env:TEMP\clt\cmdline-tools" "$sdk\cmdline-tools\latest"
+
+# ③ 环境变量：只 setx 两个短值（⚠️ **不要 setx PATH** —— setx 的值有 1024 字符上限，会把 PATH 截断）
+setx ANDROID_HOME "$sdk"
+setx ANDROID_SDK_ROOT "$sdk"
+# 当前会话先用起来（setx 要开新终端才生效）：
+$env:ANDROID_HOME = $sdk ; $env:ANDROID_SDK_ROOT = $sdk
+$env:PATH = "$sdk\cmdline-tools\latest\bin;$sdk\platform-tools;$env:PATH"
+
+# ④ 装装机必需件（licenses 会连问多个 y）
+sdkmanager --licenses
+sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+```
+
+- **Gradle 怎么找到 SDK**：认 `ANDROID_HOME`（③ 已设）即可；要更稳就写 `android/local.properties` 的 `sdk.dir`——**该文件已被 `android/.gitignore` 排除（第 27 行），含 Windows 用户名的绝对路径永不入库**（红线 11）。若手写，反斜杠必须成对（properties 转义）：`sdk.dir=C\:\\Users\\<用户名>\\AppData\\Local\\Android\\Sdk`。
+- 装完自证：`adb version` 能出号 + `sdkmanager --list_installed` 里能看到 `platforms;android-36` / `build-tools;36.0.0`。
 
 ---
 
@@ -78,19 +116,33 @@ Capacitor 的 **native runtime 会把 `window.Capacitor.Plugins` 直接注入 We
 
 ⇒ **插件写在原生工程里，Web 侧一行不用打包**，用 `window.Capacitor.Plugins.<Name>.<method>()` 就能调 ⇒ **`index.html` 一字不变**（A8 判据成立）。
 
-### 3.2 包什么（候选，按「A7.6 记录的 Web 版痛点」排序）
+### 3.2 已实现（2026-09-20 写进生成后的 `android/`）
 
-| 候选 | 对应的 Web 版痛点 | 说明 |
+| 文件 | 作用 |
+|---|---|
+| `android/app/src/main/java/io/github/sakuraqqq/doc2md/Doc2mdNativePlugin.java` | 插件本体（`@CapacitorPlugin(name = "Doc2mdNative")`） |
+| `android/app/src/main/java/io/github/sakuraqqq/doc2md/MainActivity.java` | `onCreate` 里 `registerPlugin(Doc2mdNativePlugin.class)` |
+
+三个方法 = **三级证据**：
+
+| 方法 | 对应判据 | 说明 |
 |---|---|---|
-| ⭐ **保存/下载桥** | **「保存不弹窗」**（`HANDOFF` L186 明写：`<a download>` 在 WebView 里可能无反应，需原生落盘） | `DownloadListener` + 写到用户可见位置（MediaStore Downloads / SAF 目标） |
-| 次选 **选文件桥** | 「选文件走 SAF」 | 包一层 `ACTION_OPEN_DOCUMENT`（若 WebView 自带 `onShowFileChooser` 已够用，则本条**不需要**，A2 直接过） |
+| `echo({msg})` | A7 存活 | 返回 `sdkInt` / `pkg` / `plugin` / `impl`；**它不通 ⇒ 是注册或桥的问题，后面不用查** |
+| `pickFile()` | ⭐ **A2**「选文件走安卓原生选择器（SAF）」 | `ACTION_OPEN_DOCUMENT` + `@ActivityCallback`，返回 `uri` / `name` / `size` |
+| `saveText({filename,text,mime})` | ⭐ **A4**「保存到用户可见位置」 | API 29+ 走 `MediaStore.Downloads`（**无需任何存储权限**），返回 `uri` + `location`；API 24–28 退化为公共 Downloads 直写（那里要 `WRITE_EXTERNAL_STORAGE`，本骨架不申请、失败如实 reject） |
 
-**先做第 1 个**：它同时是 A4 的兜底 —— 若第 8 步发现「`<a download>` 点了没反应」，A4 就靠它转绿（这正是「逐环节替换」的示范：**一个环节一个插件**）。
+真机验证（USB 调试 → 桌面 Chrome 打开 `chrome://inspect` → 该页 console）：
 
-### 3.3 落点与验证
+```js
+await window.Capacitor.Plugins.Doc2mdNative.echo({ msg: 'hi' })
+await window.Capacitor.Plugins.Doc2mdNative.pickFile()
+await window.Capacitor.Plugins.Doc2mdNative.saveText({ filename: 'probe.txt', text: 'hello' })
+```
 
-- 落点：`android/app/src/main/java/io/github/sakuraqqq/doc2md/`（`Doc2mdNativePlugin.java` + `MainActivity.java` 里 `registerPlugin(...)`）
-- 验证：真机 USB 调试 → 桌面 Chrome `chrome://inspect` → console 里调 `window.Capacitor.Plugins.Doc2mdNative.<method>()`，**看原始返回值**（这条是「路走通了」的证据，比"跑通一次"强）
+### 3.3 未做（诚实边界，别当成"已接好"）
+
+- **A4 的「产品内闭环」没接**：页面上点保存（`<a download>`）要走到 `saveText()`，需要 **Web 侧一行 feature-detect**（`src/ui.js` —— **本卡 outOfScope**）或**原生侧 JS 注入**（monkey-patch，能绕开 `src/` 但更隐晦）。**阶段 0 先按原样测**：若 `<a download>` 本身就能弹/能存，这个环节根本不用替换；不能，则把「接哪一端」列为**阶段 1 第一个拍板点**。
+- 插件**只用 `//` 行注释、字符串字面量一律 ASCII**：zh-CN Windows 上 javac 默认编码未必是 UTF-8，块注释里的中文若被错位解码有吃掉 `*/` 的风险；行注释 + ASCII 字面量把这个风险清零 —— **这是刻意的，不是风格疏漏**。
 
 ---
 
