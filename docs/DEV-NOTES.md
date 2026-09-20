@@ -1803,6 +1803,25 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️ **另记一条浏览器侧事实**：本机 **Edge 与 Chrome 的 `inspect` 按钮都点了没反应**（`edge://inspect` 里 **目标列得出**、点 `inspect` / `inspect fallback` 窗口都不开）⇒ 真机 WebView 的 console 取证**不能依赖浏览器按钮**。
    - **工具落点**：`.私档/工具/android-devtools.mjs` —— 绕过浏览器的 inspect 管道，自己走 `adb shell pidof` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` → `/json` → **CDP WebSocket 求值**（带 20s 超时、结果写 `.tmp/devtools-result.txt`）。阶段 1 直接复用。
 
+## 2026-09-20 · 卡 011 真机验收（用户一句「不真机试一下吗」追回来的）：三面全绿，且**真机试出一条我方虚假声明**
+
+**缘起**：卡 011 卡面的平台分工写着「**验收 = 真机（用户持有）**」、`verify` 里也列了真机步骤（「装 APK → 转换 → 点保存 → `adb shell ls -l /sdcard/Download/` + 读状态栏文案」），末尾注明「**真机是加强不是唯一**」。我第一轮交付时**只跑了 CI 桩断言就报了完成** —— 用户一句「**啊？不真机试一下吗**」把这一步追了回来。⇒ **教训：卡面写"加强"不等于"可以不做"**；卡面列了的步骤，做与不做都要**显式说明**，不能默认省略。
+
+**装置**（`.tmp/card011/real-drive.mjs`，一次性）：`www/` 重新暂存 → `npx cap sync android` → `gradlew assembleDebug`（`JAVA_HOME=jdk-24`）→ `adb install -r` → CDP 驱动（复用 `.私档/工具/android-devtools.mjs` 的 adb forward + WebSocket 模式）。
+
+**证据分层**（三层都给）：
+- **产物同源（字节级）**：新 APK **18,965,290 B / `B8062F74D047528E5EB917A6E95C086968A657E6E78137B89DE6F7A4F5EBDECA`**；用 `System.IO.Compression.ZipFile` 从 APK 里直接读出 `assets/public/index.html` = **136,560 B / `A7BBBA72…`** = 仓库产物**逐字节相同** ⇒ 证明 APK 里跑的**确是卡 011 的代码**（不是"装了个 APK"就算数）。
+- **真实触摸（内核级注入）**：`adb shell input tap`，设备 vivo V2573A / Android 16（1440×3200 / dpi 640 ⇒ dpr 4）。三面 —— **A8** ✅ 状态栏「✅ 已保存到「下载」：card011-a8-probe.md」+ 落盘 `Download/card011-a8-probe.md` **161 B**；**A9**（注入 reject 桩）✅「保存失败：真机桩：写入被拒（A9）」+ `statusClass=error` + **`anchorClicks=0`（未回落）**；**A1**（删插件）✅「保存失败：本机未加载保存插件，文件未保存」+ **`anchorClicks=0`**。
+- **截图级**：`.tmp/card011/before.png` / `after.png`（真机截屏，状态栏文案肉眼可见）。
+
+**坑 / 根因 / 防再犯**：
+1. ⭐⭐ **标定那一戳会把靶子挪走（观察者效应）**：`getBoundingClientRect()` 给的是 CSS px，换成 `adb` 的物理 px 还差一个"WebView 在屏幕上的纵向偏移"。第一版做法 = **先用一次无害触摸标定，再按旧几何发真实触摸**。结果标定那一戳把焦点给了 `textarea` ⇒ **页面滚动 44.5 px（≈一个按钮高）** ⇒ 真实触摸落在 `MAIN` 上、**空点一次**（状态栏没变、`Download/` 没多文件 —— 幸好两处都能证伪，没被当成"成功"）。**根因**：标定动作**自己改变了被测状态**；`getBoundingClientRect()` 是**一次快照**，不是持续量。**防再犯**：① **"读活几何"与"发触摸"放进同一进程、零往返**（脚本内先 evaluate 再 `input tap`，中间不隔人、不隔轮）；② 标定点优先选**不改变布局**的位置（可聚焦元素会夺焦 ⇒ 别用）。
+2. ⚠️ **`window.screenY` / `screenTop` 在 Android WebView 里说谎（都返回 `0`）**，而页面实际被状态栏下推 ⇒ **不能用它算映射**。可靠办法 = **让页面自己报命中点**：装 `click` 捕获监听器 → `adb shell input tap` → 读 `event.clientX/clientY`，与 `物理坐标/dpr` 相减即得偏移（本机实测 **38 CSS px**）。这个值还能**自证**：监听器会记下 `tag: "BUTTON"`，证明真打在按钮上（不只看"结果对了"）。
+3. ⭐⭐ **「显示真实文件名」是我写的一句假话（真机试出来的）**：`src/ui.js` 注释、台账 §九、HANDOFF A11.35 **三处**都写「文件名取**插件回报的真实值**（MediaStore 遇重名会改名成 `x.md (1)`）」，但插件 `writeTextToDownloads()` 里是 `ret.put("filename", filename)` —— **回报的是请求名**（`Doc2mdNativePlugin.java` L199，**我写注释时没读它**）。真机连点两次后实测：`Download/` 里出现 `card011-a8-probe.md` **与 `card011-a8-probe.md (1)`** 两个文件，而提示**两次都显示 `card011-a8-probe.md`** ⇒ **提示指向一个不存在的文件**。**根因**：一条**未读实现就写下的乐观假设**，被**沿着链条抄了三处**（UI 注释 → 台账 → HANDOFF）。**防再犯**：① 写「X 会返回 Y」之前**打开 X 的实现看一眼**，跨语言尤其（JS 假设 Java 行为）；② **桩证伪不了桩** —— 断言用的桩是我自己写的，它只会印证我的假设；**低成本可证伪的断言要拿到真环境验一遍**；③ 更正时**顺着链条全改**，别只改一处。
+4. ⚠️ **取证脚本的产物名必须带本轮标签**：产物名原本只带 `mode`（`real-drive-tap.txt`）⇒ A9、A1 两次 tap **把 A8 的记录覆盖掉了**（只剩控制台转录）。**取证脚本的产物 = 证据，证据不能被下一次运行吃掉** ⇒ 用 `DRIVE_TAG` 给每轮贴标签。
+5. **沙箱边界再确认**：`gradlew assembleDebug` 要写 `~/.gradle`（工作区外）⇒ **一次性升权**（实测不升权报 `gradle-8.14.3-bin.zip.lck … 拒绝访问`）；node 脚本里 `spawnSync(adb, …, {encoding:'utf8'})`（管道 stdio）在沙箱下 **EPERM** ⇒ 同一次升权跑（`npx cap sync` 反而**不需要**升权，它只拷文件）。
+6. ⚠️ **`npx` 的 stderr 噪音 ≠ 失败**：`npx.ps1` 包装脚本自己会撞 native 捕获坑（`StandardOutputEncoding is only supported when standard output is redirected` + `$LASTEXITCODE` 未设置），但 **`npx cap sync` 的正文输出是完整的**（`Sync finished`）—— 判成败看**正文与副作用**，不看那段包装脚本报错。
+
 ## 2026-09-20 · 更正：HANDOFF「纪律沉淀」标题是一句未经逐条核验的总括声明（用户点出）
 
 **现象**：`docs/HANDOFF-主开发线.md` §1 里那句 `**纪律沉淀**（已写进 AGENTS.md / 全局 AGENTS.md）：` 把四条纪律**整包**说成"两个文件都写了"；而它下辖的第二条**自己就标着**「⚠️ 全局 `AGENTS.md` 并无此条」—— **父标题的断言与子条目的更正互相打脸**，只读标题的人会拿到错的载体（用户 2026-09-20 直接点出这条"假陈述"）。
@@ -1830,7 +1849,7 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 **第二轮（`A8`/`A9`，用户拍板并进本卡）**：
 5. ⭐⭐ **"失败有声、成功无声"是最坏的不对称**：第一轮只治了失败侧 ⇒ 用户点完**成功也看不到任何回话**，与"什么都没发生"完全一样 —— **而这正是整轮混乱的起点**（误以为没保存 → 连点 13 次）。**教训：做"可见性"时先画一张两态表（成功/失败 × 有反馈/无反馈），把空格补齐**，不要只补自己顺手的那一格。
 6. ⭐ **"实现早已覆盖"≠"有守卫"**：`A9`（插件在但写入失败）其实第一轮就已覆盖（reject ⇒ 冒泡 ⇒ 状态栏 + 不回落），但**没有断言** ⇒ 任何人后续重构都可能悄悄退回静默。**本轮不写代码、只钉断言**（免费绿）—— **把已知行为钉成断言，成本≈0，价值=防回归**。
-7. ⭐ **显示"插件回报的真实值"，不是"我们请求的值"**：成功回话用 `res.filename`（MediaStore 遇重名会改名成 `x.md (1)`）—— 显示真实名，用户才能按名字找到文件；显示请求名 = 又一个"说的和做的不一致"。
+7. ~~⭐⭐ **显示"插件回报的真实值"，不是"我们请求的值"**：成功回话用 `res.filename`（MediaStore 遇重名会改名成 `x.md (1)`）—— 显示真实名，用户才能按名字找到文件；显示请求名 = 又一个"说的和做的不一致"。~~ ⚠️ **本条 2026-09-20 真机验收后【作废】（原句保留以留痕）—— 前提是假的**：插件回报的**不是**真实名，而是**请求名**（`android/app/src/main/java/io/github/sakuraqqq/doc2md/Doc2mdNativePlugin.java` **L199** `ret.put("filename", filename)`）；真机连点两次实测 = 提示显示 `card011-a8-probe.md`、而 `Download/` 里实际是 `card011-a8-probe.md (1)`。**它换来的教训比原句更有用**：「插件会回报真实值」这条**我从未核对实现**的假设，被抄进了 `src/ui.js` 注释 / 台账 §九 / HANDOFF A11.35 **三处** —— 详见上方「卡 011 真机验收」节 **坑 3**。
 
 ## 2026-09-20 · 卡 010（执行线）：APK「保存」闭环 —— 把原生 saveText 接到产品按钮上
 
