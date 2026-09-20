@@ -181,6 +181,23 @@ await window.Capacitor.Plugins.Doc2mdNative.saveText({ filename: 'probe.txt', te
 4. **A6（H2）待实测**：47.4 MB xlsx 在本项目历史上曾把**真机渲染进程**顶到 **12.6 GiB 峰值**（`DEV-NOTES` 手机侧实测）⇒ 手机上大概率**跑不完**。**这不是"卡 008 失败"** —— 卡面要的就是这个结论（能否跑 + 时间 + 内存）。
 5. **A6 的材料怎么上手机**：走**已有的 A11.7 局域网交换通道**（`.私档/工具/serve-exchange.py`，端口 8099，Basic 口令在 `.私档/lan-git/.exchange-token`；夹具**不进 git**，走同一页面直接传）。四档夹具在 `.私档/传输-手机-20260918/`，A6 只需要这两档：`3-big_47.4MB_436000rows.xlsx`、`4-mid-large_35.9MB_250000rows.xlsx`。
 
+6. ⭐ **实测发现（2026-09-20 · APK 已实证）：AAPT2 打包会把 `assets/**` 下以 `.gz` 结尾的文件解压并去掉后缀**
+
+   | 位置 | `vendor/tessdata/` 内容 | 小计 |
+   |---|---|---|
+   | 仓库 `vendor/` 与 `www/vendor/` | `eng.traineddata.gz` 2,952,873 + `chi_sim.traineddata.gz` 1,718,768 | 4,671,641 |
+   | `android/app/src/main/assets/public/vendor/tessdata/`（源码目录，cap copy 的产物） | **同一份 `.gz`** ✓ | 4,671,641 |
+   | **APK 内 `assets/public/vendor/tessdata/`** | `eng.traineddata` **5,199,098** + `chi_sim.traineddata` **2,471,033**（**已解压、后缀被去掉**） | **7,670,131** |
+
+   ⇒ `vendor/` 在 APK 里由 16,051,845 → **19,050,335 B（+2,998,490）**。
+
+   - **有害吗？没有 —— 但白胖 2.86 MB**：`src/**` **零处**引用 `tessdata` / `.gz`；运行期 OCR 只取 `langs/`（`src/ocr.js` L32–33 取 `./langs/*.traineddata`、L61 `langPath: './langs/'` + `gzip:false`）；`vendor/tessdata/*.gz` 只被**构建期**的 `tools/embed-bline.mjs` 读。⇒ APK 里这 7,670,131 B **没有任何运行期代码会读**。
+   - **阶段 1 候选（需拍板）**：把 `vendor/tessdata/` 从 `www/` 暂存清单去掉（它是构建期输入，不是运行期资产）⇒ APK 直接 **−7.67 MB**；或保留但改名（如 `.traineddata.gzip`）以规避 AAPT2 的解压规则。**阶段 0 不动** —— 改 staging = 改产物，得重出 APK，属阶段 1 的交付面取舍。
+
+7. **第一次成功构建的产物（字节级实测，2026-09-20）**：`android/app/build/outputs/apk/debug/app-debug.apk` = **18,910,129 B / SHA256 `8F0BBEEEF76D6C220700EFCC176A5C1EEE387EE8BF4830C30D87ECF44E2970EB`**，zip 条目 634。
+   - **隐私核验（B2 的一半）**：APK 内匹配 `私档|transfer|node_modules|\.git/` = **0 命中** ✓（`webDir=www` 的决定在成品上兑现）。
+   - **产品字节一致（端到端）**：APK 内 `assets/public/index.html` = **135,398 B / SHA256 `CD7977E4A98ACF956533DD56668B1F946628137A93FED816D74B60DBF70D1507`**，与仓库 `index.html` **逐字节相同** ⇒ 顺带独立复核了卡 007 登记的产物哈希。
+
 ---
 
 ## 6. 我不碰的东西（outOfScope 复述）
