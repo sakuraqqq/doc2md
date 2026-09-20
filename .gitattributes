@@ -17,8 +17,11 @@
 #
 # 备注：若日后确实需要某个二进制文件强制按二进制对待，用 `*.<ext> -text` 单行覆盖，
 #       并同步在 docs/DEV-NOTES.md 记录（改口径 = 拍板）。
-#
-# 单文件覆盖（卡 008 / 2026-09-20）：Android 模板自带的 Windows 批处理必须是 CRLF ——
-# cmd.exe 对 LF-only .bat 有解析边界问题（标签/goto 与多行块）。index 仍存 LF（eol 只影响检出）。
-android/gradlew.bat text eol=crlf
 * text=auto eol=lf
+
+# 单文件覆盖（卡 008 / 2026-09-20）：Android 模板自带的 Windows 批处理必须是 CRLF ——
+#   cmd.exe 对 LF-only .bat 有解析边界问题（标签/goto 与多行块）。index 仍存 LF（eol 只影响检出）。
+# ⚠️ **顺序要紧**：gitattributes 是「**最后匹配的规则胜出**」，不是"越具体越优先" ⇒ 覆盖行必须写在
+#    `*` **之后**。本行最初写在 `*` 之前，被 `* text=auto eol=lf` 吃掉 —— 靠 `git check-attr` 才发现
+#    （肉眼看着"写了"，实际不生效）。
+android/gradlew.bat text eol=crlf
