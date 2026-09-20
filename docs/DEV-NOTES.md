@@ -1844,6 +1844,12 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - **对照**：卡 008 的同类取证用的是 **`adb shell ls -la /sdcard/Download/`（完整清单）** ⇒ 它没踩这个坑，其 `A4 ❌` 的结论经本次复核**成立**（现场无任何产品写出的 `.md`；机制层 `com/getcapacitor/**` 无 `DownloadListener`）。**同一台机器、同一个目录，"命令形态"决定了结论真假**。
 6. ⚠️ **「找不到文件」的第二个成因：两个同名文件夹**（用户要求"亲眼看"时暴露）：`/sdcard/下载`（vivo 文件 App 的「**下载**」分类目录，内含 `App/Document/Download/Photo`）≠ `/sdcard/Download`（**产品写入的真·下载目录**）。在 vivo 文件 App 的「下载」里翻是**永远翻不到**的 ⇒ 又会得出"没保存"的错误结论。
    - **防再犯**：① 核对用户可见性走 **系统「下载」视图（DocumentsUI，读实时目录）** 或文件 App 的 **内部存储 → `Download`（英文名那层）**；② 取证命令**只认路径** `/sdcard/Download/`；③ 用 `am start -d content://com.android.externalstorage.documents/document/primary%3ADownload` **显式**打开真目录（**别只靠 VIEW intent 让它自己挑应用**——本机被 vivo 文件 App 接走，打开的是另一个夹）。
+7. ⚠️ **MediaStore 重名改名的连带伤害：扩展名被挤到中间 ⇒ MIME 变 `application/octet-stream`**（用户验收时暴露）：同目录同名重复保存时，MediaProvider 生成 **`名字.md (13)`** —— **`.md` 不再是结尾** ⇒ 按扩展名猜类型的环节失效 ⇒ 类型落成 `application/octet-stream` ⇒ 点它必弹「打开方式」且许多应用不认。
+   - **实测对照**：先写入那份（名字完好）MIME = `text/markdown` ✓；`(1)…(14)` 全部 `application/octet-stream` ✗；用户原有的 `报告-…(1).md`（**序号插在扩展名前**）仍是 `text/markdown` ✓。
+   - **防再犯**：**写 MediaStore 前自己保证显示名唯一**（在**扩展名前**插序号/时间戳），别依赖 MediaProvider 的 ` (N)`；给 MediaStore 的 `MIME_TYPE` 传**干净类型**（不带 `;charset=` 参数 —— 本机实测被规范化成 `text/markdown`，但别赌所有 ROM 都规范化）。
+   - ⚠️⭐ **"弹打开方式"不等于"没有默认应用"——我曾据此误判**：`cmd package query-activities` 列出的候选里 `isDefault=true` 的语义是「**有资格作为默认**」，**不是「它就是默认」**；我在回执里写成「无一被设为默认」，**错**。**判默认必须用 `cmd package resolve-activity --brief -a VIEW -t <mime> -d <uri>`** —— 本机 `text/markdown` 的默认 = **vivo 智能办公**（`com.vivo.smartoffice/.reader.viewer.launch.LauncherActivity`，实际进入 `…/alldoc.activity.launch.markdown.MarkDown0` 渲染）。
+   - **那为什么还弹选择器？= 入口的 URI authority 不匹配**：系统 DocumentsUI 交出 `content://com.android.externalstorage.documents/…` ⇒ 默认应用的过滤器不匹配该 authority ⇒ 探不到默认 ⇒ 弹选择器；**换 `file://` 真路径即直进阅读器**（实测）。⇒ **判"是不是我们的锅"要做两道对照**：① 同一条 intent 打开用户自己的同类文件；② **把 URI 换成 `file://` 再试一次**（很多时候差异只在 URI 形态，不在文件）。
+   - 另：`content://` 交给 Markor 会被它拒收（只认完整文件路径），用 `file://` 真路径可开。
 
 ## 2026-09-20 · 卡 009（执行线）：CI 信号可信度 —— 审计步后移到末位 + Node `engines` 与 CI 同源
 
