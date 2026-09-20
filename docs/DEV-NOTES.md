@@ -1788,6 +1788,23 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 - 「同一文件三种命运（43 s 完成 / 20 s 崩 / 磨 20 min 无果）」⇒ **天花板随可用内存浮动**，**印证不必追精确阈值**；
 - 与 **A9/A10**（预检 + 进度 + 超时）方向一致 —— 手机侧结论与我方独立收敛到同一处：**降低单次分配量**。
 
+## 2026-09-20 · 卡 008（执行线）：Capacitor 阶段 0 —— 工具链四连坑 + APK 落地
+
+> 完整回执（A1–A11 逐条）见 `docs/任务台账.md`；本卡操作手册见 `docs/ANDROID-CAPACITOR-阶段0.md`。本节只留**一手坑与结论**。
+
+### 已落地（截至本节点）
+- 工具链：Android SDK 命令行工具 + **JDK 24**（**不是 17**）+ Gradle 8.14.3 ⇒ `BUILD SUCCESSFUL in 1m 1s`。
+- **APK = 18,910,129 B / SHA256 `8F0BBEEEF76D6C220700EFCC176A5C1EEE387EE8BF4830C30D87ECF44E2970EB`**（zip 条目 634）。
+- **A7 插件骨架**已写进 `android/`：`echo`（存活）/ `pickFile`（SAF）/ `saveText`（MediaStore.Downloads），API 逐条对 `node_modules/@capacitor/android` 8.5.2 源码核过签名。
+- 字节级核验：APK 内 `assets/public/index.html` = **135,398 B / `CD7977E4…1507`**，与仓库**逐字节相同**；APK 内 `私档|transfer|node_modules|\.git/` **零命中**。
+
+### 坑（现象 → 根因 → 防再犯）
+1. **Gradle wrapper 下载超时**：`Downloading …gradle-8.14.3-all.zip failed: timeout (10000ms) / java.net.SocketTimeoutException: Read timed out`。**根因** = 模板 `networkTimeout=10000`（**每次读** 10 秒）× `-all` 包 200+ MB。**处置**：`networkTimeout=120000` + 换 `-bin.zip`（130 MB，命令行构建足够）。**防再犯**：跨洋拉大包时，先看 wrapper 的 `networkTimeout` 与包型（`-all`/`-bin`）。
+2. **AGP 非 ASCII 路径闸**：`Failed to apply plugin 'com.android.internal.application' > Your project path contains non-ASCII characters … See http://b.android.com/95744`。**根因** = 本机 Windows 用户目录名非 ASCII（环境事实，非代码问题）。**处置**：`android.overridePathCheck=true`（注释里写清回退方案 = 改用纯 ASCII 路径构建）。
+3. ⭐ **JDK 版本判错（我自己的错，已撤回结论）**：我先判「JDK 17 够用」，实测报 **`错误: 无效的源发行版：21`**。**根因 = 只核了 AGP 的最低要求（17），没核被依赖库自身的 `sourceCompatibility`** —— `@capacitor/android/capacitor/build.gradle` **L65–68** 明写 `JavaVersion.VERSION_21`。**防再犯：判「版本够不够」要逐个参与者核（AGP / Gradle / **被依赖的库**），只看一个的最低要求就会得出错误的"够了"**。**处置**：`JAVA_HOME` 指向机器上**已有**的 `jdk-24`（Gradle 8.14.3 欢迎语明写 Java 24 support）。
+4. ⭐ **我出给用户的命令漏了 `cd`（我的错）**：`adb install -r android\app\…\app-debug.apk` 在其当时的 cwd（`…\doc2md\android`）下解析成 `…\android\android\app\…` ⇒ `adb.e: failed to stat … No such file or directory`。**根因 = 出单时默认「对方还在我上一轮假设的工作目录里」**。**防再犯**：给终端命令**一律自带 `cd`，或用绝对路径**；不依赖上下文 cwd（跨轮次、跨人时上下文 cwd 不可假设）。
+5. **AAPT2 会把 `assets/**` 下以 `.gz` 结尾的文件解压并去掉后缀**（实测发现，非报错）：`vendor/tessdata/eng.traineddata.gz`(2,952,873) + `chi_sim.traineddata.gz`(1,718,768) 在 APK 内变成 `eng.traineddata`(**5,199,098**) + `chi_sim.traineddata`(**2,471,033**) ⇒ `vendor/` 由 16,051,845 → **19,050,335 B（+2,998,490）**。而 `src/**` **零处**引用 `tessdata`/`.gz`（运行期 OCR 只取 `langs/`：`src/ocr.js` L32–33 + L61 `langPath:'./langs/'`、`gzip:false`），那两个 `.gz` 只被**构建期** `tools/embed-bline.mjs` 读 ⇒ **APK 里 7.67 MB 无人读取**。**阶段 1 候选（需拍板）**：`www/` 暂存清单去掉 `vendor/tessdata/`（−7.67 MB）或改名规避 AAPT2 规则。**阶段 0 不动**。
+
 ## 2026-09-20 · 纪律改写（用户直接指令）：童子军规则 → **硬义务**；顺带查出「全局 AGENTS.md 并无此条」
 
 > 触发：用户原话「**必须做，或必须显式说明为什么不做** / 把这句话替换原来的 agents.md 的童子军里面的重构内容，**全局 agents.md 也改**」。
