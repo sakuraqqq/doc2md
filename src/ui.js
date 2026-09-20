@@ -60,18 +60,22 @@ export async function copyText(text, btn) {
   btn.textContent = '✅ 已复制';
   setTimeout(() => { btn.textContent = old; }, 1500);
 }
-export function downloadMd(text, fileName) {
-  // 复审 §1.7：.env/.gitignore 等「扩展名即整个名」的文件名 replace 后会变空 → 兜底 'doc2md'
-  const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md');
-  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+/** 触发浏览器下载：`<a download>` + blob URL（原先 downloadMd / downloadZip / downloadMdEmbedded
+ * 三处各写一遍；卡 010 的 B1 重构抽成单一实现 —— 抽函数、行为逐字不变，≤50 行配额内）。 */
+function anchorDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = base + '.md';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+export function downloadMd(text, fileName) {
+  // 复审 §1.7：.env/.gitignore 等「扩展名即整个名」的文件名 replace 后会变空 → 兜底 'doc2md'
+  const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md');
+  anchorDownload(new Blob([text], { type: 'text/markdown;charset=utf-8' }), base + '.md');
 }
 // 下载 .md + 抽取图片（zip）：fflate 内联打包，本地生成，零外发（t6 ⑨a）
 export async function downloadZip(text, fileName, assets, btn) {
@@ -87,14 +91,7 @@ export async function downloadZip(text, fileName, assets, btn) {
       } catch { /* 单图读取失败跳过（其他图照常打包） */ }
     }
     const z = F.zipSync(files);
-    const url = URL.createObjectURL(new Blob([z], { type: 'application/zip' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = base + '.zip';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    anchorDownload(new Blob([z], { type: 'application/zip' }), base + '.zip');
   } catch {
     const old = btn.textContent;
     btn.textContent = '❌ 打包失败';
@@ -160,15 +157,7 @@ export async function downloadMdEmbedded(text, fileName, assets, btn) {
   try {
     const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md'); // 复审 §1.7：空兜底
     const md = embedImagesIntoMd(text, await buildEmbedMap(assets));
-    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = base + '.md';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    anchorDownload(new Blob([md], { type: 'text/markdown;charset=utf-8' }), base + '.md');
   } catch {
     const old = btn.textContent;
     btn.textContent = '❌ 内嵌失败';
