@@ -49,11 +49,18 @@ where.exe adb
 | Capacitor 版本 | **8.5.2**（不是文档里的 v7） | 依赖已入 `package.json`（inScope） |
 | Gradle（模板自带） | **8.14.3** | 支持 Java 17–24 |
 | AGP | **8.13.0** | **要 JDK 17** |
-| `JAVA_HOME` | **`C:\Program Files\Java\jdk-17`** | ✅ **JDK 这关本来就是通的** —— PATH 上的 JDK 24 不参与（`gradlew` 只认 `JAVA_HOME`） |
+| `JAVA_HOME` | `C:\Program Files\Java\jdk-17` | ❌ **这一格我判错了，已撤回（见下方更正块）** |
+| 机器上的 JDK | **`jdk-17` 与 `jdk-24`**（`C:\Program Files\Java\`；无 Adoptium、无 Android Studio 自带 jbr） | 实测枚举（`Get-ChildItem`） |
 | `compileSdk` / `targetSdk` / `minSdk` | **36 / 36 / 24** | 有 Android 16 的真机跑得了 |
 | Android SDK | **不存在**（`ANDROID_HOME`/`ANDROID_SDK_ROOT` 空 · `%LOCALAPPDATA%\Android\Sdk` 无 · `adb` 不在 PATH） | ⚠️ **唯一缺口就是它** |
 
-⇒ **既然 JDK 17 已有，就不必装 1 GB 的 Android Studio**：只装 **SDK 命令行工具**即可（见 §1.2）。
+⇒ **既然 JDK 已有、且 SDK 命令行工具装得上，就不必装 1 GB 的 Android Studio**（见 §1.2）。
+
+> ⚠️ **更正（2026-09-20 · 留痕不静默删）**：我先前在同一张表里写「**JDK 这关本来就是通的**」，**该结论作废**。
+> - **判错的原因**：只核了 **AGP 的最低要求**（AGP 8.13 要 JDK 17），**没核 Capacitor 8 自己的安卓库按哪个 Java 版本编译**。
+> - **实测证据（两条，都在磁盘/终端里）**：① `node_modules/@capacitor/android/capacitor/build.gradle` **L65–68** = `compileOptions { sourceCompatibility JavaVersion.VERSION_21; targetCompatibility JavaVersion.VERSION_21 }`；② 真机构建报错原文 = `> Task :capacitor-android:compileDebugJavaWithJavac FAILED / Java compilation initialization error / 错误: 无效的源发行版：21`。
+> - ⇒ **这条链要 JDK ≥ 21**。处置：把 `JAVA_HOME` 指向机器上**已存在的 `jdk-24`**（Gradle 8.14.3 的欢迎语明写支持 Java 24）；若 24 不行 ⇒ 装 JDK 21（`winget install --id Microsoft.OpenJDK.21 -e`）。
+> - **防再犯**：判「工具链版本够不够」时，**每个参与者都要查**（AGP / Gradle / **被依赖的库自身的 sourceCompatibility**），只看其中一个的最低要求就会得出错误的"够了"。
 
 ### 1.2 补 Android SDK（用户终端 · 当前唯一缺口）
 
