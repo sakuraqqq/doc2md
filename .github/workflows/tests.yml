@@ -1,8 +1,8 @@
 # tests.yml — doc2md CI 质量门（防屎山 ③ 守门）
 # 模板：cola（可乐工厂效率计算器）tests.yml；按任务书扩展为 checks job：
-#   build-consistency → lint → 守卫自测 → baseline 守卫 → 交付面依赖审计 → metrics（超限必须为 0）
+#   build-consistency → lint → 守卫自测 → baseline 守卫 → metrics（超限必须为 0）
 #   → 站点白名单 smoke（组装临时 _site）→ npm test（显式 TAP reporter）→ **TAP ↔ BASELINE.json 对账**
-#   → pwa-audit → verify:ocr
+#   → pwa-audit → verify:ocr → **交付面依赖审计（卡 009 起固定在末位）**
 # 说明：
 #   - 触发：push main · **push tag `v*`**（2026-09-17 加固：发布 tag 也必须过同款门禁，见第九轮审查 §4.4）
 #     · PR。⚠️ 残留：GitHub 无「workflow 间依赖」，deploy-pages 不会等本 workflow 跑完才开始部署 ——
@@ -28,6 +28,12 @@
 #     `baseline-check --from-tap tap.txt --scope ci_clean_checkout`：**实跑 TAP 与 docs/BASELINE.json
 #     的 contract 不一致即红**（本步必须排在 npm test **之后** —— 前面拿不到测试结果）。
 #     ⚠️ `set -o pipefail` 不能省：否则 `npm test | tee` 会把失败吞成 tee 的退出码。
+#   - **CI 信号可信度（2026-09-20 卡 009）**：① `Delivery-face dependency audit` **从第 8 步后移到末步** ——
+#     事故 run `35458379084`（attempt 1）该步因 npm registry advisories **HTTP 503** 失败 ⇒ 其后 6 步
+#     （metrics / site smoke / **Contract tests** / TAP 对账 / PWA / OCR）**全部被跳过，该 run 从未跑测试**；
+#     **判据一字未改、只挪位置** ⇒ 外部服务故障不再遮蔽测试信号。⚠️ **本步之后不得再插任何门禁步**。
+#     ② `node-version` 20 → **24**，与 `package.json` 的 `engines: ">=24"` **同源**（发布/验收运行时亦为
+#     Node 24；来源：第九轮审查 R9-6）—— **改一处必须同改另一处**（单一口径，禁止两份真相）。
 name: tests
 
 on:
@@ -48,7 +54,8 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          # 与 package.json 的 engines 同源（卡 009）：口径 = 「真实支持的区间 >=24」，CI 至少覆盖下界 ⇒ 固定 24
+          node-version: 24
           cache: npm
       - name: Install dependencies
         run: npm ci
@@ -62,15 +69,6 @@ jobs:
         run: node tools/guard-selftest.mjs
       - name: "Baseline guard (docs/BASELINE.json 数字真相源：契约数溯源 + 发布物/线上/交付面现算比对；2026-09-19 卡 001-C)"
         run: node tools/baseline-check.mjs
-      # ⚠️【一次性注入 · 卡 009 的 A1 负对照】把 registry.npmjs.org 指向 127.0.0.1 ⇒ 审计步必红。
-      #    本步只为这次负对照实验存在，**下一个提交即拆除**，不属于交付物。
-      - name: "TEMP 009-A1 负对照注入：registry.npmjs.org → 127.0.0.1（一次性，勿留）"
-        run: |
-          echo "127.0.0.1 registry.npmjs.org" | sudo tee -a /etc/hosts
-          getent hosts registry.npmjs.org
-          curl -sS -m 5 -o /dev/null https://registry.npmjs.org/ || echo "[inject] registry 已不可达（预期）"
-      - name: "Delivery-face dependency audit (交付面 high/critical 未豁免即红；2026-09-16 用户拍板 B 项)"
-        run: node tools/audit-delivery.mjs
       - name: "Code metrics gate (超限函数必须为 0；2026-09-10 用户拍板)"
         run: npm run metrics
       - name: "Site whitelist assembly + deploy smoke (与 deploy-pages 同款 cp 白名单)"
@@ -90,3 +88,15 @@ jobs:
         run: node tests/pwa-audit.mjs
       - name: OCR verification (offline tesseract)
         run: npm run verify:ocr
+      # ⚠️ **末步（2026-09-20 卡 009）**：本步数据源是网络端点（npm registry advisories），
+      #    设计立场是「数据不可得 ⇒ 宁可红，不假绿」⇒ 固定放末位：它红不再跳过任何测试步。
+      #    **不要在它之后再加步骤**（会把「外部故障遮蔽测试信号」的老病带回来）。
+      # ⚠️【一次性注入 · 卡 009 的 A1 负对照】把 registry.npmjs.org 指向 127.0.0.1 ⇒ 审计步必红。
+      #    本步只为这次负对照实验存在，**下一个提交即拆除**，不属于交付物。
+      - name: "TEMP 009-A1 负对照注入：registry.npmjs.org → 127.0.0.1（一次性，勿留）"
+        run: |
+          echo "127.0.0.1 registry.npmjs.org" | sudo tee -a /etc/hosts
+          getent hosts registry.npmjs.org
+          curl -sS -m 5 -o /dev/null https://registry.npmjs.org/ || echo "[inject] registry 已不可达（预期）"
+      - name: "Delivery-face dependency audit (交付面 high/critical 未豁免即红；2026-09-16 用户拍板 B 项)"
+        run: node tools/audit-delivery.mjs
