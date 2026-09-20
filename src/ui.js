@@ -89,10 +89,14 @@ export function nativeSavePlugin() {
   const p = plugins && plugins.Doc2mdNative;
   return p && typeof p.saveText === 'function' ? p : null;
 }
+/** 保存/下载用的基名：去最后扩展名 + 空兜底（复审 §1.7：.env/.gitignore 等「扩展名即整个名」的文件名
+ * replace 后会变空 ⇒ 兜底 'doc2md'）。原先在 saveTextArtifact / downloadZip 各写一遍 ⇒ 卡 011 的 B1 抽成单一实现。 */
+function baseName(fileName) {
+  return (fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md';
+}
 /** 保存**文本**产物（.md）：原生可用走原生，否则 `<a download>`；返回 `'native' | 'anchor'`（供契约断言） */
 export async function saveTextArtifact(text, fileName, mime = 'text/markdown;charset=utf-8') {
-  // 复审 §1.7：.env/.gitignore 等「扩展名即整个名」的文件名 replace 后会变空 → 兜底 'doc2md'
-  const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md');
+  const base = baseName(fileName);
   const plugin = nativeSavePlugin();
   if (plugin) {
     await plugin.saveText({ filename: base + '.md', text: String(text == null ? '' : text), mime });
@@ -113,7 +117,7 @@ export async function downloadZip(text, fileName, assets, btn) {
   try {
     const F = window.fflate;
     if (!F) throw new Error('fflate 未加载');
-    const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md'); // 复审 §1.7：空兜底
+    const base = baseName(fileName);
     const files = {};
     files[base + '.md'] = F.strToU8(text);
     for (const a of assets || []) {
