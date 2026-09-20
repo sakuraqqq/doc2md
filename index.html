@@ -1332,10 +1332,38 @@
   }
   var NO_DATE_STYLES = { isDateStyle: () => false };
   var NUMERIC_VALUE_RE = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+  function sigDigitsOf(literal) {
+    const s = String(literal).trim().replace(/^[+-]/, "");
+    const e = s.search(/[eE]/);
+    const mant = e < 0 ? s : s.slice(0, e);
+    const dot = mant.indexOf(".");
+    const digits = dot < 0 ? mant : mant.slice(0, dot) + mant.slice(dot + 1);
+    for (let i = 0; i < digits.length; i++) {
+      const c = digits.charCodeAt(i);
+      if (c < 48 || c > 57) return null;
+    }
+    let a = 0;
+    let b = digits.length;
+    while (a < b && digits[a] === "0") a++;
+    while (b > a && digits[b - 1] === "0") b--;
+    return b - a;
+  }
+  function formatNumericLiteral(lit) {
+    const sig = sigDigitsOf(lit);
+    if (sig === null || sig <= 15) return lit;
+    if (!lit.includes(".")) return lit;
+    const n = Number(lit);
+    if (!Number.isFinite(n)) return lit;
+    const short = String(Number(n.toPrecision(15)));
+    return short === "NaN" || short === "" ? lit : short;
+  }
   function serialDateOrRaw(c, styles, date1904) {
-    if (c.s === "" || !NUMERIC_VALUE_RE.test(c.v)) return decodeXml(c.v);
-    if (!styles.isDateStyle(parseInt(c.s, 10))) return decodeXml(c.v);
-    return excelSerialToDate(parseFloat(c.v), date1904);
+    const isNum = NUMERIC_VALUE_RE.test(c.v);
+    if (isNum && c.s !== "" && styles.isDateStyle(parseInt(c.s, 10))) {
+      return excelSerialToDate(parseFloat(c.v), date1904);
+    }
+    const raw = decodeXml(c.v);
+    return isNum ? formatNumericLiteral(raw) : raw;
   }
   function boolCellText(v) {
     if (v === "1") return "true";

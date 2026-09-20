@@ -530,10 +530,49 @@ const NO_DATE_STYLES = { isDateStyle: () => false };
 /* t15：序列号/普通值单元格 → 文本（样式命中日期 → YYYY-MM-DD；否则原样）——拆函数防复杂度越限 */
 /* 数字字面量（第八轮 §3.1：Excel <v> 可存 1.5E2 科学计数法形态，旧判定会原样输出不换算） */
 const NUMERIC_VALUE_RE = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+/* 卡 007（2026-09-20 用户拍板「没做先做」）· **渲染层**的数值显示归一：
+ * 夹具 XML 里存的就是长形态（实测 `4-mid-large`/`3-big` 的 **R 列 50 个**，首例 `R38=34.200000000000003`），
+ * 而 double 的可靠十进制精度 ≈ 15.95 位 ⇒ **超过 15 位有效数字的尾巴只可能是「表示噪声」**（生产者把
+ * double 全量 dump 出来）。规则（写死；断言即规格 = 契约组 G9）：
+ *   `有效数字 > 15` ⇒ 取 **15 位有效数字**的显示形态 `String(Number(Number(v).toPrecision(15)))`；
+ *   `≤ 15` ⇒ **原样**（真精度 / `1.0` / `0.0000001` / `1e-7` 一律不动）；
+ *   **整数（无小数点）一律不动** —— 20 位整数也不动（>2^53 的整数改写 = 撒谎）。
+ * ⚠️ 本函数只决定**怎么显示**；解析层（parseCellAt / scanSheetRowsStream / rowToTexts 的取数）一字未动。*/
+function sigDigitsOf(literal) {
+  const s = String(literal).trim().replace(/^[+-]/, '');
+  const e = s.search(/[eE]/);
+  const mant = e < 0 ? s : s.slice(0, e); // 尾数部分（科学计数法的指数不参与有效数字计数）
+  const dot = mant.indexOf('.');
+  const digits = dot < 0 ? mant : mant.slice(0, dot) + mant.slice(dot + 1);
+  // 纯十进制校验与首尾零裁剪一律**手写线性扫描**：`0+$` 这类"开头不锚定 + 结尾锚定"的正则会被
+  // eslint 的 sonarjs/super-linear-regex 判 error（失败时逐位重试 ⇒ O(n²)），而这里只需 O(n)。
+  for (let i = 0; i < digits.length; i++) {
+    const c = digits.charCodeAt(i);
+    if (c < 48 || c > 57) return null; // 非纯十进制字面量（理论上进不来）⇒ 调用方按"≤15 位"处理
+  }
+  let a = 0;
+  let b = digits.length;
+  while (a < b && digits[a] === '0') a++;
+  while (b > a && digits[b - 1] === '0') b--;
+  return b - a;
+}
+function formatNumericLiteral(lit) {
+  const sig = sigDigitsOf(lit);
+  if (sig === null || sig <= 15) return lit; // 真精度：原样
+  if (!lit.includes('.')) return lit; // 整数：一律不动
+  const n = Number(lit);
+  if (!Number.isFinite(n)) return lit;
+  const short = String(Number(n.toPrecision(15)));
+  return short === 'NaN' || short === '' ? lit : short;
+}
 function serialDateOrRaw(c, styles, date1904) {
-  if (c.s === '' || !NUMERIC_VALUE_RE.test(c.v)) return decodeXml(c.v);
-  if (!styles.isDateStyle(parseInt(c.s, 10))) return decodeXml(c.v);
-  return excelSerialToDate(parseFloat(c.v), date1904);
+  const isNum = NUMERIC_VALUE_RE.test(c.v);
+  if (isNum && c.s !== '' && styles.isDateStyle(parseInt(c.s, 10))) {
+    return excelSerialToDate(parseFloat(c.v), date1904); // 日期样式：走日期换算（不受显示归一影响）
+  }
+  const raw = decodeXml(c.v);
+  return isNum ? formatNumericLiteral(raw) : raw; // 其余数值：显示归一（卡 007）
 }
 
 /* t="b" 布尔单元格 → 文本（t8 重构：从 xlsxParseSheet 抽出；1/0 → true/false，其余原样） */
