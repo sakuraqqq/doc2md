@@ -72,10 +72,41 @@ function anchorDownload(blob, filename) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
-export function downloadMd(text, fileName) {
+/* ── 「保存」环节的原生/浏览器分流（卡 010 · 方案 A：Web 侧 feature-detect）────────────────
+ * 病：Capacitor WebView 里 `<a download>` **静默无反应**（`com/getcapacitor/**` 无 DownloadListener；
+ *     卡 008 的 A4 反证 = `Download/` 里没有任何产品写出的 .md）⇒ APK「装得上、存不了」。
+ * 药：Capacitor 原生运行时把已加载插件导出到 `window.Capacitor.Plugins` ⇒ 探测到就用原生
+ *     `Doc2mdNative.saveText`（写进 MediaStore.Downloads，用户可见）；探测不到走 `<a download>`。
+ * 为什么判断写在 `src/` 里：**行为差异必须可读、可测、可断言**（卡 010 拍板 A + A3）——
+ *     藏在原生 JS 注入里 = Web 与 APK 行为不同却不在 `src/` 里 = 两份真相。
+ * 为什么探测放**点击时**：同页面对插件的出现/消失都成立，且契约组 Z2 能用桩直接测这条分支。
+ * ─────────────────────────────────────────────────────────────────────────────────── */
+/** 原生保存插件；不可用返回 null。判据 = 插件对象存在**且 `saveText` 是函数**
+ * （"存在即原生"是错口径：插件在但方法缺失时应回落浏览器路径，而不是静默失败） */
+export function nativeSavePlugin() {
+  const cap = typeof window === 'undefined' ? null : window.Capacitor;
+  const plugins = cap && cap.Plugins;
+  const p = plugins && plugins.Doc2mdNative;
+  return p && typeof p.saveText === 'function' ? p : null;
+}
+/** 保存**文本**产物（.md）：原生可用走原生，否则 `<a download>`；返回 `'native' | 'anchor'`（供契约断言） */
+export async function saveTextArtifact(text, fileName, mime = 'text/markdown;charset=utf-8') {
   // 复审 §1.7：.env/.gitignore 等「扩展名即整个名」的文件名 replace 后会变空 → 兜底 'doc2md'
   const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md');
-  anchorDownload(new Blob([text], { type: 'text/markdown;charset=utf-8' }), base + '.md');
+  const plugin = nativeSavePlugin();
+  if (plugin) {
+    await plugin.saveText({ filename: base + '.md', text: String(text == null ? '' : text), mime });
+    return 'native';
+  }
+  anchorDownload(new Blob([text], { type: mime }), base + '.md');
+  return 'anchor';
+}
+/** 原生保存失败**不静默**（「静默无反应」正是本卡要治的病）⇒ 状态栏报错 */
+function reportSaveError(e) {
+  setStatus('保存失败：' + (e && e.message ? e.message : e), true);
+}
+export function downloadMd(text, fileName) {
+  return saveTextArtifact(text, fileName).catch(reportSaveError);
 }
 // 下载 .md + 抽取图片（zip）：fflate 内联打包，本地生成，零外发（t6 ⑨a）
 export async function downloadZip(text, fileName, assets, btn) {
@@ -154,15 +185,17 @@ export async function downloadMdEmbedded(text, fileName, assets, btn) {
     await downloadZip(text, fileName, assets, btn);
     return;
   }
+  let md;
   try {
-    const base = ((fileName || 'doc2md').replace(/\.[^.]+$/, '') || 'doc2md'); // 复审 §1.7：空兜底
-    const md = embedImagesIntoMd(text, await buildEmbedMap(assets));
-    anchorDownload(new Blob([md], { type: 'text/markdown;charset=utf-8' }), base + '.md');
+    md = embedImagesIntoMd(text, await buildEmbedMap(assets));
   } catch {
     const old = btn.textContent;
     btn.textContent = '❌ 内嵌失败';
     setTimeout(() => { btn.textContent = old; }, 1500);
+    return;
   }
+  // 文本路径：原生可用走原生（APK），否则 <a download>（浏览器）——保存失败由 reportSaveError 显式暴露
+  await saveTextArtifact(md, fileName).catch(reportSaveError);
 }
 // 预览截断（2026-09-08 拍板，第六轮 B 组预览项）：textarea 只渲染前 1MB + 固定提示行；
 // 不加「查看完整」按钮——复制/下载走闭包持有的完整文本（预览与导出分离，沿用方案 A ③）。

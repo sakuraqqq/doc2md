@@ -5114,6 +5114,131 @@ function g9Parts(cells, withDateStyle) {
   }
   return parts;
 }
+// ---------------------------------------------------------------------------
+// 契约组 Z2：「保存」环节的原生/浏览器分流（卡 010 · feature-detect，方案 A）
+//   背景（卡 008 的实测输入）：Capacitor WebView 里 `<a download>` **静默无反应**
+//   （`com/getcapacitor/**` 无 DownloadListener ⇒ A4 反证：`Download/` 里没有任何产品写出的 .md），
+//   而原生插件 `Doc2mdNative.saveText` 能写进 MediaStore.Downloads。卡 010 拍板 A = **Web 侧 feature-detect**
+//   （行为差异写在 `src/` 里可读），且 **Web 行为必须不变**。
+//
+//   ⚠️ **证据分层（卡面 A4 明文要求，别混）**：
+//     · Z2-1 / Z2-3 = **Web 侧不变**（浏览器无 Capacitor ⇒ 仍走 `<a download>`；桩不合法时同样回落）
+//     · Z2-2        = **APK 分支接线**（注入合法桩 ⇒ 调原生、**不再**产生 download 事件）—— 这是「APK 逻辑」
+//                     进 CI 的唯一手段；**真机落地由卡 010 的 A1（真机 `ls`）证明，本组不替代它**。
+//     · Z2-4        = **源码级**（离线，不依赖浏览器）：feature-detect 与 `saveText` 在 `src/ui.js` 与产物
+//                     `index.html` 里都可读（A3「一处真相」的机器化守护）+ **负对照**（探测必须查函数类型）。
+// ---------------------------------------------------------------------------
+test('契约组 Z2：「保存」环节的原生/浏览器分流（无 Capacitor ⇒ 仍 <a download>；合法桩 ⇒ 走原生且不再下载）', async (t) => {
+  const server = await startServer(ROOT);
+  try {
+    // Z2-4 先跑：纯源码级，不需要浏览器（红/绿不受浏览器可用性影响）
+    await t.test('Z2-4 一处真相（源码级）：feature-detect 在 src/ui.js 与产物 index.html 里都可读；负对照 = 探测必须查函数类型', () => {
+      const pairs = [
+        ['src/ui.js', fs.readFileSync(nodePath.join(ROOT, 'src', 'ui.js'), 'utf8')],
+        ['index.html', fs.readFileSync(nodePath.join(ROOT, 'index.html'), 'utf8')],
+      ];
+      for (const [label, body] of pairs) {
+        assert.ok(body.includes('Doc2mdNative'), `${label}：读不到原生插件名 Doc2mdNative（差异没写在 src/ 里 = 两份真相）`);
+        assert.ok(body.includes('saveText'), `${label}：读不到 saveText 调用`);
+        assert.ok(body.includes('Capacitor'), `${label}：读不到 Capacitor feature-detect 痕迹`);
+      }
+      const src = pairs[0][1];
+      assert.ok(
+        /typeof\s+[\w.$]*saveText\s*===\s*['"]function['"]/.test(src),
+        'feature-detect 没有检查 typeof saveText === "function" ——「插件对象存在即当原生」是错口径（Z2-3 负例会静默走错分支）'
+      );
+    });
+
+    const chromium = await loadPlaywright();
+    const browser = await launchBrowser(chromium);
+    try {
+      const ctx = await browser.newContext({ acceptDownloads: true });
+      const page = await ctx.newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const input = page.locator('input[type=file]');
+      await input.waitFor({ state: 'attached', timeout: 10000 });
+      await input.setInputFiles(nodePath.join(DATA, 'sample.txt'));
+      await page.waitForFunction(
+        (tok) => {
+          for (const el of document.querySelectorAll('textarea, input, pre, code')) {
+            if ((el.value || el.textContent || '').includes(tok)) return true;
+          }
+          return false;
+        },
+        'DOC2MD-TXT-OK-2026',
+        { timeout: 20000 }
+      );
+      // 无附件夹具 ⇒ 下载区只有「复制」与「⬇ 下载 .md」（纯文本 .md 路径 = 本卡 A1 点的那颗按钮）
+      const btn = page.locator('.card-actions button', { hasText: '下载 .md' });
+      await btn.waitFor({ state: 'visible', timeout: 10000 });
+
+      await t.test('Z2-1 Web 侧不变：无 Capacitor ⇒ 点「⬇ 下载 .md」仍走 <a download>，产物含令牌', async () => {
+        const hasCap = await page.evaluate(() => Boolean(window.Capacitor && window.Capacitor.Plugins));
+        assert.equal(hasCap, false, '浏览器环境不该有 window.Capacitor.Plugins（有则本断言前提不成立）');
+        const dlP = page.waitForEvent('download', { timeout: 10000 }).catch(() => null);
+        await btn.click();
+        const dl = await dlP;
+        assert.ok(dl, '无 Capacitor 时点「下载 .md」没有产生 download 事件 —— Web 路径被 feature-detect 误伤');
+        assert.ok(dl.suggestedFilename().endsWith('.md'), `下载文件名=${dl.suggestedFilename()}`);
+        const body = fs.readFileSync(await dl.path(), 'utf8');
+        assert.ok(body.includes('DOC2MD-TXT-OK-2026'), '下载产物缺令牌（拿到的不是真产物）');
+      });
+
+      await t.test('Z2-2 APK 分支接线：注入合法桩 ⇒ 调原生 saveText（带 filename/text/mime）且不再产生 download 事件', async () => {
+        await page.evaluate(() => {
+          window.__z2calls = [];
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                saveText: (arg) => {
+                  window.__z2calls.push(arg);
+                  return Promise.resolve({ bytes: String((arg && arg.text) || '').length });
+                },
+              },
+            },
+          };
+        });
+        const dlP = page.waitForEvent('download', { timeout: 2500 }).catch(() => null);
+        await btn.click();
+        const dl = await dlP;
+        await page.waitForFunction(() => window.__z2calls.length > 0, { timeout: 5000 }).catch(() => {});
+        const calls = await page.evaluate(() => window.__z2calls);
+        assert.equal(calls.length, 1, `原生 saveText 调用次数=${calls.length}（期望 1；0 = feature-detect 没生效）`);
+        assert.equal(calls[0].filename, 'sample.md', `传给原生的文件名=${calls[0].filename}`);
+        assert.ok(String(calls[0].text).includes('DOC2MD-TXT-OK-2026'), '传给原生的文本缺令牌');
+        assert.ok(/^text\/markdown/.test(String(calls[0].mime)), `传给原生的 mime=${calls[0].mime}`);
+        assert.equal(dl, null, '有合法原生插件时仍走了 <a download>（分支判断错）');
+      });
+
+      await t.test('Z2-3 负对照：Capacitor 在但 saveText 不是函数 ⇒ 回落 <a download>（不得静默走原生）', async () => {
+        await page.evaluate(() => {
+          window.__z2calls = [];
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                echo: () => {
+                  window.__z2calls.push('echo');
+                  return Promise.resolve({});
+                },
+              },
+            },
+          };
+        });
+        const dlP = page.waitForEvent('download', { timeout: 10000 }).catch(() => null);
+        await btn.click();
+        const dl = await dlP;
+        assert.ok(dl, '桩缺 saveText 时没有回落到 <a download>（把「插件存在」当成了「能保存」）');
+        const calls = await page.evaluate(() => window.__z2calls);
+        assert.equal(calls.length, 0, `不该调用任何插件方法（实际调用=${JSON.stringify(calls)}）`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 test('契约组 G9：xlsx 数值长尾的显示归一（渲染层；卡 007）—— 契约先红', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
   let chromium;

@@ -1731,17 +1731,37 @@ ${xlsxRowsToMd(kept)}`);
       btn.textContent = old;
     }, 1500);
   }
-  function downloadMd(text, fileName) {
-    const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
-    const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+  function anchorDownload(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = base + ".md";
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 3e3);
+  }
+  function nativeSavePlugin() {
+    const cap = typeof window === "undefined" ? null : window.Capacitor;
+    const plugins = cap && cap.Plugins;
+    const p = plugins && plugins.Doc2mdNative;
+    return p && typeof p.saveText === "function" ? p : null;
+  }
+  async function saveTextArtifact(text, fileName, mime = "text/markdown;charset=utf-8") {
+    const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
+    const plugin = nativeSavePlugin();
+    if (plugin) {
+      await plugin.saveText({ filename: base + ".md", text: String(text == null ? "" : text), mime });
+      return "native";
+    }
+    anchorDownload(new Blob([text], { type: mime }), base + ".md");
+    return "anchor";
+  }
+  function reportSaveError(e) {
+    setStatus("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message ? e.message : e), true);
+  }
+  function downloadMd(text, fileName) {
+    return saveTextArtifact(text, fileName).catch(reportSaveError);
   }
   async function downloadZip(text, fileName, assets, btn) {
     try {
@@ -1750,21 +1770,14 @@ ${xlsxRowsToMd(kept)}`);
       const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
       const files = {};
       files[base + ".md"] = F.strToU8(text);
-      for (const a2 of assets || []) {
+      for (const a of assets || []) {
         try {
-          files[a2.name] = new Uint8Array(await a2.blob.arrayBuffer());
+          files[a.name] = new Uint8Array(await a.blob.arrayBuffer());
         } catch {
         }
       }
       const z = F.zipSync(files);
-      const url = URL.createObjectURL(new Blob([z], { type: "application/zip" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = base + ".zip";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 3e3);
+      anchorDownload(new Blob([z], { type: "application/zip" }), base + ".zip");
     } catch {
       const old = btn.textContent;
       btn.textContent = "\u274C \u6253\u5305\u5931\u8D25";
@@ -1826,25 +1839,18 @@ ${xlsxRowsToMd(kept)}`);
       await downloadZip(text, fileName, assets, btn);
       return;
     }
+    let md;
     try {
-      const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
-      const md = embedImagesIntoMd(text, await buildEmbedMap(assets));
-      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = base + ".md";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 3e3);
+      md = embedImagesIntoMd(text, await buildEmbedMap(assets));
     } catch {
       const old = btn.textContent;
       btn.textContent = "\u274C \u5185\u5D4C\u5931\u8D25";
       setTimeout(() => {
         btn.textContent = old;
       }, 1500);
+      return;
     }
+    await saveTextArtifact(md, fileName).catch(reportSaveError);
   }
   var PREVIEW_MAX_CHARS = 1024 * 1024;
   var PREVIEW_CUT_HINT = "\uFF08\u9884\u89C8\u5DF2\u622A\u65AD\uFF0C\u5B8C\u6574\u5185\u5BB9\u8BF7\u590D\u5236/\u4E0B\u8F7D\uFF09";
