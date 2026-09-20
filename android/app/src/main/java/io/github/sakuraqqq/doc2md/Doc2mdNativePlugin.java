@@ -3,13 +3,16 @@ package io.github.sakuraqqq.doc2md;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
+import android.util.Log;
 import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -32,16 +35,41 @@ import java.nio.charset.StandardCharsets;
 //              这个环节就用它替换
 //   saveText() 对应 A4「保存到用户可见位置」—— 写到 MediaStore 的 Downloads，文件管理器里能直接看到
 //
-// 调用方式（真机 USB 调试 → 桌面 Chrome 打开 chrome://inspect → console）：
-//   await window.Capacitor.Plugins.Doc2mdNative.echo({ msg: 'hi' })
-//   await window.Capacitor.Plugins.Doc2mdNative.pickFile()
-//   await window.Capacitor.Plugins.Doc2mdNative.saveText({ filename: 'probe.txt', text: 'hello' })
+// 卡 008 的 A4 实测为红：页面上的 <a download> 在 Capacitor WebView 里**静默无反应**，源码级根因是
+// com/getcapacitor/** 里根本没有 DownloadListener / onDownloadStart（整个桥都不接手下载）。
+// 而本插件的 saveText() 走原生 MediaStore 就能落盘 —— 这就是"同一个环节、换原生实现"的证明。
+//
+// load() 里的 SELFTEST 是**阶段 0 的临时验证钩子**（阶段 1 必须拆掉）：因为真机侧的 WebView DevTools
+// 通道（chrome://inspect / adb forward）在本机环境走不通，所以让插件在加载时自证一次"原生写 Downloads"，
+// 结果打进 logcat（tag=Doc2mdNative，行首 SELFTEST_OK / SELFTEST_FAIL / SELFTEST_SKIP）。
+// 用 SharedPreferences 做**一次性**标记，避免每次启动都往用户 Downloads 里丢文件。
 //
 // 注：本文件**故意只用 // 行注释**（不用 /* */ 块注释）——zh-CN Windows 上 javac 的默认编码可能不是
 // UTF-8，块注释里的中文若被错位解码可能把 */ 吃掉导致编译失败；行注释没有这个风险。
 // 所有**字符串字面量一律 ASCII**（面向开发者/控制台），进一步保证任何编码意外都不会产出乱码。
 @CapacitorPlugin(name = "Doc2mdNative")
 public class Doc2mdNativePlugin extends Plugin {
+
+    private static final String TAG = "Doc2mdNative";
+    private static final String PREFS = "doc2md";
+    private static final String PREF_SELFTEST_DONE = "native_selftest_done";
+
+    // 阶段 0 临时验证钩子（阶段 1 拆）：插件加载即自测一次"写 Downloads"，把结果打进 logcat。
+    @Override
+    public void load() {
+        try {
+            SharedPreferences sp = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            if (sp.getBoolean(PREF_SELFTEST_DONE, false)) {
+                Log.i(TAG, "SELFTEST_SKIP already done");
+                return;
+            }
+            JSObject r = writeTextToDownloads("doc2md-native-selftest.md", "# native selftest\n", "text/markdown");
+            sp.edit().putBoolean(PREF_SELFTEST_DONE, true).apply();
+            Log.i(TAG, "SELFTEST_OK " + r.toString());
+        } catch (Throwable t) {
+            Log.e(TAG, "SELFTEST_FAIL " + t);
+        }
+    }
 
     // 存活探针：返回 SDK 级别与包名，用来一眼确认"插件真的被注册进桥了"。
     @PluginMethod
@@ -104,68 +132,71 @@ public class Doc2mdNativePlugin extends Plugin {
     }
 
     // A4 环节：把文本写到**用户可见**的 Downloads。
-    // API 29+（本项目真机是 Android 16）走 MediaStore.Downloads，无需任何存储权限；
-    // API 24-28 退化为公共 Downloads 目录直写（那里需要 WRITE_EXTERNAL_STORAGE，本骨架不申请，
-    // 失败时如实 reject —— 阶段 0 的目标是"把环节替换出来"，权限策略留给阶段 1 拍板）。
     @PluginMethod
     public void saveText(PluginCall call) {
         String filename = call.getString("filename", "doc2md-output.txt");
         String text = call.getString("text", "");
         String mime = call.getString("mime", "text/plain");
-        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
         try {
-            JSObject ret = new JSObject();
-            ret.put("bytes", bytes.length);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ContentValues values = new ContentValues();
-                values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
-                values.put(MediaStore.Downloads.MIME_TYPE, mime);
-                values.put(MediaStore.Downloads.IS_PENDING, 1);
-                ContentResolver cr = getContext().getContentResolver();
-                Uri target = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-                if (target == null) {
-                    call.reject("MediaStore insert returned null");
-                    return;
-                }
-                OutputStream os = null;
-                try {
-                    os = cr.openOutputStream(target);
-                    if (os == null) {
-                        call.reject("openOutputStream returned null");
-                        return;
-                    }
-                    os.write(bytes);
-                    os.flush();
-                } finally {
-                    if (os != null) {
-                        os.close();
-                    }
-                }
-                ContentValues done = new ContentValues();
-                done.put(MediaStore.Downloads.IS_PENDING, 0);
-                cr.update(target, done, null, null);
-                ret.put("uri", target.toString());
-                ret.put("location", "Downloads (MediaStore, user-visible)");
-            } else {
-                File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                File out = new File(dir, filename);
-                FileOutputStream fos = null;
-                try {
-                    fos = new FileOutputStream(out);
-                    fos.write(bytes);
-                    fos.flush();
-                } finally {
-                    if (fos != null) {
-                        fos.close();
-                    }
-                }
-                ret.put("path", out.getAbsolutePath());
-                ret.put("location", "Downloads (legacy public dir)");
-            }
-            ret.put("filename", filename);
-            call.resolve(ret);
+            call.resolve(writeTextToDownloads(filename, text, mime));
         } catch (Exception e) {
             call.reject("saveText failed: " + e);
         }
+    }
+
+    // 共享实现（saveText 与 load() 自测都走这里）。
+    // API 29+（本项目真机是 Android 16）走 MediaStore.Downloads，无需任何存储权限；
+    // API 24-28 退化为公共 Downloads 目录直写（那里需要 WRITE_EXTERNAL_STORAGE，本骨架不申请，
+    // 失败时如实抛错 —— 阶段 0 的目标是"把环节替换出来"，权限策略留给阶段 1 拍板）。
+    private JSObject writeTextToDownloads(String filename, String text, String mime) throws Exception {
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        JSObject ret = new JSObject();
+        ret.put("bytes", bytes.length);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+            values.put(MediaStore.Downloads.MIME_TYPE, mime);
+            values.put(MediaStore.Downloads.IS_PENDING, 1);
+            ContentResolver cr = getContext().getContentResolver();
+            Uri target = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (target == null) {
+                throw new Exception("MediaStore insert returned null");
+            }
+            OutputStream os = null;
+            try {
+                os = cr.openOutputStream(target);
+                if (os == null) {
+                    throw new Exception("openOutputStream returned null");
+                }
+                os.write(bytes);
+                os.flush();
+            } finally {
+                if (os != null) {
+                    os.close();
+                }
+            }
+            ContentValues done = new ContentValues();
+            done.put(MediaStore.Downloads.IS_PENDING, 0);
+            cr.update(target, done, null, null);
+            ret.put("uri", target.toString());
+            ret.put("location", "Downloads (MediaStore, user-visible)");
+        } else {
+            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            File out = new File(dir, filename);
+            FileOutputStream fos = null;
+            try {
+                fos = new FileOutputStream(out);
+                fos.write(bytes);
+                fos.flush();
+            } finally {
+                if (fos != null) {
+                    fos.close();
+                }
+            }
+            ret.put("path", out.getAbsolutePath());
+            ret.put("location", "Downloads (legacy public dir)");
+        }
+        ret.put("filename", filename);
+        return ret;
     }
 }
