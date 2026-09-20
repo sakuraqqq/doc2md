@@ -185,6 +185,11 @@
 
 > ⚠️ **唯一不白送的是「保存不弹窗」**（需从 `<a download>` 换成 Capacitor Filesystem 插件）。**复用点**：U1 一键打包 zip 的逻辑 **Web / APK 通用**，不重复投资。
 
+> ✅ **2026-09-20 阶段 0 实测回来改写了上表两条**（卡 008，全量证据见 **A11.32**）：
+> - **A2「多选/自有选择器」这条痛点在 APK 里不存在** —— `<input type=file>` 由 WebView 的 `onShowFileChooser` 接管，**弹的就是系统 SAF**（DocumentsUI，含"图片/文档/大型文件"与"浏览其他应用中的文件"），**不受 ROM 差异影响**。
+> - **唯一确认必须用原生替换的环节 = 「保存不弹窗」（A1/A4 那一格）**：页面上的 `<a download>` 在 Capacitor WebView 里**静默无反应**，**源码级根因** = `com/getcapacitor/**` 里 `DownloadListener` / `onDownloadStart` **0 命中**（整个桥都不接手下载）⇒ 这正是**阶段 1 的第一件事**。
+> - 另两条假设的实测结论：**H1（SW 是否生效）= 成立**（`CacheStorage` 17 条目字节与 PRECACHE 清单逐项对上 ⇒ 预缓存真落盘）；**H2（47 MB 能否跑）= 成立且极快**（四档 103/72/503/**546** ms，ΔPSS **+96 MiB**）—— **历史那个 12.6 GiB 崩溃不复现**，真因是卡 002 的流式化（`XLSX_ROW_LIMIT=1000` + 够 1001 行即 `cancel()`，不再解压余下几百 MB）。
+
 **A7 的元结论（本批复核产出）**：手机侧 20 条里 **6 条是新增/升格**（#3 预览提示、#7 竖排盲区、#8/#9/#10 内存三条、#19 OLE2、#20 zip 进）、**1 条已闭环销账**（#15 S4 边界）、**1 条作废**（#11 被流式取代）、**2 条出处待核**（#16/#17 残留）、其余 10 条**本文件早已登记**（不重复排）。**主线下一步的性价比最高动作仍是「复盘后第一批」**：预览提示（XS，需拍板改断言）+ 半角标点（XS，需拍板）+ OLE2 识别（XS）——**U1 一键下载已由用户 2026-09-16 拍板改排 v0.2**（不在本批）。
 
 **A8. 第九轮审查（Codex，2026-09-17）核验与处置**（报告：`docs/doc2md-第九轮审查报告-2026-09-17.md`；**基线 = `25a7266`**；3 P1 / 4 P2 / 4 P3）
@@ -711,6 +716,18 @@
 - **回箱（2026-09-20，Linux 弱独立 = 换机 WSL2 + 真 HeadlessChrome `151.0.7922.34` + 补丁同源）—— 通过**：两口径契约数逐项命中（`297/295/0/2` · `294/291/0/3`，对账 **EXIT=0**）· 组 G9 **7/7** · **A5 四档新值** `61,990 / 23,611 / 352,023 / 352,027`（[Y] 行 + 独立台双证）· 产物 **135,398 B / `CD7977E4…1507`** 逐字节一致 · lint/metrics(21·527·超限 0·0.4%)/baseline-check/guard-selftest(19/19) 全绿 · `porcelain = 0`。**我的独立复核**：哈希 **26/26 逐条一致**、关键数字全部从**原始日志**复现。⭐ **判据升级到 tree 级**（本批已推送 ⇒ `HEAD^{tree} == 51b2787^{tree}`、补丁树 == `9ce1d68^{tree}`）—— 这条由卡 005 教训衍生的口径（"未推送给 blob、推送后可 tree"）**自然升级并生效**。
 - ⭐ **预跑负对照第三轮零偏差**：A ⇒ `pass 3 / fail 4`、B ⇒ `pass 2 / fail 5`，与出单方预跑值**逐项一致**。
 - ⭐ **A5 交叉验证成立（我提出、验收方采纳）**：注入 A 后**四档 md 逐字节回到旧基线**（`66,140 / 23,611 / 352,755 / 352,759`，SHA 前 16 全中）⇒ 从反方向证明「**产物变化的唯一来源就是这条显示归一**」。
+
+**A11.32 卡 008：Capacitor 阶段 0 —— 真机闭环 + 原生插件骨架（2026-09-20）**
+- **来源**：用户 2026-09-20 拍板 **P5=A（先 Capacitor）**。基线 `d2864d0`；工具链 = Android SDK cmdline-tools · **JDK 24**（**不是 17**）· Gradle 8.14.3 · AGP 8.13.0 · **Capacitor 8.5.2** · WebView **138.0.7204.179**（multiprocess）。
+- **交付**：`android/` 工程（53 文件，模板自带 `.gitignore` 已把 `assets/public` 与 `local.properties` 挡在库外）· `capacitor.config.json`（**`webDir=www`** —— 精选暂存，绝不用仓库根，否则 `.私档/` 会进 APK assets）· **APK v2**（含阶段 0 自测）= **18,914,510 B / `5719458889BDE60202CE3868213642A8FEB243D4C49D7323B1FD9EF53A3CB3BF`**。
+- **A1–A8 逐条**：**A1 ✅** 装上并完整渲染（冷启动 `Displayed … +308ms`）· **A2 ✅ 选文件天然走系统 SAF**（DocumentsUI）· **A3 ✅ docx + xlsx 各一**（1.2 KB/82 ms；2.0 KB/64 ms，MD 表格与契约令牌 `DOC2MD-*-0K-2026` 完整）· **A4 ❌ 红**（`<a download>` 无反应；**完整 `ls` 铁证**：`Download/` 里没有任何产品写出的 `.md`；**源码级根因 = `com/getcapacitor/**` 内 `DownloadListener`/`onDownloadStart` 0 命中**）· **A5 ✅ H1 成立**（`CacheStorage` **17 条目字节与 PRECACHE 清单逐项对上**：index.html 135,738 / sw.js 4,263 / pdf.worker 1,087,619 / mammoth 636,983 + `Database`(LevelDB) + `ScriptCache` ⇒ 预缓存真落盘）· **A6 ✅ H2 成立（推翻历史预期）** 四档 **103 / 72 / 503 / 546 ms**、ΔPSS **+96.2 MiB**、无崩溃无被杀（详见下表）· **A7 ✅ ⭐⭐ 插件骨架**（`echo`/`pickFile`-SAF/`saveText`-MediaStore + `registerPlugin`；`SELFTEST_OK {"bytes":18,"uri":"content://media/external/downloads/1000029304"}` + 文件真身 18 B ⇒ **同一「保存」环节 Web 静默失败、原生落地成功** = Strangler 路径走通一次）· **A8 ✅** `npm run build` + `git diff --exit-code index.html` = **exit 0**。
+- **A9 第 7 条对表**（`git diff --stat d2864d0..HEAD` = **62 文件 / +2,429 / −35**）：inScope 内 —— `android/`（53 文件，按文件集合算一条）· `capacitor.config.*` · `package.json`+`package-lock.json` · `docs/{任务台账,DEV-NOTES,HANDOFF-主开发线}.md`。⚠️ **超出清单但已披露的 3 项**：`.gitignore`（新增 `www/` 暂存段，**必须**，否则 24 MB 交付面副本会被 `git add -A` 带走）· `.gitattributes`（`android/gradlew.bat` 单文件覆盖 CRLF，沿用文件内自带的覆盖机制）· `docs/ANDROID-CAPACITOR-阶段0.md`（新增操作手册 214 行）。**无 outOfScope 改动**（`src/` `vendor/` `tests/` `.github/` `tools/` 零改动，A8 已证）。
+- **A10 投入闸门**：09-20 起算、**09-25 到点**；本卡 **1 天内闭环**（未到点，无需中止声明）。
+- **A11 B1/B2**：**B1** = 本卡不改 `src/`（A8 exit 0 为证）⇒ 按新规**显式说明不做**：无生产代码可重构。**B2** = `@capacitor/{core,cli,android}` 8.5.2 = **MIT** ✅ · `npm audit` 7 条（1 critical/3 high/3 moderate **全在 dev/build 树**；Capacitor 仅新增 1 条 moderate `uuid`←`xcode`←`@capacitor/cli`，iOS 工具链、不进 APK）· `audit-delivery` **PASS**（交付面 6 位成员齐全、pdfjs 那条 high 早已豁免）· **APK 内 `私档|transfer|node_modules|\.git/` 零命中** ⇒ 结论落盘于 `docs/任务台账.md` 卡 008 节。
+- ⚠️ **口径与条件如实登记**：A6 为 **USB 连接态**（充电态未单独取证），**热前置达成**（`Thermal Status 0`、SKIN 33.99→34.99 °C）；**内存两口径不一致**（`dumpsys` TOTAL PSS 323,225 kB vs AMS 单次 `am_pss` 521,210,880 B ≈ 497 MiB）—— 以 `dumpsys` 为主、`am_pss` 作旁证，**差异未深究**。
+- ⭐ **本卡最有价值的产出**：不是"跑通了一次"，而是**证明「逐环节替换原生」这条路能走**（A4 红 → A7 用原生把同一环节做出来）；并**推翻**了「47 MB 在 WebView 里跑不了」的历史预期（真因是卡 002 已修的流式化，**12.6 GiB 是卡 002 之前的行为**）。
+- ⚠️ **一手坑 6 条见 `DEV-NOTES` 同名节**，其中最贵的一条：**手机侧 DSH 开「无线调试 / adb 配对」会把 PC 侧 USB adb 挤成半死态** —— `adb devices` 列得出设备，但 `install` / `push`（**连 7 字节**）/ `shell` 全挂；关掉即恢复（**A/B 定因果**）。⇒ **纪律补充（平台分工）：用 USB adb 做真机取证前，先确认手机「开发者选项 → 无线调试」是关的**；见到「列得出、动不了」先查这个开关，别先怀疑线材/驱动（我先后误判为"线材/带宽"与"Chrome 抢 adb"，都错）。
+- **阶段 1 候选（需拍板）**：① **A4 的"产品内闭环"没接** —— 要么 Web 侧一行 feature-detect（`src/ui.js`，本卡 outOfScope），要么原生侧 JS 注入（能绕开 `src/` 但更隐晦）；② **`vendor/tessdata/` 从 `www/` 暂存清单去掉**（AAPT2 会把 `assets/**` 的 `.gz` 解压去后缀 ⇒ APK 白胖 **+2,998,490 B**，而 `src/**` 零引用 `tessdata`/`.gz`）；③ **阶段 0 的 `load()` 自测钩子必须拆除**（源码注释与回执均已标注）。
 - **验收方指出我方 1 处缺陷（已修）**：G9-3 的**报错文案**在"关掉归一"的注入下会指向错误方向（写着"非数值被误改"，真实原因是数值格未归一）⇒ **只改文案、断言条件一字未动**；改后复跑 G9 **7/7**、全量 exit 0、契约数不变。教训入 `DEV-NOTES`。
 
 **A12 局域网交换页 UI 改版（用户 2026-09-18 要求：「下次网页整好看点」）**
