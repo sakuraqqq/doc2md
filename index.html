@@ -1755,6 +1755,7 @@ ${xlsxRowsToMd(kept)}`);
     noPlugin: "\u4FDD\u5B58\u5931\u8D25\uFF1A\u672C\u673A\u672A\u52A0\u8F7D\u4FDD\u5B58\u63D2\u4EF6\uFF0C\u6587\u4EF6\u672A\u4FDD\u5B58",
     zip: "\u672C\u673A\uFF08APK\uFF09\u6682\u4E0D\u652F\u6301 zip \u4FDD\u5B58\uFF0C\u8BF7\u6539\u7528\u300C\u{1F5BC} \u4E0B\u8F7D .md\uFF08\u56FE\u7247\u5185\u5D4C\uFF09\u300D"
   };
+  var NATIVE_SAVED = "\u2705 \u5DF2\u4FDD\u5B58\u5230\u300C\u4E0B\u8F7D\u300D\uFF1A";
   function baseName(fileName) {
     return (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
   }
@@ -1762,7 +1763,8 @@ ${xlsxRowsToMd(kept)}`);
     const base = baseName(fileName);
     const plugin = nativeSavePlugin();
     if (plugin) {
-      await plugin.saveText({ filename: base + ".md", text: String(text == null ? "" : text), mime });
+      const res = await plugin.saveText({ filename: base + ".md", text: String(text == null ? "" : text), mime });
+      setStatus(NATIVE_SAVED + (res && res.filename || base + ".md"));
       return "native";
     }
     if (isNativeRuntime()) {

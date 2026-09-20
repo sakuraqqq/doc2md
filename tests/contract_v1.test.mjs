@@ -5310,6 +5310,66 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
         assert.ok(/暂不支持\s*zip/.test(status), `状态栏未出现 zip 不支持提示，实际=${JSON.stringify(status)}`);
         assert.ok(status.includes('图片内嵌'), `提示未给出替代路径，实际=${JSON.stringify(status)}`);
       });
+
+      // —— Z3-3 / Z3-4（卡 011 第二轮追加）：插件**在**时的两种结局 ——
+      //    A8：写入成功 ⇒ 必须**有回话**（含去向 + 文件名）；A9：写入失败 ⇒ 必须**有声**且**不回落**。
+      const ctx3 = await browser.newContext({ acceptDownloads: true });
+      const p3 = await ctx3.newPage();
+      await p3.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await p3.locator('input[type=file]').setInputFiles(nodePath.join(DATA, 'sample.txt'));
+      await p3.waitForFunction(
+        (tok) => {
+          for (const el of document.querySelectorAll('textarea, input, pre, code')) {
+            if ((el.value || el.textContent || '').includes(tok)) return true;
+          }
+          return false;
+        },
+        'DOC2MD-TXT-OK-2026',
+        { timeout: 20000 }
+      );
+      const btn3 = p3.locator('.card-actions button', { hasText: '下载 .md' });
+      await btn3.waitFor({ state: 'visible', timeout: 10000 });
+      const stubPlugin = (mode) =>
+        p3.evaluate((m) => {
+          window.Capacitor = {
+            getPlatform: () => 'android',
+            Plugins: {
+              Doc2mdNative: {
+                saveText: (arg) =>
+                  m === 'ok'
+                    ? Promise.resolve({
+                        filename: arg && arg.filename,
+                        bytes: String((arg && arg.text) || '').length,
+                        location: 'Downloads (MediaStore, user-visible)',
+                      })
+                    : Promise.reject(new Error('MediaStore insert returned null')),
+              },
+            },
+          };
+        }, mode);
+
+      await t.test('Z3-3 A8：原生 + 插件可用 + 写入成功 ⇒ 状态栏有成功回话（含文件名），不得无声', async () => {
+        await stubPlugin('ok');
+        const dlP = p3.waitForEvent('download', { timeout: 2500 }).catch(() => null);
+        await btn3.click();
+        const dl = await dlP;
+        await p3.waitForFunction(() => /已保存/.test((document.querySelector('#status') || {}).textContent || ''), { timeout: 5000 }).catch(() => {});
+        const status = await p3.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
+        assert.ok(dl === null, '原生插件已保存却又走了 <a download>（分支判断错）');
+        assert.ok(status.includes('已保存'), `写入成功后状态栏无成功回话（用户仍会以为没反应），实际=${JSON.stringify(status)}`);
+        assert.ok(status.includes('sample.md'), `成功回话未含文件名，实际=${JSON.stringify(status)}`);
+      });
+
+      await t.test('Z3-4 A9：原生 + 插件在但写入失败 ⇒ 必须可见失败提示，且不得回落 <a download>', async () => {
+        await stubPlugin('fail');
+        const dlP = p3.waitForEvent('download', { timeout: 2500 }).catch(() => null);
+        await btn3.click();
+        const dl = await dlP;
+        await p3.waitForFunction(() => /保存失败/.test((document.querySelector('#status') || {}).textContent || ''), { timeout: 5000 }).catch(() => {});
+        const status = await p3.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
+        assert.ok(dl === null, '原生插件写入失败后回落了 <a download>（WebView 里无效 ⇒ 等于静默）');
+        assert.ok(status.includes('保存失败'), `写入失败无可见提示，实际=${JSON.stringify(status)}`);
+      });
     } finally {
       await browser.close();
     }

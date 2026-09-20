@@ -102,6 +102,8 @@ const NATIVE_LIMIT = {
   noPlugin: '保存失败：本机未加载保存插件，文件未保存',
   zip: '本机（APK）暂不支持 zip 保存，请改用「🖼 下载 .md（图片内嵌）」',
 };
+/** 原生壳里「成功」的回话（卡 011 第二轮 A8：**成功也要有回话**，否则用户仍会以为没反应）。 */
+const NATIVE_SAVED = '✅ 已保存到「下载」：';
 /** 保存/下载用的基名：去最后扩展名 + 空兜底（复审 §1.7：.env/.gitignore 等「扩展名即整个名」的文件名
  * replace 后会变空 ⇒ 兜底 'doc2md'）。原先在 saveTextArtifact / downloadZip 各写一遍 ⇒ 卡 011 的 B1 抽成单一实现。 */
 function baseName(fileName) {
@@ -112,7 +114,9 @@ export async function saveTextArtifact(text, fileName, mime = 'text/markdown;cha
   const base = baseName(fileName);
   const plugin = nativeSavePlugin();
   if (plugin) {
-    await plugin.saveText({ filename: base + '.md', text: String(text == null ? '' : text), mime });
+    const res = await plugin.saveText({ filename: base + '.md', text: String(text == null ? '' : text), mime });
+    // A8（卡 011 第二轮）：成功也要有回话 —— 显示**插件回报的真实文件名**（MediaStore 遇重名会改名，如 `x.md (1)`）
+    setStatus(NATIVE_SAVED + ((res && res.filename) || base + '.md'));
     return 'native';
   }
   if (isNativeRuntime()) {
