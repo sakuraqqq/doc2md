@@ -1815,6 +1815,29 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 
 **防再犯**：① **"已写进 X 文件"这类声明，必须逐条 grep 求证后再写**，且**载体要跟条目写在一起**（别用一个总括标题盖住多条）；② 给某条打了「⚠️ 实际不在」的更正后，**回头检查它的父标题/汇总句是否也该改** —— 只补子条目 = 父断言继续骗人。**本次时间线（`git log -S` 实测）**：标题句由 `da755f9`（**2026-09-09**）引入；子条目更正由 `3291b1f`（**2026-09-20**）补上，**那一次没回头改父标题** ⇒ 假断言**多活了 11 天**；③ 纪律条目新增/移动时，同步它的"载体"标注，并给行号标注**快照日期**（否则文件一改，指针就漂）。
 
+## 2026-09-20 · 卡 010（执行线）：APK「保存」闭环 —— 把原生 saveText 接到产品按钮上
+
+> 完整回执（A1–A8 逐条）见 `docs/任务台账.md` 卡 010 节。本节只留**一手坑与结论**。
+
+**改了什么**：`src/ui.js` 加 `nativeSavePlugin()` + `saveTextArtifact()`（**探测在点击时**；原生可用走原生、否则 `<a download>`；**失败不静默** ⇒ 状态栏报「保存失败：…」），接入 `downloadMd` / `downloadMdEmbedded` 两条**文本**路径；⚠️ `downloadZip`（二进制）未接（另立卡）。
+
+**结论（判据级）**：
+- **A1 真机闭环 ✅**：真机真实触摸「⬇ 下载 .md」⇒ `/sdcard/Download/card010-a1-probe.md` **115 B**（`ls -l` 铁证；目录 42→44；`cat` 内容逐字一致；logcat 零异常）—— 正是卡 008 `A4 ❌` 的镜像。
+- **A2 Web 不变 ✅**：`<a download>` 探针命中 1 次 + 真实落盘 131 B（目录 29→31，含**变更前基线** 125 B）。
+- **先红 → 后绿**：组 Z2 `# tests 5 / pass 2 / fail 3`（Z2-4 与 Z2-2 红、原因正确）→ 全量 **302 / 300 / 0 / 2**。
+- **两级产物**：`index.html` 135,398 → **135,620 B**；四档 Y1 md **一字未变**。
+
+**坑 / 根因 / 防再犯**：
+
+1. ⭐⭐ **`JAVA_HOME` 指 jdk-17 ⇒ Gradle 编译失败（同一个坑第二次踩）**：
+   - **现象**：`gradlew assembleDebug` → `:capacitor-android:compileDebugJavaWithJavac FAILED` / `无效的源发行版：21`（GBK 乱码在控制台显示为 `��Ч��Դ���а棺21`，别被乱码带偏）。
+   - **根因**：`@capacitor/android/capacitor/build.gradle` 明写 `JavaVersion.VERSION_21`；而 **Gradle 只读 `JAVA_HOME`**（本机 = `jdk-17`），**不看 PATH 上的 `java`**（PATH 上是 24.0.1）⇒ 只核 PATH 会得出错误的"够了"。
+   - **处置**：**只对本次构建** `$env:JAVA_HOME = '<...>\jdk-24'`（**不动系统环境变量** ⇒ 合「默认只读」）⇒ `BUILD SUCCESSFUL in 22s`。
+   - **防再犯（重要）**：卡 008 已记过一次（同日记「JDK 版本判错（我自己的错，已撤回结论）」），**本卡又踩** ⇒ 按「同类操作错 ≥2 次 ⇒ 固化成工具」的纪律，**候选 = `tools/build-apk.ps1`**（探测 jdk-24 → 设 `JAVA_HOME` → 暂存 `www/` → `cap sync` → `assembleDebug`，一条命令出 APK）。⚠️ `tools/**` 不在本卡 inScope ⇒ **只登记候选、未做**（另立卡）。
+2. **真机取证的「喂文件」与「点保存」必须分开**：SAF 选文件是多步点击、不稳；**喂文件走 CDP**（`File` + `DataTransfer` 注入 `#fileInput`，复用卡 008 的 `.私档/工具/android-devtools.mjs` 管道），**点保存必须 `adb shell input tap` 发真实触摸** —— 否则判据会退化成"JS 合成点击也算"，而用户真的按的是物理屏幕。
+3. **`adb shell content query` 的引号会被 shell 吃掉**（`java.lang.IllegalArgumentException: Invalid token card010`）⇒ MediaStore 视角的附加核验没取到；**判据不受影响**（`ls -l` + `cat` 已足）。要查得改转义写法或走 `adb exec-out`。
+4. **Chrome 会话窗口被回收后，页面 API 全 `undefined`**：窗口回到欢迎页时页面上下文是 `data:` URL ⇒ 我清 SW 缓存的第一枪打空（`Cannot read properties of undefined (reading 'getRegistrations')`）。**顺序纪律：先 `navigate` 到目标页，再做页面侧操作**。
+
 ## 2026-09-20 · 卡 009（执行线）：CI 信号可信度 —— 审计步后移到末位 + Node `engines` 与 CI 同源
 
 > 完整回执（A1–A7 / B1–B2 逐条）见 `docs/任务台账.md` 卡 009 节。本节只留**一手坑与结论**。
