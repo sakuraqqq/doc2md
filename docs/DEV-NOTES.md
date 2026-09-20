@@ -1800,6 +1800,7 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 > 完整回执（A1–A11 逐条）见 `docs/任务台账.md`；本卡操作手册见 `docs/ANDROID-CAPACITOR-阶段0.md`。本节只留**一手坑与结论**。
 
 ### 已落地（截至本节点）
+- **A6（H2）实测推翻了历史预期**：四档 **103 / 72 / 503 / 546 ms** 全成功，ΔPSS **+96 MiB**，logcat 无 FATAL / 无 lowmemorykiller / 无本进程 killinfo。**真因（源码级）** = `src/xlsx.js` 的 `XLSX_ROW_LIMIT=1000` + 流式扫描「够 1001 行即 `p.cancel()`，**不再解压余下几百 MB**」⇒ 47.4 MB/436,000 行只解压到第 1001 行。**⇒ 手机侧 2026-09-17 那个「12.6 GiB 峰值 / 渲染进程被杀」是卡 002 之前的行为**，APK 侧不复现（历史结论要标条件，不能当现值用）。
 - 工具链：Android SDK 命令行工具 + **JDK 24**（**不是 17**）+ Gradle 8.14.3 ⇒ `BUILD SUCCESSFUL in 1m 1s`。
 - **APK = 18,910,129 B / SHA256 `8F0BBEEEF76D6C220700EFCC176A5C1EEE387EE8BF4830C30D87ECF44E2970EB`**（zip 条目 634）。
 - **A7 插件骨架**已写进 `android/`：`echo`（存活）/ `pickFile`（SAF）/ `saveText`（MediaStore.Downloads），API 逐条对 `node_modules/@capacitor/android` 8.5.2 源码核过签名。
