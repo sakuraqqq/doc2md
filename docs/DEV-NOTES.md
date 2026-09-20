@@ -1803,6 +1803,28 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️ **另记一条浏览器侧事实**：本机 **Edge 与 Chrome 的 `inspect` 按钮都点了没反应**（`edge://inspect` 里 **目标列得出**、点 `inspect` / `inspect fallback` 窗口都不开）⇒ 真机 WebView 的 console 取证**不能依赖浏览器按钮**。
    - **工具落点**：`.私档/工具/android-devtools.mjs` —— 绕过浏览器的 inspect 管道，自己走 `adb shell pidof` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` → `/json` → **CDP WebSocket 求值**（带 20s 超时、结果写 `.tmp/devtools-result.txt`）。阶段 1 直接复用。
 
+## 2026-09-20 · 卡 009（执行线）：CI 信号可信度 —— 审计步后移到末位 + Node `engines` 与 CI 同源
+
+> 完整回执（A1–A7 / B1–B2 逐条）见 `docs/任务台账.md` 卡 009 节。本节只留**一手坑与结论**。
+
+**改了什么（2 文件 / +18 −5）**：`Delivery-face dependency audit` 从第 8 步**后移到末步**（判据一字未改）· `node-version: 20 → 24` + `package.json` 加 `engines: { "node": ">=24" }`（**两处一起改**，单一 Node 口径）。
+
+**结论（判据级）**：
+- **A1 负对照成立**：run **`35511509310`** —— 注入 `/etc/hosts 127.0.0.1 registry.npmjs.org` ⇒ **末步** audit ✗、**其前 14 步全 ✓**（`Contract tests` 294/291/0/3 + `TAP ↔ ci_clean_checkout 逐项一致` + `pwa-audit 48/0` + `verify-ocr PASS` 都真的跑到）。对照事故 `35458379084` **attempt 1**（旧步序）⇒ 测试 6 步全 `skipped`。
+- **A5 全绿**：run **`35511659290`**（提交 `e6c8398`）**16 步全 ✓**。
+- **A3 运行时证据**：runner 实跑 **node 24.20.0**（`Found in cache @ /opt/hostedtoolcache/node/24.20.0/x64`）⇒ 与 `engines: ">=24"` 同源；`npm ci` 在 24 下 228 包、无 EBADENGINE。
+- **本地门禁**：build / lint / metrics（超限 0、重复率 0.4%）/ pwa（48/0）/ `npm test` = **297 / 295 / 0 / 2**（与 `BASELINE.json` 的 `local_with_fixtures` 逐项吻合）；`npm run build && git diff --exit-code index.html` = **exit 0**。
+
+**坑 / 根因 / 防再犯**：
+
+1. ⭐ **「一次 push 只给一个提交建 run」差点废掉受控对照**：
+   - **现象**：备好提交 A（旧步序 + 注入）与 B（修复 + 注入），给出的指令是两条 **refspec** push；实际执行时**一次普通 `git push` 把两个提交一起推**⇒ 远端**只有一个 run**（尖端 B），**提交 A 没有任何 run** ⇒「同一故障、只差步序」的对照只剩一半。
+   - **根因**：GitHub Actions 的 `push` 事件**按尖端提交建 run**，不是"每个提交一个 run"。
+   - **防再犯**：① 要**多个 run** 就必须**多次 push 事件** —— 指令里把 refspec 逐条写清并**明说"分两次执行"**；② 事后用 `gh run list --json headSha` **逐提交核对 run 是否真产生**，别假设"推了就有"；③ 缺的那半用**同类真实事故**兜底（本次 = 事故 attempt 1：同一 workflow 形态、同类外部故障、同类遮蔽），并在回执**如实登记为"未产生的对照"**。
+2. **`gh` 在本会话沙箱的被拒方式（补记；卡 005 记过前两种）**：① `gh run list`（无 `-R`）→ `failed to determine base repo: failed to run git: pipe: Access is denied` ⇒ **必须显式 `-R <owner>/<repo>`**；② `gh run view`（无 run id）→ `run or job ID required when not running interactively` ⇒ 非交互**必须给 run id**（取步骤级结果最稳：`gh api repos/<o>/<r>/actions/runs/<id>/jobs --jq '.jobs[0].steps[] | "\(.number) \(.conclusion) \(.name)"'`）；③ `gh api …/logs` → `the response contains terminal escape sequences` ⇒ 要加 `--allow-escape-sequences`（**runner 的 Node 版本与失败原文**就是这么取到的）；④ `git ls-remote origin` → `cannot create standard input pipe for remote-https: Permission denied` ⇒ **native 进管道**那个坑连 remote-https helper 一起吃；查远端状态改用 `gh api repos/<o>/<r>/commits/main`。
+3. **负对照的注入方式要按"被测脚本怎么取数"选**：`tools/audit-delivery.mjs` 用的是**硬编码 `fetch('https://registry.npmjs.org/-/npm/v1/security/advisories/bulk')`**、**不吃 `npm_config_registry`** ⇒ 最初设想的"改 registry 环境变量"根本不成立；改用 **`/etc/hosts` 指到 `127.0.0.1`**（网络层断源 ⇒ **审计步代码与判据一字不动**），并在注入步回显 `getent hosts` + `curl` 连接失败作**落地证明**。
+4. **`npm run metrics` 会刷新 `docs/CODE-METRICS.md` 的时间戳**（度量值不变）⇒ 在本卡（inScope 只有 5 条路径）跑完门禁后必须**回读并 `git checkout --` 还原**，否则第 7 条对表会多出一条越界路径。本卡已还原，工作区干净。
+
 ## 2026-09-20 · 卡 008（执行线）：Capacitor 阶段 0 —— 工具链四连坑 + APK 落地
 
 > 完整回执（A1–A11 逐条）见 `docs/任务台账.md`；本卡操作手册见 `docs/ANDROID-CAPACITOR-阶段0.md`。本节只留**一手坑与结论**。

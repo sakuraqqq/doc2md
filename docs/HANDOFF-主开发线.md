@@ -205,7 +205,7 @@
 | **R9-3** | §3.2 | alt「按回调顺序对号」漂移风险（无数量一致性检查） | `src/docx.js:128-134` · `:268-283` | P2 | S | **待夹具**（DrawingML+VML 双回退），§8-C14 |
 | **R9-4** | §3.3 | `BT` 不重置 `flip`（跨 BT 块继承朝向） | `src/pdf.js:132-153` | P2 | XS-S | **待夹具**（多 BT / 仅首块 Tm 的真实 PDF）；mock 已复现继承，触发面待定 → §8-C14 |
 | **R9-5** | §3.4 | 导出缺图静默（zip 少图但 md 仍引用 `assets/`；内嵌模式仍留相对引用） | `src/ui.js:61-65` · `:110-121` | P2 | S | 复盘后第二批（§8-C12）：收失败资产 → warnings + 状态栏明示 |
-| **R9-6** | §4.1 | CI Node 20 vs 发布/验收 Node 24 不一致；`package.json` 无 `engines` | `.github/workflows/tests.yml:29` · `package.json` | P3 | XS | **需拍板**（§8-A5）：加 `engines` + CI 对齐 24（或 20/24 双矩阵） |
+| **R9-6** | §4.1 | CI Node 20 vs 发布/验收 Node 24 不一致；`package.json` 无 `engines` | `.github/workflows/tests.yml:29` · `package.json` | P3 | XS | ✅ **已闭环（2026-09-20，卡 009；用户拍板 A）**：`engines: ">=24"`（**声明·非强制**，未开 `engine-strict`）+ CI `node-version: 24` **同源**；真 CI run `35511659290` 16 步全绿（runner 实跑 24.20.0）。见 **A11.33** |
 | **R9-7** | §4.2 | `extForContentType` 产出非标准扩展名（`svg+xml` / `x-emf` / `x-wmf`） | `src/docx.js:21-27` | P3 | XS | 复盘后第二批（§8-C12）：补三条映射 |
 | **R9-8** | §4.3 | GIF 尾部填充被误判（要求末字节恰为 `0x3B`） | `src/sniff.js:216-220` | P3 | S | 复盘后第二批（§8-C12）：**按 GIF 块结构解析到 trailer**（与 backlog「GIF trailer 完整性校验」条合并做，报告已提醒别看末字节） |
 
@@ -730,6 +730,15 @@
 - **阶段 1 候选（需拍板）**：① **A4 的"产品内闭环"没接** —— 要么 Web 侧一行 feature-detect（`src/ui.js`，本卡 outOfScope），要么原生侧 JS 注入（能绕开 `src/` 但更隐晦）；② **`vendor/tessdata/` 从 `www/` 暂存清单去掉**（AAPT2 会把 `assets/**` 的 `.gz` 解压去后缀 ⇒ APK 白胖 **+2,998,490 B**，而 `src/**` 零引用 `tessdata`/`.gz`）；③ **阶段 0 的 `load()` 自测钩子必须拆除**（源码注释与回执均已标注）。
 - **验收方指出我方 1 处缺陷（已修）**：G9-3 的**报错文案**在"关掉归一"的注入下会指向错误方向（写着"非数值被误改"，真实原因是数值格未归一）⇒ **只改文案、断言条件一字未动**；改后复跑 G9 **7/7**、全量 exit 0、契约数不变。教训入 `DEV-NOTES`。
 
+**A11.33 卡 009：CI 信号可信度 —— audit 步后移到末位 + Node `engines` 与 CI 同源（2026-09-20）**
+- **来源**：用户 2026-09-20 **合卡**提案（① `§8` 第 6 条候选 1「步序后移」· ② **R9-6**）；合卡理由 = **同一文件** · 同一目标（CI 信号可信）· **共享同一口径变量**（"支持哪个 Node"）。基线 `bf7f892`。
+- **交付（2 文件 / +18 −5）**：① `Delivery-face dependency audit` 从第 8 步**后移到末步**（**判据一字未改**，只挪位置）；② `node-version: 20 → 24` + `package.json` 加 `engines: { "node": ">=24" }`（**两处一起改** —— 用户拍板 **A**：*engines 声明真实支持的区间；CI 至少覆盖区间下界*）。
+- **A1–A7 逐条**：**A1 ✅ ⭐ 负对照成立**（run `35511509310`：注入 `/etc/hosts` 断 registry ⇒ **末步 audit ✗、其前 14 步全 ✓** —— `Contract tests` 294/291/0/3 · `TAP ↔ ci_clean_checkout 逐项一致` · `pwa-audit 48/0` · `verify-ocr PASS` 都真的跑到；**对照**事故 `35458379084` attempt 1 旧步序 ⇒ 其后 6 步 `skipped`）· **A2 ✅** audit 步两行**逐字符原样搬移**（未加 `env:`/`if:`/`continue-on-error`）· **A3 ✅** 一处口径两处配置 + **运行时证据**（runner `Found in cache @ /opt/hostedtoolcache/node/24.20.0/x64`）· **A4 ✅ 声明（warn-only）**：仓库无 `.npmrc` ⇒ 未开 `engine-strict`，版本不符只 warn 不拦 · **A5 ✅ 真 CI run `35511659290` 16 步全绿** · **A6 ✅ 对表**：`bf7f892..e6c8398` 恰 2 文件，outOfScope 面（`src/` `tools/` `tests/` `vendor/` + 站点资源）**零改动** · **A7 ✅** B1/B2 见下。
+- **B1**：本卡不改 `src/` ⇒ **显式说明不做**（无生产代码可重构；+18 −5 已是最小改动）。**B2**：**通过** —— 隐私面全模式扫描**零命中**、零新增依赖/action、提交身份 `sakuraqqq <sakuraqqq@users.noreply.github.com>`（noreply）；结论落盘于 `docs/任务台账.md` 卡 009 节。
+- **本地门禁（一次性升权实跑）**：`build` / `lint` / `metrics`（超限 **0**、重复率 0.4%）/ `pwa-audit`（**48/0**）/ `npm test`（**297 / 295 / 0 / 2**，与 `BASELINE.json` 的 `local_with_fixtures` 逐项吻合）**全部 exit 0**；`npm run build && git diff --exit-code index.html` = **exit 0**（产物 blob `a5d1ffa8…` 前后同一份）。
+- ⚠️ **如实登记**：受控对照的"旧步序"新 run **未产生**（一次普通 push 只给尖端提交建 run）⇒ 以**事故 attempt 1** 兜底（同类故障、同类遮蔽，已 API 复核步骤级结果）。一手坑 4 条见 `DEV-NOTES` 卡 009 节。
+- **残留（候选，需拍板）**：① 候选 2「退避重试」/ 候选 3「端点降级」**未做**（本卡 outOfScope）；② **"audit 必须是最后一步"没有机器强制** —— 现成实现是本卡的一次性结构门脚本（已 `script_archive` 存档；`tools/**` 属本卡 outOfScope ⇒ 未入库），可挂进 CI 防回归；③ `engines` 目前**只声明不强制**。
+
 **A12 局域网交换页 UI 改版（用户 2026-09-18 要求：「下次网页整好看点」）**
 - 现状：手写裸 HTML，一个 `<form>` + 文件列表；无样式体系、无拖拽、无进度、无移动端适配（手机上是主用场景，尤其该修）。
 - 下次开工先定稿再动手：拖拽上传 + 上传进度 + 文件列表（大小/时间/一键复制 `git bundle` 命令）+ 移动端单列 + 与 doc2md 主站同配色。
@@ -868,9 +877,9 @@
 2. **去用**：真实文档多转 + 真机复查 + 把发现**登记**下来（观察期的第一优先不是从 backlog 挑，而是发现还不知道的）
 3. **设计先定**（零成本）：U1 一键下载的交互/重名规则 · A7.3 内存三条的拍板点清单
 4. **机制项【需拍板】**：重构配额自查 `tools/quota-check.mjs`（可选，只提醒不阻断）
-5. **R9-6（第九轮 §4.1）【需拍板】**：`package.json` 加 `engines` + CI Node 版本与发布/验收运行时对齐（现 CI 20 / 本机 24）—— 纯配置，不动 `src/`
-6. **CI 加固（2026-09-20 事故驱动）【需拍板】—— 待立卡材料**：`tests` run **`35458379084`**（提交 `0d4f039`）红在第 8 步 `Delivery-face dependency audit`：`registry advisories HTTP 503`，body 自述 **maintenance**（npm 官方 **Scheduled maintenance 2026-09-19 17:00–19:00 UTC**，该 run 在 17:32Z）；**同服务商 `/-/npm/v1/security/audits/quick` 此刻 200 且数据同源** ⇒ 是**端点级维护**，非整站/非我方网络。**后果**：其后 6 步（metrics / site smoke / **Contract tests** / TAP 对账 / PWA / OCR）**全部被跳过** —— 该 run **从未执行测试**。**与卡 005 代码无关**（硬证据：`git diff --stat 9965d08..HEAD -- tools/` 空 + `tools/audit-delivery.mjs` blob 前后同一份 `dbae1d16…` + 本机现在跑同一步同样 503）。详见 `docs/DEV-NOTES.md` **2026-09-20 事故节**。三条候选（**全部属 `tools/**` / `.github/**`，卡 005 范围外 ⇒ 本卡未动**）：
-   1. **步序后移**【零风险·推荐】：把 `Delivery-face dependency audit` 挪到 `Contract tests` **之后** —— 判据一字不改，只保证**外部故障不再遮蔽测试信号**（本次真正的教训是"红的位置让人误判成自己改坏了"，而不是"审计太严"）。
+5. ~~**R9-6（第九轮 §4.1）【需拍板】**：`package.json` 加 `engines` + CI Node 版本与发布/验收运行时对齐（现 CI 20 / 本机 24）—— 纯配置，不动 `src/`~~ ✅ **已闭环（2026-09-20，卡 009）**：用户拍板 **A**（`engines: ">=24"` + CI 对齐 24，**单一口径**）；**两处一起改**，判据 = 真 CI run `35511659290` 全绿 + runner 实跑 Node 24.20.0。见 **A11.33**
+6. **CI 加固（2026-09-20 事故驱动）**（卡 009 已取候选 1；**候选 2/3 仍待立卡**）：`tests` run **`35458379084`**（提交 `0d4f039`）红在第 8 步 `Delivery-face dependency audit`：`registry advisories HTTP 503`，body 自述 **maintenance**（npm 官方 **Scheduled maintenance 2026-09-19 17:00–19:00 UTC**，该 run 在 17:32Z）；**同服务商 `/-/npm/v1/security/audits/quick` 此刻 200 且数据同源** ⇒ 是**端点级维护**，非整站/非我方网络。**后果**：其后 6 步（metrics / site smoke / **Contract tests** / TAP 对账 / PWA / OCR）**全部被跳过** —— 该 run **从未执行测试**。**与卡 005 代码无关**（硬证据：`git diff --stat 9965d08..HEAD -- tools/` 空 + `tools/audit-delivery.mjs` blob 前后同一份 `dbae1d16…` + 本机现在跑同一步同样 503）。详见 `docs/DEV-NOTES.md` **2026-09-20 事故节**。三条候选（**全部属 `tools/**` / `.github/**`，卡 005 范围外 ⇒ 本卡未动**）：
+   1. ~~**步序后移**【零风险·推荐】~~ ✅ **已做（2026-09-20，卡 009）**：`Delivery-face dependency audit` 已挪到**全部步骤的最后**（比"挪到 Contract tests 之后"更彻底 —— 连 TAP 对账/PWA/OCR 都不受它影响），**判据一字未改**；负对照 run `35511509310` 实测「审计 ✗ 而其前 **14 步全 ✓**」，对照事故 attempt 1（旧步序 ⇒ 测试 6 步 `skipped`）。⚠️ 已在 workflow 注释里**写死「本步之后不得再插任何门禁步」**。见 **A11.33**。
    2. **退避重试**【需拍板】：503/超时按 2–3 次指数退避重试；**保留**「数据不可得 ⇒ 宁可红，不假绿」的立场（2026-09-16 用户拍板），只削瞬时抖动。
    3. **端点降级**【需拍板】：bulk 端点不可用时改用 `/-/npm/v1/security/audits/quick`（实测此刻 200 且返回 advisory 数据）；需先确认两端口径等价（findings 结构不同 ⇒ 要写映射 + 断言），且**降级本身要留痕**（否则等于把"数据不可得"悄悄变成"没问题"）。
 
