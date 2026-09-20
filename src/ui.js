@@ -89,6 +89,19 @@ export function nativeSavePlugin() {
   const p = plugins && plugins.Doc2mdNative;
   return p && typeof p.saveText === 'function' ? p : null;
 }
+/** 是否跑在**原生壳**里（Capacitor 非 web）—— 「不再静默」的两条分支都以它为前提：
+ * 原生壳里 `<a download>` **静默无效**（卡 008 的 A4 反证 + 源码级 `com/getcapacitor/**` 无 DownloadListener），
+ * 所以「做不到」时必须**明说**，不许悄悄回落。 */
+function isNativeRuntime() {
+  const cap = typeof window === 'undefined' ? null : window.Capacitor;
+  return Boolean(cap && typeof cap.getPlatform === 'function' && cap.getPlatform() !== 'web');
+}
+/** 原生壳里「做不到」的两句话（卡 011 口径：**任何一次「点了没存下」都必须有一句用户看得见的说明**）。
+ * 表驱动 —— 文案集中一处，防静默分支再散落。 */
+const NATIVE_LIMIT = {
+  noPlugin: '保存失败：本机未加载保存插件，文件未保存',
+  zip: '本机（APK）暂不支持 zip 保存，请改用「🖼 下载 .md（图片内嵌）」',
+};
 /** 保存/下载用的基名：去最后扩展名 + 空兜底（复审 §1.7：.env/.gitignore 等「扩展名即整个名」的文件名
  * replace 后会变空 ⇒ 兜底 'doc2md'）。原先在 saveTextArtifact / downloadZip 各写一遍 ⇒ 卡 011 的 B1 抽成单一实现。 */
 function baseName(fileName) {
@@ -102,6 +115,11 @@ export async function saveTextArtifact(text, fileName, mime = 'text/markdown;cha
     await plugin.saveText({ filename: base + '.md', text: String(text == null ? '' : text), mime });
     return 'native';
   }
+  if (isNativeRuntime()) {
+    // 洞 A（卡 011）：原生壳里没有插件 ⇒ 回落 `<a download>` 等于**静默无反应** ⇒ 改为明说（不回落）
+    setStatus(NATIVE_LIMIT.noPlugin, true);
+    return 'blocked';
+  }
   anchorDownload(new Blob([text], { type: mime }), base + '.md');
   return 'anchor';
 }
@@ -114,6 +132,11 @@ export function downloadMd(text, fileName) {
 }
 // 下载 .md + 抽取图片（zip）：fflate 内联打包，本地生成，零外发（t6 ⑨a）
 export async function downloadZip(text, fileName, assets, btn) {
+  if (isNativeRuntime()) {
+    // 洞 B（卡 011）：zip 是二进制，原生插件目前只有文本写入 ⇒ 与其静默无反应，不如明说 + 指路
+    setStatus(NATIVE_LIMIT.zip, true);
+    return;
+  }
   try {
     const F = window.fflate;
     if (!F) throw new Error('fflate 未加载');

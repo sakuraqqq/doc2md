@@ -1747,12 +1747,27 @@ ${xlsxRowsToMd(kept)}`);
     const p = plugins && plugins.Doc2mdNative;
     return p && typeof p.saveText === "function" ? p : null;
   }
+  function isNativeRuntime() {
+    const cap = typeof window === "undefined" ? null : window.Capacitor;
+    return Boolean(cap && typeof cap.getPlatform === "function" && cap.getPlatform() !== "web");
+  }
+  var NATIVE_LIMIT = {
+    noPlugin: "\u4FDD\u5B58\u5931\u8D25\uFF1A\u672C\u673A\u672A\u52A0\u8F7D\u4FDD\u5B58\u63D2\u4EF6\uFF0C\u6587\u4EF6\u672A\u4FDD\u5B58",
+    zip: "\u672C\u673A\uFF08APK\uFF09\u6682\u4E0D\u652F\u6301 zip \u4FDD\u5B58\uFF0C\u8BF7\u6539\u7528\u300C\u{1F5BC} \u4E0B\u8F7D .md\uFF08\u56FE\u7247\u5185\u5D4C\uFF09\u300D"
+  };
+  function baseName(fileName) {
+    return (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
+  }
   async function saveTextArtifact(text, fileName, mime = "text/markdown;charset=utf-8") {
-    const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
+    const base = baseName(fileName);
     const plugin = nativeSavePlugin();
     if (plugin) {
       await plugin.saveText({ filename: base + ".md", text: String(text == null ? "" : text), mime });
       return "native";
+    }
+    if (isNativeRuntime()) {
+      setStatus(NATIVE_LIMIT.noPlugin, true);
+      return "blocked";
     }
     anchorDownload(new Blob([text], { type: mime }), base + ".md");
     return "anchor";
@@ -1764,10 +1779,14 @@ ${xlsxRowsToMd(kept)}`);
     return saveTextArtifact(text, fileName).catch(reportSaveError);
   }
   async function downloadZip(text, fileName, assets, btn) {
+    if (isNativeRuntime()) {
+      setStatus(NATIVE_LIMIT.zip, true);
+      return;
+    }
     try {
       const F = window.fflate;
       if (!F) throw new Error("fflate \u672A\u52A0\u8F7D");
-      const base = (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
+      const base = baseName(fileName);
       const files = {};
       files[base + ".md"] = F.strToU8(text);
       for (const a of assets || []) {

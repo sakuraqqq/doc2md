@@ -5239,6 +5239,85 @@ test('契约组 Z2：「保存」环节的原生/浏览器分流（无 Capacitor
   }
 });
 
+// ---------------------------------------------------------------------------
+// 契约组 Z3：「保存」环节的最后两处静默（卡 011）—— **只做「不再静默」，不修根因**
+//   Z3-1（洞 A）：**原生平台却探测不到插件** ⇒ 点「⬇ 下载 .md」**必须出现可见提示**，不得静默回落
+//                （`<a download>` 在 Capacitor WebView 里本来就无效 ⇒ 回落 = 静默）。
+//   Z3-2（洞 B）：**原生平台上的 zip 主按钮** ⇒ 必须明说「暂不支持 + 指路（图片内嵌）」，不得静默。
+//   ⚠️ 两条**只在 native 桩下断言**；**无 Capacitor 的浏览器路径行为不变**（回归闸 = 卡 010 的 Z2-1 / 组 I4
+//      旧断言，本组**一律不动旧断言**）。
+// ---------------------------------------------------------------------------
+test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ 提示；zip ⇒ 指路）', async (t) => {
+  const server = await startServer(ROOT);
+  try {
+    const chromium = await loadPlaywright();
+    const browser = await launchBrowser(chromium);
+    try {
+      const NATIVE_STUB = () => {
+        window.Capacitor = { getPlatform: () => 'android' }; // 只有平台、**没有 Plugins**
+      };
+      // —— Z3-1：无附件文本（按钮 = 「⬇ 下载 .md」）——
+      const ctx1 = await browser.newContext({ acceptDownloads: true });
+      const p1 = await ctx1.newPage();
+      await p1.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await p1.evaluate(NATIVE_STUB);
+      await p1.locator('input[type=file]').setInputFiles(nodePath.join(DATA, 'sample.txt'));
+      await p1.waitForFunction(
+        (tok) => {
+          for (const el of document.querySelectorAll('textarea, input, pre, code')) {
+            if ((el.value || el.textContent || '').includes(tok)) return true;
+          }
+          return false;
+        },
+        'DOC2MD-TXT-OK-2026',
+        { timeout: 20000 }
+      );
+      const btnMd = p1.locator('.card-actions button', { hasText: '下载 .md' });
+      await btnMd.waitFor({ state: 'visible', timeout: 10000 });
+      await t.test('Z3-1 洞 A：原生平台 + 无插件 ⇒ 点「⬇ 下载 .md」出现可见提示（不得静默回落）', async () => {
+        const dlP = p1.waitForEvent('download', { timeout: 2500 }).catch(() => null);
+        await btnMd.click();
+        const dl = await dlP;
+        const status = await p1.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
+        assert.ok(dl === null, '原生平台无插件时仍走了 <a download>（WebView 里那条本来就无效 ⇒ 等于静默）');
+        assert.ok(status.includes('未加载保存插件'), `状态栏未出现可见提示，实际=${JSON.stringify(status)}`);
+      });
+
+      // —— Z3-2：带图文档（主按钮 = zip）——
+      const ctx2 = await browser.newContext({ acceptDownloads: true });
+      const p2 = await ctx2.newPage();
+      await p2.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await p2.evaluate(NATIVE_STUB);
+      await p2.locator('input[type=file]').setInputFiles(nodePath.join(DATA, 'sample-images.docx'));
+      await p2.waitForFunction(
+        (tok) => {
+          for (const el of document.querySelectorAll('textarea, input, pre, code')) {
+            if ((el.value || el.textContent || '').includes(tok)) return true;
+          }
+          return false;
+        },
+        'DOC2MD-IMG-2026',
+        { timeout: 20000 }
+      );
+      const btnZip = p2.locator('.card-actions button', { hasText: 'zip' });
+      await btnZip.waitFor({ state: 'visible', timeout: 10000 });
+      await t.test('Z3-2 洞 B：原生平台上的 zip 主按钮 ⇒ 明说「暂不支持 zip」并指出替代路径', async () => {
+        const dlP = p2.waitForEvent('download', { timeout: 2500 }).catch(() => null);
+        await btnZip.click();
+        const dl = await dlP;
+        const status = await p2.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
+        assert.ok(dl === null, '原生平台 zip 仍走 <a download>（WebView 里无效 ⇒ 等于静默）');
+        assert.ok(/暂不支持\s*zip/.test(status), `状态栏未出现 zip 不支持提示，实际=${JSON.stringify(status)}`);
+        assert.ok(status.includes('图片内嵌'), `提示未给出替代路径，实际=${JSON.stringify(status)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 test('契约组 G9：xlsx 数值长尾的显示归一（渲染层；卡 007）—— 契约先红', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
   let chromium;
