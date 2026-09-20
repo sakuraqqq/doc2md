@@ -1837,6 +1837,11 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 2. **真机取证的「喂文件」与「点保存」必须分开**：SAF 选文件是多步点击、不稳；**喂文件走 CDP**（`File` + `DataTransfer` 注入 `#fileInput`，复用卡 008 的 `.私档/工具/android-devtools.mjs` 管道），**点保存必须 `adb shell input tap` 发真实触摸** —— 否则判据会退化成"JS 合成点击也算"，而用户真的按的是物理屏幕。
 3. **`adb shell content query` 的引号会被 shell 吃掉**（`java.lang.IllegalArgumentException: Invalid token card010`）⇒ MediaStore 视角的附加核验没取到；**判据不受影响**（`ls -l` + `cat` 已足）。要查得改转义写法或走 `adb exec-out`。
 4. **Chrome 会话窗口被回收后，页面 API 全 `undefined`**：窗口回到欢迎页时页面上下文是 `data:` URL ⇒ 我清 SW 缓存的第一枪打空（`Cannot read properties of undefined (reading 'getRegistrations')`）。**顺序纪律：先 `navigate` 到目标页，再做页面侧操作**。
+5. ⚠️⭐ **取证命令的锚定缺陷，差点让我把"成功"判成"失败"**（本卡用户验收时暴露，方向性错误，最该记的一条）：
+   - **现象**：我用 `ls -l /sdcard/Download/ | grep -i '\.md$'` 判「用户点的那次有没有写出文件」⇒ 结果只剩 3 个 `.md`，我据此报「**没有新 .md**」。用户实际**用手指点成功了 13 次**。
+   - **根因**：MediaStore 遇到**重名会自动改名**成 `xxx.md (13)` —— **名字不以 `.md` 结尾**，被我的 `$` 锚定整批过滤掉；而 `ls -lt` 里它们明明在最上面。
+   - **防再犯**：① **取证命令先自问「如果成功，它会以什么形态出现？」**，再决定过滤条件（本例：冲突改名 `(N)` 是必经形态）；② 判定"有没有"优先用**完整清单**（`ls -lt` / `ls -la`），**先看全量再过滤**，不要把过滤当第一道；③ 结论为"无"时，**必须**再跑一次不带锚定的对照查询 —— 判"无"的证据强度要求比判"有"更高。
+   - **对照**：卡 008 的同类取证用的是 **`adb shell ls -la /sdcard/Download/`（完整清单）** ⇒ 它没踩这个坑，其 `A4 ❌` 的结论经本次复核**成立**（现场无任何产品写出的 `.md`；机制层 `com/getcapacitor/**` 无 `DownloadListener`）。**同一台机器、同一个目录，"命令形态"决定了结论真假**。
 
 ## 2026-09-20 · 卡 009（执行线）：CI 信号可信度 —— 审计步后移到末位 + Node `engines` 与 CI 同源
 
