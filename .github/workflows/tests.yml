@@ -62,6 +62,13 @@ jobs:
         run: node tools/guard-selftest.mjs
       - name: "Baseline guard (docs/BASELINE.json 数字真相源：契约数溯源 + 发布物/线上/交付面现算比对；2026-09-19 卡 001-C)"
         run: node tools/baseline-check.mjs
+      # ⚠️【一次性注入 · 卡 009 的 A1 负对照】把 registry.npmjs.org 指向 127.0.0.1 ⇒ 审计步必红。
+      #    本步只为这次负对照实验存在，**下一个提交即拆除**，不属于交付物。
+      - name: "TEMP 009-A1 负对照注入：registry.npmjs.org → 127.0.0.1（一次性，勿留）"
+        run: |
+          echo "127.0.0.1 registry.npmjs.org" | sudo tee -a /etc/hosts
+          getent hosts registry.npmjs.org
+          curl -sS -m 5 -o /dev/null https://registry.npmjs.org/ || echo "[inject] registry 已不可达（预期）"
       - name: "Delivery-face dependency audit (交付面 high/critical 未豁免即红；2026-09-16 用户拍板 B 项)"
         run: node tools/audit-delivery.mjs
       - name: "Code metrics gate (超限函数必须为 0；2026-09-10 用户拍板)"
