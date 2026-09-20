@@ -65,7 +65,7 @@
 
 ## 本地命令约定
 
-- git 操作一律加前缀 `git -c safe.directory=*`（**不带引号**）—— pwsh 下 `'*'` 的引号会被吞成非法值，报 `fatal: detected dubious ownership`（2026-09-15 实测：不带引号可用；同进程三件套 `$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*` 亦可用。全局 gitconfig 沙箱写不了，别试写全局配置）。
+- **`safe.directory`：前缀「非必需」（2026-09-20 实测改写 —— ⚠️ 原写法「git 操作**一律**加前缀」**作废**，保留于此以留痕）**：本机用户级 `~/.gitconfig` 已**逐条登记** `safe.directory`（含本项目工作区，实测 7 条）⇒ **裸 `git status` / `git log` 实测 exit 0**，**不必**加前缀。**仍必须带前缀（或三件套）的场合 = 全局配置不可用时**：隔离实验、`GIT_CONFIG_GLOBAL` 被指到别处、换机器 / 换用户 / CI 干净环境。**对照实验（2026-09-20，可复算）**：把全局配置临时置空 ⇒ 立刻 `fatal: detected dubious ownership in repository at '<工作区>'`，报的是**工作区根**的属主 `BUILTIN\Administrators`（⚠️ `.git` 目录属主虽是当前用户，**git 校验的是工作区根** ⇒ 只改 `.git` 属主不解决问题；**用户 2026-09-20 拍板：不改属主，保持现状**）。写法：`git -c safe.directory=*`（**不带引号** —— pwsh 下 `'*'` 的引号会被吞成非法值，报 `fatal: detected dubious ownership`）；同进程三件套 `$env:GIT_CONFIG_COUNT=1` / `GIT_CONFIG_KEY_0=safe.directory` / `GIT_CONFIG_VALUE_0=*` 亦可用。全局 gitconfig **沙箱写不了**，别试写全局配置。
 - **native 命令一律独立语句 —— 禁止进 PS 管道 / 表达式 / 变量捕获 / 重定向**（2026-09-15 首记 `git`；2026-09-19 卡 004 **本会话自测复现**后推广到全部 native 命令）：
   - **范围 = 任何 native 命令**，不止 `git`/`node`/`curl`/`wsl` —— `python` / `npm` / `npx` / `gh` … 只要是被 PS 当外部程序启动的都同罪。
   - **触发写法**：`… | Select-Object` · `… | Out-String` · `2>&1` · `$x = python …` · `"…" + (python …)`，以及**任何重定向** —— `> 文件` · `>> 文件` · **`> $null`**（`$null` 也是重定向目标，不是「丢弃输出」的语法糖）。
