@@ -1850,6 +1850,8 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️⭐ **"弹打开方式"不等于"没有默认应用"——我曾据此误判**：`cmd package query-activities` 列出的候选里 `isDefault=true` 的语义是「**有资格作为默认**」，**不是「它就是默认」**；我在回执里写成「无一被设为默认」，**错**。**判默认必须用 `cmd package resolve-activity --brief -a VIEW -t <mime> -d <uri>`** —— 本机 `text/markdown` 的默认 = **vivo 智能办公**（`com.vivo.smartoffice/.reader.viewer.launch.LauncherActivity`，实际进入 `…/alldoc.activity.launch.markdown.MarkDown0` 渲染）。
    - **那为什么还弹选择器？= 入口的 URI authority 不匹配**：系统 DocumentsUI 交出 `content://com.android.externalstorage.documents/…` ⇒ 默认应用的过滤器不匹配该 authority ⇒ 探不到默认 ⇒ 弹选择器；**换 `file://` 真路径即直进阅读器**（实测）。⇒ **判"是不是我们的锅"要做两道对照**：① 同一条 intent 打开用户自己的同类文件；② **把 URI 换成 `file://` 再试一次**（很多时候差异只在 URI 形态，不在文件）。
    - 另：`content://` 交给 Markor 会被它拒收（只认完整文件路径），用 `file://` 真路径可开。
+   - ⭐⭐ **两种"地址"形态决定成败（可复用经验）**：同一个文件、同一个 `text/markdown`，**`file://` 真实路径**（文件管理类应用交的）⇒ 命中默认应用、直接渲染；**`content://…externalstorage.documents…`**（系统 DocumentsUI/SAF 交的）⇒ authority 不匹配 ⇒ 弹选择器。**判"用户能不能打开"要先问"入口给出的是哪种地址"。**
+   - ⭐⭐ **"能打开"是运气，不是保证**（用户 2026-09-20 指出）：本机能渲染只因 **vivo ROM 恰好预装「智能办公」并注册了 `text/markdown`**；**很多老机型 / 精简 ROM 没有任何应用注册 `text/markdown`** ⇒ 写出的 `.md` **根本打不开**。⇒ **交付面风险：A1 判的是"文件落地"，不是"能打开"**；产品侧候选 = 成功提示 + 可行动指引 / 兼容落 `.txt` / 应用内预览 / 发布说明写明。
 
 ## 2026-09-20 · 卡 009（执行线）：CI 信号可信度 —— 审计步后移到末位 + Node `engines` 与 CI 同源
 
