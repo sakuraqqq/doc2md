@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.sakuraqqq.doc2md",
+  "appName": "doc2md",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
