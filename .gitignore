@@ -11,6 +11,13 @@ out/
 *.tgz
 *.tar.gz
 
+# --- Capacitor 阶段 0（卡 008）：webDir 暂存目录 ---
+#   为什么是精选副本而不是仓库根：Capacitor 的 `npx cap sync/copy` 是**整目录拷贝、无 ignore 机制**
+#   ⇒ 用仓库根会把 `.私档/`（红线 9 私人策略文档）与 node_modules 一起打进 APK。
+#   内容 = 交付面（index.html + vendor/ + langs/ + icons/ + manifest.json + sw.js + assets/）。
+#   见 docs/ANDROID-CAPACITOR-阶段0.md §2。
+www/
+
 # --- 本地测试 / 会话产物 ---
 test-output/
 tests/output/
