@@ -24,6 +24,27 @@
 
 ⚠️ **纪律（卡面原话）**：**不得用管道或重定向捕获 native 命令输出** —— `$LASTEXITCODE` 在那种失败下不可采信（本项目已踩多次）。
 
+### 1.1 P0 预检实测（2026-09-20 · 用户终端）
+
+| 项 | 实测 | 判定 |
+|---|---|---|
+| Node | **v24.18.1** | ✅ 满足（Capacitor 7 要求 ≥ 20） |
+| npm | **11.16.0** | ✅ |
+| Java | **24.0.1**（系统 PATH 上的 JDK 24） | ⚠️ **不是这条链要的 JDK** —— 官方文档明写「**不需要单独装 JDK，Android Studio 会自动装合适的 JDK**」（[Environment Setup](https://capacitorjs.com/docs/v7/getting-started/environment-setup)）；系统 JDK 24 与 AGP/Gradle 的兼容性**必须在模板生成后读** `android/gradle/wrapper/gradle-wrapper.properties` + `android/build.gradle` **实测**，不猜 |
+| adb | **未找到**（`术语 'adb' 不会被识别为…`） | ⚠️ ⇒ 基本可判定**没有 Android SDK**（待探针确认是否只是 PATH 未带） |
+
+**探针（用户终端，确认 SDK / Android Studio 是否已存在）**：
+
+```powershell
+$env:ANDROID_HOME ; $env:ANDROID_SDK_ROOT ; $env:JAVA_HOME
+Test-Path "$env:LOCALAPPDATA\Android\Sdk"
+Test-Path "$env:ProgramFiles\Android\Android Studio"
+where.exe adb
+```
+
+**工具链结论**：官方 Android 路线 = **Android Studio（≥ 2024.2.1）+ 一个 Android SDK 平台包**。
+⚠️ **第 1–4 步（`npm i` / `cap doctor` / 暂存 `www` / `cap add android`）不依赖 SDK/JDK** ⇒ **可以先跑，A7 不被它阻塞**。
+
 ---
 
 ## 2. 为什么 `webDir` 是 `www/`，不是仓库根
