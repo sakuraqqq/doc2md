@@ -91,12 +91,5 @@ jobs:
       # ⚠️ **末步（2026-09-20 卡 009）**：本步数据源是网络端点（npm registry advisories），
       #    设计立场是「数据不可得 ⇒ 宁可红，不假绿」⇒ 固定放末位：它红不再跳过任何测试步。
       #    **不要在它之后再加步骤**（会把「外部故障遮蔽测试信号」的老病带回来）。
-      # ⚠️【一次性注入 · 卡 009 的 A1 负对照】把 registry.npmjs.org 指向 127.0.0.1 ⇒ 审计步必红。
-      #    本步只为这次负对照实验存在，**下一个提交即拆除**，不属于交付物。
-      - name: "TEMP 009-A1 负对照注入：registry.npmjs.org → 127.0.0.1（一次性，勿留）"
-        run: |
-          echo "127.0.0.1 registry.npmjs.org" | sudo tee -a /etc/hosts
-          getent hosts registry.npmjs.org
-          curl -sS -m 5 -o /dev/null https://registry.npmjs.org/ || echo "[inject] registry 已不可达（预期）"
       - name: "Delivery-face dependency audit (交付面 high/critical 未豁免即红；2026-09-16 用户拍板 B 项)"
         run: node tools/audit-delivery.mjs
