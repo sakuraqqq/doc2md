@@ -4505,14 +4505,22 @@ const Y_CONVERT_MS = 5000; // D3：绝对耗时上界（与 8 MB 相称）
 //   变的是**走哪条路径**，而「撤护栏」正是本卡明文要求 ⇒ 大档基线按快路径重冻。
 //   **旧值（库路径产物，保留作历史，勿再当基线引用）**：`4-mid-large` 339,912 B / `F90DCE36…F4F17` ·
 //   `3-big` 352,029 B / `C2C41F5A…7ADCB`（与归档的手机侧旧构建产物一致：剥离首行截断注释后差 115 B）。
+//   **2026-09-20 卡 007 再冻（本卡是行为变更 ⇒ 卡面 A5 明写走「新值 + 逐档说明」分支）**：渲染层开始把
+//   「有效数字 > 15 位」的数值字面量按 **15 位有效数字**显示（治浮点长尾，见契约组 G9）⇒ 三档变、一档不变：
+//     · `1-small`      66,140 → **61,990**（−4,150 B）：窗口内 **266** 个长尾（**259 个在 C 列**，如 `12.276999999999999`→`12.277`）
+//     · `2-mid`        23,611 → **23,611**（**0 B，一字不变**）：窗口内长尾 **0 个** —— 本档是天然的干净对照
+//     · `4-mid-large` 352,755 → **352,023**（−732 B）· `3-big` 352,759 → **352,027**（−732 B）：
+//       窗口内长尾 3,039 个，但 **D/J/K 三列（~2,989 个）= 17 位日期序列号 + 日期样式 ⇒ 走日期路径、不受影响**；
+//       真正变的是 **R 列 50 个**（`34.200000000000003`→`34.2` 等，每个约省 14 字符 ⇒ ~700 B）+
+//       无样式的零星长尾 —— ⭐ **这 50 个正是卡 002 记的「50 行」**（见台账卡 007 回执的必答题 2）。
 const Y_TIERS = [
   {
     key: '1-small',
     file: '1-small_154KB_3054rows.xlsx',
     rows: 3054,
     fileBytes: 154597,
-    mdBytes: 66140,
-    mdSha256: 'A8A777C0A5CF13EDD6FF1EB824609A03F49CE230A3C56B10D553B6A912BF9F91',
+    mdBytes: 61990,
+    mdSha256: '0B48F22474116D5CEFC2D8A615D49C013DB0722F19794AB1409BC0555D8950EE',
   },
   {
     key: '2-mid',
@@ -4527,8 +4535,8 @@ const Y_TIERS = [
     file: '4-mid-large_35.9MB_250000rows.xlsx',
     rows: 250000,
     fileBytes: 35856644,
-    mdBytes: 352755,
-    mdSha256: '96127CB737C520C6BDFC34BA0D3E8942BA60B16DCA3800A6C64C8658917A120D',
+    mdBytes: 352023,
+    mdSha256: '37FE03E76A13999D93B16B8E90B6013D82360F3CB8621D3337E2CE10A1B2F381',
     big: true,
   },
   {
@@ -4536,8 +4544,8 @@ const Y_TIERS = [
     file: '3-big_47.4MB_436000rows.xlsx',
     rows: 436000,
     fileBytes: 49716718,
-    mdBytes: 352759,
-    mdSha256: '519D58AAA964F7D893D629B2604A4D25CB2CBB4E40EFB678EBC5C97EA3F9281D',
+    mdBytes: 352027,
+    mdSha256: '2D064C9304FFBA22D33E373CE3C09F6CE6C153D6388FB683E778251290A0AF59',
     big: true,
   },
 ];
@@ -5040,6 +5048,199 @@ test('契约组 I2：图片 alt 的连续空白折叠（docx descr/name + html2m
         const rec = caseOf('i2Clean');
         assert.equal(rec.md, '![干净说明 1（含单个空格）](assets/i2Clean-1.png)', `无空白可折叠者被改动：${JSON.stringify(rec.md)}`);
         assert.equal(recs.__html.control, '![plain alt](x.png)', `html2md 控制组被改动：${JSON.stringify(recs.__html.control)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 G9：xlsx 数值长尾的**显示归一**（卡 007；2026-09-20 契约先红）
+// 来源：卡 002 回执自登记的第 ② 条待拍板（手机 4.2 实测「50 行由 34.2 变 34.200000000000003」）
+//   ⇒ 用户 2026-09-20 拍板「没做先做」，并给定权威口径：**在渲染层格式化（非解析层）**。
+// 根因（实测）：夹具 XML 里存的就是长形态，我方快路径**忠实读出**（`serialDateOrRaw` 直接返回字面量）
+//   ⇒ 可读性回退；**旧库路径做过数值归一**（read-excel-file 转 JS number，`String(number)` 即短形态）。
+// 落地规则（**本组断言即规格**）：
+//   `十进制有效数字 > 15 位` ⇒ 取 **15 位有效数字**的显示形态（`String(Number(Number(v).toPrecision(15)))`）；
+//   `≤ 15 位` ⇒ **原样**（真精度 / 整数 / `1.0` / `0.0000001` / `1e-7` 一律不动）。
+//   ⚠️ **整数（无小数点）一律不动** —— 20 位整数也不动（防 >2^53 被改写，那是真精度）。
+//   ⚠️ **日期样式单元格走日期路径**，不受本规则影响（实测四档的 D/J/K 列 = 17 位序列号 + 日期样式）。
+//   ⚠️ 为什么用"15 位显示"而不是更窄的"无损 round-trip"规则：卡面 A4 明确要求 `0.30000000000000004 → 0.3`，
+//      而该字面量与 `0.3` **不是同一个 double** ⇒ 任何"只做无损 round-trip"的规则都产不出 0.3 ⇒ 规则被 A4 钉死。
+// 用例 = **测试内现造**（页内 `window.fflate.zipSync`，与 G7/G8/I2 同构）；既有夹具与字节锁零改动。
+// 先红预期（实现前）：G9-1 / G9-3 / G9-5 红（长尾原样吐出）；G9-2 / G9-4 / G9-6 现绿（护栏）。
+// ---------------------------------------------------------------------------
+const G9_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+const G9_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const G9_PKG = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const G9_XMLDECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+function g9CellXml(c) {
+  if (c.isText !== undefined) return `<c r="${c.ref}" t="inlineStr"><is><t>${c.isText}</t></is></c>`;
+  const t = c.t ? ` t="${c.t}"` : '';
+  const s = c.s === undefined ? '' : ` s="${c.s}"`;
+  return `<c r="${c.ref}"${t}${s}><v>${c.v}</v></c>`;
+}
+/** withDateStyle=true 时带 styles.xml（cellXfs[1] = 内置日期格式 14） */
+function g9Parts(cells, withDateStyle) {
+  const row = '<row r="1">' + cells.map(g9CellXml).join('') + '</row>';
+  const parts = {
+    '[Content_Types].xml':
+      G9_XMLDECL +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+      '</Types>',
+    '_rels/.rels':
+      G9_XMLDECL +
+      `<Relationships xmlns="${G9_PKG}"><Relationship Id="rId1" Type="${G9_REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    'xl/workbook.xml':
+      G9_XMLDECL +
+      `<workbook xmlns="${G9_MAIN}" xmlns:r="${G9_REL}"><sheets><sheet name="S1" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    'xl/_rels/workbook.xml.rels':
+      G9_XMLDECL +
+      `<Relationships xmlns="${G9_PKG}"><Relationship Id="rId1" Type="${G9_REL}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+    'xl/worksheets/sheet1.xml':
+      G9_XMLDECL + `<worksheet xmlns="${G9_MAIN}"><sheetData>${row}</sheetData></worksheet>`,
+  };
+  if (withDateStyle) {
+    parts['xl/styles.xml'] =
+      G9_XMLDECL +
+      `<styleSheet xmlns="${G9_MAIN}"><cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="14" applyNumberFormat="1"/></cellXfs></styleSheet>`;
+  }
+  return parts;
+}
+test('契约组 G9：xlsx 数值长尾的显示归一（渲染层；卡 007）—— 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const fixtures = {
+        // 长尾组：A/B 是"表示噪声"（卡面 A4 点名的两例）；C 是 16 位（本卡口径的一部分）；D 是 20 位整数（不许动）；E 幂等对照
+        g9LongTail: g9Parts([
+          { ref: 'A1', v: '34.200000000000003' },
+          { ref: 'B1', v: '0.30000000000000004' },
+          { ref: 'C1', v: '3.141592653589793' },
+          { ref: 'D1', v: '12345678901234567890' },
+          { ref: 'E1', v: '34.2' },
+        ]),
+        // 真精度/形态对照组：全部 ≤15 位 ⇒ 一字不变（含 1.0 / 0.0000001 / 1e-7 / 14 位）
+        g9Plain: g9Parts([
+          { ref: 'A1', v: '1' },
+          { ref: 'B1', v: '1.5' },
+          { ref: 'C1', v: '0.001' },
+          { ref: 'D1', v: '482547666944' },
+          { ref: 'E1', v: '1000000' },
+          { ref: 'F1', v: '1.0' },
+          { ref: 'G1', v: '0.0000001' },
+          { ref: 'H1', v: '1e-7' },
+          { ref: 'I1', v: '1.2345678901234' },
+        ]),
+        // 类型无关性：布尔 / 文本（**长得像长尾的文本也不许动**）/ 数值
+        g9Types: g9Parts([
+          { ref: 'A1', t: 'b', v: '1' },
+          { ref: 'B1', isText: '文本 1.2345678901234567' },
+          { ref: 'C1', v: '34.200000000000003' },
+        ]),
+        // 日期样式：A1 命中日期路径（不受本规则影响）；B1 同值但无样式 ⇒ 属数值、按规则归一
+        g9Date: g9Parts([
+          { ref: 'A1', s: '1', v: '46282.61273148148' },
+          { ref: 'B1', v: '46282.61273148148' },
+        ], true),
+      };
+      const recs = await page.evaluate(async (all) => {
+        const F = window.fflate;
+        const out = {};
+        for (const key of Object.keys(all)) {
+          const entries = {};
+          for (const name of Object.keys(all[key])) entries[name] = F.strToU8(all[key][name]);
+          const zip = F.zipSync(entries);
+          const r = await window.__doc2md.convert(new File([zip], key + '.xlsx'));
+          out[key] = {
+            error: r.error ? String(r.error.message || r.error) : null,
+            backend: r.meta && r.meta.backend,
+            scanRows: r.meta && r.meta.scan ? r.meta.scan.rows : null,
+            warnings: (r.meta && r.meta.warnings) || [],
+            md: String(r.markdown || ''),
+          };
+        }
+        return out;
+      }, fixtures);
+
+      const caseOf = (k) => {
+        assert.equal(recs[k].error, null, `${k} convert 失败：${recs[k].error}`);
+        return recs[k];
+      };
+      /** 单行 sheet 的表体（首行即表头 ⇒ 头行 + 分隔行） */
+      const tableOf = (vals) => `| ${vals.join(' | ')} |\n| ${vals.map(() => '---').join(' | ')} |`;
+
+      await t.test('G9-1 长尾归一：34.200000000000003→34.2 · 0.30000000000000004→0.3（逐字符）', () => {
+        const md = caseOf('g9LongTail').md;
+        assert.equal(
+          md,
+          '### Sheet: S1\n\n' + tableOf(['34.2', '0.3', '3.14159265358979', '12345678901234567890', '34.2']),
+          `长尾未被归一（或归一闪失）：${JSON.stringify(md)}`
+        );
+      });
+
+      await t.test('G9-2 护栏（真精度一律不动）：≤15 位的 9 例逐字符原样（含 1.0 / 0.0000001 / 1e-7 / 14 位）', () => {
+        const md = caseOf('g9Plain').md;
+        assert.equal(
+          md,
+          '### Sheet: S1\n\n' + tableOf(['1', '1.5', '0.001', '482547666944', '1000000', '1.0', '0.0000001', '1e-7', '1.2345678901234']),
+          `真精度/形态被误改：${JSON.stringify(md)}`
+        );
+      });
+
+      await t.test('G9-3 类型无关性：布尔与文本不动，同一张表里的数值照常归一', () => {
+        const md = caseOf('g9Types').md;
+        assert.equal(
+          md,
+          '### Sheet: S1\n\n' + tableOf(['true', '文本 1.2345678901234567', '34.2']),
+          `非数值被误改：${JSON.stringify(md)}`
+        );
+      });
+
+      await t.test('G9-4 日期样式走日期路径（不受本规则影响）：序列号单元格出 ISO 日期、不含原序列号', () => {
+        const md = caseOf('g9Date').md;
+        // ⚠️ 只判**第 1 列**（同行的第 2 列是"同值但无样式"的对照，按规则归一是**预期行为** —— 首版断言扫了整行，
+        //    曾因此"因错误原因变红"；断言语义未变，只修正了被扫的字段范围）
+        const cols = (md.split('\n')[2] || '').split('|').map((s) => s.trim()).filter(Boolean);
+        assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(cols[0]), `日期样式单元格未走日期路径：${JSON.stringify(cols[0])}`);
+        assert.ok(!cols[0].includes('46282'), `日期样式单元格吐出了原始序列号：${JSON.stringify(cols[0])}`);
+      });
+
+      await t.test('G9-5 同值但无样式 ⇒ 属数值：46282.61273148148 → 46282.6127314815（第 16 位起为表示噪声）', () => {
+        const md = caseOf('g9Date').md;
+        const cols = (md.split('\n')[2] || '').split('|').map((s) => s.trim()).filter(Boolean);
+        assert.equal(cols[1], '46282.6127314815', `无样式长尾未归一：${JSON.stringify(cols)}`);
+      });
+
+      await t.test('G9-6 渲染层生效但不改解析口径：backend/scan/warnings 与既有语义一致', () => {
+        const rec = caseOf('g9LongTail');
+        assert.equal(rec.backend, 'xlsx-self', `backend=${rec.backend}`);
+        assert.equal(rec.scanRows, 1, `meta.scan.rows=${rec.scanRows}（期望 1 行）`);
+        assert.deepEqual(rec.warnings, [], `warnings=${JSON.stringify(rec.warnings)}`);
       });
     } finally {
       await browser.close();
