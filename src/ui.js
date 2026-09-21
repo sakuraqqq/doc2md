@@ -18,6 +18,64 @@ export function setStatus(msg, isError) {
   statusEl.className = isError ? 'error' : '';
 }
 
+/* ── 视口内提示浮层（A10 · 卡 011 第三轮，用户真机实测打回） ──────────────────────────
+ * 为什么不能只靠 `#status`：它在**文档流顶部**（`template.html`：`margin:14px 2px 0; font-size:13px`）。
+ *   多文件时页面很长，用户滚到下面点保存，反馈却出现在**页面顶端** ⇒ 视觉上等于没反馈。
+ *   用户原话：「以保存那个在**最上面的文件的上方**，根本看不见，要**滑屏幕到最上面**才看得到那个小字」。
+ *   ⚠️ 上一轮（A8）只断言了"文案在 DOM 里" —— 那是**测到了 DOM，没测到人眼**。
+ * 为什么自己写、不引库：需求只有 1 个成功 + 1 个失败文案；候选库（notyf / toastify-js，均 MIT）
+ *   的类型/位置/时长/图标/DOM API 我们**一条都用不上**，而为 ≈30 行引入 `vendor/` 库还要多过
+ *   `licenses.md` 声明 + 交付面审计 CI 步 + APK 体积三道门 ⇒ 成本 > 收益。
+ *   ⚠️「自己写」≠「自己发明」：形态**照抄 Material Snackbar 规范**（底部 · 浮于内容之上 · 单行 ·
+ *   自动消失），不发明新形态。
+ * 为什么样式写在 JS 里、不改 `src/template.html`：`template.html` 是**两端共享**的模板，往里加
+ *   原生专用 CSS = 动了 Web 的样式表（本卡要求 **Web 侧一字不动**）；而浮层**本来就只在原生分支创建**
+ *   ⇒ 元素与样式一起**懒创建**，差异全部留在 `src/` 里可读（与卡 010「一处真相」同口径）。
+ * ⚠️ 只在**原生壳的「保存」回话**里调用 —— Web 侧浏览器**自带**下载完成反馈，再加一层就是
+ *   一个动作两条成功提示（用户已明确否掉）。
+ */
+const TOAST_MS = 6000;
+let toastEl = null;
+let toastTimer = null;
+/** 在当前视口内弹一条提示（`position:fixed` ⇒ 与滚动位置无关） */
+function showToast(msg, isError) {
+  if (typeof document === 'undefined' || !document.body) return;
+  if (!toastEl) {
+    toastEl = document.createElement('div');
+    toastEl.id = 'toast';
+    toastEl.setAttribute('role', 'status');
+    toastEl.style.cssText = [
+      'position:fixed',
+      'left:12px',
+      'right:12px',
+      'bottom:24px',
+      'z-index:9999',
+      'padding:12px 14px',
+      'border-radius:10px',
+      'font-size:15px',
+      'line-height:1.45',
+      'pointer-events:none',
+      'word-break:break-all',
+      'box-shadow:0 6px 20px rgba(0,0,0,.4)',
+    ].join(';');
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = msg;
+  toastEl.style.background = isError ? '#7f1d1d' : '#1f2937';
+  toastEl.style.color = isError ? '#fee2e2' : '#f9fafb';
+  toastEl.style.display = 'block';
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    if (toastEl) toastEl.style.display = 'none';
+  }, TOAST_MS);
+}
+/** 原生壳里的「保存」回话：**既**写状态行（旧行为一字不变 ⇒ 旧断言不动）**也**弹视口内浮层（A10）。
+ * 两者职责不同：状态行 = 转换进度/汇总（长驻，在页面顶部）；浮层 = 本次保存的结局（随视口走）。 */
+function nativeNotice(msg, isError) {
+  setStatus(msg, isError);
+  showToast(msg, isError);
+}
+
 /* A10（2026-09-19 卡 002）：**解析前先画提示 → 双让帧 → 再开始解析**。
  * 为什么需要：大文件解析期间主线程被占，界面不刷新 ⇒ 用户看不到任何反馈，容易以为卡死。
  * 双让帧 = 先让浏览器画完这一帧（提示真的上屏，而不是排在解析之后），再让出一个宏任务，
@@ -115,21 +173,30 @@ export async function saveTextArtifact(text, fileName, mime = 'text/markdown;cha
   const plugin = nativeSavePlugin();
   if (plugin) {
     const res = await plugin.saveText({ filename: base + '.md', text: String(text == null ? '' : text), mime });
-    // A8（卡 011 第二轮）：成功也要有回话 —— 显示**插件回报的真实文件名**（MediaStore 遇重名会改名，如 `x.md (1)`）
-    setStatus(NATIVE_SAVED + ((res && res.filename) || base + '.md'));
+    // A8（卡 011 第二轮）：成功也要有回话 —— 显示**插件回报的文件名**。
+    // ⚠️ 口径更正（2026-09-20 真机验收证伪，原注释「插件回报的**真实**文件名（重名会改名成 `x.md (1)`）」作废）：
+    //    插件 `writeTextToDownloads()` 是 `ret.put("filename", filename)`（请求名，`Doc2mdNativePlugin.java` L199），
+    //    **不是** MediaStore 改名后的真实名 —— 真机连点两次实测：落盘 `x.md` 与 `x.md (1)`，提示**两次都显示 `x.md`**
+    //    （**指向一个不存在的文件**）。修法（插件回报插入后的 `DISPLAY_NAME`）动 `android/` ⇒ 卡外，见台账 §十二 R-A。
+    const saved = NATIVE_SAVED + ((res && res.filename) || base + '.md');
+    nativeNotice(saved);
     return 'native';
   }
   if (isNativeRuntime()) {
     // 洞 A（卡 011）：原生壳里没有插件 ⇒ 回落 `<a download>` 等于**静默无反应** ⇒ 改为明说（不回落）
-    setStatus(NATIVE_LIMIT.noPlugin, true);
+    nativeNotice(NATIVE_LIMIT.noPlugin, true);
     return 'blocked';
   }
   anchorDownload(new Blob([text], { type: mime }), base + '.md');
   return 'anchor';
 }
-/** 原生保存失败**不静默**（「静默无反应」正是本卡要治的病）⇒ 状态栏报错 */
+/** 原生保存失败**不静默**（「静默无反应」正是本卡要治的病）⇒ 状态栏报错。
+ * A10（第三轮）：原生壳里**同时**弹视口内浮层 —— 失败回话同样不能只留在页面顶部。
+ * ⚠️ Web 侧**不加浮层**（本卡要求 Web 零变化；且浏览器路径本来就有自己的反馈）。 */
 function reportSaveError(e) {
-  setStatus('保存失败：' + (e && e.message ? e.message : e), true);
+  const msg = '保存失败：' + (e && e.message ? e.message : e);
+  setStatus(msg, true);
+  if (isNativeRuntime()) showToast(msg, true);
 }
 export function downloadMd(text, fileName) {
   return saveTextArtifact(text, fileName).catch(reportSaveError);
@@ -138,7 +205,7 @@ export function downloadMd(text, fileName) {
 export async function downloadZip(text, fileName, assets, btn) {
   if (isNativeRuntime()) {
     // 洞 B（卡 011）：zip 是二进制，原生插件目前只有文本写入 ⇒ 与其静默无反应，不如明说 + 指路
-    setStatus(NATIVE_LIMIT.zip, true);
+    nativeNotice(NATIVE_LIMIT.zip, true);
     return;
   }
   try {
