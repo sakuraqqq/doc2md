@@ -776,6 +776,15 @@
 - ⚠️ **`A6` 边界声明未变**：本轮只是把反馈**从看不见挪到看得见**；**NEO7 的根因仍在**（另立卡，需那台设备 `logcat`）。另 **`R-A`（重名时提示的文件名与实际不符）本轮只更正了注释，未修行为**（修法动 `android/`，卡外）。
 - ⚠️ **真机面清单（用户 2026-09-21 一句「话说下载失败这个试了吗」追出来的补测）** —— **"真机验过"要写成一张面清单，不许一句话盖住整张表**：**成功面 ✅**（浮层「✅ 已保存到「下载」：…」，绿底）· **写入被拒 ✅**（浮层「保存失败：真机桩：写入被拒（A9）」，红底，`anchorClicks=0`，`Download/` 无新增）· **无插件 ✅**（浮层「保存失败：本机未加载保存插件，文件未保存」，红底，`anchorClicks=0`，= NEO7 那一类）· **zip 分支 ⚠️ 未在真机验**（需带图文档；CI 侧 Z3-2 已断言文案）。失败是**注入的**、触摸与运行时是**真的**；**"真机上真会缺插件"仍属 NEO7 根因**（另立卡）。三张截图在 `.私档/验证/卡011-真机实测/`。
 
+**A11.36 卡 012：`android/` 装上第一批守卫（2026-09-21）**
+- **来源**：用户 2026-09-21「web 这边有**完整的审查系统，ci 什么的**。**apk 那边就缺少**……**apk 也会屎山，防屎山什么的还没做**」。**背景定量**：`android/app/src` 239 文件里**几乎全是 `main/assets/public/`**（`www/` 经 `cap sync` 落的暂存副本，已被 gitignore），**真·原生源码只有 2 个 Java 文件 ≈ 10 KB** ⇒ **现在建基线最便宜**。基线 `062cc04`，实现 `977bf0d`。
+- **交付**：`tools/apk-artifact-check.mjs`（**G1**：从 **APK 内**解出 `assets/public/index.html` ⇔ 仓库产物比**字节 + SHA256**；**三态退出码 0 通过 / 1 不同源 / 2 未验**；复用 `tests/lib/zipio.mjs` 的 `readZip`，不重复造 zip 解析）· `tools/android-permission-audit.mjs`（**G2**：源码 manifest `<uses-permission>` 全集 ⇔ 登记清单；**多 / 少 / 改名 / 缺「为什么需要」⇒ 红**；manifest 缺失 ⇒ 红而非跳过）· `docs/android-permissions.json`（登记清单，**`INTERNET` 理由不编**）· `tools/android-guard-selftest.mjs`（**15/15**，体例**照抄** `guard-selftest.mjs`，不发明新自证方式，也不改既有工具）· `.github/workflows/tests.yml` **+1 步**（第 9 步，**在末步 `Delivery-face dependency audit` 之前** —— 卡 009 硬约束；`steps 15 → 16`）。
+- **`INTERNET` 的解释（本卡第一个真实产出）**：来源 = **Capacitor 安卓工程模板默认**（实测 `@capacitor/android` **自身 manifest 为空** ⇒ **不是库注入**）；**必需性 = 未验证**（移除实验要改 `android/` ⇒ 卡外），现有证据**指向非必需**（零外发红线 + 组 H2 零外域 + WebView 走**进程内**自定义 scheme `https://localhost`）。⚠️「未发现用途」**不等于**「可移除」。
+- **门禁**：`index.html` **逐字节不变**（**137,866 B / `C06F654A…`**，`git diff --exit-code index.html` = **0** —— ⚠️ **与卡 010/011 相反**，本卡不改 `src/`）· 四档 `Y_TIERS` md **实测不变** · 契约数 **`313 / 311 / 0 / 2`** 不变 · lint **0/0** · metrics 文件 **21→24** / 函数 **534→562** / **超限 0** / 重复率 **0.1%→0.2%** · 既有 `guard-selftest` **19/19**（未被弄坏）· pwa-audit 48/0 · YAML 回读 `steps=16`。⚠️ **首跑不是全绿**：lint 1 error + 2 warning、metrics 超限 2（**门禁红**）⇒ 嵌套三元改**表驱动** + 抽 4 个子函数后复跑全绿。
+- ⏳ **未结项（唯一）**：`A8` 后半「**由真 CI run 证明 G2 真的在跑**」**必须等推送**（新门禁的唯一证据是**真 run**；"我本机跑了"不算）。
+- ⚠️ **新残留（只报不改 —— 均动 `android/` ⇒ 另立卡）**：**R-1** `res/xml/file_paths.xml` 的 `<external-path name="my_images" path="." />` = **整个外部存储**的 FileProvider 授权面，而**两处 Java 都没调用它**（**死配置 + 宽授权面**，Capacitor 模板默认）· **R-2** `android/app/build.gradle` **L10–11** `versionCode 1` / `versionName "1.0"` = 模板默认，**从未与网页产品 `v0.1.9` 对齐**（装机覆盖 / 用户辨认版本 / 日后上架都会踩）· 另 `android:allowBackup="true"` 与 androidx 自动合并项已登记在清单的 `autoMerged` 段（**不参与门禁**：只在构建产物里，CI 无此文件）。
+- ⚠️ **边界（不许当成"`android/` 安全了"）**：本卡只装了**第一批两条**；`android/` 的其余面（**lint / metrics（防屎山本体）/ Gradle 依赖审计 / 隐私审查覆盖面**）**仍然静默** —— **第二刀另立**（卡面写死的边界）。
+
 **A12 局域网交换页 UI 改版（用户 2026-09-18 要求：「下次网页整好看点」）**
 - 现状：手写裸 HTML，一个 `<form>` + 文件列表；无样式体系、无拖拽、无进度、无移动端适配（手机上是主用场景，尤其该修）。
 - 下次开工先定稿再动手：拖拽上传 + 上传进度 + 文件列表（大小/时间/一键复制 `git bundle` 命令）+ 移动端单列 + 与 doc2md 主站同配色。

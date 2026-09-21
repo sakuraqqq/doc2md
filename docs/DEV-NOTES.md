@@ -1803,6 +1803,20 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️ **另记一条浏览器侧事实**：本机 **Edge 与 Chrome 的 `inspect` 按钮都点了没反应**（`edge://inspect` 里 **目标列得出**、点 `inspect` / `inspect fallback` 窗口都不开）⇒ 真机 WebView 的 console 取证**不能依赖浏览器按钮**。
    - **工具落点**：`.私档/工具/android-devtools.mjs` —— 绕过浏览器的 inspect 管道，自己走 `adb shell pidof` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` → `/json` → **CDP WebSocket 求值**（带 20s 超时、结果写 `.tmp/devtools-result.txt`）。阶段 1 直接复用。
 
+## 2026-09-21 · 卡 012：给 `android/` 装上第一批守卫 —— `android/` 那边原本「**断言数为 0**」
+
+**来源**：用户 2026-09-21「web 这边有**完整的审查系统，ci 什么的**。**apk 那边就缺少**……**apk 也会屎山**」。
+
+**结论**：新增 `tools/apk-artifact-check.mjs`（G1 · APK ↔ 仓库产物同源，**三态退出码 0/1/2**）+ `tools/android-permission-audit.mjs`（G2 · 源码 manifest 权限面 ↔ `docs/android-permissions.json` 登记清单）+ `tools/android-guard-selftest.mjs`（**15/15**，负例必红）+ `tests.yml` 新增一步（`steps 15 → 16`，位置在末步之前）。`index.html` **逐字节不变**（137,866 B / `C06F654A…`），契约数 **313/311/0/2 不变**。
+
+**坑 / 根因 / 防再犯**：
+1. ⭐ **"只是加个脚本"是错觉 —— 新文件进 `tools/` 就同时进 ESLint 与 metrics 两把尺子**：本卡首跑 **lint 1 error + 2 warning**（嵌套三元 + 两个函数圈复杂度 12/14 > 10）**且 metrics 超限 2 ⇒ 门禁红**。**防再犯**：写 `tools/` 新脚本时**当场自问三句** —— ① 有嵌套三元吗（`sonarjs/no-nested-conditional` 是 **error** 不是 warning）② 有函数圈复杂度 > 10 吗 ③ 有 ≥2 处相似片段吗。修法：嵌套三元 → **表驱动**（`Map`）；大函数 → 抽 `readRegistry` / `diffPermissions` / `printDiff` / `printAutoMerged`。
+2. ⭐ **"未验"必须与"通过"用不同的退出码**：`G1` 设计成 **0 通过 / 1 不同源 / 2 未验**，并在自测里**专门断言三个值两两不同**。**根因** = 可跳过就会静默（本仓现成反例：组 Y2/Y3 因缺大夹具 `t.skip`，CI 上**从不执行**）。**防再犯**：凡"输入可能缺失"的守卫，**先把退出码语义定死，再写代码**。
+3. ⭐ **登记清单的价值全在"理由那一栏"，而理由不许编**：`INTERNET` 分三层写 —— **来源**（有证据：Capacitor 模板默认；实测 `@capacitor/android` 自身 manifest **为空** ⇒ **不是库注入**）· **必需性**（**未验证**，并列出"现有证据指向非必需"三条）· **候选动作**（另立卡做移除实验）。⇒ **"不知道"就写"不知道"，但要写清"差哪一步才能知道"**。
+4. ⚠️ **源码面 ≠ 全集**：源码 manifest 只有 **1** 条 `uses-permission`，而**合并后**是 **2** 条（多出 androidx 的 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`）—— 后者**只在构建产物里**，而 CI 不构建 APK ⇒ 它**无法自动比对**，只能进 `autoMerged` 段作说明。**防再犯**：登记/审计类任务**源码面与产物面分开取数**，别用源码面冒充全集。顺带记下：`build/intermediates/.../merged_manifests/` 是**唯一**能看到"APK 实际请求什么"的地方（该目录 gitignored）。
+5. ⭐ **"我本机跑过了"在新 CI 步上等于零证据**：新门禁的唯一证据是**真 run**（卡面原话）。⇒ 回执里 `A8` 后半标 **⏳ 待推送**，**不预填、不用"应该没问题"凑数**。
+6. ⚠️ **顺手读出来的两条"未登记项"（只报不改）**：① `res/xml/file_paths.xml` 的 `<external-path path="."/>` = **整个外部存储**的 FileProvider 授权面，而**两处 Java 都没用它**（死配置 + 宽授权）；② `build.gradle` **L10–11** 的 `versionCode 1` / `versionName "1.0"` 是模板默认，**从未与网页产品 `v0.1.9` 对齐**。两条都动 `android/` ⇒ **另立卡**。
+
 ## 2026-09-21 · 卡 011 第三轮（`A10`）：反馈必须落在**当前视口内** —— **病灶在判据，不在实现**
 
 **用户真机实测打回（原话，卡面「修订记录 #2」）**：「这个下载反馈不明显，**以保存那行字太小**，而且**我试了多个文件**，以保存那个**在最上面的文件的上方，根本看不见**，要**滑屏幕到最上面**才看得到那个小字」。
