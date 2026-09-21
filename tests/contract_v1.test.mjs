@@ -5207,7 +5207,11 @@ test('契约组 Z2：「保存」环节的原生/浏览器分流（无 Capacitor
         assert.equal(calls[0].filename, 'sample.md', `传给原生的文件名=${calls[0].filename}`);
         assert.ok(String(calls[0].text).includes('DOC2MD-TXT-OK-2026'), '传给原生的文本缺令牌');
         assert.ok(/^text\/markdown/.test(String(calls[0].mime)), `传给原生的 mime=${calls[0].mime}`);
-        assert.equal(dl, null, '有合法原生插件时仍走了 <a download>（分支判断错）');
+        // ⚠️ 写法更正（卡 011 第三轮 · `B3` 断言过户；**判据一字未变**）：原为 `assert.equal(dl, null, …)`，
+        //    它在失败时会把 playwright 的 Download 对象图格式化进错误消息 ⇒ **实测把整个测试进程 OOM**
+        //    （`FATAL ERROR: Committing semi space failed`，卡 011 第二轮真事）。`assert.ok(dl === null)`
+        //    条件完全相同，但不 inspect 对象（同批 Z3-1..Z3-4 已是这个写法，本条属补齐一致性）。
+        assert.ok(dl === null, '有合法原生插件时仍走了 <a download>（分支判断错）');
       });
 
       await t.test('Z2-3 负对照：Capacitor 在但 saveText 不是函数 ⇒ 回落 <a download>（不得静默走原生）', async () => {
@@ -5369,6 +5373,177 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
         const status = await p3.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
         assert.ok(dl === null, '原生插件写入失败后回落了 <a download>（WebView 里无效 ⇒ 等于静默）');
         assert.ok(status.includes('保存失败'), `写入失败无可见提示，实际=${JSON.stringify(status)}`);
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 Z4：保存反馈必须落在**当前视口内**（卡 011 第三轮 · A10）—— 用户真机实测打回
+//   用户原话：「这个下载反馈不明显，**以保存那行字太小**，而且**我试了多个文件**，以保存那个
+//   **在最上面的文件的上方，根本看不见**，要**滑屏幕到最上面**才看得到那个小字」。
+//   ⚠️ 上一轮（Z3 / A8）只断言了「**文案在 DOM 里**」—— 而 `#status` 在**文档流顶部**（`src/template.html`
+//      L59：`margin: 14px 2px 0; font-size: 13px`），多文件 + 已滚动时它在视口外
+//      ⇒ **旧判据测不到用户看到的那个问题**。Z4-0 专门把这一现场钉成**可判条件**（不成立就说明
+//      "测试根本没复现用户场景"，此时 Z4-1 会退化成恒真 —— 与 A8 翻车同因）。
+//   ⚠️ 适用范围（卡面 2026-09-21 修正后口径）：**浮层只加在原生分支** —— Web 侧浏览器**自带**
+//      下载完成反馈，再加一层 = 一个动作两条成功提示（用户原话「这样 web 不就有两个下载成功
+//      反馈了？」）⇒ Z4-3 守「**Web 侧零变化**」（比原 A3 更强）。
+//   ⚠️ Z4-1 的"可见"判据含三层，**缺一层就可能恒真**：元素存在 → `display !== none` →
+//      **rect 非零**（`display:none` 的元素 `getBoundingClientRect()` 全 0，只判"落在视口内"必过）。
+// ---------------------------------------------------------------------------
+test('契约组 Z4：保存反馈必须落在当前视口内（多文件 + 滚到底部；浮层只加在原生分支）', async (t) => {
+  const server = await startServer(ROOT);
+  try {
+    const chromium = await loadPlaywright();
+    const browser = await launchBrowser(chromium);
+    try {
+      const MULTI = ['sample.txt', 'sample.html', 'sample-truncated.txt'];
+      const TXT_TOKEN = 'DOC2MD-TXT-OK-2026';
+      const stubNative = (page, mode) =>
+        page.evaluate((m) => {
+          window.Capacitor = {
+            getPlatform: () => 'android',
+            Plugins: {
+              Doc2mdNative: {
+                saveText: (arg) =>
+                  m === 'ok'
+                    ? Promise.resolve({ filename: (arg && arg.filename) || 'x.md', bytes: 1 })
+                    : Promise.reject(new Error('MediaStore insert returned null')),
+              },
+            },
+          };
+        }, mode);
+
+      // 造现场：3 个文件 ⇒ 3 张卡（页面够长）⇒ 滚到底部
+      const openMultiScrolled = async (page) => {
+        await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.locator('input[type=file]').setInputFiles(MULTI.map((f) => nodePath.join(DATA, f)));
+        await page.waitForFunction(
+          (tok) => {
+            for (const el of document.querySelectorAll('textarea, input, pre, code')) {
+              if ((el.value || el.textContent || '').includes(tok)) return true;
+            }
+            return false;
+          },
+          TXT_TOKEN,
+          { timeout: 30000 }
+        );
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await page.waitForTimeout(250);
+      };
+      const siteGeometry = (page) =>
+        page.evaluate(() => {
+          const s = document.querySelector('#status');
+          const r = s ? s.getBoundingClientRect() : null;
+          return {
+            cards: document.querySelectorAll('#results .card').length,
+            actionRows: document.querySelectorAll('#results .card-actions').length,
+            scrollY: Math.round(window.scrollY),
+            innerHeight: window.innerHeight,
+            statusRect: r && { top: Math.round(r.top), bottom: Math.round(r.bottom) },
+            statusInViewport: Boolean(r && r.bottom > 0 && r.top < window.innerHeight),
+            statusText: (s || {}).textContent || '',
+          };
+        });
+      const toastGeometry = (page) =>
+        page.evaluate(() => {
+          const el = document.querySelector('#toast');
+          if (!el) return { exists: false };
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return {
+            exists: true,
+            text: el.textContent || '',
+            display: cs.display,
+            fontSize: parseFloat(cs.fontSize),
+            position: cs.position,
+            rect: { top: Math.round(r.top), bottom: Math.round(r.bottom), width: Math.round(r.width), height: Math.round(r.height) },
+            innerHeight: window.innerHeight,
+            nonEmpty: r.width > 0 && r.height > 0,
+            fullyInViewport: r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight,
+          };
+        });
+
+      // —— 现场 A：原生 + 写入成功 ——
+      const ctxA = await browser.newContext({ acceptDownloads: true });
+      const pA = await ctxA.newPage();
+      await openMultiScrolled(pA);
+      await stubNative(pA, 'ok');
+      const btnA = pA.locator('#results .card-actions button', { hasText: '下载 .md' }).last();
+      await btnA.waitFor({ state: 'visible', timeout: 10000 });
+      const g0 = await siteGeometry(pA);
+
+      await t.test('Z4-0 现场前提：3 张卡 + 已滚到底部 ⇒ 旧载体 #status 确实已在视口外（把用户的抱怨钉成可判条件）', () => {
+        assert.equal(g0.actionRows, 3, `操作行数=${g0.actionRows}（期望 3 —— 少于 3 就复现不出"多文件"现场）`);
+        assert.ok(g0.scrollY > 0, `scrollY=${g0.scrollY}（期望 > 0 —— 页面没滚起来就什么都没证明）`);
+        assert.equal(
+          g0.statusInViewport,
+          false,
+          `#status 仍在视口内（rect=${JSON.stringify(g0.statusRect)} / innerHeight=${g0.innerHeight}）⇒ 现场不成立，Z4-1 会退化成恒真`
+        );
+      });
+
+      await t.test('Z4-1 A10：点最后一张卡的「⬇ 下载 .md」⇒ 提示必须出现在当前视口内（用户无需滚动）', async () => {
+        await btnA.click();
+        await pA.waitForTimeout(600);
+        const tg = await toastGeometry(pA);
+        assert.ok(tg.exists, '视口内提示元素不存在 —— 反馈仍只在文档流顶部的 #status 里（用户滚下去就看不见）');
+        assert.notEqual(tg.display, 'none', `提示元素 display=${tg.display}（存在但没显示 = 等于没反馈）`);
+        assert.ok(tg.nonEmpty, `提示元素尺寸为 0（rect=${JSON.stringify(tg.rect)}）—— "存在"不等于"可见"`);
+        assert.ok(
+          tg.fullyInViewport,
+          `提示未完全落在视口内：rect=${JSON.stringify(tg.rect)} / innerHeight=${tg.innerHeight}`
+        );
+        assert.ok(/已保存/.test(tg.text), `提示文案无成功回话，实际=${JSON.stringify(tg.text)}`);
+      });
+
+      await t.test('Z4-2 A10：提示字号不得低于可读下限（≥14px）', async () => {
+        const tg = await toastGeometry(pA);
+        assert.ok(tg.exists, '没有视口内提示元素（见 Z4-1）');
+        assert.ok(tg.fontSize >= 14, `提示字号=${tg.fontSize}px（下限 14px —— 用户原话「以保存那行字太小」）`);
+      });
+
+      // —— 现场 B：原生 + 写入失败（失败回话同样不能只在页面顶部）——
+      const ctxB = await browser.newContext({ acceptDownloads: true });
+      const pB = await ctxB.newPage();
+      await openMultiScrolled(pB);
+      await stubNative(pB, 'fail');
+      const btnB = pB.locator('#results .card-actions button', { hasText: '下载 .md' }).last();
+      await btnB.waitFor({ state: 'visible', timeout: 10000 });
+
+      await t.test('Z4-4 A10：写入失败同样必须落在视口内（失败文案也不能只在页面顶部）', async () => {
+        await btnB.click();
+        await pB.waitForTimeout(600);
+        const tg = await toastGeometry(pB);
+        assert.ok(
+          tg.exists && tg.fullyInViewport,
+          `失败提示未落在视口内：${JSON.stringify(tg)}`
+        );
+        assert.ok(/保存失败/.test(tg.text), `提示文案无失败回话，实际=${JSON.stringify(tg.text)}`);
+      });
+
+      // —— 现场 C：Web（无 Capacitor）—— 浮层**不得**出现 ——
+      const ctxC = await browser.newContext({ acceptDownloads: true });
+      const pC = await ctxC.newPage();
+      await openMultiScrolled(pC);
+      const btnC = pC.locator('#results .card-actions button', { hasText: '下载 .md' }).last();
+      await btnC.waitFor({ state: 'visible', timeout: 10000 });
+
+      await t.test('Z4-3 回归闸：Web 分支零变化 —— 不出现浮层（浏览器自带下载完成反馈，再加一层 = 双重反馈）', async () => {
+        const hasCap = await pC.evaluate(() => Boolean(window.Capacitor));
+        assert.equal(hasCap, false, '浏览器环境不该有 window.Capacitor（有则本断言前提不成立）');
+        const dlP = pC.waitForEvent('download', { timeout: 10000 }).catch(() => null);
+        await btnC.click();
+        const dl = await dlP;
+        assert.ok(dl, '无 Capacitor 时点「下载 .md」没有产生 download 事件 —— Web 路径被浮层改动误伤');
+        await pC.waitForTimeout(400);
+        const tg = await toastGeometry(pC);
+        assert.equal(tg.exists, false, `Web 侧出现了原生浮层（${JSON.stringify(tg.text)}）—— 一个动作两条成功反馈，用户已明确否掉`);
       });
     } finally {
       await browser.close();

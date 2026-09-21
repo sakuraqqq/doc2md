@@ -1695,6 +1695,44 @@ ${xlsxRowsToMd(kept)}`);
     statusEl.textContent = msg || "";
     statusEl.className = isError ? "error" : "";
   }
+  var TOAST_MS = 6e3;
+  var toastEl = null;
+  var toastTimer = null;
+  function showToast(msg, isError) {
+    if (typeof document === "undefined" || !document.body) return;
+    if (!toastEl) {
+      toastEl = document.createElement("div");
+      toastEl.id = "toast";
+      toastEl.setAttribute("role", "status");
+      toastEl.style.cssText = [
+        "position:fixed",
+        "left:12px",
+        "right:12px",
+        "bottom:24px",
+        "z-index:9999",
+        "padding:12px 14px",
+        "border-radius:10px",
+        "font-size:15px",
+        "line-height:1.45",
+        "pointer-events:none",
+        "word-break:break-all",
+        "box-shadow:0 6px 20px rgba(0,0,0,.4)"
+      ].join(";");
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = msg;
+    toastEl.style.background = isError ? "#7f1d1d" : "#1f2937";
+    toastEl.style.color = isError ? "#fee2e2" : "#f9fafb";
+    toastEl.style.display = "block";
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      if (toastEl) toastEl.style.display = "none";
+    }, TOAST_MS);
+  }
+  function nativeNotice(msg, isError) {
+    setStatus(msg, isError);
+    showToast(msg, isError);
+  }
   function nextPaint() {
     return new Promise((resolve) => {
       requestAnimationFrame(() => setTimeout(resolve, 0));
@@ -1764,25 +1802,28 @@ ${xlsxRowsToMd(kept)}`);
     const plugin = nativeSavePlugin();
     if (plugin) {
       const res = await plugin.saveText({ filename: base + ".md", text: String(text == null ? "" : text), mime });
-      setStatus(NATIVE_SAVED + (res && res.filename || base + ".md"));
+      const saved = NATIVE_SAVED + (res && res.filename || base + ".md");
+      nativeNotice(saved);
       return "native";
     }
     if (isNativeRuntime()) {
-      setStatus(NATIVE_LIMIT.noPlugin, true);
+      nativeNotice(NATIVE_LIMIT.noPlugin, true);
       return "blocked";
     }
     anchorDownload(new Blob([text], { type: mime }), base + ".md");
     return "anchor";
   }
   function reportSaveError(e) {
-    setStatus("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message ? e.message : e), true);
+    const msg = "\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message ? e.message : e);
+    setStatus(msg, true);
+    if (isNativeRuntime()) showToast(msg, true);
   }
   function downloadMd(text, fileName) {
     return saveTextArtifact(text, fileName).catch(reportSaveError);
   }
   async function downloadZip(text, fileName, assets, btn) {
     if (isNativeRuntime()) {
-      setStatus(NATIVE_LIMIT.zip, true);
+      nativeNotice(NATIVE_LIMIT.zip, true);
       return;
     }
     try {
