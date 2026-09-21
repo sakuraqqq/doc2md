@@ -1,8 +1,8 @@
 # tests.yml — doc2md CI 质量门（防屎山 ③ 守门）
 # 模板：cola（可乐工厂效率计算器）tests.yml；按任务书扩展为 checks job：
-#   build-consistency → lint → 守卫自测 → baseline 守卫 → metrics（超限必须为 0）
-#   → 站点白名单 smoke（组装临时 _site）→ npm test（显式 TAP reporter）→ **TAP ↔ BASELINE.json 对账**
-#   → pwa-audit → verify:ocr → **交付面依赖审计（卡 009 起固定在末位）**
+#   build-consistency → lint → 守卫自测 → **android 守卫（权限面 + 自证能红，卡 012）** → baseline 守卫
+#   → metrics（超限必须为 0）→ 站点白名单 smoke（组装临时 _site）→ npm test（显式 TAP reporter）
+#   → **TAP ↔ BASELINE.json 对账** → pwa-audit → verify:ocr → **交付面依赖审计（卡 009 起固定在末位）**
 # 说明：
 #   - 触发：push main · **push tag `v*`**（2026-09-17 加固：发布 tag 也必须过同款门禁，见第九轮审查 §4.4）
 #     · PR。⚠️ 残留：GitHub 无「workflow 间依赖」，deploy-pages 不会等本 workflow 跑完才开始部署 ——
@@ -67,6 +67,20 @@ jobs:
         run: npm run lint
       - name: "Guard selftest (deploy-smoke / audit-delivery / baseline 正例 + 负例必红；2026-09-17)"
         run: node tools/guard-selftest.mjs
+      # ⚠️ **位置是硬约束（卡 009）**：本步必须在末步 `Delivery-face dependency audit` **之前** ——
+      #    那一步的数据源是网络端点（npm registry advisories），它红起来会**跳过其后的所有步**
+      #    （事故 run 35458379084：6 步被跳过、该 run 从未跑测试）。本步在其之前 ⇒ 不受影响。
+      # 卡 012（2026-09-21）：`android/` 那边原本**断言数为 0**（改什么都不会红）⇒ 这是第一批两条守卫。
+      #    ① 权限面：源码 manifest 的 <uses-permission> 全集 ↔ docs/android-permissions.json 逐条比对
+      #       （多 / 少 / 改名 / 缺「为什么需要」⇒ 红）；只读源码 manifest —— 合并后的 manifest 需要
+      #       构建产物，而**本仓 CI 不装 Android SDK、不构建 APK**（用户 2026-09-21 拍板）。
+      #    ② 守卫自测：两条守卫的正例 + **负例必红**（体例同上面的 guard-selftest，不发明新方式）。
+      #    ⚠️ G1（`apk-artifact-check.mjs`，APK ↔ 仓库产物同源）**不进 CI**：它要一个 APK 文件，
+      #       而 CI 里没有 ⇒ 它只在**本机**按需实跑（无 APK 时 exit 2「未验」，**不是通过**）。
+      - name: "Android guards (权限面登记比对 + 两守卫自证能红；2026-09-21 卡 012)"
+        run: |
+          node tools/android-permission-audit.mjs
+          node tools/android-guard-selftest.mjs
       - name: "Baseline guard (docs/BASELINE.json 数字真相源：契约数溯源 + 发布物/线上/交付面现算比对；2026-09-19 卡 001-C)"
         run: node tools/baseline-check.mjs
       - name: "Code metrics gate (超限函数必须为 0；2026-09-10 用户拍板)"

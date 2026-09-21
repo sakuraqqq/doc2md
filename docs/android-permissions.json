@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "_comment": "android/ 权限面登记清单（卡 012 · 2026-09-21 立）。规则：① 源码 manifest 里每一条 <uses-permission> 都必须在这里出现，且 reason 写清「为什么需要」——**理由不许编**，说不清就写「来源未明、待查」；② 由 tools/android-permission-audit.mjs 逐条比对，**多 / 少 / 改名 / 缺理由 ⇒ CI 红**；③ 只登记源码 manifest（android/app/src/main/AndroidManifest.xml）——构建期自动合并进来的权限登记在 autoMerged 段，只作说明、**不参与门禁**；④ 本文件不含任何本机路径 / 设备标识 / 账号（发布前审查硬门禁）。",
+  "manifest": "android/app/src/main/AndroidManifest.xml",
+  "permissions": [
+    {
+      "name": "android.permission.INTERNET",
+      "reason": "⚠️ 本项目**代码未主动请求**该权限。来源 = **Capacitor 安卓工程模板默认**（`npx cap add android` 生成），随安卓工程一起入仓。**不是库注入** —— 实测 `node_modules/@capacitor/android/capacitor/src/main/AndroidManifest.xml` 是一个**空 manifest**（无任何 uses-permission）。",
+      "necessity": "**未验证**（本卡 outOfScope：不改 `android/` 任何文件 ⇒ 做不了移除实验）。现有证据**指向非必需**：① 产品红线是「零外发」，契约组 H2 同时断言 fetchable 外域 URL ⊆ 白名单（零外域）；② WebView 加载的是 Capacitor 自定义 scheme `https://localhost`，由 `WebViewLocalServer` **进程内**拦截，不走网络栈。⇒ ⚠️「未发现必需用途」**不等于**「可移除」，两者都不许当结论。",
+      "action": "候选（**另立卡**）：移除 INTERNET + 真机回归；若通过 ⇒ 与「零外发」口径一致（对外说明也更干净）。若保留 ⇒ 本登记即为对外解释。",
+      "since": "2026-09-20（随安卓工程入仓，提交 2937166 / 卡 008）",
+      "measured": "2026-09-21（卡 012）：源码 manifest 唯一一条 uses-permission，位于 L40"
+    }
+  ],
+  "autoMerged": [
+    {
+      "name": "io.github.sakuraqqq.doc2md.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+      "reason": "**androidx 构建期自动生成**（`android:protectionLevel=\"signature\"`，应用自用；非系统权限、不涉及用户数据）。只在**构建产物**的合并 manifest 里出现，源码 manifest 里没有。",
+      "measured": "2026-09-21：读本机 `android/app/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml`（该目录 gitignored ⇒ CI 无此文件 ⇒ **无法自动比对**，故只登记不门禁）"
+    }
+  ]
+}
