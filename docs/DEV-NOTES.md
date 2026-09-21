@@ -1803,6 +1803,19 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️ **另记一条浏览器侧事实**：本机 **Edge 与 Chrome 的 `inspect` 按钮都点了没反应**（`edge://inspect` 里 **目标列得出**、点 `inspect` / `inspect fallback` 窗口都不开）⇒ 真机 WebView 的 console 取证**不能依赖浏览器按钮**。
    - **工具落点**：`.私档/工具/android-devtools.mjs` —— 绕过浏览器的 inspect 管道，自己走 `adb shell pidof` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` → `/json` → **CDP WebSocket 求值**（带 20s 超时、结果写 `.tmp/devtools-result.txt`）。阶段 1 直接复用。
 
+## 2026-09-21 · 卡 013：`android/` 收尾 —— FileProvider **删除** + APK 版本号对齐（`G3` 第一次用 `G1`）
+
+**结论**：① `res/xml/file_paths.xml`（原 `<external-path path="."/>` = **整个外部存储**）与 manifest 里的 `<provider>` **删除**，新增**契约组 Z5**（4 条）守住；② `build.gradle` 的 `versionName` 改为**从 `package.json` 读**（单源；**读失败抛错、不回落 `"1.0"`**）、`versionCode 1 → 2`；③ 新守卫 **`G3`**（`tools/apk-version-check.mjs`）从**产物侧**（合并后 manifest，文本 XML）守版本对齐。契约数 `313 → 317`；新 APK **18,911,213 B**；`G1` 复验 **PASS**。
+
+**坑 / 根因 / 防再犯**：
+1. ⭐⭐ **块注释里的 glob `**/` 会把注释提前闭合** —— `G3` 的头注释里写了 `…/intermediates/**/merged_manifests/**/…`，其中的 **`*/` 终止了块注释** ⇒ 首次三条命令**全是 `SyntaxError`**、退出码却都是 1。⚠️ **我差点把这三次崩溃当成"先红成立"**。**防再犯**：**"先红"必须读错误文本，不能只看退出码** —— `exit 1` 既可能是"判据生效"，也可能是"程序根本没起来"，**两者在证据链上的价值完全不同**（前者是证据，后者是零信息）。
+2. ⭐ **注释里的字面量会绊倒"不得出现 X"式断言**：`Z5-2` 判"manifest 里不得有 `<provider>`/`FileProvider`/`file_paths`"，而**删除处置本来就该在原位留一句"为什么删"**，那句话里三个字面量全会出现 ⇒ 初版断言**会被我自己的说明文字绊红**（而"修绿"的诱惑是**删掉那句注释**——把有用的信息删掉来迁就断言）。**处置**：**先剥 XML 注释再判**，把"注释不算声明"写进断言本身。⚠️ 这是 `B3` 里 `已静默` 的**近亲**：**一条会被非目标因素驱动的断言**。
+3. ⚠️ **`lint` 的 warning 也是门禁**：本项目口径「**0 错 0 警**」。`G3` 首跑 `checkApkVersion` 圈复杂度 **12 > 10** ⇒ 抽 `readProductVersion()` 后清零。⚠️ **同一族第二次**（卡 012 已记过一次：新文件进 `tools/` 就同时进 ESLint + metrics 两把尺子）。
+4. ⚠️ **三跳链条里"中间那跳"是手工的**：`npm run build` → **手工拷进 `www/`** → `npx cap sync android` → `gradlew assembleDebug`。`tools/build.mjs` 与 `package.json` 里 `grep www` **零命中** ⇒ **没人替你同步 `www/`**。漏了它，`G1` 会**红在错误根因**上（它说"APK 与仓库不同源"，真因是"`www/` 是旧的"）。**防再犯**：**先核 `www/index.html` 的哈希**，再谈 `G1`。
+5. ⭐ **守卫的"读法"要写清，否则判据不可判**：卡面 `G3` 第一版只写了"从 APK 读 `versionName`"，而 APK 里的 manifest 是**二进制 XML** ⇒ 普通解析器读不了 ⇒ **判据不可判 = 不是判据**。处置 = 走**合并后的中间产物**（**文本 XML**，纯 Node 可读）。**代价**：它 gitignored ⇒ **`G3` 进不了 CI**（**已知取舍，已写死在卡面与脚本头注释里**，免得日后被当成"漏了 CI 接线"）。
+6. ⚠️ **"两端由构造相同"的断言 = 恒真 = 装饰**：`G3` 初版想比 `build.gradle` 的 `versionName` 与 `package.json` 的 `version` —— 而前者**就是从后者读来的** ⇒ **永远绿、负例造不出来**。**改判据**：比**产物侧**（`package.json → Gradle 读 → manifest 合并 → 产物`，中间任何一环都可能错）⇒ **能红了**（改 `package.json` 不重建 ⇒ 必红，实测）。⚠️ **本项目的第 N 次同一族**：`A8` 的「可见」没定义参照系（判据太弱）· 本条（判据不可能假）—— **都是"守卫不会响"**。
+7. ⚠️ **设备掉线就停手**：`A2` 的真机那半（覆盖安装 / `dumpsys` 读回 / 降级负例）在 `adb devices` 返回空时**直接停**，标 ⏳ 并写清"要做哪三件"。**不用纸面值凑** —— 卡面明写"纸面对齐不算"。
+
 ## 2026-09-21 · 卡外登记：Dependabot PR #8「CI 绿了合不合」的判定 + 一处**许可门口径冲突**
 
 **缘起**：用户截图问「ci绿，这个机器人的pr合不合」。**结论：不合**（按本仓既定口径本地落地），理由见 `HANDOFF §8-G` 第 25/26 条。本节只留**可复用的判定方法与坑**。

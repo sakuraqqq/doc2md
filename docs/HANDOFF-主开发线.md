@@ -785,6 +785,17 @@
 - ⚠️ **新残留（只报不改 —— 均动 `android/` ⇒ 另立卡）**：**R-1** `res/xml/file_paths.xml` 的 `<external-path name="my_images" path="." />` = **整个外部存储**的 FileProvider 授权面，而**两处 Java 都没调用它**（**死配置 + 宽授权面**，Capacitor 模板默认）· **R-2** `android/app/build.gradle` **L10–11** `versionCode 1` / `versionName "1.0"` = 模板默认，**从未与网页产品 `v0.1.9` 对齐**（装机覆盖 / 用户辨认版本 / 日后上架都会踩）· 另 `android:allowBackup="true"` 与 androidx 自动合并项已登记在清单的 `autoMerged` 段（**不参与门禁**：只在构建产物里，CI 无此文件）。
 - ⚠️ **边界（不许当成"`android/` 安全了"）**：本卡只装了**第一批两条**；`android/` 的其余面（**lint / metrics（防屎山本体）/ Gradle 依赖审计 / 隐私审查覆盖面**）**仍然静默** —— **第二刀另立**（卡面写死的边界）。
 
+**A11.37 卡 013：`android/` 收尾 —— FileProvider 删除 + APK 版本号对齐（2026-09-21）**
+- **来源**：卡 012 `§八` 的 `R-1`/`R-2`（**只报不改**交出来的两条真发现）+ 用户「R-1/R-2 立，合成一张 `android/` 收尾卡」。基线 `e4ad8e6`，实现 `47e09f7`。卡面当天改 8 次（用户 5 抓 + 独立审查 3 阻塞）后**放行**。
+- **`A1` FileProvider 退役（唯一实现 = 删除）**：删 `android/app/src/main/res/xml/file_paths.xml`（原 `<external-path path="."/>` = **整个外部存储**）+ 删 manifest 的 `<provider>`（原位留"为什么删"）。依据 = **全仓零调用者**（两次独立复核）⇒「真正需要的子路径」= **空集** ⇒「收窄」**没有判定目标**。⭐ **新增契约组 Z5**（4 条）—— 现有守卫都不覆盖它（`G1` 管 `index.html`、`G2` 管 `<uses-permission>`）⇒ 不补断言则**删前删后都绿**；**Z5 在 CI 也能跑**（那两个文件是入库的）。
+- **`A2` 版本号（口径 ⓐ）**：`build.gradle` 的 `versionName` 改为从**仓库根 `package.json` 的 `version`** 读（**单源、不许手抄**）；**读失败（缺文件 / JSON 坏 / 缺 version）一律 `throw`，不回落 `"1.0"`**；`versionCode 1 → 2`；`docs/RELEASE-CHECKLIST.md` §2 加「**发 APK 前 `versionCode` 必须 +1 且 > 上一版**」（该轴**没有真相源** ⇒ 只能人工，故给它一个能被看到的落点）。
+- **`G3` 新守卫**（`tools/apk-version-check.mjs`）：守**产物侧**的 `versionName == package.json.version`（**不是** `build.gradle` 源文本 —— 那个由构造相同、**恒真**）。读法 = 卡面四条路径的第 **③** 条（**合并后的 manifest 中间产物 = 文本 XML**，纯 Node 零依赖）；**只有 0/1 两态、没有"未验"出口**；同时打印 `versionCode`。⚠️ **不进 CI**（输入是 gitignored 的 `build/intermediates`）—— **已知取舍**，触发方式 = 跟着**本机构建 APK** 跑。
+- **先红后绿**：`Z5` 先红 `4/1/3`（Z5-1/Z5-2 红；**Z5-3 现场前提先红即绿**）→ 绿；`G3` 先红 `exit 1`「产物 `"1.0"` ≠ 产品 `"0.1.9"`」+ 两种读取失败各 `exit 1`（**均不回落**）→ 转绿 `exit 0`（产物侧 `versionName="0.1.9"` / `versionCode=2`）；**卡面指定负例**（改 `package.json` 不重建 ⇒ 必红）**实测成立**，还原后 `git status` 零输出。
+- **`A3` 守卫兑付**：新 APK **18,911,213 B / `AD732A9D60FC37A33AE3F747BDF8DF24F8383071011E6B30C87A06C7422510E3`**；**`G1` PASS**（APK 内 `index.html` = 137,866 B / `C06F654A…` = 仓库产物）。⚠️ **APK 变了是预期的** —— `G1` 守的是"APK 里的 `index.html` 仍等于仓库产物"，**不是"APK 不变"**。三跳链条：`npm run build` → **手工拷 `www/`** → `npx cap sync android` → `gradlew assembleDebug`。
+- **门禁**：`index.html` **逐字节不变**（`git diff --exit-code index.html` = **0**）· 四档 md **实测不变** · `lint` **0 错 0 警**（首跑 1 warning：`checkApkVersion` 复杂度 12 ⇒ 抽函数清零）· metrics 文件 **25** / 函数 **570** / **超限 0** / 重复率 0.2% · `guard-selftest` **19/19** · `android-guard-selftest` **15/15 → 22/22**（只增）· `G2` PASS · `baseline-check` 两口径 + `--from-tap` 一致 · 契约数 **317/315/0/2**（CI **314/311/0/3**），`BASELINE.json` 与 `CONTRACT.md` 同批同步 · `A7` 对表 = **恰 9 条路径**、outOfScope 面空（含「**本卡未动 `MainActivity` 的插件注册声明**」的显式声明）。
+- ⏳ **未结项（唯一）**：`A2` 的**真机那半** —— ① 覆盖安装（`install -r`，**不是**先卸载）② `dumpsys package` 读回 `versionName=0.1.9` / `versionCode=2` ③ **降级负例**（装回 `versionCode 1` 的旧包 ⇒ 预期 `INSTALL_FAILED_VERSION_DOWNGRADE`，前置 = 先有一个 v1 APK，计划 `pm path` + `adb pull` 从设备抠）。**原因：开工时 `adb devices` 列表为空（设备未连）⇒ 按"卡住即停"标 ⏳，不用纸面值凑**。
+- ⚠️ **边界**：本卡与 012 合起来**只覆盖 `android/` 的两个面**（产物同源/权限面 + FileProvider/版本号），其余（**lint / metrics / Gradle 依赖审计 / 隐私审查覆盖面**）**仍然静默** —— 第二刀另立。
+
 **A12 局域网交换页 UI 改版（用户 2026-09-18 要求：「下次网页整好看点」）**
 - 现状：手写裸 HTML，一个 `<form>` + 文件列表；无样式体系、无拖拽、无进度、无移动端适配（手机上是主用场景，尤其该修）。
 - 下次开工先定稿再动手：拖拽上传 + 上传进度 + 文件列表（大小/时间/一键复制 `git bundle` 命令）+ 移动端单列 + 与 doc2md 主站同配色。
