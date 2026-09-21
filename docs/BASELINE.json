@@ -14,7 +14,7 @@
       "counts": { "total": 314, "pass": 311, "fail": 0, "skip": 3 },
       "measured": {
         "at": "2026-09-21",
-        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：由 local_with_fixtures 的 317/315/0/2 按同一映射推得 314/311/0/3（组 Y 4 条 → 1 条 skip：total −3 / pass −4 / skip +1）；② **真实 CI runner 待本轮推送后由 CI 步现算对账**（`--from-tap tap.txt --scope ci_clean_checkout`，不符即红、不静默）—— 上一值 310/307/0/3（卡 011 第三轮，**已由真 CI run `35588293123` 对账确认**）"
+        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：由 local_with_fixtures 的 317/315/0/2 按同一映射推得 314/311/0/3（组 Y 4 条 → 1 条 skip：total −3 / pass −4 / skip +1）；② **真实 CI runner 已对账**（`--from-tap tap.txt --scope ci_clean_checkout`）：**真 run `35608426747`（`f1744b6`，push，success）第 14 步输出 `ok TAP ↔ contract.ci_clean_checkout：314 / 311 / 0 / 3 逐项一致`** —— 上一值 310/307/0/3（卡 011 第三轮，由真 run `35588293123` 对账确认）"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }
