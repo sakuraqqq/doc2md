@@ -795,6 +795,7 @@
 - **门禁**：`index.html` **逐字节不变**（`git diff --exit-code index.html` = **0**）· 四档 md **实测不变** · `lint` **0 错 0 警**（首跑 1 warning：`checkApkVersion` 复杂度 12 ⇒ 抽函数清零）· metrics 文件 **25** / 函数 **570** / **超限 0** / 重复率 0.2% · `guard-selftest` **19/19** · `android-guard-selftest` **15/15 → 22/22**（只增）· `G2` PASS · `baseline-check` 两口径 + `--from-tap` 一致 · 契约数 **317/315/0/2**（CI **314/311/0/3**），`BASELINE.json` 与 `CONTRACT.md` 同批同步 · `A7` 对表 = **恰 9 条路径**、outOfScope 面空（含「**本卡未动 `MainActivity` 的插件注册声明**」的显式声明）。
 - ✅ **已结项**：`A2` 的**真机那半**（设备连上后补做）—— ① 升级前读回 `versionCode=1` / `versionName=1.0`，并把设备上的**旧包**抠出（**18,965,761 B / `D5E361BE…`** = 卡 012 那版**逐字节相同**）；② **覆盖安装** `install -r` = **`Success`** ⇒ **真机读回 `versionCode=2` / `versionName=0.1.9`**（与 `package.json` 对上）；③ **降级负例** ⇒ `exit 1` + **`INSTALL_FAILED_VERSION_DOWNGRADE: Downgrade detected: Update version code 1 is older than current 2`**（负例后设备仍是 v2）。⚠️ 回执里**不含**设备序列号 / `codePath` / `dataDir` / 签名（占位符）。
 - ⚠️ **边界**：本卡与 012 合起来**只覆盖 `android/` 的两个面**（产物同源/权限面 + FileProvider/版本号），其余（**lint / metrics / Gradle 依赖审计 / 隐私审查覆盖面**）**仍然静默** —— 第二刀另立。
+- ⭐ **CI 侧已兑现**（推送后补取）：**run `35608426747`**（`f1744b6` · push · **success** · 17 步全绿）—— 第 **14** 步 **`ok TAP ↔ contract.ci_clean_checkout：314 / 311 / 0 / 3 逐项一致`**；第 **9** 步 `Android guards`：`[android-perm] PASS`（**`<provider>` 已删之后仍 PASS**）+ **`[android-guard-selftest] 22/22`**；⭐ **组 Z5 在 CI 真的跑了**（`ok 45 - 契约组 Z5`）⇒ 卡面"Z5 放契约组是为了进 CI"的判断成立。
 
 **A12 局域网交换页 UI 改版（用户 2026-09-18 要求：「下次网页整好看点」）**
 - 现状：手写裸 HTML，一个 `<form>` + 文件列表；无样式体系、无拖拽、无进度、无移动端适配（手机上是主用场景，尤其该修）。
