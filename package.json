@@ -27,11 +27,11 @@
     "esbuild": "^0.28.2",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-sonarjs": "^4.2.0",
+    "eslint-plugin-sonarjs": "^4.2.1",
     "globals": "^17.12.0",
     "jscpd": "^5.2.1",
     "pdfjs-dist": "^3.11.174",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.8",
     "read-excel-file": "^5.8.7",
     "tesseract.js": "^6.0.1"
   },
