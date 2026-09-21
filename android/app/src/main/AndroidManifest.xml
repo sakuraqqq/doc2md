@@ -24,15 +24,10 @@
 
         </activity>
 
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths"></meta-data>
-        </provider>
+        <!-- 卡 013 / A1：FileProvider 的 <provider> 已**删除**（连同 res/xml/file_paths.xml）。
+             原因：模板默认的 <external-path name="my_images" path="." /> 把**整个外部存储**暴露给该 provider，
+             而全仓**零调用者**（卡 012 §八 与卡 013 A1 两次独立复核）⇒ "真正需要的子路径" = 空集 ⇒ 删除是唯一实现。
+             守卫 = 契约组 Z5（不补断言的话，删前删后都"绿" —— 那不叫守）。 -->
     </application>
 
     <!-- Permissions -->

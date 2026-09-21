@@ -5553,6 +5553,60 @@ test('契约组 Z4：保存反馈必须落在当前视口内（多文件 + 滚�
   }
 });
 
+// ---------------------------------------------------------------------------
+// 契约组 Z5：`android/` 的 FileProvider **已退役**（卡 013 · A1）—— 先红
+//   为什么要有这一组：`res/xml/file_paths.xml` 原本是 `<external-path path="." />` ⇒ 把**整个外部存储**
+//   暴露给 FileProvider；而**全仓零调用者**（卡 012 §八 与卡 013 A1 两次独立复核）⇒ **"真正需要的
+//   子路径" = 空集** ⇒ 唯一实现 = **删除**（`file_paths.xml` + manifest 里的 `<provider>`）。
+//   ⚠️ **现有守卫都不覆盖它**：`G1` 只管 `assets/public/index.html`；`G2` 只解析 `<uses-permission>`
+//   ⇒ 不补断言的话，**删前删后都"绿"** —— 那不叫守，那叫没有守（卡 013 `A1` 明文要求）。
+//   ⚠️ 本组**在 CI 也能跑**：`android/` 的这两个文件是**入库**的，不依赖 APK / SDK / 构建产物
+//   —— 这正是它放在**契约组**而不是放进 `tools/` 的原因（`G1`/`G3` 都因为要 APK 而进不了 CI）。
+//   ⚠️ `Z5-3` 是**现场前提**（先红阶段即绿）：它证明"无人调用"仍然成立 —— 而这正是删除的依据。
+// ---------------------------------------------------------------------------
+test('契约组 Z5：android/ 的 FileProvider 已退役（卡 013 · A1）', async (t) => {
+  const MAIN = nodePath.join(ROOT, 'android', 'app', 'src', 'main');
+  const MANIFEST = nodePath.join(MAIN, 'AndroidManifest.xml');
+  const FILE_PATHS = nodePath.join(MAIN, 'res', 'xml', 'file_paths.xml');
+
+  await t.test('Z5-1 A1：res/xml/file_paths.xml 已删除（它原本把**整个外部存储**暴露给 FileProvider）', () => {
+    assert.equal(
+      fs.existsSync(FILE_PATHS),
+      false,
+      'file_paths.xml 仍存在 —— 卡 013 的 A1 唯一实现 = 删除（"收窄到真正需要的子路径"没有判定目标：无调用者）'
+    );
+  });
+
+  await t.test('Z5-2 A1：AndroidManifest.xml 里不再声明 FileProvider 的 <provider>', () => {
+    // ⚠️ 先**剥掉 XML 注释**再判：注释里出现 `<provider>` / `FileProvider` / `file_paths` 是**正常的**
+    //    （删除处置就该在原位留一句"为什么删"）—— 不剥的话，这条断言会被**自己的说明文字**绊红。
+    //    这一条是本轮现场踩到的：第一次 grep 合并后 manifest 时，我一度以为 `<provider>` 还在。
+    const xml = fs.readFileSync(MANIFEST, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    assert.ok(!/<provider\b/.test(xml), 'manifest 里仍有 <provider> 声明（本卡应删掉 FileProvider 那条）');
+    assert.ok(!xml.includes('FileProvider'), 'manifest 里仍出现 FileProvider');
+    assert.ok(!xml.includes('file_paths'), 'manifest 里仍引用 @xml/file_paths（文件已删 ⇒ 会编译失败）');
+  });
+
+  await t.test('Z5-3 现场前提（先红阶段即绿）：代码面零调用 —— 这是"可删"的依据', () => {
+    const roots = [nodePath.join(MAIN, 'java'), nodePath.join(ROOT, 'src')];
+    const hits = [];
+    for (const r of roots) {
+      if (!fs.existsSync(r)) continue;
+      for (const rel of fs.readdirSync(r, { recursive: true })) {
+        const p = nodePath.join(r, String(rel));
+        if (!fs.statSync(p).isFile()) continue;
+        const body = fs.readFileSync(p, 'utf8');
+        if (/FileProvider|getUriForFile/.test(body)) hits.push(nodePath.relative(ROOT, p));
+      }
+    }
+    assert.equal(
+      hits.length,
+      0,
+      `仍有代码面调用（删之前必须复核"确实无人调用"，发现真有人用 ⇒ 停下来回报，别硬删）：${JSON.stringify(hits)}`
+    );
+  });
+});
+
 test('契约组 G9：xlsx 数值长尾的显示归一（渲染层；卡 007）—— 契约先红', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
   let chromium;

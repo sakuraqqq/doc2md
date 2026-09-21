@@ -1,5 +1,27 @@
 apply plugin: 'com.android.application'
 
+// 卡 013 / R-2：`versionName` 的**单一真相源 = 仓库根 package.json 的 version**（**不许手抄** ——
+// 手抄就是一处会漂移的副本，本项目已实测过这个病）。
+// ⚠️ 读失败一律**抛错**，**绝不回落到模板默认的 `"1.0"`**（口径：「可跳过 = 会静默」）。
+//    守卫 = `tools/apk-version-check.mjs`（G3：从**产物侧**读回 versionName 与 package.json 对表）。
+def doc2mdVersionName = {
+    def pkgFile = rootProject.file('../package.json')
+    if (!pkgFile.exists()) {
+        throw new GradleException("卡 013：找不到 package.json（${pkgFile}）—— 它是 versionName 的唯一真相源，不许回落默认值")
+    }
+    def parsed
+    try {
+        parsed = new groovy.json.JsonSlurper().parse(pkgFile)
+    } catch (Exception e) {
+        throw new GradleException("卡 013：package.json 解析失败（${e.message}）—— 不许回落默认值")
+    }
+    def v = parsed?.version
+    if (!(v instanceof String) || !v.trim()) {
+        throw new GradleException("卡 013：package.json 缺 version 字段 —— 不许回落默认值")
+    }
+    return v.trim()
+}()
+
 android {
     namespace = "io.github.sakuraqqq.doc2md"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +29,13 @@ android {
         applicationId "io.github.sakuraqqq.doc2md"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // ⚠️ versionCode【没有真相源】（卡 013 实测：全仓无任何东西守它，`RELEASE-CHECKLIST §2` 的
+        //    `npm version` 只动 package.json）⇒ 只能**人工单调递增**：
+        //    **发 APK 前必须 +1 且 > 上一版**（落点 = docs/RELEASE-CHECKLIST.md）。
+        //    起点 2 —— 模板默认是 1，**必须严格大于它**，否则覆盖安装会 INSTALL_FAILED_VERSION_DOWNGRADE。
+        versionCode 2
+        // ⭐ versionName 的唯一真相源 = package.json 的 version（见上方 doc2mdVersionName；**不许手抄**）
+        versionName doc2mdVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -8,6 +8,8 @@
  *   G1 `apk-artifact-check`：正例（同源）· 负例（内容不同源 / APK 内无该条目）· 无 APK 三种成因
  *   G2 `android-permission-audit`：正例（真实 manifest ↔ 真实清单）· 负例（多 / 少 / 改名 / 缺理由 /
  *      manifest 缺失 / 清单不是合法 JSON）
+ *   G3 `apk-version-check`（卡 013）：正例（产物侧 == package.json）· 负例（产物侧 stale 「1.0」·
+ *      manifest 不存在 · package.json 解析失败 / 缺 version · 产物侧无 versionName）
  *   ⭐ 三态退出码：**通过 0 · 不同源 1 · 未验 2**（两两不同 —— 这条防的正是"未验被当成通过"）
  *
  * 用法：node tools/android-guard-selftest.mjs  → 全过 exit 0；任一失败 exit 1
@@ -21,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { buildZip } from '../tests/lib/zipio.mjs';
 import { APK_ENTRY, EXIT, checkApkArtifact, exitCodeFor } from './apk-artifact-check.mjs';
 import { MANIFEST_REL, REGISTRY_REL, checkAndroidPermissions } from './android-permission-audit.mjs';
+import { checkApkVersion, parseManifestVersion } from './apk-version-check.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = path.join(ROOT, '.tmp', 'android-guard-selftest');
@@ -147,6 +150,59 @@ ok(
 const badJson = writeFixture('registry-bad.json', '{ 这不是 JSON');
 r = checkAndroidPermissions({ manifestPath: realManifest, registryPath: badJson });
 ok('G2 负例：清单不是合法 JSON ⇒ 红', !r.ok && /JSON/.test(r.why || ''), JSON.stringify(r.why));
+
+/* ==================== G3：apk-version-check（产物侧版本对齐，卡 013） ====================
+ * 守的是**产物侧**的 versionName == package.json 的 version（**不是** build.gradle 的源文本 ——
+ * 那个由构造相同、恒真；卡面「修订记录·第三条」）。 */
+const realPkg = path.join(ROOT, 'package.json');
+const pkgVersion = JSON.parse(fs.readFileSync(realPkg, 'utf8')).version;
+const mergedXml = (versionName, versionCode) =>
+  `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="io.github.sakuraqqq.doc2md"\n    android:versionCode="${versionCode}"\n    android:versionName="${versionName}" >\n</manifest>\n`;
+const mergedOk = writeFixture('merged-ok.xml', mergedXml(pkgVersion, 2));
+
+const parsedMerged = parseManifestVersion(fs.readFileSync(mergedOk, 'utf8'));
+ok(
+  'G3 解析：从合并后 manifest 同时取到 versionName 与 versionCode',
+  parsedMerged.versionName === pkgVersion && parsedMerged.versionCode === 2,
+  JSON.stringify(parsedMerged)
+);
+
+r = checkApkVersion({ manifestPath: mergedOk, packagePath: realPkg });
+ok('G3 正例：产物侧 versionName == package.json 的 version ⇒ ok', r.ok === true, JSON.stringify(r.why));
+
+r = checkApkVersion({ manifestPath: writeFixture('merged-stale.xml', mergedXml('1.0', 1)), packagePath: realPkg });
+ok(
+  'G3 负例（卡面指定的那条）：产物侧仍是模板默认 "1.0" ⇒ 必红',
+  r.ok === false && /不一致/.test(r.why || ''),
+  JSON.stringify(r.why)
+);
+
+r = checkApkVersion({ manifestPath: path.join(TMP, '没有这个文件.xml'), packagePath: realPkg });
+ok(
+  'G3-b 负例：产物侧 manifest 不存在 ⇒ 必红（**不许回落到 "1.0"**，**也没有"未验"出口**）',
+  r.ok === false && /不存在/.test(r.why || ''),
+  JSON.stringify(r.why)
+);
+
+r = checkApkVersion({ manifestPath: mergedOk, packagePath: writeFixture('pkg-broken.json', '{ 这不是 JSON') });
+ok('G3-b 负例：package.json 解析失败 ⇒ 必红', r.ok === false && /JSON/.test(r.why || ''), JSON.stringify(r.why));
+
+r = checkApkVersion({
+  manifestPath: mergedOk,
+  packagePath: writeFixture('pkg-no-version.json', JSON.stringify({ name: 'doc2md' })),
+});
+ok(
+  'G3-b 负例：package.json 缺 version ⇒ 必红（**不许回落到任何默认值**）',
+  r.ok === false && /缺 version/.test(r.why || ''),
+  JSON.stringify(r.why)
+);
+
+const noVName = writeFixture(
+  'merged-novname.xml',
+  `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:versionCode="2" />\n`
+);
+r = checkApkVersion({ manifestPath: noVName, packagePath: realPkg });
+ok('G3-b 负例：产物侧 manifest 里没有 versionName ⇒ 必红', r.ok === false && /解析不出/.test(r.why || ''), JSON.stringify(r.why));
 
 /* ==================== 汇总 ==================== */
 let failed = 0;
