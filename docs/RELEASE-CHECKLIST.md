@@ -53,6 +53,16 @@ git push --dry-run origin main
 git push --dry-run origin v0.1.1
 ```
 
+> ⭐ **APK 侧版本（卡 013 / `R-2` 立的**落点**）—— ⚠️ 发 APK 前必做**：
+> **`android/app/build.gradle` 的 `versionCode` 必须 +1，且严格大于上一版**（**只增不减**）。
+> - **它没有真相源**：`versionName` 从 `package.json` 的 `version` **自动读取**（单源，见 `build.gradle` 里的
+>   `doc2mdVersionName`，读失败**抛错**、不回落 `"1.0"`）；而 **`versionCode` 全仓无任何东西守它**
+>   （卡 013 实测）⇒ ⭐ **这一轴只能靠人记得，所以写在这里**。
+> - **不 +1 的后果**：覆盖安装会 `INSTALL_FAILED_VERSION_DOWNGRADE`（⚠️ **通识，本轮未读到官方原文**；
+>   卡 013 已用真机**实测反证**一次：装完新包后 `install -r` 装回旧包 ⇒ 必失败）。
+> - **自检**：`node tools/apk-version-check.mjs`（**G3**）会**同时打印**产物侧的 `versionName` **与 `versionCode`**
+>   —— 让这一轴**能被看到**，而不是只躺在 `build.gradle` 里。
+
 > **⚠️ v0.1.7 实发踩坑（2026-09-15，写死在此防再犯）**：
 > 1. **`gh release create` 需要默认仓库**：未设置时报 `X No default remote repository has been set` 而失败 → 修法 = 加 `--repo <owner>/<repo>`，或先 `gh repo set-default <owner>/<repo>`；
 >    也可以**直接网页发**（本项目 v0.1.7 即网页发布，最省事）。

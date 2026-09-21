@@ -3,18 +3,18 @@
   "_comment": "doc2md 数字型易变量的唯一真相源（2026-09-19 立，卡 001-C）。规则：① 只放「会漂移的数字」，不放规则/口径文字；② 每个数字须被带 measured（时点+来源）与 scope（口径）的节点覆盖 —— 缺即红；③ 能现算的绝不写死：released/online 的 index.html 由 tools/baseline-check.mjs 从 git blob 现算比对，交付面按磁盘现算；④ HEAD / 远端 / 待推数不入本文件（「产物与 src 一致」由契约组 T 守卫）；⑤ 契约数 = 实跑数据，守卫做三道：溯源（measured/scope）+ 自洽（pass+fail+skip==total）+ **与实跑 TAP 对账**（`node tools/baseline-check.mjs --from-tap <tap 文件> --scope <口径>`；CI 校 ci_clean_checkout、本机校 local_with_fixtures）—— **不一致即红，且守卫绝不自动改写本文件**（改应然值 = 改口径 ⇒ 需用户拍板）。",
   "contract": {
     "local_with_fixtures": {
-      "counts": { "total": 313, "pass": 311, "fail": 0, "skip": 2 },
+      "counts": { "total": 317, "pass": 315, "fail": 0, "skip": 2 },
       "measured": {
         "at": "2026-09-21",
-        "source": "npm test（本机 · 升权实跑，TAP 摘要）：# tests 313 / # pass 311 / # fail 0 / # skipped 2 —— 卡 011 **第三轮**（A10 保存反馈必须落在**当前视口内**）后实测：**新增组 Z4 共 6 条**（组壳 + Z4-0 现场前提 / Z4-1 视口内可见 / Z4-2 字号 ≥14px / Z4-3 Web 零变化 / Z4-4 失败也在视口内），**旧断言零改动**。前值：第二轮 307/305/0/2 · 第一轮 305/303/0/2"
+        "source": "npm test（本机 · 升权实跑，TAP 摘要）：# tests 317 / # pass 315 / # fail 0 / # skipped 2 —— 卡 013（`android/` 收尾：FileProvider 删除 + APK 版本号对齐）后实测：**新增组 Z5 共 4 条**（组壳 + Z5-1 file_paths 已删 / Z5-2 manifest 无 provider / Z5-3 代码面零调用=现场前提），**旧断言零改动**。前值：卡 012 后 313/311/0/2 · 卡 011 第三轮后 313/311/0/2（同一值，Z4 已计入）"
       },
       "scope": "本机口径：.私档/传输-手机-20260918 四档夹具在位 ⇒ 组 Y 真跑（组壳+Y1+Y2+Y3，全绿）；卡 002 前为 271/3（组 Y 预期先红：Y2 无 meta.scan · Y3 超 5s · 组壳）。与 CI 口径不可混用"
     },
     "ci_clean_checkout": {
-      "counts": { "total": 310, "pass": 307, "fail": 0, "skip": 3 },
+      "counts": { "total": 314, "pass": 311, "fail": 0, "skip": 3 },
       "measured": {
         "at": "2026-09-21",
-        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：由 local_with_fixtures 的 313/311/0/2 按同一映射推得 310/307/0/3（组 Y 4 条 → 1 条 skip：total −3 / pass −4 / skip +1）；② **真实 CI runner 待本轮推送后由 CI 步现算对账**（`--from-tap tap.txt --scope ci_clean_checkout`，不符即红、不静默）—— 上一值 304/301/0/3（卡 011 第二轮，**已由真 CI run `35520749619` 对账确认**）"
+        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：由 local_with_fixtures 的 317/315/0/2 按同一映射推得 314/311/0/3（组 Y 4 条 → 1 条 skip：total −3 / pass −4 / skip +1）；② **真实 CI runner 待本轮推送后由 CI 步现算对账**（`--from-tap tap.txt --scope ci_clean_checkout`，不符即红、不静默）—— 上一值 310/307/0/3（卡 011 第三轮，**已由真 CI run `35588293123` 对账确认**）"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }
