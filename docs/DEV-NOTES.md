@@ -1669,7 +1669,7 @@ U1 未重跑 `npm ci` · **U2 函数级等价性台未随出单附上**（我方
 复现脚本（已存档）：`.tmp/verify-r9.mjs`（GIF/flip/descr/扩展名）· `.tmp/verify-r9-convert.mjs` · `.tmp/mk-r9-fixtures.mjs`（两个假绿站点 + audit 夹具）。
 
 ### ⚠️ 报告自身的红线问题（未入库，待拍板）
-报告**第 3 行**含 `C:\Users\测试\dsh-workspace\doc2md`（**本地绝对路径 + Windows 用户名**）→ 属红线 11 / 隐私审查 A.1 禁止项。该文件目前**未跟踪**（`git status = ??`，未泄露）。**我未自行修改**（第三方报告只报告不修改）→ 需要用户点头才能脱敏入库。
+报告**第 3 行**含 `C:\Users\<用户名>\dsh-workspace\doc2md`（**本地绝对路径 + Windows 用户名**）→ 属红线 11 / 隐私审查 A.1 禁止项。该文件目前**未跟踪**（`git status = ??`，未泄露）。**我未自行修改**（第三方报告只报告不修改）→ 需要用户点头才能脱敏入库。
 
 ### 批 A 落地（用户拍板「观察期内零风险」→ 全不动 `src/`，产物字节不变）
 | 改动 | 内容 |
@@ -2141,7 +2141,7 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - **防再犯**：① 看到 CI 红**先看步骤级结果**（`gh run view <id>` 的 ✓/✗ 列表），**别直接怀疑自己**；② 给出「该步是否与本次改动相关」的**硬证据**（本例：`tools/**` 零改动 + blob 同一份 + 本机复现同错）；③ 加固候选见 `HANDOFF §8`（步序后移 / 退避重试 / 端点降级）。
 2. **`gh` 在本会话沙箱里有两种被拒方式（都不是网络问题）**：
    - `gh run list` → `failed to determine base repo: failed to run git: pipe: Access is denied.` —— gh 内部调 `git` 探测仓库，**踩的是"native 进管道"那个坑**。
-   - `gh run view <id> --log` → `creating cache entry: open C:\Users\…\AppData\Local\GitHub CLI\run-log-….zip: Access is denied` —— 日志缓存**在工作区外**。
+   - `gh run view <id> --log` → `creating cache entry: open C:\Users\<用户名>\AppData\Local\GitHub CLI\run-log-….zip: Access is denied` —— 日志缓存**在工作区外**。
    - **可用写法**：`gh -R <owner>/<repo> run list`（显式仓库，跳过 git 探测）+ 一次性升权让 gh 写自己的缓存目录；`$env:GH_REPO` 亦可。
 3. **判「第三方故障 vs 自身回归」的最低成本取证法**（本次三步定案，值得复用）：
    - ① **端点级**：直接打那个 URL，把 **status + body** 打出来（本次 body 自带「maintenance」字样 ⇒ 一句话定案）；
