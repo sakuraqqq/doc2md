@@ -22,7 +22,7 @@
   "released": {
     "version": "0.1.9",
     "tag": "v0.1.9",
-    "tag_sha": "cc504dadd22f632607b761e87825004784f6731e",
+    "tag_sha": "e49e06163d3a7beec1033fe6d8f506c985c2c243",
     "index_html": {
       "bytes": 121229,
       "sha256": "F80E862639708D7C27CCE6C1A3E388298E8ECF01536B6B0F912539BBBE74F04D"
@@ -39,7 +39,7 @@
       "bytes": 121406,
       "sha256": "18EA70E4E2D50403B0134C3543172FCA6F4BDCE14E3277A23CFD11F4FE279EB3"
     },
-    "source_commit": "e0bd1de",
+    "source_commit": "7790f92",
     "divergence_reason": "线上 = main 构建（依赖 PR 落地批）：push main 曾触发 Pages 自动部署；用户 2026-09-17 拍板接受现状（该批行为零变更，两台已证），等下次推 tag 被发布物覆盖，不手动 dispatch",
     "measured": {
       "at": "2026-09-17",
