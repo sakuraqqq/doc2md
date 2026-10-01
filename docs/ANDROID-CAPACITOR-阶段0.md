@@ -179,7 +179,7 @@ await window.Capacitor.Plugins.Doc2mdNative.saveText({ filename: 'probe.txt', te
 2. **A2 待实测**：`<input type=file>` 在 Capacitor WebView 里**由 `onShowFileChooser` 接管**、应弹系统选择器 —— 但**这是推断**，要真机实测（看是否 SAF、能否进 Downloads）。
 3. **A5（H1）待实测**：`androidScheme: "https"` ⇒ 页面在 `https://localhost` 这个 secure context 里，**理论上** SW 可注册；但 WebView 的 SW 受 `ServiceWorkerController` 影响 ⇒ 必须真测。
 4. **A6（H2）待实测**：47.4 MB xlsx 在本项目历史上曾把**真机渲染进程**顶到 **12.6 GiB 峰值**（`DEV-NOTES` 手机侧实测）⇒ 手机上大概率**跑不完**。**这不是"卡 008 失败"** —— 卡面要的就是这个结论（能否跑 + 时间 + 内存）。
-5. **A6 的材料怎么上手机**：走**已有的 A11.7 局域网交换通道**（`.私档/工具/serve-exchange.py`，端口 8099，Basic 口令在 `.私档/lan-git/.exchange-token`；夹具**不进 git**，走同一页面直接传）。四档夹具在 `.私档/传输-手机-20260918/`，A6 只需要这两档：`3-big_47.4MB_436000rows.xlsx`、`4-mid-large_35.9MB_250000rows.xlsx`。
+5. **A6 的材料怎么上手机**：走**已有的 A11.7 局域网交换通道**（带口令门槛的本地 HTTP 服务；**脚本名 / 端口 / 绑定 / 口令文件路径不在公开面**，细节见 `.私档/` 内的通道运维件；夹具**不进 git**，走同一页面直接传）。四档夹具在 `.私档/传输-手机-20260918/`，A6 只需要这两档：`3-big_47.4MB_436000rows.xlsx`、`4-mid-large_35.9MB_250000rows.xlsx`。
 
 6. ⭐ **实测发现（2026-09-20 · APK 已实证）：AAPT2 打包会把 `assets/**` 下以 `.gz` 结尾的文件解压并去掉后缀**
 

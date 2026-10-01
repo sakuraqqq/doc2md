@@ -4,7 +4,6 @@ description: 执行台 —— 按「任务卡」交付的角色技能。用于�
 license: MIT
 metadata:
   version: "1.2"
-  author: 测试
   based_on: 结构借鉴 obra/superpowers 的 executing-plans / test-driven-development / verification-before-completion / dispatching-parallel-agents；任务卡字段对齐 DSH AgentTeams 的 create_task 契约；门禁与提交纪律取自本项目 AGENTS.md。**只取结构，不复制文本。**
   changelog: "1.2（2026-09-19）：§8 增一行反模式 —— **删/挪内容前不核对目标处**（凭记忆觉得「那边已经写了」⇒ 两边都没有 ⇒ 纪律静默消失）；解药 = 逐条列「覆盖/缺口」表并去目标文件 grep 求证，有缺先补再删。1.1（2026-09-19）：补三处缺口 —— §0「没卡就等」· §7「不要为写调度工作区申请升权」与「回执必带坑/根因/防再犯」· 新增 §9「复盘分层」。起因 = AGENTS.md 两线关系节瘦身前，逐条核对技能覆盖度，发现这三条只存在于 AGENTS.md。注意：本字段是**双引号标量**，值内一律用「」，不许再出现半角双引号 —— 否则 YAML 提前闭合、整份技能被静默丢弃。"
 ---
