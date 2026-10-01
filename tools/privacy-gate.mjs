@@ -182,6 +182,24 @@ function loadAllowlist(repoRoot) {
   return map
 }
 
+/**
+ * 在一行里找该规则的**第一个有效命中**（被 `ignore` 或允许清单放行的都跳过）⇒ 命中值 / `null`。
+ * ⚠️ 抽出来是**纯结构重构**（卡 022）：原来这段 `while` 嵌在 `scanText` 的两层循环里，
+ *    认知复杂度 26（阈值 15）。**语义逐条不变** —— 同一行同一规则仍只取**第一个**有效命中。
+ */
+function firstHitInLine(r, line) {
+  r.find.lastIndex = 0
+  let m
+  while ((m = r.find.exec(line)) !== null) {
+    const arg = m[1]
+    if (r.ignore && r.ignore(m[0], arg)) continue
+    const literal = arg ?? m[0]
+    if (ALLOW.get(r.id)?.has(hash16(literal))) continue // 命中允许清单（按哈希比对）
+    return literal
+  }
+  return null
+}
+
 /** 扫一段文本，返回 [{rule, line}]；**不返回命中值**（--explain 只给掩码形状 + 哈希）。 */
 function scanText(text, fileLabel) {
   const out = []
@@ -190,23 +208,16 @@ function scanText(text, fileLabel) {
     const line = lines[i]
     if (line.length > 20000) continue
     for (const r of RULES) {
-      r.find.lastIndex = 0
-      let m
-      while ((m = r.find.exec(line)) !== null) {
-        const arg = m[1]
-        if (r.ignore && r.ignore(m[0], arg)) continue
-        const literal = arg ?? m[0]
-        if (ALLOW.get(r.id)?.has(hash16(literal))) continue // 命中允许清单（按哈希比对）
-        out.push({
-          rule: r.id,
-          desc: r.desc,
-          fix: r.fix,
-          file: fileLabel,
-          line: i + 1,
-          shape: EXPLAIN ? `${maskValue(literal)}  hash=${hash16(literal)}` : undefined,
-        })
-        break // 同一行同一规则只报一次
-      }
+      const literal = firstHitInLine(r, line)
+      if (literal === null) continue
+      out.push({
+        rule: r.id,
+        desc: r.desc,
+        fix: r.fix,
+        file: fileLabel,
+        line: i + 1,
+        shape: EXPLAIN ? `${maskValue(literal)}  hash=${hash16(literal)}` : undefined,
+      })
     }
   }
   return out
@@ -227,35 +238,54 @@ function gitToFile(args, outPath, cwd) {
   }
 }
 
+/** hunk 头：`@@ -a,b +c,d @@`（⚠️ **不带 `g`**：带 `g` 会让 `.test/.exec` 的 `lastIndex` 跨行残留） */
+const HUNK_RE = /^@@ -\d{1,9}(?:,\d{1,9})? \+(\d{1,9})(?:,\d{1,9})? @@/
+
+/**
+ * 给一条 patch 行分类（卡 022 抽出来：原来这条 `if` 链整个压在 `scanPatch` 里，圈 11 / 认知 24）。
+ * ⚠️ **判定顺序逐条照抄原实现**（`+++ ` 必须先于 `+`），否则会把文件头当成新增行。
+ */
+function patchLineKind(raw, trackCommit) {
+  if (trackCommit && raw.startsWith('commit ')) return 'commit'
+  if (raw.startsWith('+++ ')) return 'file'
+  if (HUNK_RE.test(raw)) return 'hunk'
+  if (raw.startsWith('+')) return 'added'
+  if (raw.startsWith('-')) return 'del'
+  if (raw.startsWith('\\')) return 'marker'
+  return 'context'
+}
+
+/** 单行状态更新**表**（卡 022 表驱动化：把这几条 `if` 从 `scanPatch` 主体搬出来，降认知复杂度） */
+const PATCH_STATE_UPDATES = {
+  commit: (raw, st) => {
+    st.commit = raw.slice(7, 19)
+  },
+  file: (raw, st) => {
+    st.file = raw.slice(4).replace(/^b\//, '').trim()
+  },
+  hunk: (raw, st) => {
+    st.newLine = Number(HUNK_RE.exec(raw)[1])
+  },
+}
+
+/** 处理一条新增行：扫它，并按当前行号 / 提交号产出 findings */
+function addedFindings(raw, st, trackCommit) {
+  return scanText(raw.slice(1), st.file).map((f) => ({
+    ...f,
+    line: st.newLine,
+    commit: trackCommit ? st.commit : undefined,
+  }))
+}
+
 /** 解析 `git diff/log -p` 输出：只取新增行，并跟踪当前文件与行号。 */
 function scanPatch(patchText, { trackCommit = false } = {}) {
   const findings = []
-  let file = '(unknown)'
-  let commit = ''
-  let newLine = 0
+  const st = { file: '(unknown)', commit: '', newLine: 0 }
   for (const raw of patchText.split(/\r?\n/)) {
-    if (trackCommit && raw.startsWith('commit ')) {
-      commit = raw.slice(7, 19)
-      continue
-    }
-    if (raw.startsWith('+++ ')) {
-      file = raw.slice(4).replace(/^b\//, '').trim()
-      continue
-    }
-    const hunk = /^@@ -\d{1,9}(?:,\d{1,9})? \+(\d{1,9})(?:,\d{1,9})? @@/.exec(raw)
-    if (hunk) {
-      newLine = Number(hunk[1])
-      continue
-    }
-    if (raw.startsWith('+')) {
-      const text = raw.slice(1)
-      for (const f of scanText(text, file)) {
-        findings.push({ ...f, line: newLine, commit: trackCommit ? commit : undefined })
-      }
-      newLine += 1
-      continue
-    }
-    if (!raw.startsWith('-') && !raw.startsWith('\\')) newLine += 1
+    const kind = patchLineKind(raw, trackCommit)
+    PATCH_STATE_UPDATES[kind]?.(raw, st)
+    if (kind === 'added') findings.push(...addedFindings(raw, st, trackCommit))
+    if (kind === 'added' || kind === 'context') st.newLine += 1
   }
   return findings
 }
@@ -333,42 +363,52 @@ const NEGATIVE = [
   ['device-id', '序列号 `<设备序列号>` / 机型 `<机型>`'],
 ]
 
-function selftest() {
+/** 跑一组用例（正例 = 必须命中 / 白名单 = 必须不命中），返回**不合格条数**（卡 022 表驱动化） */
+function runCases(cases, wantHit, header, missNote) {
   let bad = 0
-  console.log('— 正例（必须命中）—')
-  for (const [want, sample] of POSITIVE) {
-    const hits = scanText(sample, '<selftest>')
-    const ok = hits.some((h) => h.rule === want)
+  console.log(header)
+  for (const [want, sample] of cases) {
+    const hit = scanText(sample, '<selftest>').some((h) => h.rule === want)
+    const ok = wantHit ? hit : !hit
     if (!ok) bad += 1
-    console.log(`  ${ok ? '✓' : '✗'} ${want.padEnd(18)} ${ok ? '' : '← 未命中！'} ${JSON.stringify(sample).slice(0, 60)}`)
+    console.log(`  ${ok ? '✓' : '✗'} ${want.padEnd(18)} ${ok ? '' : missNote} ${JSON.stringify(sample).slice(0, 60)}`)
   }
-  console.log('— 白名单（必须不命中）—')
-  for (const [want, sample] of NEGATIVE) {
-    const hits = scanText(sample, '<selftest>')
-    const ok = !hits.some((h) => h.rule === want)
-    if (!ok) bad += 1
-    console.log(`  ${ok ? '✓' : '✗'} ${want.padEnd(18)} ${ok ? '' : '← 误伤！'} ${JSON.stringify(sample).slice(0, 60)}`)
-  }
-  console.log('— 已知抓不到的形状（这是边界，不是承诺）—')
-  for (const [what, why] of KNOWN_GAPS) console.log(`  ⚠️  ${what} —— ${why}`)
+  return bad
+}
 
-  // ⭐ 自清洁断言：门禁**不许在自己的源码 / 文档上命中**。
-  //    2026-09-30 首次提交门禁自己时 14 处命中全来自本文件的测试样本与 README 的举例，
-  //    差点让"安装门禁"这一步永远过不去。这条就是那次事故的回归测试。
+/** 一个文件被自己命中的处置：打印结论，返回**不合格条数**（0 或 1） */
+function reportSelfHits(p, hits) {
+  if (hits.length === 0) {
+    console.log(`  ✓ ${basename(p)} 未被自己命中`)
+    return 0
+  }
+  console.log(`  ✗ ${basename(p)} 被自己命中 ${hits.length} 处：`)
+  for (const h of hits.slice(0, 20)) console.log(`        L${h.line}  [${h.rule}]`)
+  return 1
+}
+
+/**
+ * ⭐ 自清洁断言：门禁**不许在自己的源码 / 文档上命中**。
+ *    2026-09-30 首次提交门禁自己时 14 处命中全来自本文件的测试样本与 README 的举例，
+ *    差点让"安装门禁"这一步永远过不去。这条就是那次事故的回归测试。
+ */
+function selfCleanCheck() {
   console.log('— 自清洁（源码与文档不得被自己命中）—')
   const selfDir = dirname(fileURLToPath(import.meta.url))
+  let bad = 0
   for (const p of [fileURLToPath(import.meta.url), join(selfDir, 'README.md')]) {
     if (!existsSync(p)) continue
-    const hits = scanText(readFileSync(p, 'utf8'), p)
-    if (hits.length === 0) {
-      console.log(`  ✓ ${basename(p)} 未被自己命中`)
-    } else {
-      bad += 1
-      console.log(`  ✗ ${basename(p)} 被自己命中 ${hits.length} 处：`)
-      for (const h of hits.slice(0, 20)) console.log(`        L${h.line}  [${h.rule}]`)
-    }
+    bad += reportSelfHits(p, scanText(readFileSync(p, 'utf8'), p))
   }
+  return bad
+}
 
+function selftest() {
+  let bad = runCases(POSITIVE, true, '— 正例（必须命中）—', '← 未命中！')
+  bad += runCases(NEGATIVE, false, '— 白名单（必须不命中）—', '← 误伤！')
+  console.log('— 已知抓不到的形状（这是边界，不是承诺）—')
+  for (const [what, why] of KNOWN_GAPS) console.log(`  ⚠️  ${what} —— ${why}`)
+  bad += selfCleanCheck()
   console.log(bad === 0 ? '\n✅ 自检全绿' : `\n✗ 自检 ${bad} 项不合格`)
   process.exit(bad === 0 ? 0 : 1)
 }
