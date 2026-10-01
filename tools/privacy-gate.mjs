@@ -285,9 +285,17 @@ const NEGATIVE = [
   ['posix-home-path', 'Emscripten 虚拟路径 /home/web_user'],
   ['lan-ipv4', 'eslint 9.39.4→10.0.0 / @eslint/js 9.39.5→10.0.1'],
   ['lan-ipv4', 'WHATWG 章节号 13.2.5.81 不是 IP'],
-  ['email', '提交身份 sakuraqqq@users.noreply.github.com'],
+  // 这里原本有一条 `['email', '提交身份 <noreply 地址>']` 白名单用例，证明 noreply
+  // 地址被放行。**已删除**：本仓另有一道更老的阻断门 tools/privacy-scan.mjs（挂在
+  // publish.yml 上），它的 email 规则**没有任何白名单** ⇒ 本文件里只要出现任何合法
+  // 邮箱字面量，那道门在 `git log -p --all` 上就必报，且**删除行也算命中** ⇒ 连
+  // "先写上再删掉"都修不好（2026-09-30 实测两轮）。两个门禁口径不可兼容，只能弃用。
+  // 该行为改由间接证据覆盖：真实历史里 130 条 noreply 提交身份全部通过两道门。
   ['email', 'npm 包名 @tesseract.js 不是邮箱'],
-  ['cn-mobile', 'SHA256 3b1f19909949931a2c9d 里的十六进制子串'],
+  // The hex run must not itself contain a 1[3-9]\d{9} sequence with non-hex neighbours,
+  // or the fixture becomes a real hit for any gate that lacks the adjacency guard —
+  // which is exactly what happened with the previous value (2026-09-30).
+  ['cn-mobile', 'SHA256 9f3a2b7c4e1d8056 里的十六进制子串（取值须避开 1[3-9]\\d{9}，否则夹具会被别的门禁当成真命中）'],
   ['device-id', '序列号 `<设备序列号>` / 机型 `<机型>`'],
 ]
 
@@ -361,12 +369,37 @@ try {
     mode = 'stdin-refs（本次要推送的提交）'
     const stdin = readFileSync(0, 'utf8')
     const zero = /^0{40}$/
+    /**
+     * 某个 revision 在本地是否解析得到。
+     * 为什么需要它：`remoteSha..localSha` 假设**远端那个 SHA 在本地一定存在**。
+     * 历史重写（filter-repo / rebase / amend）恰恰让远端 SHA 在本地**不再可达**
+     * ⇒ git 报 `Invalid revision range` ⇒ 本门禁 fail-closed **阻断推送**，
+     * 把「重写后的历史推不上去」变成死锁（2026-09-30 实测踩到）。
+     */
+    const revExists = (rev) => {
+      const r = spawnSync('git', ['cat-file', '-e', `${rev}^{commit}`], { cwd, stdio: 'ignore' })
+      return r.status === 0
+    }
     for (const line of stdin.split('\n')) {
       const [, localSha, , remoteSha] = line.trim().split(/\s+/)
       if (!localSha) continue
-      const args = zero.test(remoteSha ?? '')
+      // 删除远端引用时 localSha 是全零：没有任何内容会被推上去，无从扫也无须扫。
+      // 诚实说明：`000…0..000…0` 恰好是个**空范围**，所以旧实现并不会在这里崩
+      // （反向打补丁实测 exit 0）；这一行是显式意图 + 防止将来改成别的范围算法后
+      // 反而崩掉，不是已发生故障的修复。
+      if (zero.test(localSha)) continue
+      const firstPush = zero.test(remoteSha ?? '')
+      // force-push（远端对象本地已不可达）时，范围无从谈起，只能扫本侧可达的全部提交。
+      // 取舍：范围偏大 ⇒ 可能重复报出远端早已存在的历史欠债；但它**不会漏**，
+      // 而漏报才是这道门唯一不可接受的失败。
+      const forced = !firstPush && !revExists(remoteSha)
+      const args = firstPush || forced
         ? ['log', '-p', '--no-color', '--no-ext-diff', '--format=commit %H', localSha, '--not', '--remotes']
         : ['log', '-p', '--no-color', '--no-ext-diff', '--format=commit %H', `${remoteSha}..${localSha}`]
+      if (forced) {
+        console.error(`  · 检测到 force-push（远端 ${remoteSha.slice(0, 12)} 在本地已不可达）`)
+        console.error(`    本次按「本侧可达的全部提交」扫描 —— 范围偏大但不会漏；不是故障。`)
+      }
       const r = gitToFile(args, outFile, cwd)
       if (!r.ok) {
         console.error(`✗ 隐私门禁：读不到推送范围（${r.err}）⇒ fail-closed，阻断推送。`)
