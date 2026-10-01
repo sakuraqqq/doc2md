@@ -84,7 +84,7 @@ doc2md/
 │   ├── design-decisions.md # 决策史（DD-4~12：OCR blob 化/样例覆盖事故/单文件陷阱…）
 │   ├── licenses.md         # 复用库许可核对表（逐库一手证据）
 │   └── DEV-NOTES.md        # 工作流程日志
-├── .github/workflows/deploy-pages.yml  # GitHub Pages 自动部署（照 cola 同款）
+├── .github/workflows/deploy-pages.yml  # GitHub Pages 自动部署（照 <项目B> 同款）
 ├── LICENSE                 # MIT
 ├── AGENTS.md               # 本项目协作纪律
 └── doc2md-项目规划与指令.md # 立项规划文档

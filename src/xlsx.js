@@ -1,6 +1,6 @@
 /* xlsx.js —— xlsx 转换器域（t8 重构：由 index.html 迁移；t33 流式改造）
  * 决策史（保留）：
- *  - 口径与参考 dsh-file-upload-convert.js 一致（表格格式化）。
+ *  - 口径与参考 项目A-file-upload-convert.js 一致（表格格式化）。
  *  - sheet 名列表自读 xl/workbook.xml（bundle 未导出 readSheetNames——t4 G 组实测红根因）；
  *    零依赖 ZIP 中央目录 + 浏览器内置 DecompressionStream('deflate-raw')（t5 定版）。
  *  - 截断口径（审查报告 §1.5）：只计已读 sheet 的行数，文案「已读取前 X 个 sheet 共 Y 行」。

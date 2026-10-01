@@ -10,7 +10,7 @@
 |---|---|---|
 | LICENSE（MIT） | ✅ 就绪 | 根目录 `LICENSE` |
 | README 终稿（中英 + 功能 + 口径 + 截图 + 测试 + 许可 + 发展） | ✅ 就绪 | `README.md`；截图 ✅ `assets/screenshot.png`；演示 GIF **已拍板不做**（拖放/上传为直觉操作，2026-09-04） |
-| GitHub Pages workflow | ✅ 就绪 | `.github/workflows/deploy-pages.yml`（照 cola `deploy-pages.yml` 同款；纯静态零构建；Workflow 跑在 checkout 干净树上，`.gitignore` 已排除 node_modules/.tmp/.npm-cache，不会上传 Pages） |
+| GitHub Pages workflow | ✅ 就绪 | `.github/workflows/deploy-pages.yml`（照 <项目B> `deploy-pages.yml` 同款；纯静态零构建；Workflow 跑在 checkout 干净树上，`.gitignore` 已排除 node_modules/.tmp/.npm-cache，不会上传 Pages） |
 | `.nojekyll` | ✅ 就绪 | 根目录（Pages 免 Jekyll 处理） |
 | 契约测试 | ✅ **254/254**（2026-09-16 实跑） | `npm test`：全量 **256 tests / 254 pass / 0 fail / 2 skip**（含组 T 产物一致性、组 W OCR 输入质量、组 X 方向重试、**组 S S4-8..S4-16 编码判据门**、**组 U U9（P1 行内顺序缩放，含负对照必红）**）；B/C/M 组真实浏览器/手机视口断言全绿；skip = `real-cid-paper`（第三方样例不入库） |
 | 产物一致性（本地防线，v0.1.3 纳入） | ✅ 新增 | 契约组 **T**：现场重建产物并比对字节，不一致即 FAIL（治「只改 src 忘 `npm run build` → 本地对着旧产物假绿」）；CI 另有 build-consistency 步骤 |
