@@ -1803,6 +1803,18 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️ **另记一条浏览器侧事实**：本机 **Edge 与 Chrome 的 `inspect` 按钮都点了没反应**（`edge://inspect` 里 **目标列得出**、点 `inspect` / `inspect fallback` 窗口都不开）⇒ 真机 WebView 的 console 取证**不能依赖浏览器按钮**。
    - **工具落点**：`.私档/工具/android-devtools.mjs` —— 绕过浏览器的 inspect 管道，自己走 `adb shell pidof` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` → `/json` → **CDP WebSocket 求值**（带 20s 超时、结果写 `.tmp/devtools-result.txt`）。阶段 1 直接复用。
 
+## 2026-10-01 · 卡 023：公开仓里 5 处跨项目标识符打码（B-3 活泄漏）
+
+**做了什么**：按卡面点名的 5 处（`tests.yml:2` + 规划文件 11/28/58/141）把两个自有项目的**仓名/项目名**换成 `<项目A>` / `<项目B>`，**保留账号名**（§7 拍板 ⓑ），叙述功能不塌；`numstat` = `1 1` / `4 4`（纯行内替换）。⚠️ 回执与提交全程**不回显真名**。
+
+**坑 / 根因 / 防再犯**：
+1. ⭐⭐ **"用名字扫泄漏"时，匹配形态选错 ⇒ 两个方向的结论都会错**。卡面用**完整仓名**扫得「2 文件 / 5 处」（**对**）；我第一版用**宽子串（短名）+ 大小写不敏感 + 未排除 vendor** 扫得「7 个文件」（**错**：其中一条是 base64 大行里的**巧合子串**）。
+   ⭐ 正确做法 = **两种形态各扫一遍再逐条分类**：完整名验卡面清单，短名找漏网的 —— 结果发现**同一个标识符族还有约 13 处在卡外**（4 个文件根本不在 inScope）。
+   **一般化**：判"泄漏清单全不全"这件事，**前提是先把"匹配形态"写死**（完整名？名称前缀？大小写？算不算 vendor/二进制？），否则**两头都不可判**。
+2. ⚠️ **`git grep -n` 在超长行上会把整行倒出来**：扫 `vendor/*.wasm.js` 时输出被一行 base64 淹没（几万字符）。**防再犯**：扫未知仓库**先 `-c` 按文件计数定位**，再对具体路径用 `-o` 或 `-E '.{0,15}….{0,15}'`（**有界上下文**）看内容。
+3. ⚠️⭐ **`git log -S` 在本机不可用**（会被 diff driver 打断）：实测 `E: unsupported filetype …sample-legacy-doc.doc` + `fatal: unable to read files to diff` ⇒ **结果不可信**（中途 fatal、可能静默漏提交）。**改用按修订版直接 `git grep <pattern> <rev> -- <path>`**（不需 diff，实测好用）—— 本卡的历史残留登记就是这么取证的。
+4. ⚠️ **"卡面点名的每一处都属实" ≠ "清单是全的"**：本次两者**同时成立** —— 5 处逐处属实，而族内另有一批在卡外。⇒ 出卡/接卡时都要问一句：**我这一遍扫描的匹配形态，能不能覆盖"同一族的其它写法"？**
+
 ## 2026-10-01 · 卡 022：privacy-gate 三个超限函数拆分（metrics 超限 3 → 0，CI 最后一个红因）
 
 **做了什么**：只改**控制流结构**（抽函数 / 表驱动化），**不删分支、不合并判断、不放宽阈值** —— `scanText`（抽出 `firstHitInLine`）· `scanPatch`（`patchLineKind` + `PATCH_STATE_UPDATES` 表 + `addedFindings`）· `selftest`（`runCases` 表驱动 + `selfCleanCheck`/`reportSelfHits`）。`npm run metrics` **超限 3 → 0 · exit 1 → exit 0**，`--selftest`/`--all` 与存档 **diff 均 0 行**。

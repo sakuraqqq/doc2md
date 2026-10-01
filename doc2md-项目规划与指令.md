@@ -8,7 +8,7 @@
 
 # 一、准备：从你的两个仓库拿到的经验（这是本项目的纪律基石）
 
-以下全部来自你已发布的两个仓库（dsh-auto-paste、cola-factory-optimizer）的实际做法 + 你的全局 SOP。
+以下全部来自你已发布的两个仓库（<项目A>、<项目B>）的实际做法 + 你的全局 SOP。
 
 ## 1. 文档纪律（两仓库都做得很好，照搬）
 
@@ -25,7 +25,7 @@
 - **修验分离**：实现方跑过不算数——换环境/换数据独立重跑；第三方（如 GLM 视觉模型）只报告不修改；视觉产物 ≥9/10。
 - **每版带 SHA**：发布记录里留版本+测试结果+SHA（可追溯）。
 
-## 3. 发布纪律（dsh-auto-paste 的血泪经验）
+## 3. 发布纪律（<项目A> 的血泪经验）
 
 - **git**：先 commit 版本 bump → 再打 tag（顺序反了 tag 指错 commit）；push **只推本版本**，**禁用 `--tags`**（会带历史脏 tag）。
 - **打包核对**：`npm pack --dry-run --json`（**必须 --json**，plain 输出看不见清单），核对 LICENSE/产物/源码/入口都在清单。
@@ -55,7 +55,7 @@
 1. **新工作区初始化**：`git init`；写 `README.md` 骨架（名称/一句话/为什么做/范围/不做——照上面文档纪律的结构）；`AGENTS.md`（引用全局 SOP + 本项目承诺：全本地转换、零外发）。
 2. **许可核对表**（写进 docs/licenses.md）：逐个确认并记录 LICENSE——`markitdown`(MIT) / `markitdown-node`(MIT?) / `pdf.js`(Apache-2.0) / `mammoth`(BSD-2) / `read-excel-file`(MIT) / `tesseract.js`(Apache-2.0)。**逐库查证，别凭印象**。
 3. **定 v1 范围**：PDF / DOCX / XLSX / 图片OCR / TXT·HTML 只做这 5 类；README「不做」栏写明（如：音频转录、EPUB 等 v2 再说）。
-4. **`.gitignore`**（按 dsh-auto-paste 教训）：`node_modules/`、构建产物、`*.tgz`、本地测试文件（`.dshhome*/`、`test-output/`）都覆盖；目录名不带尾随空格。
+4. **`.gitignore`**（按 <项目A> 的教训）：`node_modules/`、构建产物、`*.tgz`、本地测试文件（`.dshhome*/`、`test-output/`）都覆盖；目录名不带尾随空格。
 5. **准备参考素材**：把 `dsh-file-upload` 的 `lib/convert.js` 复制进 `参考/` 目录（它就是这个「转换器注册表」架构的现成范本——**照它的结构做，别重造**）。
 
 **验收**：git 干净、README 骨架有范围/不做、licenses 表填完、参考素材就位。✅
@@ -138,4 +138,4 @@
 - 架构范本：`参考/dsh-file-upload-convert.js`（转换器注册表写法）
 - 上游：Microsoft MarkItDown（Python，MIT）· `markitdown-node`（Node 社区版）——**看它的格式支持清单，不抄代码**
 - 库（申请 LICENSE 前查官方页）：pdf.js / mammoth / read-excel-file / tesseract.js
-- 你的两仓库（经验已在「一、准备」）：`sakuraqqq/dsh-auto-paste`、`sakuraqqq/cola-factory-optimizer`
+- 你的两仓库（经验已在「一、准备」）：`sakuraqqq/<项目A>`、`sakuraqqq/<项目B>`
