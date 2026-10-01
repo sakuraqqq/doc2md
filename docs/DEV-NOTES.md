@@ -1803,6 +1803,17 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️ **另记一条浏览器侧事实**：本机 **Edge 与 Chrome 的 `inspect` 按钮都点了没反应**（`edge://inspect` 里 **目标列得出**、点 `inspect` / `inspect fallback` 窗口都不开）⇒ 真机 WebView 的 console 取证**不能依赖浏览器按钮**。
    - **工具落点**：`.私档/工具/android-devtools.mjs` —— 绕过浏览器的 inspect 管道，自己走 `adb shell pidof` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` → `/json` → **CDP WebSocket 求值**（带 20s 超时、结果写 `.tmp/devtools-result.txt`）。阶段 1 直接复用。
 
+## 2026-10-01 · 卡 022：privacy-gate 三个超限函数拆分（metrics 超限 3 → 0，CI 最后一个红因）
+
+**做了什么**：只改**控制流结构**（抽函数 / 表驱动化），**不删分支、不合并判断、不放宽阈值** —— `scanText`（抽出 `firstHitInLine`）· `scanPatch`（`patchLineKind` + `PATCH_STATE_UPDATES` 表 + `addedFindings`）· `selftest`（`runCases` 表驱动 + `selfCleanCheck`/`reportSelfHits`）。`npm run metrics` **超限 3 → 0 · exit 1 → exit 0**，`--selftest`/`--all` 与存档 **diff 均 0 行**。
+
+**坑 / 根因 / 防再犯**：
+1. ⭐⭐ **被比较的文件不存在时，`Compare-Object` 会报"0 处差异" —— 假绿**。我第一次跑 A3 时 `.tmp\card022\` **目录没建** ⇒ 两条 `Start-Process` 重定向**双双失败**（stderr：`Could not find a part of the path`），`Get-Content` 拿到 `$null`，而 `Compare-Object $a $null` **返回空集 ⇒ 打印「diff 行数 = 0」** —— 看上去**完美通过**，而 A3 恰是本卡**最核心**的判据（"检出能力不下降"）。
+   **识别方法**：`Start-Process` 的失败**不是终止错误**（脚本继续往下跑）⇒ **必须读 stderr**；且 diff 之前**先断言两侧文件存在且非空**（第二次我加了"字节数 = 2934 / 105"这条前置断言）。
+   **防再犯**：**凡"比两个文件的差异"的取证，先断言两侧非空** —— "0 差异"既可能是"真的相同"，也可能是"根本没比成"。⚠️ 这与卡 021 的"`exit 1` 可能是崩溃而非断言红"**同族**：**判据的输入没到位时，判据会给出最像成功的那个答案**。
+2. ⭐ **复杂度是按函数算的 ⇒ 抽函数必须抽到"每块都达标"**：我把 `scanPatch` 的 `if` 链抽成 `patchLineKind` 之后，它**仍然 cyc 10 / cog 19**（超限）—— 因为几条"更新状态变量"的 `if` 还留在主体里 ⇒ 只能把状态更新也**表驱动化**（`PATCH_STATE_UPDATES`），主体才降到"循环 + 判断 + 累加"。**只搬一半 = 把超限挪了个位置**（甚至可能造出一个新的超限函数）。
+3. ⭐ **把正则从"每轮新建的字面量"提到模块级常量时，绝不能随手带 `g`**：带 `g` 的 `RegExp` 在 `.test()/.exec()` 之间保留 `lastIndex` ⇒ 复用时会**随机漏匹配**（间歇性、最难查）。本卡的 `HUNK_RE` 就**不带 `g`**。
+
 ## 2026-10-01 · 卡 020：privacy-gate 复杂正则等价改写 + PATH 口径落地（lint 转 0 error）
 
 **做了什么**：`PLACEHOLDER` 拆成「字面词 Set + 形状正则」· LAN 正则改成「**通用四段 IPv4 + 代码判定**」· 设备号消掉**相邻无界量词** · 4 处 `git` 行内 disable + 理由 · 2 处 `node` 改 `process.execPath`。**`npm run lint` 9 error → exit 0**，`--selftest`/`--all` 与卡 019 存档 **diff 均 0 行**。
