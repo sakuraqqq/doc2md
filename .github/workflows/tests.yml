@@ -65,6 +65,26 @@ jobs:
         run: npm run build && git diff --exit-code index.html
       - name: "Lint (ESLint: src/ + tools/)"
         run: npm run lint
+      # ── 卡 024：把隐私门禁挂到**服务端**（补 L1 本机钩子绕得过去的那一层）──────────
+      # 为什么需要：本机 `.githooks/` 可被 `--no-verify`、网页端提交、未装钩子的克隆绕过；
+      #   这一步在 CI 里跑 ⇒「发生了也进不去」（L2）。
+      # ⚠️ **必须带 `if: always()`** —— 否则 lint 一红它就被跳过（卡 021 实测：那正是本轮
+      #   「隐藏红因」的成因 ⇒ 平时绿、一遇 lint 红就静默失效 = 假绿）。
+      # ⚠️ 范围**不许写死 SHA**（换 base / 换默认分支就废）：优先用事件给的基线；拿不到
+      #   （新分支 = before 全 0 / force-push = 该提交本地不可达）就退化到与默认分支的**合并基点**
+      #   ⇒ 覆盖「本分支引入的全部提交」，既不漏也不误红。
+      # ⚠️ 本步只报「类别 + 位置 + 命中数」，**绝不回显命中值**（引擎自身行为）。
+      - name: "Privacy gate (新增行里的敏感内容 ⇒ 红；privacy-gate.mjs --range；2026-10-01 卡 024)"
+        if: always()
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "[privacy-ci] 事件未给可用基线（新分支 / force-push）⇒ 退化到与默认分支的合并基点"
+            BASE="$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse --verify -q HEAD~1 || git rev-parse HEAD)"
+          fi
+          echo "[privacy-ci] 扫描范围端点（只回显 SHA 前缀）：${BASE:0:12} .. ${GITHUB_SHA:0:12}"
+          node tools/privacy-gate.mjs --range "${BASE}..${GITHUB_SHA}"
       - name: "Guard selftest (deploy-smoke / audit-delivery / baseline 正例 + 负例必红；2026-09-17)"
         if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: node tools/guard-selftest.mjs
