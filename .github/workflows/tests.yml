@@ -1,5 +1,5 @@
 # tests.yml — doc2md CI 质量门（防屎山 ③ 守门）
-# 模板：cola（可乐工厂效率计算器）tests.yml；按任务书扩展为 checks job：
+# 模板：<项目B> 的 tests.yml（另一自有项目）；按任务书扩展为 checks job：
 #   build-consistency → lint → 守卫自测 → **android 守卫（权限面 + 自证能红，卡 012）** → baseline 守卫
 #   → metrics（超限必须为 0）→ 站点白名单 smoke（组装临时 _site）→ npm test（显式 TAP reporter）
 #   → **TAP ↔ BASELINE.json 对账** → pwa-audit → verify:ocr → **交付面依赖审计（卡 009 起固定在末位）**
