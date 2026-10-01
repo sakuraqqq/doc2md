@@ -1,7 +1,7 @@
 # docs/architecture.md — doc2md v1 架构与转换器注册表契约
 
 > **本文档是 B线（转换器实现）的契约**：接口签名、嗅探规则、错误处理、红线约束从此定版；B线实现 PDF / XLSX / 图片(OCR) 时**不得改变接口**，只能填实现。改接口 = 改口径 = 拍板。
-> 架构范本：`参考/dsh-file-upload-convert.js`（转换器注册表 + 「不信任扩展名」的嗅探链），浏览器化改造。
+> 架构范本：`参考/项目A-file-upload-convert.js`（转换器注册表 + 「不信任扩展名」的嗅探链），浏览器化改造。
 
 ## 1. 数据流
 
@@ -185,7 +185,7 @@ async function convert(file /* File */) -> Promise<{
 - **版本管理**：修改 PRECACHE 或策略 → bump `CACHE_NAME`（如 `doc2md-sw-v2`）→ 旧缓存 activate 时自动清理。
 - **局限**：SW 仅 http(s)/localhost 生效；`file://` 双击打开时应用仍离线可用（单文件本质），PWA 安装提示不出现（无桌面安装入口）——这是浏览器的平台限制，如实记录。
 
-### 8.3 手机适配规格（照 cola GLM 评审教训）
+### 8.3 手机适配规格（照 <项目B> GLM 评审教训）
 
 | 项 | 规格 | 落地 |
 |---|---|---|
