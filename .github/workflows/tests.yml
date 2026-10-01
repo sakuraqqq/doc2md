@@ -66,6 +66,7 @@ jobs:
       - name: "Lint (ESLint: src/ + tools/)"
         run: npm run lint
       - name: "Guard selftest (deploy-smoke / audit-delivery / baseline 正例 + 负例必红；2026-09-17)"
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: node tools/guard-selftest.mjs
       # ⚠️ **位置是硬约束（卡 009）**：本步必须在末步 `Delivery-face dependency audit` **之前** ——
       #    那一步的数据源是网络端点（npm registry advisories），它红起来会**跳过其后的所有步**
@@ -78,32 +79,41 @@ jobs:
       #    ⚠️ G1（`apk-artifact-check.mjs`，APK ↔ 仓库产物同源）**不进 CI**：它要一个 APK 文件，
       #       而 CI 里没有 ⇒ 它只在**本机**按需实跑（无 APK 时 exit 2「未验」，**不是通过**）。
       - name: "Android guards (权限面登记比对 + 两守卫自证能红；2026-09-21 卡 012)"
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: |
           node tools/android-permission-audit.mjs
           node tools/android-guard-selftest.mjs
       - name: "Baseline guard (docs/BASELINE.json 数字真相源：契约数溯源 + 发布物/线上/交付面现算比对；2026-09-19 卡 001-C)"
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: node tools/baseline-check.mjs
       - name: "Code metrics gate (超限函数必须为 0；2026-09-10 用户拍板)"
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: npm run metrics
       - name: "Site whitelist assembly + deploy smoke (与 deploy-pages 同款 cp 白名单)"
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: |
           mkdir -p _site
           cp index.html manifest.json sw.js .nojekyll _site/
           cp -r vendor langs icons _site/
           node tools/deploy-smoke.mjs _site
       - name: Contract tests (node --test · **显式 TAP reporter**；输出同时落 tap.txt 供对账)
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         shell: bash
         run: |
           set -o pipefail
           npm test -- --test-reporter=tap 2>&1 | tee tap.txt
       - name: "Contract ↔ BASELINE.json reconciliation (TAP 摘要 ↔ contract.ci_clean_checkout；2026-09-19 卡 003)"
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: node tools/baseline-check.mjs --from-tap tap.txt --scope ci_clean_checkout
       - name: PWA audit (static)
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: node tests/pwa-audit.mjs
       - name: OCR verification (offline tesseract)
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: npm run verify:ocr
       # ⚠️ **末步（2026-09-20 卡 009）**：本步数据源是网络端点（npm registry advisories），
       #    设计立场是「数据不可得 ⇒ 宁可红，不假绿」⇒ 固定放末位：它红不再跳过任何测试步。
       #    **不要在它之后再加步骤**（会把「外部故障遮蔽测试信号」的老病带回来）。
       - name: "Delivery-face dependency audit (交付面 high/critical 未豁免即红；2026-09-16 用户拍板 B 项)"
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: node tools/audit-delivery.mjs
