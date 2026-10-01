@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-01T14:23:41.065Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-01T14:36:09.176Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,27 +11,27 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：29；函数总数：606；超限函数数：3（圈 >10 或认知 >15）
+- 度量文件数：29；函数总数：609；超限函数数：3（圈 >10 或认知 >15）
 - 圈复杂度最高：16；认知复杂度最高：26
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 606 个，超限 3 个。
+重构后当前：函数 609 个，超限 3 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
 | 文件 | 函数 | 行 | 圈复杂度 | 认知复杂度 |
 |---|---|---|---|---|
-| tools/privacy-gate.mjs | scanText | 158 | 10 | 26 ⚠️ |
-| tools/privacy-gate.mjs | scanPatch | 202 | 11 ⚠️ | 24 ⚠️ |
-| tools/privacy-gate.mjs | selftest | 302 | 16 ⚠️ | 26 ⚠️ |
+| tools/privacy-gate.mjs | scanText | 186 | 10 | 26 ⚠️ |
+| tools/privacy-gate.mjs | scanPatch | 231 | 11 ⚠️ | 24 ⚠️ |
+| tools/privacy-gate.mjs | selftest | 336 | 16 ⚠️ | 26 ⚠️ |
 
 ## 4. 全量函数清单
 
 | 文件 | 函数 | 行 | 圈复杂度 | 认知复杂度 |
 |---|---|---|---|---|
-| tools/privacy-gate.mjs | selftest | 302 | 16 | 26 |
-| tools/privacy-gate.mjs | scanPatch | 202 | 11 | 24 |
-| tools/privacy-gate.mjs | scanText | 158 | 10 | 26 |
+| tools/privacy-gate.mjs | selftest | 336 | 16 | 26 |
+| tools/privacy-gate.mjs | scanPatch | 231 | 11 | 24 |
+| tools/privacy-gate.mjs | scanText | 186 | 10 | 26 |
 | tools/metrics.mjs | loadIgnoreFilter | 53 | 10 | 13 |
 | tools/deploy-smoke.mjs | checkManifest | 112 | 10 | 12 |
 | src/xlsx.js | xlsxByLib | 884 | 10 | 11 |
@@ -49,7 +49,7 @@
 | src/sniff.js | imageKind | 185 | 9 | 9 |
 | src/xlsx.js | areaLossWarning | 833 | 9 | 8 |
 | src/xlsx.js | parseRowCells | 268 | 8 | 14 |
-| tools/privacy-gate.mjs | loadAllowlist | 138 | 8 | 12 |
+| tools/privacy-gate.mjs | loadAllowlist | 166 | 8 | 12 |
 | src/html2md.js | joinFrags | 25 | 8 | 10 |
 | tools/baseline-check.mjs | checkContract | 155 | 8 | 10 |
 | tools/baseline-check.mjs | runSelftest | 387 | 8 | 10 |
@@ -264,6 +264,7 @@
 | tools/install-hooks.mjs | git | 26 | 4 | 3 |
 | tools/metrics.mjs | childNesting | 163 | 4 | 3 |
 | tools/metrics.mjs | collectFunctions | 182 | 4 | 3 |
+| tools/privacy-gate.mjs | isPrivateV4 | 50 | 4 | 3 |
 | src/pdf.js | glyphRun | 84 | 3 | 4 |
 | src/docx.js | ommlChild | 57 | 3 | 3 |
 | src/html2md.js | fragFor | 138 | 3 | 3 |
@@ -333,8 +334,8 @@
 | tools/metrics.mjs | identName | 92 | 3 | 2 |
 | tools/metrics.mjs | namedKey | 95 | 3 | 2 |
 | tools/metrics.mjs | cogVisit | 144 | 3 | 2 |
-| tools/privacy-gate.mjs | maskValue | 122 | 3 | 2 |
-| tools/privacy-gate.mjs | gitToFile | 188 | 3 | 2 |
+| tools/privacy-gate.mjs | maskValue | 150 | 3 | 2 |
+| tools/privacy-gate.mjs | gitToFile | 216 | 3 | 2 |
 | src/app.js | (anonymous) | 54 | 2 | 1 |
 | src/bline.js | fetchTxt | 7 | 2 | 1 |
 | src/bline.js | (anonymous) | 7 | 2 | 1 |
@@ -415,7 +416,8 @@
 | tools/metrics.mjs | (anonymous) | 71 | 2 | 1 |
 | tools/metrics.mjs | (anonymous) | 270 | 2 | 1 |
 | tools/metrics.mjs | (anonymous) | 328 | 2 | 1 |
-| tools/privacy-gate.mjs | opt | 345 | 2 | 1 |
+| tools/privacy-gate.mjs | isPlaceholder | 42 | 2 | 1 |
+| tools/privacy-gate.mjs | opt | 379 | 2 | 1 |
 | src/app.js | (anonymous) | 51 | 1 | 0 |
 | src/app.js | (anonymous) | 58 | 1 | 0 |
 | src/app.js | (anonymous) | 73 | 1 | 0 |
@@ -622,17 +624,18 @@
 | tools/metrics.mjs | (anonymous) | 230 | 1 | 0 |
 | tools/metrics.mjs | (anonymous) | 301 | 1 | 0 |
 | tools/metrics.mjs | (anonymous) | 301 | 1 | 0 |
-| tools/privacy-gate.mjs | ignore | 47 | 1 | 0 |
-| tools/privacy-gate.mjs | ignore | 54 | 1 | 0 |
-| tools/privacy-gate.mjs | ignore | 80 | 1 | 0 |
-| tools/privacy-gate.mjs | ignore | 105 | 1 | 0 |
-| tools/privacy-gate.mjs | hash16 | 128 | 1 | 0 |
-| tools/privacy-gate.mjs | J | 257 | 1 | 0 |
-| tools/privacy-gate.mjs | (anonymous) | 307 | 1 | 0 |
-| tools/privacy-gate.mjs | (anonymous) | 314 | 1 | 0 |
-| tools/privacy-gate.mjs | has | 344 | 1 | 0 |
-| tools/privacy-gate.mjs | revExists | 379 | 1 | 0 |
-| tools/privacy-gate.mjs | (anonymous) | 426 | 1 | 0 |
+| tools/privacy-gate.mjs | ignore | 66 | 1 | 0 |
+| tools/privacy-gate.mjs | ignore | 73 | 1 | 0 |
+| tools/privacy-gate.mjs | ignore | 86 | 1 | 0 |
+| tools/privacy-gate.mjs | ignore | 104 | 1 | 0 |
+| tools/privacy-gate.mjs | ignore | 133 | 1 | 0 |
+| tools/privacy-gate.mjs | hash16 | 156 | 1 | 0 |
+| tools/privacy-gate.mjs | J | 286 | 1 | 0 |
+| tools/privacy-gate.mjs | (anonymous) | 341 | 1 | 0 |
+| tools/privacy-gate.mjs | (anonymous) | 348 | 1 | 0 |
+| tools/privacy-gate.mjs | has | 378 | 1 | 0 |
+| tools/privacy-gate.mjs | revExists | 413 | 1 | 0 |
+| tools/privacy-gate.mjs | (anonymous) | 461 | 1 | 0 |
 | tools/verify-ocr.mjs | (anonymous) | 36 | 1 | 0 |
 | tools/verify-ocr.mjs | (anonymous) | 38 | 1 | 0 |
 

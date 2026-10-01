@@ -33,7 +33,9 @@ if (argv.length === 0) {
 
 // 1) 先过门禁（等价于 pre-commit 钩子做的事）
 console.log('[commit.mjs] 先跑隐私门禁（--staged）…')
-const gate = spawnSync('node', [GATE, '--staged'], { stdio: 'inherit' })
+// P3（卡 020）：用 process.execPath 而不是裸 `node` —— 裸命令名依赖 PATH，可能被可写目录劫持。
+// 本仓正解样板 = tools/metrics.mjs:248（早就这么写了）。
+const gate = spawnSync(process.execPath, [GATE, '--staged'], { stdio: 'inherit' })
 if (gate.error) {
   console.error(`[commit.mjs] 门禁无法启动：${gate.error} ⇒ fail-closed，不提交。`)
   process.exit(2)
@@ -46,6 +48,7 @@ if (gate.status !== 0) {
 
 // 2) 过了才提交；显式清空 hooksPath（钩子内容已由上面等价执行，不是绕过）
 console.log('[commit.mjs] 门禁通过，提交中…')
+// eslint-disable-next-line sonarjs/no-os-command-from-path -- 命令名是固定字面量 `git`（不接受外部输入）；本仓 tools/ 只在 CI 与开发者本机受控环境运行，PATH 不含不可信目录
 const commit = spawnSync('git', ['-c', 'core.hooksPath=', 'commit', ...argv], { stdio: 'inherit' })
 if (commit.error) {
   console.error(`[commit.mjs] git 无法启动：${commit.error}`)

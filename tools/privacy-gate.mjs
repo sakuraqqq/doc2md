@@ -33,7 +33,26 @@ import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
 // ── 占位符白名单：这些"名字段"是合成的，不算身份 ──────────────────────────
-const PLACEHOLDER = /^(?:<[^>]{1,32}>|someone|someuser|user|username|test|example|your[_-]?name|web_user|w|xxx+|\.{2,})$/i
+// ⚠️ 为什么拆成「字面词表 + 形状正则」而不是一条大 alternation：合成一条时
+//    `sonarjs/regex-complexity` 会到 **21**（阈值 20），而卡 020 的拍板是「**改写、不开例外**」。
+//    两者合起来的判定与原 `/^(?:…)$/i` **逐条等价**：字面词由 Set 精确匹配承担（大小写由
+//    `toLowerCase()` 承担，等价于原来的 `/i`），带量词的形状（`<…>` / `your[_-]?name` / `xxx+` / `..`）留在正则里。
+const PLACEHOLDER_WORDS = new Set(['someone', 'someuser', 'user', 'username', 'test', 'example', 'web_user', 'w'])
+const PLACEHOLDER_SHAPES = /^(?:<[^>]{1,32}>|your[_-]?name|xxx+|\.{2,})$/i
+const isPlaceholder = (s) => PLACEHOLDER_WORDS.has(s.toLowerCase()) || PLACEHOLDER_SHAPES.test(s)
+
+// ── 私网 IPv4 的判定：从正则挪进代码（卡 020 · P1 ⓑ 明许「用 `String` 方法替代部分匹配」）──
+// 为什么：把 `10` / `192.168` / `172.16-31` 三种前缀都编码进**一条**正则时，`sonarjs/regex-complexity`
+// 到 **22**（阈值 20）；实测各种等价写法的地板就是 22（25 / 26 / 23 / 22）⇒ 拆成
+// 「**通用四段 IPv4** 正则 + 前缀判定」。检出集合与原先**逐条相同**（见自检 / 全量体检的对照）。
+// ⚠️ 判定**按字符串比**而不是 `Number()`：`010.1.1.1` 用 Number 会等于 10 而**多报**，
+//    而原来那条正则只认字面量 `10`（不认前导零）—— 换成 Number 就会悄悄改掉检出边界。
+const isPrivateV4 = (s) => {
+  const [a, b] = s.split('.')
+  if (a === '10') return true
+  if (a === '192') return b === '168'
+  return a === '172' && /^(?:1[6-9]|2\d|3[01])$/.test(b)
+}
 
 // ── 规则表 ────────────────────────────────────────────────────────────────
 // ⚠️ 全部使用**有界量词**，且**禁止相邻无界量词**（见 gate-design：一条坏正则能冻死整个事件循环）。
@@ -44,14 +63,14 @@ const RULES = [
     id: 'win-user-path',
     desc: 'Windows 用户名绝对路径（本机身份）',
     find: /[A-Za-z]:[\\/](?:Users|Documents and Settings)[\\/]([^\\/\s"'`|]{1,64})/g,
-    ignore: (m, name) => PLACEHOLDER.test(name),
+    ignore: (m, name) => isPlaceholder(name),
     fix: '换成 <工作区> 或相对路径',
   },
   {
     id: 'posix-home-path',
     desc: 'POSIX 家目录绝对路径（本机身份）',
     find: /\/(?:home|Users)\/([^/\s"'`|]{1,64})/g,
-    ignore: (m, name) => PLACEHOLDER.test(name),
+    ignore: (m, name) => isPlaceholder(name),
     fix: '换成 <工作区> 或相对路径',
   },
   {
@@ -59,7 +78,12 @@ const RULES = [
     desc: '私网 / 手机热点 IPv4 地址',
     // 每条分支都必须凑满 4 段：10 与 172.16-31 只占 1/2 段。
     // （少写一段 ⇒ 10.x.x.x 整类漏掉；且 3 段写法会把版本号 10.0.0 误伤）
-    find: /(?<![\d.])(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(?![\d.])/g,
+    // ⚠️ 卡 020（P1 = 改写、不开例外）：正则**只认「四段 IPv4」**，「是不是私网」由下面的
+    //    `ignore` 判定（见 `isPrivateV4` 的说明）。理由：把三种前缀都编进一条正则时，
+    //    `sonarjs/regex-complexity` **改写地板就是 22**（阈值 20；实测各等价写法 25/26/23/22）
+    //    ⇒ 拆成「通用正则 + String 判定」，这也正是卡面 ⓑ 明许的写法。
+    find: /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g,
+    ignore: (m) => !isPrivateV4(m),
     fix: '换成 <LAN地址>',
   },
   {
@@ -101,8 +125,12 @@ const RULES = [
     // ⚠️ 下限 {5,31}（总长 ≥6）不是随手写的：实测 `{3,31}` 会在 doc2md 命中 6 处
     //    **长度恰好为 5** 的误报（tests/ 里的普通标识符）。真序列号 ≥8 位、IMEI 15 位、
     //    机型如 V2573A 是 6 位 ⇒ 5 位不可能是设备标识。**别再把下限调回去。**
-    find: /(?:序列号|设备序列号|IMEI|设备号|机型)\s*[:：=]?\s*[`"']{0,2}([A-Za-z0-9][A-Za-z0-9_-]{5,31})/g,
-    ignore: (m, v) => PLACEHOLDER.test(v),
+    // ⚠️ 分隔符段写成 `\s*(?:[:：=]\s*)?` 而**不是** `\s*[:：=]?\s*`：后者是**两个相邻无界量词**
+    //    （中间只隔一个可选字符）⇒ `sonarjs/super-linear-regex` 判**超线性回溯**，而本项目**已实测过**
+    //    "相邻无界量词把宿主事件循环冻死" ⇒ 这不是风格问题，是 **DoS 面**（卡 020 拍板：改写，不接受 off）。
+    //    新写法与原写法**逐字符等价**：`\s*` 吃前导空白 → 至多一个分隔符 + 其后空白 → 再进引号段。
+    find: /(?:序列号|设备序列号|IMEI|设备号|机型)\s*(?:[:：=]\s*)?[`"']{0,2}([A-Za-z0-9][A-Za-z0-9_-]{5,31})/g,
+    ignore: (m, v) => isPlaceholder(v),
     fix: '换成 <设备序列号> / <机型>',
   },
   { id: 'secret-npm', desc: 'npm token', find: /npm_[A-Za-z0-9]{20,64}/g, fix: '立即吊销并轮换' },
@@ -188,6 +216,7 @@ function scanText(text, fileLabel) {
 function gitToFile(args, outPath, cwd) {
   const fd = openSync(outPath, 'w')
   try {
+    // eslint-disable-next-line sonarjs/no-os-command-from-path -- 命令名是固定字面量 `git`（不接受外部输入）；本仓 tools/ 只在 CI 与开发者本机受控环境运行，PATH 不含不可信目录
     const res = spawnSync('git', args, { cwd, stdio: ['ignore', fd, 'inherit'] })
     if (res.error) return { ok: false, err: String(res.error) }
     return { ok: res.status === 0, err: `git exit ${res.status}` }
@@ -286,11 +315,16 @@ const NEGATIVE = [
   ['lan-ipv4', 'eslint 9.39.4→10.0.0 / @eslint/js 9.39.5→10.0.1'],
   ['lan-ipv4', 'WHATWG 章节号 13.2.5.81 不是 IP'],
   // 这里原本有一条 `['email', '提交身份 <noreply 地址>']` 白名单用例，证明 noreply
-  // 地址被放行。**已删除**：本仓另有一道更老的阻断门 tools/privacy-scan.mjs（挂在
-  // publish.yml 上），它的 email 规则**没有任何白名单** ⇒ 本文件里只要出现任何合法
+  // 地址被放行。**已删除**：删除当时，本仓另有一道更老的阻断门 `tools/privacy-scan.mjs`
+  // （挂在 `publish.yml` 上），它的 email 规则**没有任何白名单** ⇒ 本文件里只要出现任何合法
   // 邮箱字面量，那道门在 `git log -p --all` 上就必报，且**删除行也算命中** ⇒ 连
   // "先写上再删掉"都修不好（2026-09-30 实测两轮）。两个门禁口径不可兼容，只能弃用。
   // 该行为改由间接证据覆盖：真实历史里 130 条 noreply 提交身份全部通过两道门。
+  // ⚠️ **现状更正（卡 020 · 2026-10-01 核实，原文保留以留沿革）**：上面提到的
+  //    `tools/privacy-scan.mjs` 与 `.github/workflows/publish.yml` **在本仓已都不存在**
+  //    （`Test-Path` 均为假；`git grep` 全仓**只有本注释这两行**提到它们）⇒ 那段是**历史**，不是现状。
+  //    本仓**现行的阻断门只有一个**：本文件 —— 由 `.githooks/pre-commit`（`--staged`）与
+  //    `.githooks/pre-push`（`--stdin-refs`）挂载；CI（`.github/workflows/tests.yml`）里**没有**隐私步。
   ['email', 'npm 包名 @tesseract.js 不是邮箱'],
   // The hex run must not itself contain a 1[3-9]\d{9} sequence with non-hex neighbours,
   // or the fixture becomes a real hit for any gate that lacks the adjacency guard —
@@ -377,6 +411,7 @@ try {
      * 把「重写后的历史推不上去」变成死锁（2026-09-30 实测踩到）。
      */
     const revExists = (rev) => {
+      // eslint-disable-next-line sonarjs/no-os-command-from-path -- 命令名是固定字面量 `git`（不接受外部输入）；本仓 tools/ 只在 CI 与开发者本机受控环境运行，PATH 不含不可信目录
       const r = spawnSync('git', ['cat-file', '-e', `${rev}^{commit}`], { cwd, stdio: 'ignore' })
       return r.status === 0
     }

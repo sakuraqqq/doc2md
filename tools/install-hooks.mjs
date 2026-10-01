@@ -29,6 +29,7 @@ function git(args, cwd) {
   const fd = openSync(out, 'w')
   let res
   try {
+    // eslint-disable-next-line sonarjs/no-os-command-from-path -- 命令名是固定字面量 `git`（不接受外部输入）；本仓 tools/ 只在 CI 与开发者本机受控环境运行，PATH 不含不可信目录
     res = spawnSync('git', args, { cwd, stdio: ['ignore', fd, 'inherit'] })
   } finally {
     closeSync(fd)
@@ -90,7 +91,8 @@ if (back.status !== 0 || back.text !== '.githooks') {
 console.log('  ✓ 回读验证通过')
 
 // 4) 冒烟：跑引擎自检（正例必红 / 白名单必绿）
-const smoke = spawnSync('node', [join(repo, 'tools/privacy-gate.mjs'), '--selftest'], {
+// P3（卡 020）：用 process.execPath 而不是裸 `node`（同 tools/metrics.mjs:248 的正解样板）
+const smoke = spawnSync(process.execPath, [join(repo, 'tools/privacy-gate.mjs'), '--selftest'], {
   cwd: repo,
   stdio: ['ignore', 'inherit', 'inherit'],
 })
