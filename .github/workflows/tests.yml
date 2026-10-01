@@ -84,7 +84,10 @@ jobs:
             BASE="$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse --verify -q HEAD~1 || git rev-parse HEAD)"
           fi
           echo "[privacy-ci] 扫描范围端点（只回显 SHA 前缀）：${BASE:0:12} .. ${GITHUB_SHA:0:12}"
-          node tools/privacy-gate.mjs --range "${BASE}..${GITHUB_SHA}"
+          # ⚠️⚠️ 本行是**一次性分支**（`ci/privacy-redpath-tmp`）专用：故意把范围钉在**已知含真实泄漏的历史区间**
+          #    ⇒ 用来验证「Privacy gate 这一步**会红**」（卡 024 的 A6 红路）。**用完即删分支 + 关 PR，绝不合并。**
+          #    main 上的正版写法是：`--range "${BASE}..${GITHUB_SHA}"`（范围由事件派生，不写死）。
+          node tools/privacy-gate.mjs --range "c8e051c~1..c8e051c"
       - name: "Guard selftest (deploy-smoke / audit-delivery / baseline 正例 + 负例必红；2026-09-17)"
         if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: node tools/guard-selftest.mjs
