@@ -1803,6 +1803,17 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️ **另记一条浏览器侧事实**：本机 **Edge 与 Chrome 的 `inspect` 按钮都点了没反应**（`edge://inspect` 里 **目标列得出**、点 `inspect` / `inspect fallback` 窗口都不开）⇒ 真机 WebView 的 console 取证**不能依赖浏览器按钮**。
    - **工具落点**：`.私档/工具/android-devtools.mjs` —— 绕过浏览器的 inspect 管道，自己走 `adb shell pidof` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` → `/json` → **CDP WebSocket 求值**（带 20s 超时、结果写 `.tmp/devtools-result.txt`）。阶段 1 直接复用。
 
+## 2026-10-01 · 卡 021：CI 守卫步不再被 lint 一步堵死（`if: always()` ×10 + 结构性检查器）
+
+**做了什么**：`Lint` 之后的 10 步各加一行 `if: always()`（只加 10 行）；新增 `tools/ci-step-guard-check.mjs`（零依赖、按**位置**判定、三态退出码）。⭐ **不沿用卡 009 的"挪到末位"** —— 那招对 lint 不可行（lint 就该早跑），改靠**显式声明**不受前序失败影响。
+
+**坑 / 根因 / 防再犯**：
+1. ⭐⭐ **新脚本一进 `tools/` 就同时被两把尺子量（ESLint + metrics）—— 必须"落盘即跑门禁"，不能等功能验完再跑**。本卡我**先跑通了 V1/V2/V3 全部功能判据**，之后才发现新文件带 **2 个 lint error**（`\s*(.*)$` 的相邻无界量词 ⇒ `super-linear-regex`）×2 + **1 个超限函数**（`parseSteps` 圈 13）。**同一族第三次**（卡 012 复杂度 / 卡 013 复杂度 / 本卡）。**防再犯**：`tools/*.mjs` **写完先 `npm run lint && npm run metrics`**，再谈功能。
+2. ⭐ **行内注释会让"值比对"式检查器失效**：`if: always()   # 卡 021：…` 是**合法 YAML**，但 `slice(3).trim()` 会拿到 `always()   # 卡 021：…` ⇒ **检查器把自己刚写的修复判成不合规**。**修法**：检查器**先剥 YAML 行内注释**再比对，而不是要求人别写注释。⚠️ **一般化**：凡解析「键: 值」的检查器，**先剥注释**——这是解析器的责任，不是书写者的。
+3. ⚠️ **"只加 N 行"的硬约束会与"在文件里写清为什么"冲突**：A6 要求 `tests.yml` **恰好 +10 行** ⇒ 我**不能**加注释块解释（会变 +11）。⇒ rationale 只能进**回执 + 提交信息**。**登记**：想让理由留在文件里，卡面就得给 `+N+K` 的额度。
+4. ⚠️⭐ **提交进仓的"自动产物"可能是陈旧的，而且没有任何门禁守它**：`docs/CODE-METRICS.md` 提交版写「21 文件 / 527 函数 / **超限 0**」，**真值是 28 / 590 / 超限 3** —— ⚠️ **它声称的「超限 0」是假的**（成因：10-01 那次本机塞进三个 `tools/*.mjs` 时**没人跑过 metrics**）。⇒ 教训：**"仓库里有一份 X"≠"X 与真值一致"**。凡「工具自动重写 + 人肉提交」的产物，**要么加一致性门禁，要么别当权威**。
+5. ⚠️ **`.tmp/` 里的变体是"负例取证"的正确落点**：V3 的三个变体（A 原样 / B 加 `continue-on-error` / C 漏一步）只写 `.tmp/card021/`（gitignored），**不提交** —— 既拿到"检查器能红"的原始输出，又不往仓库里塞故意坏掉的文件。
+
 ## 2026-10-01 · 卡 019：`privacy-gate.mjs` 8 条纯机械 lint error 等义替换
 
 **做了什么**：把 `tools/privacy-gate.mjs` 上 8 条 lint error（7 处 `concise-regex` + 1 处 `duplicates-in-character-class`）做**行内等义替换**（只动 5 行）⇒ error **18 → 9**，`--selftest` / `--all` 输出**逐字节不变**。**不做重构**（理由见台账）。
