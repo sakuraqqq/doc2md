@@ -38,7 +38,20 @@
 ## 红线关联
 
 - 所有库均为**本地打包/内联**使用——不存在「运行时从 CDN 拉取」的许可问题（Apache-2.0 允许内联，只需附文本与声明）。
-- **禁止**把带 Copyleft（GPL/AGPL/LGPL）的库引入本项目（未来选库第一道门槛）。
+- **禁止**把带 Copyleft（GPL/AGPL/LGPL）的库引入**交付面** —— 即任何**会进 `vendor/` 或 `langs/`、随交付物分发**的依赖（未来选库第一道门槛）。
+- ⭐ **豁免：不分发的 `devDependency`** —— 只进 `node_modules/`、**不进交付面**的工具链依赖（lint / 格式化 / 度量 / 测试），**允许带 Copyleft，但必须在本节登记**（不登记 = 违反本门）。
+- ⭐ **现役登记（copyleft 家族，实测 = 恰好 1 项）**：
+
+  | 包 | 版本 | 许可 | 位置 | 取数命令 | 实测值（2026-10-03） |
+  |---|---|---|---|---|---|
+  | `eslint-plugin-sonarjs` | `4.2.0` | `LGPL-3.0-only` | **devDependency**（不进交付面） | `node -p "require('./package-lock.json').packages['node_modules/eslint-plugin-sonarjs'].license"` | `LGPL-3.0-only`（`dev=true`） |
+
+  ⚠️ **判据以 `package-lock.json` 的 `license` 字段为准**，扫描口径 = `packages[*].license` 匹配 `/(?:A?GPL\|LGPL)/i`；复算命令见回执 A7。
+- ⭐ **前瞻登记（条件性 · 该包现【不在仓】）**：**当** `eslint-plugin-sonarjs` **升级到 `4.2.1+` 时**，**会**带进 `@sonarsource/analyzer-commons-configurations`（`LGPL-3.0-only`；其版本形态 `2.31.0-5284` 为**预发布形态**）。
+  ⚠️ **届时按本节确立的口径办**：它是 **devDependency**（不进交付面）⇒ **允许，但必须补进上面那张现役登记表**。
+  📌 **现状反证（防误读为"已在仓"）**：截至 2026-10-03，`package-lock.json` 里 `sonarsource` 与 `analyzer-commons` **各 0 命中**、`node_modules/@sonarsource` **不存在** ⇒ **它是"升级才带进"，不是现状**。
+- **未采纳的两个反方（留痕，不删）**：ⓑ **换掉 `eslint-plugin-sonarjs`**（会丢规则、需重评 lint 面）· ⓒ **只把门收窄到交付面、不给 devDep 开豁免**（与本门"登记即可"的落地口径不符）—— 用户 **2026-09-21 拍板选 ⓐ**（给 devDep 开豁免），故上两条**未采纳**，保留于此备查。
+- ⚠️ **本节只管口径文字**：`tools/audit-delivery.mjs` 的交付面检查与 `ALLOWLIST` **无需改动**（devDependency 不进交付面）。
 
 ## 测试语料（非运行时依赖）
 
