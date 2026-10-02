@@ -433,7 +433,7 @@ const outFile = join(tmp, 'out.txt')
 try {
   if (has('--staged')) {
     mode = 'staged（暂存区新增行）'
-    const r = gitToFile(['diff', '--cached', '--unified=0', '--no-color', '--no-ext-diff'], outFile, cwd)
+    const r = gitToFile(['diff', '--cached', '--unified=0', '--no-color', '--no-ext-diff', '--no-textconv'], outFile, cwd)
     if (!r.ok) {
       console.error(`✗ 隐私门禁：读不到暂存区（${r.err}）⇒ fail-closed，阻断提交。`)
       process.exit(2)
@@ -469,8 +469,8 @@ try {
       // 而漏报才是这道门唯一不可接受的失败。
       const forced = !firstPush && !revExists(remoteSha)
       const args = firstPush || forced
-        ? ['log', '-p', '--no-color', '--no-ext-diff', '--format=commit %H', localSha, '--not', '--remotes']
-        : ['log', '-p', '--no-color', '--no-ext-diff', '--format=commit %H', `${remoteSha}..${localSha}`]
+        ? ['log', '-p', '--no-color', '--no-ext-diff', '--no-textconv', '--format=commit %H', localSha, '--not', '--remotes']
+        : ['log', '-p', '--no-color', '--no-ext-diff', '--no-textconv', '--format=commit %H', `${remoteSha}..${localSha}`]
       if (forced) {
         console.error(`  · 检测到 force-push（远端 ${remoteSha.slice(0, 12)} 在本地已不可达）`)
         console.error(`    本次按「本侧可达的全部提交」扫描 —— 范围偏大但不会漏；不是故障。`)
@@ -484,7 +484,7 @@ try {
     }
   } else if (opt('--range')) {
     mode = `range ${opt('--range')}`
-    const r = gitToFile(['log', '-p', '--no-color', '--no-ext-diff', '--format=commit %H', opt('--range')], outFile, cwd)
+    const r = gitToFile(['log', '-p', '--no-color', '--no-ext-diff', '--no-textconv', '--format=commit %H', opt('--range')], outFile, cwd)
     if (!r.ok) {
       console.error(`✗ 隐私门禁：读不到范围（${r.err}）⇒ fail-closed。`)
       process.exit(2)
