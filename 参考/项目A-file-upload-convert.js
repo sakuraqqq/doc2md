@@ -226,14 +226,14 @@ export async function convertDocument(filePath, data, sniff, options) {
             return await convertMarkitdown(options.markitdownBin, filePath, options.markitdownTimeoutMs ?? 120000);
         }
         catch (err) {
-            console.warn(`[dsh-file-upload] MarkItDown CLI failed for ${filePath}, falling back to bundled engine:`, err);
+            console.warn(`[项目A] MarkItDown CLI failed for ${filePath}, falling back to bundled engine:`, err);
         }
     }
     try {
         return await convertMarkitdownNode(filePath);
     }
     catch (err) {
-        console.warn(`[dsh-file-upload] bundled engine failed for ${filePath}, falling back to JS parsers:`, err);
+        console.warn(`[项目A] bundled engine failed for ${filePath}, falling back to JS parsers:`, err);
     }
     return convertJs(data, sniff, options);
 }
