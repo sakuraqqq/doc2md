@@ -1,21 +1,20 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-01T14:44:17.604Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-02T20:08:22.180Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
 ## 1. 重复率（jscpd：src/ + tools/；tests/ 不计入；阈值 <5%）
 
-- **重复率：0.2%**（目标 <5%）
-- 判定：✅ 达标
+- **重复率：不可用（jscpd 未运行成功或目标目录为空；沙箱内可先手动跑 jscpd 生成报告）**（目标 <5%）
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：29；函数总数：618；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：30；函数总数：656；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 618 个，超限 0 个。
+重构后当前：函数 656 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -86,6 +85,7 @@
 | tools/baseline-check.mjs | checkOnline | 213 | 7 | 6 |
 | tools/baseline-check.mjs | checkDelivery | 242 | 7 | 6 |
 | tools/ci-step-guard-check.mjs | runCli | 170 | 7 | 6 |
+| tools/gen-handoff-baseline.mjs | buildBlock | 74 | 7 | 6 |
 | tools/metrics.mjs | countCycPoints | 118 | 7 | 6 |
 | src/xlsx.js | scanSheetRowsStream | 330 | 6 | 13 |
 | tools/privacy-gate.mjs | scanText | 204 | 6 | 13 |
@@ -105,6 +105,7 @@
 | src/pdf.js | lineText | 240 | 6 | 8 |
 | src/pdf.js | textQualityRatio | 362 | 6 | 8 |
 | tools/audit-delivery.mjs | judged | 189 | 6 | 8 |
+| tools/gen-handoff-baseline.mjs | scanBlockForExcludedFields | 161 | 6 | 8 |
 | src/pdf.js | groupRunsIntoLines | 213 | 6 | 7 |
 | src/pdf.js | monospaceFontsOf | 289 | 6 | 7 |
 | tools/baseline-check.mjs | compareDeliveryEntry | 228 | 6 | 7 |
@@ -147,6 +148,9 @@
 | tools/baseline-check.mjs | compareArtifact | 175 | 6 | 5 |
 | tools/baseline-check.mjs | reconcileTap | 319 | 6 | 5 |
 | tools/ci-step-guard-check.mjs | stepName | 45 | 6 | 5 |
+| tools/gen-handoff-baseline.mjs | mutateOutsideBlock | 249 | 6 | 5 |
+| tools/gen-handoff-baseline.mjs | specM3 | 298 | 6 | 5 |
+| tools/gen-handoff-baseline.mjs | assert | 305 | 6 | 5 |
 | tools/gen-icons.mjs | sample | 28 | 6 | 5 |
 | tools/gen-icons.mjs | maskablePoint | 39 | 6 | 5 |
 | tools/metrics.mjs | fnName | 98 | 6 | 5 |
@@ -157,6 +161,7 @@
 | src/sniff.js | charsetLabels | 62 | 5 | 7 |
 | src/xlsx.js | colIndexOfRef | 607 | 5 | 7 |
 | src/xlsx.js | pullRowUnit | 803 | 5 | 7 |
+| tools/gen-handoff-baseline.mjs | reportSelftest | 348 | 5 | 7 |
 | src/docx.js | docxMathFragment | 170 | 5 | 6 |
 | src/docx.js | insideQuotes | 206 | 5 | 6 |
 | src/xlsx.js | findCentralEntry | 44 | 5 | 6 |
@@ -193,6 +198,12 @@
 | tools/apk-artifact-check.mjs | runCli | 90 | 5 | 4 |
 | tools/baseline-check.mjs | runCheck | 373 | 5 | 4 |
 | tools/deploy-smoke.mjs | resolveInSite | 71 | 5 | 4 |
+| tools/gen-handoff-baseline.mjs | spliceBlock | 118 | 5 | 4 |
+| tools/gen-handoff-baseline.mjs | doGenerate | 194 | 5 | 4 |
+| tools/gen-handoff-baseline.mjs | specM2 | 286 | 5 | 4 |
+| tools/gen-handoff-baseline.mjs | assert | 290 | 5 | 4 |
+| tools/gen-handoff-baseline.mjs | specM4b | 315 | 5 | 4 |
+| tools/gen-handoff-baseline.mjs | doSelftest | 359 | 5 | 4 |
 | tools/measure-xlsx-peak.mjs | convertInPage | 201 | 5 | 4 |
 | tools/measure-xlsx-peak.mjs | (anonymous) | 203 | 5 | 4 |
 | tools/metrics.mjs | nodeCogPoints | 154 | 5 | 4 |
@@ -219,6 +230,7 @@
 | tools/apk-artifact-check.mjs | firstDiff | 51 | 4 | 4 |
 | tools/audit-delivery.mjs | itemsFromAuditJson | 161 | 4 | 4 |
 | tools/audit-delivery.mjs | itemsFromBulk | 170 | 4 | 4 |
+| tools/gen-handoff-baseline.mjs | thousands | 54 | 4 | 4 |
 | src/app.js | (anonymous) | 67 | 4 | 3 |
 | src/bline.js | (anonymous) | 6 | 4 | 3 |
 | src/convert.js | done | 114 | 4 | 3 |
@@ -258,6 +270,8 @@
 | tools/ci-step-guard-check.mjs | parseSteps | 98 | 4 | 3 |
 | tools/ci-step-guard-check.mjs | checkWorkflowText | 139 | 4 | 3 |
 | tools/ci-step-guard-check.mjs | report | 153 | 4 | 3 |
+| tools/gen-handoff-baseline.mjs | (anonymous) | 251 | 4 | 3 |
+| tools/gen-handoff-baseline.mjs | assert | 323 | 4 | 3 |
 | tools/gen-icons.mjs | inDocRect | 48 | 4 | 3 |
 | tools/install-hooks.mjs | git | 26 | 4 | 3 |
 | tools/metrics.mjs | childNesting | 163 | 4 | 3 |
@@ -265,6 +279,7 @@
 | tools/privacy-gate.mjs | isPrivateV4 | 50 | 4 | 3 |
 | tools/privacy-gate.mjs | selftest | 406 | 4 | 3 |
 | src/pdf.js | glyphRun | 84 | 3 | 4 |
+| tools/gen-handoff-baseline.mjs | countOccurrences | 139 | 3 | 4 |
 | tools/privacy-gate.mjs | selfCleanCheck | 395 | 3 | 4 |
 | src/docx.js | ommlChild | 57 | 3 | 3 |
 | src/html2md.js | fragFor | 138 | 3 | 3 |
@@ -276,6 +291,7 @@
 | tools/baseline-check.mjs | checkNumberLeaf | 147 | 3 | 3 |
 | tools/baseline-check.mjs | tapDiffs | 309 | 3 | 3 |
 | tools/deploy-smoke.mjs | checkDenyTop | 128 | 3 | 3 |
+| tools/gen-handoff-baseline.mjs | scanBlockForForbidden | 152 | 3 | 3 |
 | tools/gen-icons.mjs | pngRGBA | 77 | 3 | 3 |
 | src/app.js | (anonymous) | 64 | 3 | 2 |
 | src/convert.js | cjkLatin | 52 | 3 | 2 |
@@ -324,6 +340,9 @@
 | tools/deploy-smoke.mjs | extractRefs | 32 | 3 | 2 |
 | tools/deploy-smoke.mjs | pushRef | 45 | 3 | 2 |
 | tools/deploy-smoke.mjs | collectAttr | 50 | 3 | 2 |
+| tools/gen-handoff-baseline.mjs | doCheck | 220 | 3 | 2 |
+| tools/gen-handoff-baseline.mjs | specM1 | 271 | 3 | 2 |
+| tools/gen-handoff-baseline.mjs | assert | 278 | 3 | 2 |
 | tools/gen-icons.mjs | inFoldNotch | 60 | 3 | 2 |
 | tools/guard-selftest.mjs | mkSite | 23 | 3 | 2 |
 | tools/measure-xlsx-peak.mjs | readPssKb | 164 | 3 | 2 |
@@ -408,6 +427,12 @@
 | tools/ci-step-guard-check.mjs | (anonymous) | 130 | 2 | 1 |
 | tools/deploy-smoke.mjs | extractSwRefs | 61 | 2 | 1 |
 | tools/deploy-smoke.mjs | checkRefs | 106 | 2 | 1 |
+| tools/gen-handoff-baseline.mjs | readBaseline | 179 | 2 | 1 |
+| tools/gen-handoff-baseline.mjs | contractLine | 240 | 2 | 1 |
+| tools/gen-handoff-baseline.mjs | (anonymous) | 253 | 2 | 1 |
+| tools/gen-handoff-baseline.mjs | mutateVendorBytesBothSides | 258 | 2 | 1 |
+| tools/gen-handoff-baseline.mjs | apply | 318 | 2 | 1 |
+| tools/gen-handoff-baseline.mjs | collectInvariantChecks | 336 | 2 | 1 |
 | tools/gen-icons.mjs | crc32 | 123 | 2 | 1 |
 | tools/guard-selftest.mjs | ok | 20 | 2 | 1 |
 | tools/guard-selftest.mjs | (anonymous) | 62 | 2 | 1 |
@@ -587,6 +612,18 @@
 | tools/deploy-smoke.mjs | isExternalRef | 68 | 1 | 0 |
 | tools/embed-bline.mjs | read | 18 | 1 | 0 |
 | tools/embed-bline.mjs | readB | 19 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | normSha | 66 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | normNum | 69 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | buildMarkerRegion | 110 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | sha256 | 184 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | regenerate | 187 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | mutateContractNumber | 237 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | mutateDropEnd | 246 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | apply | 274 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | apply | 289 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | apply | 301 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | (anonymous) | 342 | 1 | 0 |
+| tools/gen-handoff-baseline.mjs | ok | 363 | 1 | 0 |
 | tools/gen-icons.mjs | inRoundedCorner | 53 | 1 | 0 |
 | tools/gen-icons.mjs | chunk | 96 | 1 | 0 |
 | tools/guard-selftest.mjs | (anonymous) | 54 | 1 | 0 |

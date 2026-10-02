@@ -131,6 +131,9 @@ jobs:
       - name: OCR verification (offline tesseract)
         if: always()   # 卡 021：前序失败（含 lint 红）也照跑
         run: npm run verify:ocr
+      - name: "HANDOFF baseline block (生成块 == docs/BASELINE.json；2026-10-03 卡 031)"
+        if: always()   # 卡 021：前序失败（含 lint 红）也照跑
+        run: node tools/gen-handoff-baseline.mjs && git diff --exit-code -- docs/HANDOFF-主开发线.md
       # ⚠️ **末步（2026-09-20 卡 009）**：本步数据源是网络端点（npm registry advisories），
       #    设计立场是「数据不可得 ⇒ 宁可红，不假绿」⇒ 固定放末位：它红不再跳过任何测试步。
       #    **不要在它之后再加步骤**（会把「外部故障遮蔽测试信号」的老病带回来）。
