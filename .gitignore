@@ -51,6 +51,12 @@ tools/_verify-clean.mjs
 tools/_pdf-pages.mjs
 .script-archive/
 
+# --- 过程档案永不进公开仓（2026-10-03 立；口径见 AGENTS.md 同名节 + 卡 038）---
+#   ⚠️ 只管【新文件】；docs/ 里已入库的存量属【有意保留】(grandfather)，⛔ 不搬不删
+docs/*回执*.md
+docs/*交接*.md
+docs/*会话总结*.md
+docs/任务台账-NEW*.md
 # --- 系统 / 编辑器 ---
 Thumbs.db
 .DS_Store
