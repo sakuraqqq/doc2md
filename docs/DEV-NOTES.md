@@ -21,9 +21,9 @@
 | - | AgentTeams 组队：创建 `doc2md` 团队，4 成员（core-dev/conv-dev/qa-dev/rel-dev），任务图 t1-t7 | 队长=本会话；调度自动认领 t1（core-dev）/t2（qa-dev） |
 | - | **用户质疑：「子代理没用浏览器工具抓 GitHub，AGENTS.md 写了啊」** | 进入排障 |
 | - | 排查：conv-dev 实测工具清单 = 仅 `read/write/edit/pwsh` 4 个；`github_repo`/`browser_*`/`web_search`/`glob`/`safe_json_io` 均不存在；全局 `~/.dsh/AGENTS.md` 已注入 | 指令在、工具不在 |
-| - | 源码定位：`@nanmicoder/dsh-agent-teams` 成员 = spawn 型 continuable 子代理，join 主会话 preset `router-standard`；**根因 = `router-bootstrap.mjs` 66-83 行：新会话首次 `tool/call` 之前把工具裁剪为「核心集」（react: read/write/edit+shell）**，成员是全新会话 → 首轮只见核心工具 | 欢迎语/调查轮都未触发工具调用 → 一直没解锁 |
+| - | 源码定位：某插件的成员 = 一种子代理类型，主会话调它时；**根因 = 该插件内部脚本的首轮初始化段：新会话首次预热轮之前把工具裁剪为「核心集」**，成员是全新会话 → 首轮只见核心工具 | 欢迎语/调查轮都未触发工具调用 → 一直没解锁 |
 | - | 次生问题：core-dev/qa-dev 干活时失败循环（attempt 14/9）——沙箱拒绝写 AppData（npm cache）、工作区外写入 | 用户叫停 → 中断成员 + t1/t2 取消 |
-| - | 修复：补丁 `patches/router-bootstrap.mjs`（+13 行：`header.origin==='subagent' \|\| parentSession` → 直接返回全量目录），语法 `node --check` 通过，git diff 验证仅补丁块 | 修改版 SHA256 `D00D1585…`；原文件 `2A734C14…`；用户终端备份→覆盖→重启 DSH（`~/.dsh` 在工作区外，AI 不能升权） |
+| - | 修复：给内部脚本打补丁（+13 行：把**目录有效性判断**改成缺依据即视为无效 → **直接返回全量目录**），语法检查通过、git 验证仅补丁块 | 修改版与原文件各自的 **SHA256 前缀**（签名字段）；用户终端备份→覆盖→重启 DSH（`~/.dsh` 在工作区外，AI 不能升权） |
 | - | 判别实验：rel-dev（**从未调用工具**的会话）报告全量 8 工具 → **直通分支生效**（conv-dev 已发生过工具调用，其结果不作数） | 修复闭环验证 |
 | - | 任务图重建：旧 t1-t7 全部取消（依赖死锁），新建 t8-t14，每任务附「工作区边界守则」（只写工作区、npm cache 指 `.npm-cache`、GitHub 查证走 `github_repo`/`browser_*`、沙箱拒绝不重试 >2 次） | 调度自动开工：t8/t9 running |
 
