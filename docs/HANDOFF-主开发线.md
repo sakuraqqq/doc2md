@@ -486,7 +486,7 @@
 - **核验**：`SHA256SUMS` **1/1 通过**（README 自指，不计）；交换仓合并后 **3/3 文件 blob 与手机交付逐字节相同**（`386cf4bc…` / `43a151eb…` / `661f66a7…`）。
   - **合并**：交换仓 `cca4950` + 手机 `e2ae51b`（base `08b1237`）→ **`d20051a`**（plumbing：`read-tree -m` + `commit-tree` + `update-ref`）。
   - ⚠️ **新踩坑（对象搬运）**：`git fetch` 又一次死在 `cannot create standard input pipe for git-upload-pack … Permission denied`（沙箱）；**可行替代 = 直接搬 pack 文件**（本仓缺的正是 `pack-a82deab0…`，`idx`+`pack`+`rev` 三件一起拷进 `objects/pack/` ⇒ 对象即刻可用，内容寻址天然幂等）。**别再试 `fetch`/`unbundle`。**
-- **方案要点（手机侧提案，性质 = 提案不是结果）**：同文件（`3-big` 47.4 MB）× **两个浏览器**（夸克 `com.quark.browser` vs 默认 `com.vivo.browser`）各跑一轮，**唯一自变量 = 浏览器** —— 利用「**系统侧规则相同、主机侧策略不同**」把 T1 卡住的「**主机 vs 系统**」分开（夸克有**自有 JS 看门狗**：实测调用栈 `JsAnrThreadNotRespondingCallback.showDestroyCurrentWindowDialog`；默认浏览器是 stock Chromium ⇒ 推断走 `OomIntervention`）。
+- **方案要点（手机侧提案，性质 = 提案不是结果）**：同文件（`3-big` 47.4 MB）× **两个浏览器**（一个第三方手机浏览器 vs 系统自带浏览器）各跑一轮，**唯一自变量 = 浏览器** —— 利用「**系统侧规则相同、主机侧策略不同**」把 T1 卡住的「**主机 vs 系统**」分开（前者另带**自有 JS 看门狗**：实测抓到的栈来自它**自家的** JS 无响应回调；后者是**原生 Chromium 内核** ⇒ 推断走的则是**系统级内存干预**那条路）。
 - ⚠️ **实施前必须先改（否则采不到）**：包名过滤 `com.quark.browser` → **`com.quark.browser|com.vivo.browser`**，**三条通路都要改**（采样器 / 提取 / `am_kill` 过滤）；默认浏览器渲染进程名（实测）= `com.vivo.browser:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0` ⇒ **不改 = 采样器"看不见"渲染进程**（与老坑"没取到 ≠ 不存在"同源）。
 - **三条待拍板（等人签字，未动）**：① **是否采用 A/B 设计**（而非再跑一轮夸克，手机侧建议采用）② **档位**——T1 需**全量 logcat** ⇒ 走 §5.6 **v1.1 口径**，**现档位已在 T3 结束后收回只读档，需重新拍板 + 用户本人重新配对**（换网/重启即失效）③ **轮次与顺序**——建议**两轮封顶、先默认浏览器后夸克**；**第一轮即命中判据 1/2 则第二轮可省**（当场停）。
 - **判读表已"写死不许临场改"**（含：任一出现 `killinfo` 首字段=渲染进程 pid ⇒ **sender = lmkd 直接定案**；任一出现 `am_kill [… low memory …]` ⇒ **sender = AMS 直接定案**；两轮都没触发 ⇒ **如实写"未复现"**）。
