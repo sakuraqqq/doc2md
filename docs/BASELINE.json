@@ -24,7 +24,7 @@
       },
       "measured": {
         "at": "2026-10-05",
-        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：由 local_with_fixtures 的 318/316/0/2 按同一映射推得 315/312/0/3（组 Y 4 条 → 1 条 skip：total −3 / pass −4 / skip +1）；② ⚠️ **真实 CI runner 对账待本卡 PR 的 CI 跑完后确认**（前值 314/311/0/3 由真 run `35608426747` 对账确认）"
+        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：由 local_with_fixtures 的 318/316/0/2 按同一映射推得 315/312/0/3（组 Y 4 条 → 1 条 skip：total −3 / pass −4 / skip +1）；② ⭐ **真实 CI runner 已对账**：卡 042 的 PR run `37233758141`（`fcd778b`）与 main push run `37233882200`（`bfd66fd`）第 15 步 `Contract ↔ BASELINE.json reconciliation` **均 success**（前值 314/311/0/3 由真 run `35608426747` 对账确认）"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }
