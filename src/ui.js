@@ -201,6 +201,50 @@ function reportSaveError(e) {
 export function downloadMd(text, fileName) {
   return saveTextArtifact(text, fileName).catch(reportSaveError);
 }
+/* ── 卡 042（`R9-5`）：导出的「缺图」从静默 → 有信号 ────────────────────────────────
+ * 病（改前实测）：资产（图片）读取失败时，zip 与内嵌两条路径的 `catch` 都是空的 —— zip 少一张图、
+ *   内嵌 md 里留一条**指不到的相对引用**，而界面**零提示**（状态栏还停在「完成：共 6 个文件。」）。
+ * 药：收失败项 → **复用既有 warnings 渲染面**（`renderResult` 的 `.warnings` + `⚠ ` 前缀）**+ 状态栏明示**
+ *   （卡面 I1 两条都要）⇒ ⛔ 不另造提示机制。
+ * ⚠️ 只加「可见性」：失败资产**照旧跳过**、其余照常导出 ⇒ **产物字节不变**（卡面 A5 口径）。
+ * ⚠️ 为什么落在卡片内、而不只写状态栏：`#status` 在**文档流顶部**，长页面滚到下面点导出时它远在视口之上
+ *   （改前实测：点最后一张卡时 `#status.top = -1579px`）—— 这条病卡 011 的 A10 已踩过一次（只测「DOM 里有」= 没测到人眼）。
+ * ⚠️ 为什么用 `[data-asset-fail]` 当锚：同一张卡的**转换期** warnings 由 `renderResult` 写，⛔ 不许被本卡顶掉；
+ *   且重复点导出要**改写而非叠加**（幂等）⇒ 用自己的锚，不抢既有 `.warnings`。
+ */
+const ASSET_FAIL_TEXT = {
+  zip: { verb: '打包', tail: '其余图片已照常打包' },
+  embed: { verb: '内嵌', tail: '未内嵌的图在 .md 里仍是相对引用（单文件不自包含）' },
+};
+/** 「导出缺图」提示元素的定位/创建（同一张卡只有一个；重复点导出不叠加）
+ *  ⚠️ 位置 = **按钮行【上方】**（与 `renderResult` 的转换期 warnings 同位置）—— 不只是为了整齐：
+ *    用户点的是按钮 ⇒ 按钮可见 ⇒ **按钮上方的空间必然可见**（提示不会掉到折叠线以下）。
+ *    改后首跑实测：append 到卡片末尾时提示落在**视口下方 8px**（`top=728 > 视口 720`）⇒ 看不见 = 白做。 */
+function assetFailSlot(card) {
+  const found = card.querySelector('[data-asset-fail]');
+  if (found) return found;
+  const el = document.createElement('div');
+  el.className = 'warnings';
+  el.setAttribute('data-asset-fail', '');
+  const body = card.querySelector('.card-body');
+  const actions = card.querySelector('.card-actions');
+  if (body && actions) body.insertBefore(el, actions);
+  else (body || card).appendChild(el);
+  return el;
+}
+/** 收失败项 → 卡片内 `.warnings` + 状态栏。⚠️ `failed` 为空时**什么都不做**（无失败不许凭空报警 —— 卡面 A2） */
+function reportAssetFailures(btn, failed, mode) {
+  const card = btn && btn.closest ? btn.closest('.card') : null;
+  const slot = card && card.querySelector('[data-asset-fail]');
+  if (!failed.length) {
+    if (slot) slot.remove(); // 上次失败过、这次没有 ⇒ 撤掉旧提示（不留陈旧断言）
+    return;
+  }
+  const t = ASSET_FAIL_TEXT[mode] || ASSET_FAIL_TEXT.zip;
+  const msg = t.verb + '缺 ' + failed.length + ' 张图：' + failed.join('、') + '；' + t.tail;
+  setStatus(msg, true);
+  if (card) assetFailSlot(card).textContent = '⚠ ' + msg;
+}
 // 下载 .md + 抽取图片（zip）：fflate 内联打包，本地生成，零外发（t6 ⑨a）
 export async function downloadZip(text, fileName, assets, btn) {
   if (isNativeRuntime()) {
@@ -208,6 +252,7 @@ export async function downloadZip(text, fileName, assets, btn) {
     nativeNotice(NATIVE_LIMIT.zip, true);
     return;
   }
+  const failed = []; // 卡 042：收「读取失败」的资产名（空 = 不报警）
   try {
     const F = window.fflate;
     if (!F) throw new Error('fflate 未加载');
@@ -217,7 +262,7 @@ export async function downloadZip(text, fileName, assets, btn) {
     for (const a of assets || []) {
       try {
         files[a.name] = new Uint8Array(await a.blob.arrayBuffer());
-      } catch { /* 单图读取失败跳过（其他图照常打包） */ }
+      } catch { failed.push(a.name + '（读取失败）'); } // 卡 042：照旧跳过，但**记下来**（不再静默）
     }
     const z = F.zipSync(files);
     anchorDownload(new Blob([z], { type: 'application/zip' }), base + '.zip');
@@ -225,7 +270,9 @@ export async function downloadZip(text, fileName, assets, btn) {
     const old = btn.textContent;
     btn.textContent = '❌ 打包失败';
     setTimeout(() => { btn.textContent = old; }, 1500);
+    return; // 卡 042：「整个打包失败」与「部分资产失败」是两条互斥通道（⛔ 别把整包失败也报成缺图）
   }
+  reportAssetFailures(btn, failed, 'zip');
 }
 // 方案 A（2026-09-07 拍板）：单文件 .md 导出——assets 图片转 data URL 内嵌（自包含单文件）；
 // 引用替换：](assets/<name>) → ](data:<mime>;base64,…)（本地生成，零外发；预览区不内嵌——预览与导出分离）
@@ -255,14 +302,16 @@ function assetsTotalBytes(assets) {
   for (const a of assets || []) if (a && a.blob) total += a.blob.size || 0;
   return total;
 }
-/** 引用表：原始名 / escUrl 转义名 → data URL（单遍替换用 Map 查询） */
-async function buildEmbedMap(assets) {
+/** 引用表：原始名 / escUrl 转义名 → data URL（单遍替换用 Map 查询）
+ *  ⚠️ `failed` 是**出参**（卡 042）：读取失败 / 内容为空的资产名往这里塞，由调用方决定怎么说（⛔ 本函数不发提示） */
+async function buildEmbedMap(assets, failed) {
   const map = new Map();
   for (const a of assets || []) {
     if (!a || !a.blob) continue;
-    let bytes = null;
-    try { bytes = new Uint8Array(await a.blob.arrayBuffer()); } catch { /* 单图读取失败跳过（其他图照常内嵌） */ }
-    if (!bytes || bytes.length === 0) continue;
+    let bytes;
+    try { bytes = new Uint8Array(await a.blob.arrayBuffer()); }
+    catch { failed.push(a.name + '（读取失败）'); continue; } // 卡 042：照旧跳过，但**记下来**（不再静默）
+    if (bytes.length === 0) { failed.push(a.name + '（内容为空）'); continue; }
     const dataUrl = 'data:' + (a.type || 'image/png') + ';base64,' + bytesToB64(bytes);
     map.set(a.name, dataUrl);
     map.set(escAssetName(a.name), dataUrl);
@@ -283,15 +332,18 @@ export async function downloadMdEmbedded(text, fileName, assets, btn) {
     await downloadZip(text, fileName, assets, btn);
     return;
   }
+  const failed = []; // 卡 042：收「读取失败 / 内容为空」的资产名（空 = 不报警）
   let md;
   try {
-    md = embedImagesIntoMd(text, await buildEmbedMap(assets));
+    md = embedImagesIntoMd(text, await buildEmbedMap(assets, failed));
   } catch {
     const old = btn.textContent;
     btn.textContent = '❌ 内嵌失败';
     setTimeout(() => { btn.textContent = old; }, 1500);
     return;
   }
+  // 卡 042：先报「缺图」**再**落盘 —— `#status` 是共享的单通道，⛔ 不许把既有的「保存失败」顶掉
+  reportAssetFailures(btn, failed, 'embed');
   // 文本路径：原生可用走原生（APK），否则 <a download>（浏览器）——保存失败由 reportSaveError 显式暴露
   await saveTextArtifact(md, fileName).catch(reportSaveError);
 }
