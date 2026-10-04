@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-04T16:45:27.868Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-04T18:18:31.020Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：30；函数总数：656；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：32；函数总数：665；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 656 个，超限 0 个。
+重构后当前：函数 665 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -30,6 +30,7 @@
 | src/xlsx.js | xlsxByLib | 884 | 10 | 11 |
 | src/xlsx.js | sigDigitsOf | 542 | 10 | 10 |
 | tools/measure-xlsx-peak.mjs | main | 276 | 10 | 10 |
+| tools/verify-release-online.mjs | main | 67 | 10 | 10 |
 | tools/baseline-check.mjs | runFromTap | 411 | 10 | 9 |
 | src/xlsx.js | collectTTexts | 358 | 9 | 14 |
 | src/ui.js | buildEmbedMap | 259 | 9 | 13 |
@@ -61,6 +62,8 @@
 | tools/privacy-gate.mjs | patchLineKind | 248 | 8 | 7 |
 | src/html2md.js | blockifyContainer | 151 | 7 | 13 |
 | src/xlsx.js | xlsxDegradeWarnings | 863 | 7 | 12 |
+| tools/check-pages-allowlist.mjs | parseArgs | 25 | 7 | 11 |
+| tools/verify-release-online.mjs | parseArgs | 32 | 7 | 11 |
 | tools/deploy-smoke.mjs | checkSite | 135 | 7 | 9 |
 | src/docx.js | ommlEnclosingPara | 143 | 7 | 8 |
 | src/xlsx.js | zipDirectory | 58 | 7 | 8 |
@@ -124,6 +127,7 @@
 | src/xlsx.js | rowColCount | 769 | 6 | 6 |
 | tools/android-permission-audit.mjs | printDiff | 92 | 6 | 6 |
 | tools/audit-delivery.mjs | report | 220 | 6 | 6 |
+| tools/check-pages-allowlist.mjs | main | 61 | 6 | 6 |
 | tools/ci-step-guard-check.mjs | checkSteps | 120 | 6 | 6 |
 | tools/gen-icons.mjs | onTextLine | 67 | 6 | 6 |
 | src/convert.js | ocrWarnings | 69 | 6 | 5 |
@@ -198,6 +202,7 @@
 | tools/android-permission-audit.mjs | diffPermissions | 52 | 5 | 4 |
 | tools/apk-artifact-check.mjs | runCli | 90 | 5 | 4 |
 | tools/baseline-check.mjs | runCheck | 373 | 5 | 4 |
+| tools/check-pages-allowlist.mjs | judge | 49 | 5 | 4 |
 | tools/deploy-smoke.mjs | resolveInSite | 71 | 5 | 4 |
 | tools/gen-handoff-baseline.mjs | spliceBlock | 118 | 5 | 4 |
 | tools/gen-handoff-baseline.mjs | doGenerate | 194 | 5 | 4 |
@@ -357,6 +362,7 @@
 | tools/privacy-gate.mjs | maskValue | 150 | 3 | 2 |
 | tools/privacy-gate.mjs | gitToFile | 227 | 3 | 2 |
 | tools/privacy-gate.mjs | reportSelfHits | 380 | 3 | 2 |
+| tools/verify-release-online.mjs | fetchRaw | 55 | 3 | 2 |
 | src/app.js | (anonymous) | 54 | 2 | 1 |
 | src/bline.js | fetchTxt | 7 | 2 | 1 |
 | src/bline.js | (anonymous) | 7 | 2 | 1 |
@@ -447,6 +453,7 @@
 | tools/privacy-gate.mjs | addedFindings | 272 | 2 | 1 |
 | tools/privacy-gate.mjs | (anonymous) | 273 | 2 | 1 |
 | tools/privacy-gate.mjs | opt | 419 | 2 | 1 |
+| tools/verify-release-online.mjs | readExpectFromReleaseMd | 46 | 2 | 1 |
 | src/app.js | (anonymous) | 51 | 1 | 0 |
 | src/app.js | (anonymous) | 58 | 1 | 0 |
 | src/app.js | (anonymous) | 73 | 1 | 0 |
@@ -604,6 +611,8 @@
 | tools/baseline-check.mjs | mutate | 354 | 1 | 0 |
 | tools/baseline-check.mjs | (anonymous) | 394 | 1 | 0 |
 | tools/build.mjs | (anonymous) | 42 | 1 | 0 |
+| tools/check-pages-allowlist.mjs | fetchAllowlist | 39 | 1 | 0 |
+| tools/check-pages-allowlist.mjs | (anonymous) | 52 | 1 | 0 |
 | tools/ci-step-guard-check.mjs | normalizeIf | 34 | 1 | 0 |
 | tools/ci-step-guard-check.mjs | (anonymous) | 51 | 1 | 0 |
 | tools/ci-step-guard-check.mjs | (anonymous) | 100 | 1 | 0 |

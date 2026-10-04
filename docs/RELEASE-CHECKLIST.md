@@ -39,6 +39,12 @@
 # ① 版本 bump（v1 候选 0.1.0 → 0.1.1；先改后提交）
 #    package.json "version": "0.1.0" → "0.1.1"；index.html footer「v0.1」字样同步（如涉及）
 #    ⚠️ 本项目实测：用 `npm version <ver> --no-git-tag-version` 一次改对 package.json + package-lock.json（不动 git tag）
+# ② 发布前核【部署白名单】—— ⚠️⭐ 必须在推 tag 【之前】（2026-10-05 事故：漏这步 ⇒ 线上冻结 19 天 11 小时）
+#    node tools/check-pages-allowlist.mjs
+#    期望输出：白名单实测 = ["branch:main","tag:v*"]  ⇒ ✅ 通过（exit 0）
+#    ⚠️ 本件【需联网 + 需 gh 已认证】（不在 CI 里跑）；红则先修白名单，⛔ 不要先推 tag
+#    为什么：能不能部署由【两处】共同决定 —— workflow 触发条件 + 环境的部署白名单；
+#      09-16 只改了前者 ⇒ tag 部署每次被拒，而 CI 全绿、全部守卫 exit 0（无门禁能发现）
 
 git add -A
 git commit -m "release: doc2md v0.1.1"
@@ -80,6 +86,7 @@ git push --dry-run origin v0.1.1
 | 4 | 手机浏览器：添加到主屏幕 → standalone 窗口；首次在线后断网重开仍可加载（SW 离线） | 安装 + 离线均 OK |
 | 5 | 全量回归：`npm test`（C/M 组全绿）+ `node tests/pwa-audit.mjs`（48/48） | 全绿 |
 | 6 | 契约样例字节锁复核：`npm run gen:samples` 重跑不产生 diff（覆盖即改口径） | 零 diff |
+| 7 | ⭐ **发布闭环回读**：`node tools/verify-release-online.mjs --from-release-md` | **exit 0 = 绿**（线上产物与发布物【逐字节一致】）；⛔ **exit 1 = 红 ⇒ 线上没更新**（查 `deploy-pages` / 环境白名单 / CDN·SW 缓存 / tag 指向）。⚠️ **口径**：线上侧取【原始字节】算 SHA256，⛔ 不得用 DOM 序列化长度之类的不同口径 |
 
 ## 4. npm pack 类核对（本项目无 npm 包，等价清单）
 

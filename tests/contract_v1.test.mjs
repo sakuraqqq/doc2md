@@ -1779,6 +1779,34 @@ test('契约组 H：corePath 同源 / 零外域 fetchable URL / SW v4 分段缓�
       'deploy-pages.yml 的 `on:` 仍含 `branches:` 触发 —— 「线上 == 发布物」会再次失效（用户 2026-09-16 拍板改为仅 tag 部署）'
     );
   });
+  // H15b（2026-10-05 卡 041，⭐ **由「线上冻结 19 天」真实事故驱动**）：
+  //   ⚠️ H15 守的是 **workflow 的触发条件**；而「**能不能部署**」由【两处】共同决定 ——
+  //     另一处是 `github-pages` 环境的**部署白名单**（GitHub Settings → Environments）。
+  //   事故：2026-09-16 只改了 workflow（改成仅 tag 触发）、**没改白名单**（白名单只有 `main`）
+  //   ⇒ tag 触发的部署**每次都被拒**，线上冻结 **19 天 11 小时**，
+  //     而 **CI 全绿、全部守卫 exit 0** —— ⛔ 当时没有任何门禁能发现。
+  // ⚠️⭐ **本断言守的是「发布流程里写了这一步」—— ⛔ 它【不等于】「白名单真的是对的」**
+  //   ⇒ **必须与联机件 `tools/check-pages-allowlist.mjs` 配套**，
+  //   ⛔ **不许单独存在**（只判"流程有写"而无联机核 = 装饰性门禁，本仓明令禁止）。
+  await t.test('H15b 发布流程含「核部署白名单」步骤且在【推 tag 之前】（⚠️ 仅「流程有写」，非「配置对」）', () => {
+    const p = nodePath.join(ROOT, 'docs', 'RELEASE-CHECKLIST.md');
+    assert.ok(fs.existsSync(p), 'docs/RELEASE-CHECKLIST.md 缺失');
+    const text = fs.readFileSync(p, 'utf8');
+    /* ⚠️⭐ 锚必须精确：本文件里「部署白名单」共 3 处，其中 1 处是【完全不同的东西】
+     * （§0 表格里的「部署白名单 smoke」= 站点白名单冒烟）。首版判据用了泛词 indexOf ⇒
+     * **命中的是那一处旧的** ⇒ 判据【恒绿】（把本步删掉/挪走都不会红）—— 2026-10-05 实测抓出。
+     * ⇒ 改为只在【shell 注释行】里找（表格行 / 正文行不会误命中）。 */
+    const m = text.match(/^#[^\n]*部署白名单[^\n]*$/m);
+    assert.ok(
+      m,
+      'docs/RELEASE-CHECKLIST.md 的发布流程里未见「核部署白名单」这一步（须以 `#` 注释行写在 §2 的发布命令块中）—— 2026-10-05 事故：缺它 ⇒ 线上冻结 19 天'
+    );
+    const idx = m.index;
+    assert.ok(/check-pages-allowlist\.mjs/.test(text), 'RELEASE-CHECKLIST 该步骤未指向联机件 tools/check-pages-allowlist.mjs（⛔ 无联机核 = 装饰性门禁）');
+    const tagPush = text.search(/git push origin v[\d.]+/);
+    assert.ok(tagPush >= 0, 'RELEASE-CHECKLIST 找不到「git push origin v<ver>」锚点 —— 无法判定白名单步骤的位置');
+    assert.ok(idx < tagPush, '「部署白名单」步骤出现在【推 tag 之后】—— ⛔ 必须在其【之前】（否则 tag 推了才发现部署不了）');
+  });
 });
 
 // ---------------------------------------------------------------------------
