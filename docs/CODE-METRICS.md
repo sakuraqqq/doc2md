@@ -1,12 +1,13 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-02T20:08:22.180Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-04T16:45:27.868Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
 ## 1. 重复率（jscpd：src/ + tools/；tests/ 不计入；阈值 <5%）
 
-- **重复率：不可用（jscpd 未运行成功或目标目录为空；沙箱内可先手动跑 jscpd 生成报告）**（目标 <5%）
+- **重复率：0.2%**（目标 <5%）
+- 判定：✅ 达标
 
 ## 2. 函数复杂度总览与技术债基线
 
