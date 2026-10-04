@@ -1821,11 +1821,40 @@ ${xlsxRowsToMd(kept)}`);
   function downloadMd(text, fileName) {
     return saveTextArtifact(text, fileName).catch(reportSaveError);
   }
+  var ASSET_FAIL_TEXT = {
+    zip: { verb: "\u6253\u5305", tail: "\u5176\u4F59\u56FE\u7247\u5DF2\u7167\u5E38\u6253\u5305" },
+    embed: { verb: "\u5185\u5D4C", tail: "\u672A\u5185\u5D4C\u7684\u56FE\u5728 .md \u91CC\u4ECD\u662F\u76F8\u5BF9\u5F15\u7528\uFF08\u5355\u6587\u4EF6\u4E0D\u81EA\u5305\u542B\uFF09" }
+  };
+  function assetFailSlot(card) {
+    const found = card.querySelector("[data-asset-fail]");
+    if (found) return found;
+    const el = document.createElement("div");
+    el.className = "warnings";
+    el.setAttribute("data-asset-fail", "");
+    const body = card.querySelector(".card-body");
+    const actions = card.querySelector(".card-actions");
+    if (body && actions) body.insertBefore(el, actions);
+    else (body || card).appendChild(el);
+    return el;
+  }
+  function reportAssetFailures(btn, failed, mode) {
+    const card = btn && btn.closest ? btn.closest(".card") : null;
+    const slot = card && card.querySelector("[data-asset-fail]");
+    if (!failed.length) {
+      if (slot) slot.remove();
+      return;
+    }
+    const t = ASSET_FAIL_TEXT[mode] || ASSET_FAIL_TEXT.zip;
+    const msg = t.verb + "\u7F3A " + failed.length + " \u5F20\u56FE\uFF1A" + failed.join("\u3001") + "\uFF1B" + t.tail;
+    setStatus(msg, true);
+    if (card) assetFailSlot(card).textContent = "\u26A0 " + msg;
+  }
   async function downloadZip(text, fileName, assets, btn) {
     if (isNativeRuntime()) {
       nativeNotice(NATIVE_LIMIT.zip, true);
       return;
     }
+    const failed = [];
     try {
       const F = window.fflate;
       if (!F) throw new Error("fflate \u672A\u52A0\u8F7D");
@@ -1836,6 +1865,7 @@ ${xlsxRowsToMd(kept)}`);
         try {
           files[a.name] = new Uint8Array(await a.blob.arrayBuffer());
         } catch {
+          failed.push(a.name + "\uFF08\u8BFB\u53D6\u5931\u8D25\uFF09");
         }
       }
       const z = F.zipSync(files);
@@ -1846,7 +1876,9 @@ ${xlsxRowsToMd(kept)}`);
       setTimeout(() => {
         btn.textContent = old;
       }, 1500);
+      return;
     }
+    reportAssetFailures(btn, failed, "zip");
   }
   var EMBED_MAX_BYTES = 20 * 1024 * 1024;
   var embedMaxBytes = EMBED_MAX_BYTES;
@@ -1872,16 +1904,21 @@ ${xlsxRowsToMd(kept)}`);
     for (const a of assets || []) if (a && a.blob) total += a.blob.size || 0;
     return total;
   }
-  async function buildEmbedMap(assets) {
+  async function buildEmbedMap(assets, failed) {
     const map = /* @__PURE__ */ new Map();
     for (const a of assets || []) {
       if (!a || !a.blob) continue;
-      let bytes = null;
+      let bytes;
       try {
         bytes = new Uint8Array(await a.blob.arrayBuffer());
       } catch {
+        failed.push(a.name + "\uFF08\u8BFB\u53D6\u5931\u8D25\uFF09");
+        continue;
       }
-      if (!bytes || bytes.length === 0) continue;
+      if (bytes.length === 0) {
+        failed.push(a.name + "\uFF08\u5185\u5BB9\u4E3A\u7A7A\uFF09");
+        continue;
+      }
       const dataUrl = "data:" + (a.type || "image/png") + ";base64," + bytesToB64(bytes);
       map.set(a.name, dataUrl);
       map.set(escAssetName(a.name), dataUrl);
@@ -1901,9 +1938,10 @@ ${xlsxRowsToMd(kept)}`);
       await downloadZip(text, fileName, assets, btn);
       return;
     }
+    const failed = [];
     let md;
     try {
-      md = embedImagesIntoMd(text, await buildEmbedMap(assets));
+      md = embedImagesIntoMd(text, await buildEmbedMap(assets, failed));
     } catch {
       const old = btn.textContent;
       btn.textContent = "\u274C \u5185\u5D4C\u5931\u8D25";
@@ -1912,6 +1950,7 @@ ${xlsxRowsToMd(kept)}`);
       }, 1500);
       return;
     }
+    reportAssetFailures(btn, failed, "embed");
     await saveTextArtifact(md, fileName).catch(reportSaveError);
   }
   var PREVIEW_MAX_CHARS = 1024 * 1024;
