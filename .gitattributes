@@ -31,5 +31,6 @@ android/gradlew.bat text eol=crlf
 #   （实测：blob 1428 B vs 工作区 1491 B；另两份 1023/1079 与 1453/1517）
 #   ⇒ CI 全新检出拿到的字节 ≠ `tests/data/manifest.json` 锁的字节 ⇒ **B 组字节锁假红**（且本机看不见）。
 #   ⇒ 这三个夹具**强制按二进制**存（`-text`），字节锁才在任何平台成立。
-#   ⚠️ 本行是**口径微调**（本文件头注：改口径 = 拍板）⇒ 已在 `docs/DEV-NOTES.md` 同日条登记，待追认。
+#   ⚠️ 本行是**口径微调**（本文件头注：改口径 = 拍板）⇒ 已登记 `docs/DEV-NOTES.md` 同日条，
+#   ✅ **并已经用户 2026-10-06 追认**（原话：「追认 .gitattributes 微调（给三个合成 PDF 加 -text）」）。
 tests/data/sample-nonbmp-*.pdf -text
