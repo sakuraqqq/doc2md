@@ -1847,6 +1847,13 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
   ✅ **本行属口径微调**（该文件明写「改口径 = 拍板」）⇒ **用户 2026-10-06 已追认**（原话：「追认 .gitattributes 微调（给三个合成 PDF 加 -text）」）。备选路径（把夹具归一化为 LF 并重锁 manifest）**未采用** —— 那会改动「外部确定性产物」的字节。
 - **防再犯**：① **凡把外部/二进制件入库，必须逐件比对 `git cat-file blob :<path>` 与工作区字节**（⛔ 不能只看 `git status` —— 它把行尾差异当「干净」）；② **`git add` 的 stderr 不许当噪音**（本次真问题就藏在那三行 warning 里）；③ 新增二进制夹具后，把「manifest 记的字节数 == blob 字节数」列为**收尾检查项**（本卡已做）。
 
+### 坑 4 ⚠️⭐ **改了 `docs/BASELINE.json` 却没重生 `docs/HANDOFF-主开发线.md` 的生成块 ⇒ CI 红而本地全绿**
+
+- **现象**：本卡把 `BASELINE.json` 的契约数重冻为 `328/326/0/2`（local）· `325/322/0/3`（ci）后，本地**四件套 + `baseline-check` 全绿**，而 CI 那一步 **`HANDOFF baseline block`** 红：`node tools/gen-handoff-baseline.mjs && git diff --exit-code -- docs/HANDOFF-主开发线.md`（CI 日志里可见 `- 契约（CI 干净检出口径）：315 / 312 / 0 / 3` ⇒ 生成块仍是旧值）。
+- **根因**：`docs/HANDOFF-主开发线.md` 顶部有**由脚本生成的现值块**（唯一真相源 = `docs/BASELINE.json`）⇒ **BASELINE 一变，该块必须重生**；而**这条守卫只在 CI 里**（本地四件套与 `baseline-check` 都不含它）⇒ 本地永远看不见。
+- **修法**：`node tools/gen-handoff-baseline.mjs`（脚本**幂等**：再跑一次字节不变）后**把 `docs/HANDOFF-主开发线.md` 一并提交**。
+- **防再犯**：① **凡动 `docs/BASELINE.json`，收尾必跑 `node tools/gen-handoff-baseline.mjs` 并提交 HANDOFF** —— 把它当作"改 BASELINE"这件事的一部分；② 下"本地绿 = CI 绿"结论前，**先看 `.github/workflows/tests.yml` 的步骤清单里有没有本机没跑的守卫**（本轮 CI 约 19 步，而本地判据只有 6 条）。
+
 ## 2026-10-06 · 卡 044（执行线）：保存出口改落点 `Download/WenZhuanMD/` + 一键全部保存
 
 > 完整回执落**非公开面** `.私档/卡/c044/回执.md`；本节只留**可复用的坑 / 决策 / 防再犯**。
