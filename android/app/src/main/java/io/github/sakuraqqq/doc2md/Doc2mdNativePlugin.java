@@ -53,6 +53,9 @@ public class Doc2mdNativePlugin extends Plugin {
     private static final String TAG = "Doc2mdNative";
     private static final String PREFS = "doc2md";
     private static final String PREF_SELFTEST_DONE = "native_selftest_done";
+    // 卡 044：保存落点 = Download/WenZhuanMD/（新建子目录，不再平铺在 Download 根）。
+    // 两个 API 分支（29+ MediaStore / 24-28 公开目录）【共用】这一个目录名常量 —— 不许各写一份字面量。
+    private static final String DOWNLOAD_SUBDIR = "WenZhuanMD";
 
     // 阶段 0 临时验证钩子（阶段 1 拆）：插件加载即自测一次"写 Downloads"，把结果打进 logcat。
     @Override
@@ -155,6 +158,11 @@ public class Doc2mdNativePlugin extends Plugin {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ContentValues values = new ContentValues();
             values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+            // 卡 044（A1/A2）：落点 = Download/WenZhuanMD/ —— 用【两分支共用常量】拼，不写字面量。
+            // RELATIVE_PATH 是 API 29+ 的字段，而本分支正是 >= Q，故安全。
+            values.put(
+                    MediaStore.Downloads.RELATIVE_PATH,
+                    Environment.DIRECTORY_DOWNLOADS + "/" + DOWNLOAD_SUBDIR);
             values.put(MediaStore.Downloads.MIME_TYPE, mime);
             values.put(MediaStore.Downloads.IS_PENDING, 1);
             ContentResolver cr = getContext().getContentResolver();
@@ -179,9 +187,15 @@ public class Doc2mdNativePlugin extends Plugin {
             done.put(MediaStore.Downloads.IS_PENDING, 0);
             cr.update(target, done, null, null);
             ret.put("uri", target.toString());
-            ret.put("location", "Downloads (MediaStore, user-visible)");
+            ret.put("location", "Downloads/" + DOWNLOAD_SUBDIR + " (MediaStore, user-visible)");
         } else {
-            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            // 卡 044（A3）：API 24-28 走公开 Downloads 下的【子目录】—— 与 29+ 分支共用同一个常量。
+            // 子目录可能不存在 ⇒ 先建；建不出来也不吞（后面的 FileOutputStream 会以真实异常暴露给 Web 侧）。
+            File dir = new File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), DOWNLOAD_SUBDIR);
+            if (!dir.exists() && !dir.mkdirs()) {
+                Log.w(TAG, "SUBDIR_MKDIR_FAIL " + dir);
+            }
             File out = new File(dir, filename);
             FileOutputStream fos = null;
             try {
@@ -194,7 +208,7 @@ public class Doc2mdNativePlugin extends Plugin {
                 }
             }
             ret.put("path", out.getAbsolutePath());
-            ret.put("location", "Downloads (legacy public dir)");
+            ret.put("location", "Downloads/" + DOWNLOAD_SUBDIR + " (legacy public dir)");
         }
         ret.put("filename", filename);
         return ret;
