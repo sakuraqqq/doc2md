@@ -117,6 +117,8 @@ export async function convert(file) {
   const read = await readAndSniff(file);
   if (read.error) return done({ error: read.error });
   meta.type = read.type;
+  // 卡 045（A7.4）：OLE2 分型子字段透出（只有 OLE2 才有；其余路径的 meta 形状一字不变）
+  if (read.ole2Subtype) meta.ole2Subtype = read.ole2Subtype;
   return runOrExplain(file, read.buf, meta, t0, done);
 }
 
@@ -166,7 +168,7 @@ async function xlsxPreflight(buf) {
 /* 类型层不支持 → 友好文案；否则执行转换并把异常兜成 { error }
  * （R9-1 批内童子军重构：抽出本段使 convert 的圈复杂度回到门禁线内 —— metrics 硬要求≤10） */
 async function runOrExplain(file, buf, meta, t0, done) {
-  const unsupported = unsupportedError(meta.type);
+  const unsupported = unsupportedError(meta.type, meta.ole2Subtype);
   if (unsupported) return done({ error: unsupported });
   try {
     if (meta.type === 'xlsx') await xlsxPreflight(buf);
@@ -183,7 +185,7 @@ async function readAndSniff(file) {
   try {
     const buf = new Uint8Array(await file.arrayBuffer());
     const s = await sniff(buf);
-    return { buf, type: s.type };
+    return { buf, type: s.type, ole2Subtype: s.ole2Subtype };
   } catch (e) {
     return { error: '读取文件失败：' + (e && e.message ? e.message : '未知错误') };
   }
@@ -196,12 +198,22 @@ function guardError(file) {
   return null;
 }
 
+/* 卡 045（`A7.4`）：OLE2 **分型后的补充指引** —— 基础句（下方 `base`）一字不改（`O2`/`O3` 冻结口径在它上面），
+ * 只在它**之后**按内容识别出的子类型补一句更准的扩展名指引。⛔ 不新增 `type` 名（`E5` 允许集合不动）。 */
+const OLE2_HINT = {
+  word: '（已按内容识别为 Word 97-2003 文档，请另存为 .docx）',
+  excel: '（已按内容识别为 Excel 97-2003 工作簿，请另存为 .xlsx）',
+  ppt: '（已按内容识别为 PowerPoint 97-2003 演示文稿，请另存为 .pptx）',
+  encrypted: '（已识别为加密的 Office 文档，请先解除密码保护再另存）',
+};
+
 /* 类型层不支持（含 unknown/pptx/zip/doc 的友好指引；t11 §1.6 OLE2 通用口径 O2/O3 不得变） */
-function unsupportedError(type) {
+function unsupportedError(type, ole2Subtype) {
   if (type === 'pptx') return 'PPTX 不在 v1 支持范围（见 README），v2 再议';
   if (type === 'zip') return '暂不支持普通 ZIP 文件，请解压后再转换';
   if (type === 'doc') {
-    return '老版 Office 二进制格式（.doc/.xls/.ppt）或加密文档暂不支持，请用 Word/Excel/WPS 打开后另存为新格式（.docx/.xlsx）再转换';
+    const base = '老版 Office 二进制格式（.doc/.xls/.ppt）或加密文档暂不支持，请用 Word/Excel/WPS 打开后另存为新格式（.docx/.xlsx）再转换';
+    return base + (OLE2_HINT[ole2Subtype] || '');
   }
   if (type === 'unknown' || !registry[type]) return '无法识别的文件类型';
   return null;

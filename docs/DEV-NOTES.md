@@ -1811,6 +1811,49 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️ **另记一条浏览器侧事实**：本机 **Edge 与 Chrome 的 `inspect` 按钮都点了没反应**（`edge://inspect` 里 **目标列得出**、点 `inspect` / `inspect fallback` 窗口都不开）⇒ 真机 WebView 的 console 取证**不能依赖浏览器按钮**。
    - **工具落点**：`.私档/工具/android-devtools.mjs` —— 绕过浏览器的 inspect 管道，自己走 `adb shell pidof` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` → `/json` → **CDP WebSocket 求值**（带 20s 超时、结果写 `.tmp/devtools-result.txt`）。阶段 1 直接复用。
 
+## 2026-10-06 · 卡 045（执行线）：文本通道三处更正（`A.3` PDF 非 BMP · `A.4` xlsx `<rPh>` 注音 · `A7.4` OLE2 分型）
+
+> 完整回执落**非公开面** `.私档/卡/c045/回执.md`；本节只留**可复用的坑 / 决策 / 防再犯**。
+
+### 坑 1 ⭐⭐ **`A.3` 的真因不是锚表给的「`slice(-1)` 切碎代理对」** —— 是「质量门 → OCR → **无条件顶掉文本层**」
+
+- **现象**：非 BMP 字符整字消失（夹具 V1 实测产物 = 一个 ASCII `n`）。
+- **分层实测定因**（探针在**同一页、同一个 `window.pdfjsLib`** 上依次取三层）：
+  | 层 | V1 实测 | 判定 |
+  |---|---|---|
+  | `getTextContent()`（兜底路径） | `𠀀中` | ✅ 正确 |
+  | **operator list 的 `glyph.unicode`**（产品真正消费的那层，`src/pdf.js` L68-91） | `𠀀` / `中` | ✅ 正确 |
+  | **产品产物** | **`n`** | ⛔ 被改坏 |
+- **根因**：`needsOcr()` 的质量门含 `text.length < 10` ⇒ **2–3 字符的短页一律触发 OCR**；OCR 在「字体未嵌入的合成 PDF」上只吐垃圾（`n` / `LR et`），而 `pageTextWithOcr()` **无条件采纳**（`if (ocrText) return { text: ocrText, ocr: true }`）⇒ 正确的文本层被替换，字符就此「消失」。
+- **修法**：加**仲裁** —— 仅当 `goodCharCount(ocr) > goodCharCount(layer)`（有效字符数**严格更多**）才采纳 OCR；否则保留文本层并**如实说明**（新增一句 warning）。
+- **防再犯**：① 判「字符丢了」必须**分层量**（文本层 / 算子层 / 产物层各取一次），⛔ 别拿「锚表说哪里坏」当结论（出卡人自己就标了那只是**线索**，真因须夹具定位）；② **兜底/降级路径必须与主路径仲裁**，⛔ 不能无条件覆盖 —— 覆盖式兜底会把「正确但短」换成「更长但错」；③ 短页的质量判据应是「**有效字符数为 0** 才可疑」，而不是「字符少就可疑」。
+
+### 决策
+- **`A7.4` 不动 `E5` 允许集合**：`type` 仍 `doc`，分型走**新增子字段** `meta.ole2Subtype ∈ {word,excel,ppt,encrypted,unknown}`；文案 = **基础句一字不改**（`O2`/`O3` 冻结口径在它之上）+ 按子类型追加一句扩展名指引 ⇒ 既满足「按子类型给正确扩展名」，又让 O2/O3 **零风险**（合成件无流名 ⇒ `unknown` ⇒ 不加提示）。
+- **CFB 流名必须按 UTF-16LE 交错形态匹配**：目录项名在文件里是 `W\0o\0r\0d…` ⇒ 在 `headAscii()` 上直接 `includes('WordDocument')` **必然落空**（实测）；两种形态都匹配才稳。
+
+### 坑 2 ⚠️ **契约里「事件/时序型」断言在高负载下会假红**（本轮 3 次实测各红**不同**条）
+
+- **现象**：同一构建、同一命令，`Z4-1/Z4-2`（元素不可稳定点击，30 s 超时）· `Q4` / `I4`（download 事件 22 s 未到）· `C 组 image@手机`（OCR 超时）逐次各红 1–3 条；**同构建隔离复跑同一条全绿**。
+- **判据（防误判为真回归）**：① 看 `duration_ms`（22–30 s = 抖动特征）；② **隔离复跑**该组；③ 核 `git diff --stat` 是否碰了它练的模块（本例 Z4 只练 `src/ui.js`，而本轮 diff **未含** `ui.js`）。
+- ⚠️ **后果与处置**：`ci_clean_checkout` 口径的 **pass/fail 拆分不能采信本机抖动跑**（取文档化映射：total −3 / pass −4 / skip +1），真实对账交 **CI 第 15 步**（`Contract ↔ BASELINE.json reconciliation`）。
+
+### 坑 3 ⚠️⭐ **「合成二进制夹具」被 `text=auto` 当文本 ⇒ 入库时静默折行 ⇒ 本地绿、CI 红**
+
+- **现象**：`git add` 三个手机侧合成的极简 PDF 时，**stderr** 冒出 `CRLF will be replaced by LF the next time Git touches it`；逐字节比对（`git cat-file blob :<path>` vs 工作区）证实**入库 blob 已被折行**：**1428 vs 1491** / **1023 vs 1079** / **1453 vs 1517** B。
+- **根因**：本仓 `.gitattributes` 是 `* text=auto eol=lf`，而 git 判「是不是文本」靠**前 8000 B 有无 NUL**；这三个合成 PDF **只有 ASCII + CRLF、无 NUL** ⇒ 被判为文本 ⇒ `eol=lf` 归一化生效。
+  ⚠️ 后果是**本地与 CI 分叉**：`git status` 干净、本机跑所有门禁都绿，而 **CI 全新检出拿到的字节 ≠ `tests/data/manifest.json` 锁的字节** ⇒ **B 组字节锁在 CI 假红**（本地永远看不到）。
+- **修法**：按 `.gitattributes` 头注自己给的处置办法加**单目录覆盖** `tests/data/sample-nonbmp-*.pdf -text`（⚠️ 必须写在 `*` **之后** —— 该文件已记过「顺序反了会被吃掉」的坑）+ `git add --renormalize` 重存 ⇒ 复核 **8 件新夹具 blob == 工作区 全 True**。
+  ✅ **本行属口径微调**（该文件明写「改口径 = 拍板」）⇒ **用户 2026-10-06 已追认**（原话：「追认 .gitattributes 微调（给三个合成 PDF 加 -text）」）。备选路径（把夹具归一化为 LF 并重锁 manifest）**未采用** —— 那会改动「外部确定性产物」的字节。
+- **防再犯**：① **凡把外部/二进制件入库，必须逐件比对 `git cat-file blob :<path>` 与工作区字节**（⛔ 不能只看 `git status` —— 它把行尾差异当「干净」）；② **`git add` 的 stderr 不许当噪音**（本次真问题就藏在那三行 warning 里）；③ 新增二进制夹具后，把「manifest 记的字节数 == blob 字节数」列为**收尾检查项**（本卡已做）。
+
+### 坑 4 ⚠️⭐ **改了 `docs/BASELINE.json` 却没重生 `docs/HANDOFF-主开发线.md` 的生成块 ⇒ CI 红而本地全绿**
+
+- **现象**：本卡把 `BASELINE.json` 的契约数重冻为 `328/326/0/2`（local）· `325/322/0/3`（ci）后，本地**四件套 + `baseline-check` 全绿**，而 CI 那一步 **`HANDOFF baseline block`** 红：`node tools/gen-handoff-baseline.mjs && git diff --exit-code -- docs/HANDOFF-主开发线.md`（CI 日志里可见 `- 契约（CI 干净检出口径）：315 / 312 / 0 / 3` ⇒ 生成块仍是旧值）。
+- **根因**：`docs/HANDOFF-主开发线.md` 顶部有**由脚本生成的现值块**（唯一真相源 = `docs/BASELINE.json`）⇒ **BASELINE 一变，该块必须重生**；而**这条守卫只在 CI 里**（本地四件套与 `baseline-check` 都不含它）⇒ 本地永远看不见。
+- **修法**：`node tools/gen-handoff-baseline.mjs`（脚本**幂等**：再跑一次字节不变）后**把 `docs/HANDOFF-主开发线.md` 一并提交**。
+- **防再犯**：① **凡动 `docs/BASELINE.json`，收尾必跑 `node tools/gen-handoff-baseline.mjs` 并提交 HANDOFF** —— 把它当作"改 BASELINE"这件事的一部分；② 下"本地绿 = CI 绿"结论前，**先看 `.github/workflows/tests.yml` 的步骤清单里有没有本机没跑的守卫**（本轮 CI 约 19 步，而本地判据只有 6 条）。
+
 ## 2026-10-06 · 卡 044（执行线）：保存出口改落点 `Download/WenZhuanMD/` + 一键全部保存
 
 > 完整回执落**非公开面** `.私档/卡/c044/回执.md`；本节只留**可复用的坑 / 决策 / 防再犯**。

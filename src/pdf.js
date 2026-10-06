@@ -369,6 +369,19 @@ export function textQualityRatio(text) {
   return good + garbage > 0 ? good / (good + garbage) : 0;
 }
 
+/** 卡 045（`A.3`）：**有效字符数**（绝对量）—— 与 `textQualityRatio` 同一判类口径（跳过空白；
+ * `isPdfGarbageCode` 判 PUA / FFFD / 未分配码点；⚠️ **孤立代理项**（`U+D840` 这类未配对项）属未分配 ⇒ 计 garbage）。
+ * 用途：**OCR 与文本层的仲裁**必须看绝对量（"谁提供的信息更多"）——比例会掩盖"2 个字符全对"这种短文本层
+ *（夹具 V1 的真实形态：文本层 `𠀀中` 比例 1.0，仍被 OCR 的 `n` 顶掉）。 */
+function goodCharCount(text) {
+  let good = 0;
+  for (const ch of String(text || '')) {
+    if (/\s/.test(ch)) continue;
+    if (!isPdfGarbageCode(ch)) good++;
+  }
+  return good;
+}
+
 /** 兜底：getTextContent 旧行为（线性化、无修复） */
 async function textContentFallback(page) {
   const content = await page.getTextContent();
@@ -425,10 +438,19 @@ async function pageTextWithOcr(page, idx, pageCount, text, warnings) {
   } catch {
     ocrText = null; // OCR 引擎不可用（file:// worker/WASM 受限、初始化失败）——t8：单页失败不得拖垮整篇
   }
-  if (ocrText) return { text: ocrText, ocr: true };
+  /* ⭐ 卡 045（`A.3`）：**OCR 只在"确实更好"时才采纳** —— 旧实现无条件采纳（`if (ocrText)`）⇒ 短而有效的
+   * 文本层被 OCR 的垃圾产出顶掉：夹具 V1 的文本层是 `𠀀中`（2 字符、质量比例 1.0），却因"字符数 < 10"
+   * 命中质量门；OCR 在该页（字体未嵌入）只吐出一个 `n` ⇒ **非 BMP 字符 `U+20000` 就此消失**。
+   * ⚠️ 真因**不在** `slice(-1)`（那是锚表给的线索）：实测 pdf.js 与 operator-list 重建**都给对了** `𠀀中`。
+   * 判据：有效字符数**严格更多**才算更优；否则保留文本层并**如实说明**（⛔ 不静默替换）。 */
+  if (ocrText && goodCharCount(ocrText) > goodCharCount(text)) return { text: ocrText, ocr: true };
   if (text.trim() !== '') {
-    // OCR 失败/无产出 → 保留文本层原样 + warning（不猜测；t8 口径「第 N 页 OCR 不可用，已保留原文本层」）
-    warnings.push(`第 ${idx} 页 OCR 不可用，已保留原文本层（结果可能不可读）`);
+    // OCR 失败/无产出（t8 口径）或**未优于文本层**（卡 045）→ 保留文本层原样 + warning（不猜测）
+    warnings.push(
+      ocrText
+        ? `第 ${idx} 页 OCR 结果未优于文本层，已保留原文本层（未采用 OCR 输出）`
+        : `第 ${idx} 页 OCR 不可用，已保留原文本层（结果可能不可读）`
+    );
     return { text, ocr: false };
   }
   // 无文本层且 OCR 不可用 → 跳过该页并提示（扫描页在 file:// 下的真实场景）

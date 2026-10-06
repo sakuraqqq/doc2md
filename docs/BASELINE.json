@@ -4,27 +4,27 @@
   "contract": {
     "local_with_fixtures": {
       "counts": {
-        "total": 318,
-        "pass": 316,
+        "total": 328,
+        "pass": 326,
         "fail": 0,
         "skip": 2
       },
       "measured": {
-        "at": "2026-10-05",
-        "source": "npm test（本机 · 升权实跑，TAP 摘要）：# tests 318 / # pass 316 / # fail 0 / # skipped 2 —— ⭐ **卡 041**（发布链路闭环）新增契约组 H 的 **H15b** 1 条（发布流程含「核部署白名单」步且在推 tag 之前）；**旧断言零改动**。前值：318−1 = 317/315/0/2（卡 013 后）"
+        "at": "2026-10-06",
+        "source": "npm test（本机实跑，TAP 摘要）：# tests 328 / # pass 326 / # fail 0 / # skipped 2 —— ⭐ **卡 045**（文本通道三处更正：`A.3` PDF 非 BMP / `A.4` xlsx `<rPh>` 注音 / `A7.4` OLE2 分型）新增契约组 **T45 共 10 条**（1 组壳 + 9 子测试；卡面 A9 要求「三条各至少一条回归断言」）；**旧断言零改动**。前值：328−10 = 318/316/0/2（卡 041 后）"
       },
       "scope": "本机口径：.私档/传输-手机-20260918 四档夹具在位 ⇒ 组 Y 真跑（组壳+Y1+Y2+Y3，全绿）；卡 002 前为 271/3（组 Y 预期先红：Y2 无 meta.scan · Y3 超 5s · 组壳）。与 CI 口径不可混用"
     },
     "ci_clean_checkout": {
       "counts": {
-        "total": 315,
-        "pass": 312,
+        "total": 325,
+        "pass": 322,
         "fail": 0,
         "skip": 3
       },
       "measured": {
-        "at": "2026-10-05",
-        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：由 local_with_fixtures 的 318/316/0/2 按同一映射推得 315/312/0/3（组 Y 4 条 → 1 条 skip：total −3 / pass −4 / skip +1）；② ⭐ **真实 CI runner 已对账**：卡 042 的 PR run `37233758141`（`fcd778b`）与 main push run `37233882200`（`bfd66fd`）第 15 步 `Contract ↔ BASELINE.json reconciliation` **均 success**（前值 314/311/0/3 由真 run `35608426747` 对账确认）"
+        "at": "2026-10-06",
+        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：实测两次，**tests 325 / skipped 3 两次完全一致**；pass/fail 拆分取**文档化映射**（由 local_with_fixtures 328/326/0/2 ⇒ total −3 / pass −4 / skip +1 = 325/322/0/3）。⚠️ 两次实测各有 1 条 **download-event 类断言**假红（run A = Q4、run B = I4；时长 22 s+，同构建隔离复跑全绿）⇒ 记为本机高负载下的抖动（`docs/DEV-NOTES.md` 2026-10-06 条），**不入应然值**；② 真实 CI runner 由第 15 步 `Contract ↔ BASELINE.json reconciliation` 对账（卡 042 的 run `37233758141` / `37233882200`、卡 043 / 044 各 run 均 success；卡 045 由本卡 PR run 复核）"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }

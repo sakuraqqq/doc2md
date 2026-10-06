@@ -25,3 +25,12 @@
 #    `*` **之后**。本行最初写在 `*` 之前，被 `* text=auto eol=lf` 吃掉 —— 靠 `git check-attr` 才发现
 #    （肉眼看着"写了"，实际不生效）。
 android/gradlew.bat text eol=crlf
+
+# 单目录覆盖（卡 045 / 2026-10-06）：手机侧**合成的极简 PDF** 内部只有 ASCII + CRLF、前 8000 B **无 NUL**
+#   ⇒ `text=auto` 的 NUL 探测把它**当文本** ⇒ `eol=lf` 在入库时把 CRLF 折成 LF
+#   （实测：blob 1428 B vs 工作区 1491 B；另两份 1023/1079 与 1453/1517）
+#   ⇒ CI 全新检出拿到的字节 ≠ `tests/data/manifest.json` 锁的字节 ⇒ **B 组字节锁假红**（且本机看不见）。
+#   ⇒ 这三个夹具**强制按二进制**存（`-text`），字节锁才在任何平台成立。
+#   ⚠️ 本行是**口径微调**（本文件头注：改口径 = 拍板）⇒ 已登记 `docs/DEV-NOTES.md` 同日条，
+#   ✅ **并已经用户 2026-10-06 追认**（原话：「追认 .gitattributes 微调（给三个合成 PDF 加 -text）」）。
+tests/data/sample-nonbmp-*.pdf -text

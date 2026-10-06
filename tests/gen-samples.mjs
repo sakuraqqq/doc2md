@@ -1121,6 +1121,70 @@ const manifest = {
   note: '脱敏合成数据；PDF 样例为纯拉丁文本层（拍板点 T-2）；PNG 为真实字体（Arial）OCR 样例（HELLO DOC2MD 2026，图像资产 tests/lib/assets/sample-image.png，DD-10）；real-multisheet.xlsx/sample-images.docx/sample-math.docx 为 P1 契约组 G/I/J 的合成样例（契约先红 t4）；sample-omml-noe.docx/sample-spacing.pdf 为复审契约组 L/K（k6）的合成样例（契约先红 t14，第三方复审报告 §1.5/§1.6）；sample-omml-parenfrac.docx 为 L2（括号内分数：m:d > m:e > m:f）样例（契约先红 t20，ZCode A 批 ②）；sample-omml-multi.docx 为 L3（oMathPara 双公式）样例（契约先红 t23）；real-cid-paper.pdf 为用户提供真实中文 PDF（《质量链管理理论研究综述_金国强》，CID 无 ToUnicode——契约组 C2 契约先红 t26；字节登记非生成）；sample-legacy-doc.doc 为 .doc 老格式（OLE2 魔数 D0CF11E0A1B11AE1，512 B 确定性填充）友好提示样例（契约组 O，真实用户反馈 2026-09-08）；sample-shuffle-sheets.xlsx 为 sheet 映射错位样例（workbook 顺序 ≠ 文件顺序，第五轮审查报告 §1.1——契约组 G3）；sample-symbols.pdf 为纯 ASCII 符号文本层样例（第五轮审查报告 §1.2 质量门误杀——契约组 P）；sample-lowtext.pdf 为私用区 U+E050 文本层样例（第五轮审查报告 §1.2 OCR 失败兜底——契约组 P）；sample-truncated.txt 为 UTF-8 末尾截断样例（第五轮审查报告 §1.4 FFFD 过度触发——契约组 F7）；sample-corrupt-xlsx.xlsx 为损坏 xlsx 越界样例（EOCD localOff 越界，第五轮审查报告 §1.5——契约组 G4）；sample-numfmt-date.xlsx 为 numFmt=14 序列号日期样例（45123/45292.75，第六轮审查报告 §2.3——契约组 G5）；sample-rels-dotdot.xlsx 为 rels Target 用 `../` 相对路径样例（第七轮审查报告 §2.2——契约组 G6）；sample-flipped-tm.pdf / sample-monospace-code.pdf / sample-tl-leading.pdf / sample-quote-ops.pdf / sample-overprint.pdf 为 v0.1.4 缺陷批合成样例（契约组 U 先红；由来 = 2026-09-14 真机 7 篇 Chromium 打印 PDF 实测 + 算子级取证：A1 翻转 Tm 行序反向 / A2 缺 `TL`(36) 算子 / A3 等宽代码围栏 / A4 同位置叠印去重；全部自造合成、纯拉丁文本层、确定性字节）；sample-bmw-text.txt / sample-gif8-text.txt / sample-pdf-mention.txt / sample.bmp / sample.gif / sample-big5-upper-meta.html / sample-image-alt.docx 为 v0.1.4 批 3 契约组 V 样例（2026-09-14：B1 `BM*`·`GIF8*` 前缀误判的纯文本负例 + 1×1 真 BMP/GIF 正例、B2 正文提及 `%PDF` 的纯文本负例、B3 大写 `<META CHARSET="big5">` 的 Big5 编码 HTML、C1 docx 图片 alt 取 `descr`；全部自造合成、确定性生成、manifest 字节锁）；sample-scale-td.pdf 为 **P1（PDF 文本层顺序错乱）**合成样例（契约组 U 续号 **U9**；2026-09-16 真机 WPS 导出 PDF 实测 + 电脑侧算子级取证驱动：文本空间位移未乘 Tm 缩放 ⇒ 同一视觉行的两个文本对象按 x 排序后交错；样例形态 = 页面级 cm 翻转 + Tm 缩放 0.05 + 逐字 TD 推进 + 同一行两对象）',
   files: outFiles,
 };
+/* ---------------- 卡 045（`A7.4`）：OLE2 分型夹具（最小 CFB 壳；合成·确定性·进 manifest 字节锁）
+ * 形态：合法 CFB v3（512 B 头 + 1 个 FAT 扇区 + 1 个目录扇区，共 1536 B），目录项里放**真实流名**（UTF-16LE）——
+ * 这是分型判据唯一的输入。⛔ 文件名一律**中性** `.dat`：专门证明「类型由**内容**定」，不是看扩展名。
+ * 确定性：无时间戳、无随机、字段全部按 CFB 规范填（同一输入 ⇒ 逐字节同一输出）。 */
+function buildOle2(streamName) {
+  const SECT = 512;
+  const buf = Buffer.alloc(SECT * 3, 0);
+  Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]).copy(buf, 0); // 魔数
+  buf.writeUInt16LE(0x003e, 0x18); // minor version
+  buf.writeUInt16LE(0x0003, 0x1a); // major version（v3 = 512 B 扇区）
+  buf.writeUInt16LE(0xfffe, 0x1c); // byte order
+  buf.writeUInt16LE(9, 0x1e); // sector shift
+  buf.writeUInt16LE(6, 0x20); // mini sector shift
+  buf.writeUInt32LE(0, 0x28); // num dir sectors（v3 恒 0）
+  buf.writeUInt32LE(1, 0x2c); // num FAT sectors
+  buf.writeUInt32LE(1, 0x30); // first dir sector
+  buf.writeUInt32LE(4096, 0x38); // mini stream cutoff
+  buf.writeUInt32LE(0xfffffffe, 0x3c); // first miniFAT = ENDOFCHAIN
+  buf.writeUInt32LE(0, 0x40); // num miniFAT sectors
+  buf.writeUInt32LE(0xfffffffe, 0x44); // first DIFAT = ENDOFCHAIN
+  buf.writeUInt32LE(0, 0x48); // num DIFAT sectors
+  for (let i = 0; i < 109; i++) buf.writeUInt32LE(i === 0 ? 0 : 0xffffffff, 0x4c + i * 4); // DIFAT：FAT 在第 0 扇区
+  const fat = SECT;
+  for (let i = 0; i < 128; i++) buf.writeUInt32LE(0xffffffff, fat + i * 4);
+  buf.writeUInt32LE(0xfffffffd, fat); // 扇区 0 = FATSECT
+  buf.writeUInt32LE(0xfffffffe, fat + 4); // 扇区 1 = 目录链尾
+  const dir = SECT * 2;
+  const entry = (idx, name, type) => {
+    const o = dir + idx * 128;
+    const nm = Buffer.from(name + '\0', 'utf16le');
+    nm.copy(buf, o);
+    buf.writeUInt16LE(nm.length, o + 64); // name length（含结尾 NUL）
+    buf[o + 66] = type; // 0=空 2=流 5=根
+    buf[o + 67] = 1; // color = black
+    for (const off of [68, 72, 76]) buf.writeUInt32LE(0xffffffff, o + off); // left/right/child
+    buf.writeUInt32LE(0xfffffffe, o + 116); // start sector = ENDOFCHAIN（空流）
+    buf.writeUInt32LE(0, o + 120); // size = 0
+  };
+  entry(0, 'Root Entry', 5);
+  entry(1, streamName, 2);
+  return buf;
+}
+put('ole2-word.dat', buildOle2('WordDocument'));
+put('ole2-excel.dat', buildOle2('Workbook'));
+put('ole2-ppt.dat', buildOle2('PowerPoint Document'));
+put('ole2-encrypted.dat', buildOle2('EncryptedPackage'));
+
+/* ---------------- 卡 045：先红夹具（手机侧确定性生成 —— **只锁不生成**） ----------------
+ * 来源：调度线 `队列/045-附件-先红夹具/夹具/`（2026-10-06 手机侧 `生成-先红夹具.py` 产出，
+ * 外部确定性产物）。⛔ 本生成器**不重生成**它们（源在另一个工作区）——只做字节登记；
+ * 文件由人工复制进 `tests/data/`（同 `real-cid-paper.pdf` 先例，L711 那段）。改名映射：
+ *   先红-A3-代理对-U20000.pdf        → sample-nonbmp-u20000.pdf    （V1：pdfjs 读作 `𠀀中`）
+ *   先红-A3v2-简单字体-ToUnicode.pdf → sample-nonbmp-tounicode.pdf （V2：pdfjs 读作 `中𠀀😀`）
+ *   先红-A3v3-Type0-3码位.pdf        → sample-nonbmp-type0.pdf     （V3：pdfjs 给两个**孤立代理项**）
+ *   先红-A4-注音rPh.xlsx             → sample-rph-ruby.xlsx         （`<rPh>` 注音混入正文）
+ */
+for (const n of ['sample-nonbmp-u20000.pdf', 'sample-nonbmp-tounicode.pdf', 'sample-nonbmp-type0.pdf', 'sample-rph-ruby.xlsx']) {
+  const f = path.join(OUT, n);
+  if (fs.existsSync(f)) put(n, fs.readFileSync(f));
+  else console.log(`  （${n} 缺失——跳过登记；复制进 tests/data/ 后重跑 gen:samples）`);
+}
+
+manifest.note += '；卡 045（2026-10-06）新增：ole2-word.dat / ole2-excel.dat / ole2-ppt.dat / ole2-encrypted.dat 为**最小 CFB 壳**（合法 CFB v3：512 B 头 + FAT + 目录扇区，共 1536 B；目录项放真实流名 UTF-16LE，文件名中性 `.dat` ⇒ 专证「OLE2 分型由**内容**定、不看扩展名」——`A7.4`）；sample-nonbmp-u20000.pdf / sample-nonbmp-tounicode.pdf / sample-nonbmp-type0.pdf / sample-rph-ruby.xlsx 为**手机侧确定性生成的先红夹具**（调度线 `队列/045-附件-先红夹具/`，2026-10-06；**只锁不生成**，人工复制入 `tests/data/`，同 real-cid-paper.pdf 先例——`A.3` 非 BMP 代理对 / `A.4` `<rPh>` 注音）。';
+
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 const mBuf = fs.readFileSync(path.join(OUT, 'manifest.json'));
 console.log(`  manifest.json       ${mBuf.length} B  sha256=${crypto.createHash('sha256').update(mBuf).digest('hex').slice(0, 16)}…`);

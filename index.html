@@ -258,6 +258,25 @@
     return s.replace(/\s+/g, " ");
   }
   var OLE2_SIG = [208, 207, 17, 224, 161, 177, 26, 225];
+  var OLE2_SUBTYPE_STREAMS = [
+    ["encrypted", ["EncryptedPackage", "EncryptionInfo"]],
+    ["word", ["WordDocument"]],
+    ["excel", ["Workbook", "Book"]],
+    ["ppt", ["PowerPoint Document"]]
+  ];
+  function utf16leInterleaved(name) {
+    let s = "";
+    for (const ch of name) s += ch + "\0";
+    return s;
+  }
+  function ole2SubtypeOf(head) {
+    for (const [sub, names] of OLE2_SUBTYPE_STREAMS) {
+      for (const n of names) {
+        if (head.includes(n) || head.includes(utf16leInterleaved(n))) return sub;
+      }
+    }
+    return "unknown";
+  }
   var PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
   var JPEG_SIG = [255, 216, 255];
   var BOM_SIGS = [
@@ -274,7 +293,7 @@
     if (head.length === 0) return { type: "unknown", detail: "empty" };
     const ascii = headAscii(head);
     if (isPdfHead(ascii)) return { type: "pdf" };
-    if (startsWith(head, OLE2_SIG)) return { type: "doc" };
+    if (startsWith(head, OLE2_SIG)) return { type: "doc", ole2Subtype: ole2SubtypeOf(ascii) };
     const image = imageKind(head, ascii, buf);
     if (image) return { type: "image", detail: image };
     if (isZipHead(head)) return zipKind(ascii);
@@ -1173,21 +1192,49 @@
     await p.cancel();
     return { rawRows: rawRows.slice(0, rowLimit), maxS, more, bytes };
   }
+  function inRange(i, to) {
+    return i >= 0 && i < to;
+  }
+  function elemAt(s, i, name) {
+    if (s[i] !== "<" || !s.startsWith(name, i + 1)) return false;
+    const c = s[i + 1 + name.length];
+    return c === " " || c === ">" || c === "/";
+  }
+  function skipRPhBlock(s, from, to) {
+    const rp = s.indexOf("<rPh", from);
+    if (!inRange(rp, to) || !elemAt(s, rp, "rPh")) return from;
+    const ts = s.indexOf("<t", from);
+    if (inRange(ts, rp)) return from;
+    const gt = s.indexOf(">", rp);
+    if (!inRange(gt, to)) return -1;
+    if (s[gt - 1] === "/") return gt + 1;
+    const end = s.indexOf("</rPh>", gt);
+    return inRange(end, to) ? end + 6 : -1;
+  }
+  function takeT(s, from, to) {
+    const ts = s.indexOf("<t", from);
+    if (ts < 0 || ts > to) return null;
+    if (s[ts + 2] !== " " && s[ts + 2] !== ">") return { text: "", next: ts + 3 };
+    const tp = s.indexOf(">", ts);
+    if (tp < 0) return null;
+    const te = s.indexOf("</t>", tp);
+    if (te < 0 || te > to) return null;
+    return { text: s.slice(tp + 1, te), next: te + 4 };
+  }
   function collectTTexts(s, from, to) {
     let out = "";
     let p = from;
     while (p < to) {
-      const ts = s.indexOf("<t", p);
-      if (ts < 0 || ts > to) break;
-      if (s[ts + 2] !== " " && s[ts + 2] !== ">") {
-        p = ts + 3;
+      const skip = skipRPhBlock(s, p, to);
+      if (skip === -1) break;
+      if (skip > p) {
+        p = skip;
         continue;
       }
-      const tp = s.indexOf(">", ts);
-      const te = s.indexOf("</t>", tp);
-      if (tp < 0 || te < 0 || te > to) break;
-      out += s.slice(tp + 1, te);
-      p = te + 4;
+      const t = takeT(s, p, to);
+      if (t === null) break;
+      out += t.text;
+      p = t.next;
     }
     return out;
   }
@@ -2412,6 +2459,14 @@ ${xlsxRowsToMd(kept)}`);
     }
     return good + garbage > 0 ? good / (good + garbage) : 0;
   }
+  function goodCharCount(text) {
+    let good = 0;
+    for (const ch of String(text || "")) {
+      if (/\s/.test(ch)) continue;
+      if (!isPdfGarbageCode(ch)) good++;
+    }
+    return good;
+  }
   async function textContentFallback(page) {
     const content = await page.getTextContent();
     const lines = [];
@@ -2456,9 +2511,11 @@ ${xlsxRowsToMd(kept)}`);
     } catch {
       ocrText = null;
     }
-    if (ocrText) return { text: ocrText, ocr: true };
+    if (ocrText && goodCharCount(ocrText) > goodCharCount(text)) return { text: ocrText, ocr: true };
     if (text.trim() !== "") {
-      warnings.push(`\u7B2C ${idx} \u9875 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u4FDD\u7559\u539F\u6587\u672C\u5C42\uFF08\u7ED3\u679C\u53EF\u80FD\u4E0D\u53EF\u8BFB\uFF09`);
+      warnings.push(
+        ocrText ? `\u7B2C ${idx} \u9875 OCR \u7ED3\u679C\u672A\u4F18\u4E8E\u6587\u672C\u5C42\uFF0C\u5DF2\u4FDD\u7559\u539F\u6587\u672C\u5C42\uFF08\u672A\u91C7\u7528 OCR \u8F93\u51FA\uFF09` : `\u7B2C ${idx} \u9875 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u4FDD\u7559\u539F\u6587\u672C\u5C42\uFF08\u7ED3\u679C\u53EF\u80FD\u4E0D\u53EF\u8BFB\uFF09`
+      );
       return { text, ocr: false };
     }
     warnings.push(`\u7B2C ${idx} \u9875\u65E0\u6587\u672C\u5C42\u4E14 OCR \u4E0D\u53EF\u7528\uFF0C\u5DF2\u8DF3\u8FC7\u8BE5\u9875`);
@@ -2591,6 +2648,7 @@ ${p.text}
     const read = await readAndSniff(file);
     if (read.error) return done({ error: read.error });
     meta.type = read.type;
+    if (read.ole2Subtype) meta.ole2Subtype = read.ole2Subtype;
     return runOrExplain(file, read.buf, meta, t0, done);
   }
   var PREFLIGHT_MIN_BYTES = 32 * 1024 * 1024;
@@ -2616,7 +2674,7 @@ ${p.text}
     }
   }
   async function runOrExplain(file, buf, meta, t0, done) {
-    const unsupported = unsupportedError(meta.type);
+    const unsupported = unsupportedError(meta.type, meta.ole2Subtype);
     if (unsupported) return done({ error: unsupported });
     try {
       if (meta.type === "xlsx") await xlsxPreflight(buf);
@@ -2629,7 +2687,7 @@ ${p.text}
     try {
       const buf = new Uint8Array(await file.arrayBuffer());
       const s = await sniff(buf);
-      return { buf, type: s.type };
+      return { buf, type: s.type, ole2Subtype: s.ole2Subtype };
     } catch (e) {
       return { error: "\u8BFB\u53D6\u6587\u4EF6\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF") };
     }
@@ -2639,11 +2697,18 @@ ${p.text}
     if (file.size > MAX_BYTES) return "\u6587\u4EF6\u8FC7\u5927\uFF08\u8D85\u8FC7 50MB\uFF09\uFF0C\u8BF7\u5148\u88C1\u526A";
     return null;
   }
-  function unsupportedError(type) {
+  var OLE2_HINT = {
+    word: "\uFF08\u5DF2\u6309\u5185\u5BB9\u8BC6\u522B\u4E3A Word 97-2003 \u6587\u6863\uFF0C\u8BF7\u53E6\u5B58\u4E3A .docx\uFF09",
+    excel: "\uFF08\u5DF2\u6309\u5185\u5BB9\u8BC6\u522B\u4E3A Excel 97-2003 \u5DE5\u4F5C\u7C3F\uFF0C\u8BF7\u53E6\u5B58\u4E3A .xlsx\uFF09",
+    ppt: "\uFF08\u5DF2\u6309\u5185\u5BB9\u8BC6\u522B\u4E3A PowerPoint 97-2003 \u6F14\u793A\u6587\u7A3F\uFF0C\u8BF7\u53E6\u5B58\u4E3A .pptx\uFF09",
+    encrypted: "\uFF08\u5DF2\u8BC6\u522B\u4E3A\u52A0\u5BC6\u7684 Office \u6587\u6863\uFF0C\u8BF7\u5148\u89E3\u9664\u5BC6\u7801\u4FDD\u62A4\u518D\u53E6\u5B58\uFF09"
+  };
+  function unsupportedError(type, ole2Subtype) {
     if (type === "pptx") return "PPTX \u4E0D\u5728 v1 \u652F\u6301\u8303\u56F4\uFF08\u89C1 README\uFF09\uFF0Cv2 \u518D\u8BAE";
     if (type === "zip") return "\u6682\u4E0D\u652F\u6301\u666E\u901A ZIP \u6587\u4EF6\uFF0C\u8BF7\u89E3\u538B\u540E\u518D\u8F6C\u6362";
     if (type === "doc") {
-      return "\u8001\u7248 Office \u4E8C\u8FDB\u5236\u683C\u5F0F\uFF08.doc/.xls/.ppt\uFF09\u6216\u52A0\u5BC6\u6587\u6863\u6682\u4E0D\u652F\u6301\uFF0C\u8BF7\u7528 Word/Excel/WPS \u6253\u5F00\u540E\u53E6\u5B58\u4E3A\u65B0\u683C\u5F0F\uFF08.docx/.xlsx\uFF09\u518D\u8F6C\u6362";
+      const base = "\u8001\u7248 Office \u4E8C\u8FDB\u5236\u683C\u5F0F\uFF08.doc/.xls/.ppt\uFF09\u6216\u52A0\u5BC6\u6587\u6863\u6682\u4E0D\u652F\u6301\uFF0C\u8BF7\u7528 Word/Excel/WPS \u6253\u5F00\u540E\u53E6\u5B58\u4E3A\u65B0\u683C\u5F0F\uFF08.docx/.xlsx\uFF09\u518D\u8F6C\u6362";
+      return base + (OLE2_HINT[ole2Subtype] || "");
     }
     if (type === "unknown" || !registry[type]) return "\u65E0\u6CD5\u8BC6\u522B\u7684\u6587\u4EF6\u7C7B\u578B";
     return null;

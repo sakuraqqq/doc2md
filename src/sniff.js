@@ -144,6 +144,33 @@ export function normWs(s) { return s.replace(/\s+/g, ' '); }
 
 /* ---------- 类型嗅探（magic bytes，不信任扩展名） ---------- */
 const OLE2_SIG = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+/* 卡 045（`A7.4`）：OLE2 复合文档（CFB）**分型** —— 靠 CFB 目录项里的**流名**判定，不猜内容：
+ *   Word 97-2003 = `WordDocument` · Excel = `Workbook`/`Book` · PowerPoint = `PowerPoint Document` ·
+ *   加密 Office（任一类型）= `EncryptedPackage`/`EncryptionInfo`（判在最前：加密件不含各类型的正名流）。
+ * ⚠️ CFB 目录项里的名字是 **UTF-16LE** 存储（ASCII 名 ⇒ 逐字符夹 `\0`）⇒ 两种形态都要匹配，
+ *   否则在 `headAscii(...)` 上 `includes('WordDocument')` **必然落空**（实测 raw 里是 `W\0o\0r\0d…`）。
+ * ⛔ 不动 `E5` 允许集合：`type` 仍是 `doc`，细分走**新增子字段** `ole2Subtype`（`word|excel|ppt|encrypted|unknown`）。 */
+const OLE2_SUBTYPE_STREAMS = [
+  ['encrypted', ['EncryptedPackage', 'EncryptionInfo']],
+  ['word', ['WordDocument']],
+  ['excel', ['Workbook', 'Book']],
+  ['ppt', ['PowerPoint Document']],
+];
+/** ASCII 流名的 UTF-16LE 交错形态（`WordDocument` → `W\0o\0r\0d…`） */
+function utf16leInterleaved(name) {
+  let s = '';
+  for (const ch of name) s += ch + '\0';
+  return s;
+}
+/** OLE2 子类型（判据全在流名上）：命中即返回；都不命中 ⇒ `unknown`（如合成的"魔数 + NUL"假件） */
+export function ole2SubtypeOf(head) {
+  for (const [sub, names] of OLE2_SUBTYPE_STREAMS) {
+    for (const n of names) {
+      if (head.includes(n) || head.includes(utf16leInterleaved(n))) return sub;
+    }
+  }
+  return 'unknown';
+}
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const JPEG_SIG = [0xff, 0xd8, 0xff];
 const BOM_SIGS = [
@@ -169,7 +196,7 @@ export async function sniff(buf) {
   if (isPdfHead(ascii)) return { type: 'pdf' };
   // OLE2 复合文档魔数（Word 97-2003 二进制 .doc 等老 Office 格式；t5 新增·契约组 O——专型化便于
   // convert 层给「另存为 .docx」友好指引；不再落入未知二进制/文本，E5 断言允许 unknown|doc）
-  if (startsWith(head, OLE2_SIG)) return { type: 'doc' };
+  if (startsWith(head, OLE2_SIG)) return { type: 'doc', ole2Subtype: ole2SubtypeOf(ascii) };
   const image = imageKind(head, ascii, buf);
   if (image) return { type: 'image', detail: image };
   // ZIP 系（docx/xlsx/pptx/zip）
