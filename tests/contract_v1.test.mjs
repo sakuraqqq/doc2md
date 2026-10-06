@@ -5773,3 +5773,131 @@ test('契约组 G9：xlsx 数值长尾的显示归一（渲染层；卡 007）�
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 T45：文本通道三处更正（卡 045）—— `A.3` PDF 非 BMP 代理对 · `A.4` xlsx `<rPh>` 注音 · `A7.4` OLE2 分型
+// 先红正证据（产物原文 + 逐层码点）：`.私档/卡/c045/证据/probe-before.json`（真浏览器 + 附件夹具）
+// 每条都能红——去掉对应实现即红：pdf.js 的 OCR 仲裁 / xlsx 的 `<rPh>` 跳过 / sniff 的 `ole2Subtype`。
+// ⚠️ 真因登记（与卡面锚表给的"线索"不同，实测定位）：`A.3` **不是** `slice(-1)` 切碎代理对 ——
+//    质量门 `needsOcr()`（`text.length < 10`）把 2 字符的有效文本层送进 OCR，OCR 的垃圾产出又**无条件顶掉**
+//    文本层（V1 实测：`𠀀中` → `n`）。修法 = OCR 只在"有效字符数严格更多"时采纳。
+// ---------------------------------------------------------------------------
+test('契约组 T45：文本通道三处更正（卡 045）', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message); // 基建缺失——如实红，非契约断言失败（见 CONTRACT.md §5）
+      return;
+    }
+    try {
+      const page = await (await browser.newContext()).newPage();
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      const conv = async (name) => {
+        const b64 = fs.readFileSync(nodePath.join(DATA, name)).toString('base64');
+        return page.evaluate(
+          async (arg) => {
+            const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+            return window.__doc2md.convert(new File([bytes], arg.name));
+          },
+          { b64, name }
+        );
+      };
+      const sniffOf = async (name) => {
+        const b64 = fs.readFileSync(nodePath.join(DATA, name)).toString('base64');
+        return page.evaluate(
+          async (arg) => {
+            const bytes = Uint8Array.from(atob(arg.b64), (ch) => ch.charCodeAt(0));
+            return window.__doc2md.sniff(bytes);
+          },
+          { b64 }
+        );
+      };
+
+      // —— A.3：非 BMP 必须保住（V1/V2）；V3 不可还原但必须不静默 ——
+      const v1 = await conv('sample-nonbmp-u20000.pdf');
+      await t.test('T45-1 A.3 V1：产物含 U+20000（𠀀）且 BMP 对照「中」完好，不得降级成 ?', () => {
+        const md = v1.markdown || '';
+        assert.ok(
+          md.includes('\u{20000}'),
+          `产物缺 U+20000：${JSON.stringify(md)}（先红形态 = 被 OCR 垃圾替换成 "n"；真因见本组头注）`
+        );
+        assert.ok(md.includes('中'), `产物缺 BMP 对照「中」：${JSON.stringify(md)}`);
+        assert.ok(!md.includes('?'), `产物出现 ?（U+003F）——可映射的非 BMP 不得降级：${JSON.stringify(md)}`);
+      });
+      const v2 = await conv('sample-nonbmp-tounicode.pdf');
+      await t.test('T45-2 A.3 V2：含 U+20000 与 emoji U+1F600（ToUnicode 路径）', () => {
+        const md = v2.markdown || '';
+        assert.ok(md.includes('\u{20000}'), `产物缺 U+20000：${JSON.stringify(md)}`);
+        assert.ok(md.includes('\u{1F600}'), `产物缺 U+1F600：${JSON.stringify(md)}`);
+        assert.ok(md.includes('中'), `产物缺 BMP 对照「中」：${JSON.stringify(md)}`);
+      });
+      const v3 = await conv('sample-nonbmp-type0.pdf');
+      await t.test('T45-3 A.3 V3：pdfjs 自身给孤立代理项 ⇒ 不要求还原，但必须「不静默」（warnings 非空）', () => {
+        const w = (v3.meta && v3.meta.warnings) || [];
+        assert.ok(
+          w.length > 0,
+          `V3 warnings 为空 = 静默（判据：不得只给垃圾产物而 warning 为空）——产物=${JSON.stringify(v3.markdown)}`
+        );
+      });
+
+      // —— A.4：`<rPh>` 注音不得进正文 ——
+      const rph = await conv('sample-rph-ruby.xlsx');
+      await t.test('T45-4 A.4：注音不进正文（无 かんじ/とう/きょう、无「漢字かんじ」拼接），对照行与锚行必须在', () => {
+        const md = rph.markdown || '';
+        for (const ruby of ['かんじ', 'とう', 'きょう']) {
+          assert.ok(!md.includes(ruby), `产物含注音「${ruby}」（rPh 内的 t 元素被当正文收走）：${JSON.stringify(md)}`);
+        }
+        assert.ok(!md.includes('漢字かんじ'), `出现注音与正文直接拼接：${JSON.stringify(md)}`);
+        assert.ok(md.includes('漢字'), `正文「漢字」丢失（跳过 <rPh> 不得连正文一起跳）：${JSON.stringify(md)}`);
+        assert.ok(md.includes('行1 无注音（对照）'), `对照行缺失（行1 无注音）：${JSON.stringify(md)}`);
+        assert.ok(md.includes('RPH-ANCHOR-4'), `校验锚缺失：${JSON.stringify(md)}`);
+      });
+
+      // —— A7.4：OLE2 分型（不动 E5 枚举 ⇒ type 仍 doc，细分走 ole2Subtype）——
+      const ole2Cases = [
+        ['ole2-word.dat', 'word', '.docx'],
+        ['ole2-excel.dat', 'excel', '.xlsx'],
+        ['ole2-ppt.dat', 'ppt', '.pptx'],
+        ['ole2-encrypted.dat', 'encrypted', null],
+      ];
+      for (const [name, sub, ext] of ole2Cases) {
+        await t.test(`T45-5 A7.4 ${name}：ole2Subtype=${sub}${ext ? ' 且文案含 ' + ext : ''}（type 不得越出 E5 允许集合）`, async () => {
+          const s = await sniffOf(name);
+          assert.equal(s.type, 'doc', `type 必须是 doc（E5 允许集合只有 unknown/doc/ole2）：${JSON.stringify(s)}`);
+          assert.equal(s.ole2Subtype, sub, `ole2Subtype=${JSON.stringify(s.ole2Subtype)}（期望 ${sub}）——须由 CFB 目录项流名判定（UTF-16LE 交错形态）`);
+          const r = await conv(name);
+          assert.ok(r.error, `OLE2 必须显式失败，不得当文本乱码「成功」：${JSON.stringify(r.error)}`);
+          if (ext) {
+            assert.ok(r.error.includes(ext), `文案未按子类型给出 ${ext}：${JSON.stringify(r.error)}`);
+          }
+        });
+      }
+      const o2 = await conv('sample-legacy-doc.doc');
+      await t.test('T45-6 A6 回归：通用文案一字不退（合成件无流名 ⇒ unknown ⇒ 不加子类型提示）', () => {
+        assert.ok(o2.error, `未显式失败：${JSON.stringify(o2.error)}`);
+        assert.ok(o2.error.includes('另存为'), `文案不含「另存为」：${JSON.stringify(o2.error)}`);
+        assert.ok(o2.error.includes('docx'), `文案不含「docx」：${JSON.stringify(o2.error)}`);
+        assert.equal(
+          o2.meta && o2.meta.ole2Subtype,
+          'unknown',
+          `合成件（魔数 + NUL，无流名）应判 unknown，实测 ${JSON.stringify(o2.meta && o2.meta.ole2Subtype)}`
+        );
+      });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});

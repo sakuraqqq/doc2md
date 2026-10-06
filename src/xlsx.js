@@ -353,20 +353,63 @@ async function scanSheetRowsStream(stream, rowLimit) {
   return { rawRows: rawRows.slice(0, rowLimit), maxS, more, bytes };
 }
 
+/** 下标落在 [0, to) 内（把 `i >= 0 && i < to` 收成谓词：圈复杂度算子不进调用方） */
+function inRange(i, to) {
+  return i >= 0 && i < to;
+}
+/** 位置 i 处是不是元素 `<name`（后必须紧跟空白 / `>` / `/` —— 前缀守卫，防 `<rPhXxx` 误匹配） */
+function elemAt(s, i, name) {
+  if (s[i] !== '<' || !s.startsWith(name, i + 1)) return false;
+  const c = s[i + 1 + name.length];
+  return c === ' ' || c === '>' || c === '/';
+}
+/** `<rPh>`（注音）段跳过（卡 045 / `A.4`）：返回**跳过后的新位置**、`from`（本段不适用）、
+ * `-1`（半个 `<rPh>`：等更多数据 ⇒ 调用方 break）。⛔ 只跳过、不产出文本。 */
+function skipRPhBlock(s, from, to) {
+  const rp = s.indexOf('<rPh', from);
+  if (!inRange(rp, to) || !elemAt(s, rp, 'rPh')) return from;
+  const ts = s.indexOf('<t', from);
+  if (inRange(ts, rp)) return from; // 本段之前还有正文 <t> ⇒ 先收正文
+  const gt = s.indexOf('>', rp);
+  if (!inRange(gt, to)) return -1;
+  if (s[gt - 1] === '/') return gt + 1; // <rPh …/>（无内容）
+  const end = s.indexOf('</rPh>', gt);
+  return inRange(end, to) ? end + 6 : -1;
+}
+
+/** 取一个 `<t>…</t>`：返回 `{ text, next }`（`text` 可为空串 = 跳过 `'<tX'` 这类误匹配），
+ * 取不到/越界返回 `null`（调用方 break）。t12 纪律：只用 indexOf，⛔ 无正则回溯。 */
+function takeT(s, from, to) {
+  const ts = s.indexOf('<t', from);
+  if (ts < 0 || ts > to) return null;
+  if (s[ts + 2] !== ' ' && s[ts + 2] !== '>') return { text: '', next: ts + 3 };
+  const tp = s.indexOf('>', ts);
+  if (tp < 0) return null;
+  const te = s.indexOf('</t>', tp);
+  if (te < 0 || te > to) return null;
+  return { text: s.slice(tp + 1, te), next: te + 4 };
+}
+
 /* <t> 文本线性提取（t11 小重构：extractInlineText / parseSharedStrings 同构段共用——t12 indexOf 纪律，
- * 无正则回溯；[from, to) 边界内收集全部 <t>…</t> 文本并拼接） */
+ * 无正则回溯；[from, to) 边界内收集全部 <t>…</t> 文本并拼接）
+ * ⭐ 卡 045（`A.4`）：**`<rPh>`（注音）内的 `<t>` 不是正文** —— 整段跳过（`skipRPhBlock`）。
+ * `<rPh>` 是 `<si>` 的子元素（OOXML phonetic run：`<rPh sb="0" eb="2"><t>かんじ</t></rPh>`），
+ * 旧实现把它一并收走 ⇒ 产物里出现 `漢字かんじ` 这类**注音与正文直接拼接**（真机实测形态）。
+ * 拆成 skipRPhBlock / takeT 两个小函数是本卡的重构配额项（原单函数圈复杂度 21、认知复杂度 42 ⇒ 双超限）。 */
 function collectTTexts(s, from, to) {
   let out = '';
   let p = from;
   while (p < to) {
-    const ts = s.indexOf('<t', p);
-    if (ts < 0 || ts > to) break;
-    if (s[ts + 2] !== ' ' && s[ts + 2] !== '>') { p = ts + 3; continue; }
-    const tp = s.indexOf('>', ts);
-    const te = s.indexOf('</t>', tp);
-    if (tp < 0 || te < 0 || te > to) break;
-    out += s.slice(tp + 1, te);
-    p = te + 4;
+    const skip = skipRPhBlock(s, p, to);
+    if (skip === -1) break; // 半个 <rPh>：等更多数据
+    if (skip > p) {
+      p = skip;
+      continue;
+    }
+    const t = takeT(s, p, to);
+    if (t === null) break;
+    out += t.text;
+    p = t.next;
   }
   return out;
 }
