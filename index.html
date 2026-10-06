@@ -1793,7 +1793,7 @@ ${xlsxRowsToMd(kept)}`);
     noPlugin: "\u4FDD\u5B58\u5931\u8D25\uFF1A\u672C\u673A\u672A\u52A0\u8F7D\u4FDD\u5B58\u63D2\u4EF6\uFF0C\u6587\u4EF6\u672A\u4FDD\u5B58",
     zip: "\u672C\u673A\uFF08APK\uFF09\u6682\u4E0D\u652F\u6301 zip \u4FDD\u5B58\uFF0C\u8BF7\u6539\u7528\u300C\u{1F5BC} \u4E0B\u8F7D .md\uFF08\u56FE\u7247\u5185\u5D4C\uFF09\u300D"
   };
-  var NATIVE_SAVED = "\u2705 \u5DF2\u4FDD\u5B58\u5230\u300C\u4E0B\u8F7D\u300D\uFF1A";
+  var NATIVE_SAVED = "\u2705 \u5DF2\u4FDD\u5B58\u5230\u300C\u4E0B\u8F7D/WenZhuanMD\u300D\uFF1A";
   function baseName(fileName) {
     return (fileName || "doc2md").replace(/\.[^.]+$/, "") || "doc2md";
   }
@@ -1820,6 +1820,63 @@ ${xlsxRowsToMd(kept)}`);
   }
   function downloadMd(text, fileName) {
     return saveTextArtifact(text, fileName).catch(reportSaveError);
+  }
+  async function saveAllArtifacts(items) {
+    const list = items || [];
+    let ok = 0;
+    let failed = 0;
+    for (const it of list) {
+      try {
+        const how = await saveTextArtifact(it.text, it.fileName);
+        if (how === "blocked") failed += 1;
+        else ok += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    const where = isNativeRuntime() ? "\u4E0B\u8F7D/WenZhuanMD" : "\u6D4F\u89C8\u5668\u4E0B\u8F7D\u76EE\u5F55";
+    const msg = failed === 0 ? "\u2705 \u5DF2\u4FDD\u5B58 " + ok + " \u4E2A .md \u5230\u300C" + where + "\u300D" : "\u5DF2\u4FDD\u5B58 " + ok + " \u4E2A / " + failed + " \u4E2A\u5931\u8D25\uFF08\u5171 " + (ok + failed) + " \u4E2A\uFF09";
+    setStatus(msg, failed > 0);
+    if (isNativeRuntime()) showToast(msg, failed > 0);
+    return { ok, failed };
+  }
+  var batchBar = null;
+  function renderBatchSave(items) {
+    if (batchBar && batchBar.parentNode) batchBar.parentNode.removeChild(batchBar);
+    batchBar = null;
+    const list = items || [];
+    if (list.length < 2) return;
+    const bar = document.createElement("div");
+    bar.className = "card";
+    const head = document.createElement("div");
+    head.className = "card-head";
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = "\u6279\u91CF\u4FDD\u5B58";
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = "\u5171 " + list.length + " \u4E2A\u53EF\u7528\u7ED3\u679C \xB7 \u9010\u4E2A\u5B58 .md";
+    head.appendChild(name);
+    head.appendChild(meta);
+    const body = document.createElement("div");
+    body.className = "card-body";
+    const btn = document.createElement("button");
+    btn.className = "btn primary";
+    btn.textContent = "\u{1F4BE} \u5168\u90E8\u4FDD\u5B58 " + list.length + " \u4E2A .md";
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      const p = saveAllArtifacts(list);
+      p.finally(() => {
+        btn.disabled = false;
+      });
+      p.catch(() => {
+      });
+    });
+    body.appendChild(btn);
+    bar.appendChild(head);
+    bar.appendChild(body);
+    resultsEl.insertBefore(bar, resultsEl.firstChild);
+    batchBar = bar;
   }
   var ASSET_FAIL_TEXT = {
     zip: { verb: "\u6253\u5305", tail: "\u5176\u4F59\u56FE\u7247\u5DF2\u7167\u5E38\u6253\u5305" },
@@ -2615,10 +2672,16 @@ ${p.text}
     hintEl.style.display = "none";
     setStatus("\u6B63\u5728\u5904\u7406 " + list.length + " \u4E2A\u6587\u4EF6\u2026");
     let ok = 0;
+    const saved = [];
     for (const file of list) {
-      if (await processOne(file)) ok++;
+      const r = await processOne(file);
+      if (r && !r.error) {
+        ok++;
+        saved.push({ fileName: file.name, text: r.markdown });
+      }
     }
     const failed = list.length - ok;
+    renderBatchSave(saved);
     setStatus(
       failed === 0 ? "\u5B8C\u6210\uFF1A\u5171 " + list.length + " \u4E2A\u6587\u4EF6\u3002" : "\u5B8C\u6210\uFF1A" + ok + " \u6210\u529F / " + failed + " \u5931\u8D25\uFF08\u5171 " + list.length + " \u4E2A\u6587\u4EF6\uFF09\u3002",
       failed > 0
@@ -2628,14 +2691,15 @@ ${p.text}
     try {
       const result = await convert(file);
       renderResult(file, result);
-      return !(result && result.error);
+      return result;
     } catch (e) {
-      renderResult(file, {
+      const result = {
         markdown: "",
         meta: { name: file.name || "\u672A\u547D\u540D\u6587\u4EF6", warnings: [] },
         error: "\u8F6C\u6362\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF")
-      });
-      return false;
+      };
+      renderResult(file, result);
+      return result;
     }
   }
   dropzone.addEventListener("click", () => fileInput.click());

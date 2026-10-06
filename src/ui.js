@@ -160,8 +160,9 @@ const NATIVE_LIMIT = {
   noPlugin: '保存失败：本机未加载保存插件，文件未保存',
   zip: '本机（APK）暂不支持 zip 保存，请改用「🖼 下载 .md（图片内嵌）」',
 };
-/** 原生壳里「成功」的回话（卡 011 第二轮 A8：**成功也要有回话**，否则用户仍会以为没反应）。 */
-const NATIVE_SAVED = '✅ 已保存到「下载」：';
+/** 原生壳里「成功」的回话（卡 011 第二轮 A8：**成功也要有回话**，否则用户仍会以为没反应）。
+ * 卡 044（A6）：**文案必须写明真实落点** —— 落点已改为 `Download/WenZhuanMD/`（由原生插件建子目录）。 */
+const NATIVE_SAVED = '✅ 已保存到「下载/WenZhuanMD」：';
 /** 保存/下载用的基名：去最后扩展名 + 空兜底（复审 §1.7：.env/.gitignore 等「扩展名即整个名」的文件名
  * replace 后会变空 ⇒ 兜底 'doc2md'）。原先在 saveTextArtifact / downloadZip 各写一遍 ⇒ 卡 011 的 B1 抽成单一实现。 */
 function baseName(fileName) {
@@ -200,6 +201,79 @@ function reportSaveError(e) {
 }
 export function downloadMd(text, fileName) {
   return saveTextArtifact(text, fileName).catch(reportSaveError);
+}
+/* ── 卡 044：一次点击「全部保存」（多文件结果） ──────────────────────────────────
+ * 范围（卡面写死）：**只覆盖「逐个保存 .md 产物」这条路径** —— 循环复用 `saveTextArtifact`；
+ *   ⛔ 不新增 zip 能力（原生壳拒绝 zip 是**有意设计**，见 NATIVE_LIMIT.zip）
+ *   ⛔ 不碰图片内嵌 / EMBED_MAX_BYTES 那条分支（超限照现状，那是另案）。
+ * 为什么复用而不是自己拼：`saveTextArtifact` 已把「原生 / 浏览器 / 原生无插件」三个出口都处理过，
+ *   本函数只负责「点一次 + 汇总一句」，⛔ 不另造第二套写文件实现（卡面 A4）。
+ * 落点文案：原生 =「下载/WenZhuanMD」（与 A6 口径一致）；浏览器 =「浏览器下载目录」
+ *   （浏览器把文件交给下载栏管，⛔ 不冒充成有子目录）。 */
+export async function saveAllArtifacts(items) {
+  const list = items || [];
+  let ok = 0;
+  let failed = 0;
+  for (const it of list) {
+    try {
+      const how = await saveTextArtifact(it.text, it.fileName);
+      if (how === 'blocked') failed += 1;
+      else ok += 1;
+    } catch {
+      failed += 1; // 单件失败不拖累其余（与 R9-1「逐文件隔离」同口径）
+    }
+  }
+  const where = isNativeRuntime() ? '下载/WenZhuanMD' : '浏览器下载目录';
+  const msg =
+    failed === 0
+      ? '✅ 已保存 ' + ok + ' 个 .md 到「' + where + '」'
+      : '已保存 ' + ok + ' 个 / ' + failed + ' 个失败（共 ' + (ok + failed) + ' 个）';
+  setStatus(msg, failed > 0);
+  if (isNativeRuntime()) showToast(msg, failed > 0);
+  return { ok, failed };
+}
+/** 批次入口（卡 044）：页面上**一个**「全部保存」，⛔ 不在每张卡上重复 N 个按钮
+ *  （重复按钮既是噪音、也让"哪个是真的"变得含糊；卡面的实质要求是"一次点击存全部"）。
+ * 只在 ≥2 个成功结果时出现：单个结果，该卡自带的保存按钮就够。 */
+let batchBar = null;
+export function renderBatchSave(items) {
+  if (batchBar && batchBar.parentNode) batchBar.parentNode.removeChild(batchBar);
+  batchBar = null;
+  const list = items || [];
+  if (list.length < 2) return;
+  /* ⚠️ 卡面外的硬约束（2026-10-06 实测撞上）：⛔ 本入口**不得使用 `.card-actions`** ——
+   * 契约 Z4-0 数的是 `#results .card-actions`（断言恰 3），多一个就把"多文件现场"前提顶掉。
+   * ⇒ 改用既有 `.card-head` + `.card-body` 承载（⛔ 不动 template.html，也不改断言）。 */
+  const bar = document.createElement('div');
+  bar.className = 'card';
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = '批量保存';
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  meta.textContent = '共 ' + list.length + ' 个可用结果 · 逐个存 .md';
+  head.appendChild(name);
+  head.appendChild(meta);
+  const body = document.createElement('div');
+  body.className = 'card-body';
+  const btn = document.createElement('button');
+  btn.className = 'btn primary';
+  btn.textContent = '💾 全部保存 ' + list.length + ' 个 .md';
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    const p = saveAllArtifacts(list);
+    p.finally(() => {
+      btn.disabled = false;
+    });
+    p.catch(() => {}); // 兜底：逐件失败已在函数内计数，⛔ 不让异常逃逸成 unhandled rejection
+  });
+  body.appendChild(btn);
+  bar.appendChild(head);
+  bar.appendChild(body);
+  resultsEl.insertBefore(bar, resultsEl.firstChild);
+  batchBar = bar;
 }
 /* ── 卡 042（`R9-5`）：导出的「缺图」从静默 → 有信号 ────────────────────────────────
  * 病（改前实测）：资产（图片）读取失败时，zip 与内嵌两条路径的 `catch` 都是空的 —— zip 少一张图、

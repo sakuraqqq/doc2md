@@ -1811,6 +1811,24 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
    - ⚠️ **另记一条浏览器侧事实**：本机 **Edge 与 Chrome 的 `inspect` 按钮都点了没反应**（`edge://inspect` 里 **目标列得出**、点 `inspect` / `inspect fallback` 窗口都不开）⇒ 真机 WebView 的 console 取证**不能依赖浏览器按钮**。
    - **工具落点**：`.私档/工具/android-devtools.mjs` —— 绕过浏览器的 inspect 管道，自己走 `adb shell pidof` → `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>` → `/json` → **CDP WebSocket 求值**（带 20s 超时、结果写 `.tmp/devtools-result.txt`）。阶段 1 直接复用。
 
+## 2026-10-06 · 卡 044（执行线）：保存出口改落点 `Download/WenZhuanMD/` + 一键全部保存
+
+> 完整回执落**非公开面** `.私档/卡/c044/回执.md`；本节只留**可复用的坑 / 决策 / 防再犯**。
+
+### 决策
+- **批量入口不复用 `.card-actions`**：`#results` 里新增的「全部保存」入口改用既有 `.card-head` + `.card-body` 承载（⛔ 不动 `template.html`）。原因见坑 1。
+- **原生保存两分支共用一个目录名常量** `DOWNLOAD_SUBDIR = "WenZhuanMD"`：API 29+ 走 `MediaStore.Downloads.RELATIVE_PATH`，24–28 走 `getExternalStoragePublicDirectory(...)` + `mkdirs()` ⇒ **单一真相**，防两分支各写一份字面量而漂移。
+
+### 坑 1 ⭐ **新增一个 UI 元素，把契约的「现场前提」顶掉了**（本次真被门禁抓到，不是假想）
+
+- **现象**：实现完成后 `npm test` = 318 / **314 pass** / **fail 2** / 2（基线 318/316/0/2），红在 `Z4-0 现场前提`：`操作行数=4（期望 3 —— 少于 3 就复现不出"多文件"现场）`。
+- **根因**：`Z4-0` 的前提判据是 **`document.querySelectorAll('#results .card-actions').length === 3`**（`tests/contract_v1.test.mjs` L5473 取值器 / L5510 断言）。我的批次条用了 `.card-actions` 这个**布局类** ⇒ 计数变 4 ⇒ **现场前提不成立**（不是新功能算错，是我把"复现现场"改了）。
+  ⚠️ 同处 `#results .card` 也被计数（L5472）但**没有断言** ⇒ **加卡片无害、加操作行有害** —— 计数型取值器"是否被断言"决定它能不能复用。
+- **防再犯**：
+  1. 往 `#results`（或任何被契约观察的容器）里加元素前，先 grep 契约里的**计数型取值器**（`actionRows` / `cards` / `querySelectorAll('#…')`），⛔ 别只看"我这块逻辑对不对"；
+  2. **布局类可能同时是语义锚**（`.card-actions` 既是 flex 布局又是计数钩子）⇒ 想复用它之前先查有没有断言依赖；
+  3. 见红先分清「**断言本身错**」与「**我改坏了现场**」—— 本例是后者 ⇒ 按铁律 6 **只改实现、不动断言**，改完复绿 318/316/0/2。
+
 ## 2026-10-05 · 卡 043（执行线）：AI 模块 · 接口与生命周期设计（只设计不实现）
 
 > 完整回执落**非公开面** `.私档/卡/c043/回执.md`；本节按卡面 inScope 只登记**未验证 / 待查项**。
