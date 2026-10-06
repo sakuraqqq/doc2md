@@ -24,7 +24,7 @@
       },
       "measured": {
         "at": "2026-10-06",
-        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：实测两次，**tests 325 / skipped 3 两次完全一致**；pass/fail 拆分取**文档化映射**（由 local_with_fixtures 328/326/0/2 ⇒ total −3 / pass −4 / skip +1 = 325/322/0/3）。⚠️ 两次实测各有 1 条 **download-event 类断言**假红（run A = Q4、run B = I4；时长 22 s+，同构建隔离复跑全绿）⇒ 记为本机高负载下的抖动（`docs/DEV-NOTES.md` 2026-10-06 条），**不入应然值**；② 真实 CI runner 由第 15 步 `Contract ↔ BASELINE.json reconciliation` 对账（卡 042 的 run `37233758141` / `37233882200`、卡 043 / 044 各 run 均 success；卡 045 由本卡 PR run 复核）"
+        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：实测两次，**tests 325 / skipped 3 两次完全一致**；pass/fail 拆分取**文档化映射**（由 local_with_fixtures 328/326/0/2 ⇒ total −3 / pass −4 / skip +1 = 325/322/0/3）。⚠️ 两次实测各有 1 条 **download-event 类断言**假红（run A = Q4、run B = I4；时长 22 s+，同构建隔离复跑全绿）⇒ 记为本机高负载下的抖动（`docs/DEV-NOTES.md` 2026-10-06 条），**不入应然值**；② 真实 CI runner 由第 15 步 `Contract ↔ BASELINE.json reconciliation` 对账（卡 042 的 run `37233758141` / `37233882200`、卡 043 / 044 各 run 均 success；⭐ **卡 045 已由真实 run `37482095522`（head `ef3e98f`）对账确认 = `success`，其中第 15 步 `Contract ↔ BASELINE.json reconciliation` = green ⇒ 上句「由映射推得」的 pass/fail 拆分**已被 runner 证实**；同一 run 第 18 步 `HANDOFF baseline block` 亦 green）"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }
