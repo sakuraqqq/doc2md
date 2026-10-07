@@ -1,13 +1,15 @@
 apply plugin: 'com.android.application'
 
-// 卡 013 / R-2：`versionName` 的**单一真相源 = 仓库根 package.json 的 version**（**不许手抄** ——
+// 卡 013 / R-2：版本号的**单一真相源 = 仓库根 package.json 的 version**（**不许手抄** ——
 // 手抄就是一处会漂移的副本，本项目已实测过这个病）。
 // ⚠️ 读失败一律**抛错**，**绝不回落到模板默认的 `"1.0"`**（口径：「可跳过 = 会静默」）。
-//    守卫 = `tools/apk-version-check.mjs`（G3：从**产物侧**读回 versionName 与 package.json 对表）。
-def doc2mdVersionName = {
+//    守卫 = `tools/apk-version-check.mjs`（G3：从**产物侧**读回 versionName/versionCode 与 package.json 对表）。
+// 卡 048 / R1：**读法只有一份**（`doc2mdPkgVersion`），`versionName` 与 `versionCode` 都从它派生
+//    ⇒ ⛔ 不再有"第二个要人工维护的数"。
+def doc2mdPkgVersion = {
     def pkgFile = rootProject.file('../package.json')
     if (!pkgFile.exists()) {
-        throw new GradleException("卡 013：找不到 package.json（${pkgFile}）—— 它是 versionName 的唯一真相源，不许回落默认值")
+        throw new GradleException("卡 013：找不到 package.json（${pkgFile}）—— 它是版本号唯一真相源，不许回落默认值")
     }
     def parsed
     try {
@@ -20,6 +22,28 @@ def doc2mdVersionName = {
         throw new GradleException("卡 013：package.json 缺 version 字段 —— 不许回落默认值")
     }
     return v.trim()
+}
+
+def doc2mdVersionName = doc2mdPkgVersion()
+
+// 卡 048 / R1（需求件：`软著/20261007-需求-versionCode口径（软著线定·主线实现）.md`）：
+// `versionCode = major*10000 + minor*100 + patch`（**每段 ≤ 99**，否则会与相邻版本串号）。
+// 例：0.1.10 ⇒ 110 · 0.2.0 ⇒ 200 · 1.0.0 ⇒ 10000（⛔ 不要求连续，只要求**严格递增**）。
+// ⚠️ 结构与 versionName 同源 ⇒ 「**忘了 bump version**」这种失效模式**结构上不可能发生**
+//    （手动 +1 的失败模式正是"忘了"，而人一定会忘）。守卫见 `tools/apk-version-check.mjs` 的 R2-a/R2-b。
+def doc2mdVersionCode = {
+    def v = doc2mdPkgVersion()
+    def m = (v =~ /^(\d+)\.(\d+)\.(\d+)$/)
+    if (!m.matches()) {
+        throw new GradleException("卡 048：version 必须是 x.y.z 形式（当前 \"${v}\"）—— 推导不出 versionCode")
+    }
+    def segs = [m[0][1], m[0][2], m[0][3]]*.toInteger()
+    segs.eachWithIndex { s, i ->
+        if (s > 99) {
+            throw new GradleException("卡 048：version 第 ${i + 1} 段 = ${s} > 99 —— 公式（major*10000+minor*100+patch）会串号，先拍板换公式")
+        }
+    }
+    return segs[0] * 10000 + segs[1] * 100 + segs[2]
 }()
 
 android {
@@ -29,11 +53,11 @@ android {
         applicationId "io.github.sakuraqqq.doc2md"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // ⚠️ versionCode【没有真相源】（卡 013 实测：全仓无任何东西守它，`RELEASE-CHECKLIST §2` 的
-        //    `npm version` 只动 package.json）⇒ 只能**人工单调递增**：
-        //    **发 APK 前必须 +1 且 > 上一版**（落点 = docs/RELEASE-CHECKLIST.md）。
-        //    起点 2 —— 模板默认是 1，**必须严格大于它**，否则覆盖安装会 INSTALL_FAILED_VERSION_DOWNGRADE。
-        versionCode 2
+        // ⭐ 卡 048 / R1：versionCode **由同一个 package.json 的 version 推导**（见上方 `doc2mdVersionCode`）
+        //    —— 本条原为「人工 +1」的硬编码 `2`；它的失效模式（**忘了递增** ⇒ 设备与商店都不认为有新版本，
+        //    更新静默失效）已由"推导"从结构上消除。公式 = major*10000 + minor*100 + patch（每段 ≤ 99）。
+        //    ⚠️ 值从 2 跳到 110（对应 0.1.10）是**允许的**：Android 只要求严格递增，⛔ 不要求连续。
+        versionCode doc2mdVersionCode
         // ⭐ versionName 的唯一真相源 = package.json 的 version（见上方 doc2mdVersionName；**不许手抄**）
         versionName doc2mdVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

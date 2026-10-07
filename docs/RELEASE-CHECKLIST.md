@@ -59,15 +59,23 @@ git push --dry-run origin main
 git push --dry-run origin v0.1.1
 ```
 
-> ⭐ **APK 侧版本（卡 013 / `R-2` 立的**落点**）—— ⚠️ 发 APK 前必做**：
-> **`android/app/build.gradle` 的 `versionCode` 必须 +1，且严格大于上一版**（**只增不减**）。
-> - **它没有真相源**：`versionName` 从 `package.json` 的 `version` **自动读取**（单源，见 `build.gradle` 里的
->   `doc2mdVersionName`，读失败**抛错**、不回落 `"1.0"`）；而 **`versionCode` 全仓无任何东西守它**
->   （卡 013 实测）⇒ ⭐ **这一轴只能靠人记得，所以写在这里**。
-> - **不 +1 的后果**：覆盖安装会 `INSTALL_FAILED_VERSION_DOWNGRADE`（⚠️ **通识，本轮未读到官方原文**；
+> ⭐ **APK 侧版本（卡 013 立落点 · 卡 048 改口径 = 单源推导）—— ⚠️ 发 APK 前【必跑】这条**：
+> ```bash
+> node tools/apk-version-check.mjs      # ⭐ 本机构建 APK（gradlew assembleDebug）之后跑
+> ```
+> - **两条轴都已单源**：`versionName` **与** `versionCode` **都**从 `package.json` 的 `version` 派生
+>   （`build.gradle` 的 `doc2mdPkgVersion` → `doc2mdVersionName` / `doc2mdVersionCode`；读失败**抛错**、⛔ 不回落 `"1.0"`）。
+>   `versionCode` 公式 = **`major*10000 + minor*100 + patch`**（每段 ≤ 99）—— 例：`0.1.10` ⇒ **110** · `0.2.0` ⇒ 200 · `1.0.0` ⇒ 10000。
+>   ⛔ **不再有人工维护的第二个数**（原硬编码 `versionCode 2` 已废）。
+> - ⭐ **为什么必须写进本清单**：该守卫**进不了 CI** —— 输入是 **gitignored** 的 `build/intermediates/`，
+>   且本仓 CI 不装 Android SDK ⇒ ⛔ "记得就跑" = 等于没有 ⇒ **只能靠本清单**。
+> - ⭐ **它同时防两种失效**：**R2-a** = 产物侧读回的 `versionCode` 必须 == `f(package.json.version)`
+>   （抓"没接上 / 读错 / Gradle 缓存旧值"）；**R2-b** = 本版 `versionCode` 必须 **严格大于上一个 tag** 的
+>   （用 `git show <prev tag>:package.json` 推导上一版）—— **R2-b 才是真正防"忘了 bump `version`"的那条**。
+> - ⚠️ **同一版本重发**（改 bug 不 bump）⇒ `versionCode` 不变 ⇒ **不会被识别为新版本** ⇒
+>   **约定：重发必须 bump `version`（补丁位，语义化版本的正常做法）**。
+> - ⚠️ **不递增的后果**：覆盖安装 `INSTALL_FAILED_VERSION_DOWNGRADE`（⚠️ **通识，本轮未读到官方原文**；
 >   卡 013 已用真机**实测反证**一次：装完新包后 `install -r` 装回旧包 ⇒ 必失败）。
-> - **自检**：`node tools/apk-version-check.mjs`（**G3**）会**同时打印**产物侧的 `versionName` **与 `versionCode`**
->   —— 让这一轴**能被看到**，而不是只躺在 `build.gradle` 里。
 
 > **⚠️ v0.1.7 实发踩坑（2026-09-15，写死在此防再犯）**：
 > 1. **`gh release create` 需要默认仓库**：未设置时报 `X No default remote repository has been set` 而失败 → 修法 = 加 `--repo <owner>/<repo>`，或先 `gh repo set-default <owner>/<repo>`；
