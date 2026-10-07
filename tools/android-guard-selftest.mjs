@@ -10,6 +10,10 @@
  *      manifest 缺失 / 清单不是合法 JSON）
  *   G3 `apk-version-check`（卡 013）：正例（产物侧 == package.json）· 负例（产物侧 stale 「1.0」·
  *      manifest 不存在 · package.json 解析失败 / 缺 version · 产物侧无 versionName）
+ *   G3 ⭐（卡 048 扩 R2-a/R2-b）：**versionCode** 也算数了 ——
+ *      公式算例（`0.1.10⇒110` · `0.2.0⇒200` · `1.0.0⇒10000`；负例：段 >99 · 格式非法）
+ *      · R2-a 正例（产物侧 == f(version)）· R2-a **负例**（产物侧 109 / 缺 versionCode ⇒ 必红）
+ *      · R2-b 正例（0.1.10 > 0.1.9）· R2-b **负例**（同版 / 倒退 ⇒ 必红）· 首版放行但要打印理由
  *   ⭐ 三态退出码：**通过 0 · 不同源 1 · 未验 2**（两两不同 —— 这条防的正是"未验被当成通过"）
  *
  * 用法：node tools/android-guard-selftest.mjs  → 全过 exit 0；任一失败 exit 1
@@ -23,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { buildZip } from '../tests/lib/zipio.mjs';
 import { APK_ENTRY, EXIT, checkApkArtifact, exitCodeFor } from './apk-artifact-check.mjs';
 import { MANIFEST_REL, REGISTRY_REL, checkAndroidPermissions } from './android-permission-audit.mjs';
-import { checkApkVersion, parseManifestVersion } from './apk-version-check.mjs';
+import { checkApkVersion, checkVersionMonotonic, parseManifestVersion, versionCodeFrom } from './apk-version-check.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TMP = path.join(ROOT, '.tmp', 'android-guard-selftest');
@@ -151,24 +155,64 @@ const badJson = writeFixture('registry-bad.json', '{ 这不是 JSON');
 r = checkAndroidPermissions({ manifestPath: realManifest, registryPath: badJson });
 ok('G2 负例：清单不是合法 JSON ⇒ 红', !r.ok && /JSON/.test(r.why || ''), JSON.stringify(r.why));
 
-/* ==================== G3：apk-version-check（产物侧版本对齐，卡 013） ====================
- * 守的是**产物侧**的 versionName == package.json 的 version（**不是** build.gradle 的源文本 ——
- * 那个由构造相同、恒真；卡面「修订记录·第三条」）。 */
+/* ==================== G3：apk-version-check（产物侧版本对齐，卡 013；卡 048 扩 R2-a/R2-b） ====================
+ * 守的是**产物侧**的 versionName/versionCode == package.json 的 version 及其推导值（**不是** build.gradle
+ * 的源文本 —— 那个由构造相同、恒真；卡面「修订记录·第三条」）。 */
 const realPkg = path.join(ROOT, 'package.json');
 const pkgVersion = JSON.parse(fs.readFileSync(realPkg, 'utf8')).version;
+const pkgCode = versionCodeFrom(pkgVersion).code;
 const mergedXml = (versionName, versionCode) =>
   `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    package="io.github.sakuraqqq.doc2md"\n    android:versionCode="${versionCode}"\n    android:versionName="${versionName}" >\n</manifest>\n`;
-const mergedOk = writeFixture('merged-ok.xml', mergedXml(pkgVersion, 2));
+const mergedOk = writeFixture('merged-ok.xml', mergedXml(pkgVersion, pkgCode));
+
+/* --- 卡 048：公式算例（与 build.gradle 的 Groovy 实现独立、喂同一批算例） --- */
+ok(
+  'G3 公式：0.1.10 ⇒ 110 · 0.2.0 ⇒ 200 · 1.0.0 ⇒ 10000',
+  versionCodeFrom('0.1.10').code === 110 && versionCodeFrom('0.2.0').code === 200 && versionCodeFrom('1.0.0').code === 10000,
+  JSON.stringify([versionCodeFrom('0.1.10'), versionCodeFrom('0.2.0'), versionCodeFrom('1.0.0')])
+);
+ok(
+  'G3 公式负例：某段 > 99 ⇒ 必红（否则 0.1.100 会与 0.2.0 串号）',
+  !!versionCodeFrom('0.1.100').why && /99/.test(versionCodeFrom('0.1.100').why),
+  JSON.stringify(versionCodeFrom('0.1.100'))
+);
+ok('G3 公式负例：不是 x.y.z ⇒ 必红', !!versionCodeFrom('1.0').why, JSON.stringify(versionCodeFrom('1.0')));
+ok(
+  `G3 公式：当前 package.json 的 version（${pkgVersion}）⇒ ${pkgCode}`,
+  typeof pkgCode === 'number',
+  JSON.stringify(versionCodeFrom(pkgVersion))
+);
 
 const parsedMerged = parseManifestVersion(fs.readFileSync(mergedOk, 'utf8'));
 ok(
   'G3 解析：从合并后 manifest 同时取到 versionName 与 versionCode',
-  parsedMerged.versionName === pkgVersion && parsedMerged.versionCode === 2,
+  parsedMerged.versionName === pkgVersion && parsedMerged.versionCode === pkgCode,
   JSON.stringify(parsedMerged)
 );
 
 r = checkApkVersion({ manifestPath: mergedOk, packagePath: realPkg });
 ok('G3 正例：产物侧 versionName == package.json 的 version ⇒ ok', r.ok === true, JSON.stringify(r.why));
+ok('G3 正例（R2-a）：产物侧 versionCode == f(package.json.version) ⇒ ok', r.ok === true && r.wantCode === pkgCode, JSON.stringify(r));
+
+/* --- 卡 048 / R2-a 负例：产物侧 versionCode 与推导值不符 ⇒ 必红 --- */
+const staleCode = pkgCode - 1;
+r = checkApkVersion({ manifestPath: writeFixture('merged-code-off.xml', mergedXml(pkgVersion, staleCode)), packagePath: realPkg });
+ok(
+  `G3 负例（R2-a）：产物侧 versionCode=${staleCode}（当前 ${pkgVersion} 应为 ${pkgCode}）⇒ 必红`,
+  r.ok === false && /R2-a/.test(r.why || '') && /versionCode 不一致/.test(r.why || ''),
+  JSON.stringify(r.why)
+);
+
+const noVCode = writeFixture(
+  'merged-nocode.xml',
+  `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns="http://schemas.android.com/apk/res/android" android:versionName="${pkgVersion}" />\n`
+);
+r = checkApkVersion({ manifestPath: noVCode, packagePath: realPkg });
+ok(
+  'G3 负例（R2-a）：产物侧没有 versionCode ⇒ 必红（⛔ 不回落到任何默认值）',
+  r.ok === false && /R2-a/.test(r.why || '') && /解析不出 android:versionCode/.test(r.why || ''),
+  JSON.stringify(r.why)
+);
 
 r = checkApkVersion({ manifestPath: writeFixture('merged-stale.xml', mergedXml('1.0', 1)), packagePath: realPkg });
 ok(
@@ -199,10 +243,32 @@ ok(
 
 const noVName = writeFixture(
   'merged-novname.xml',
-  `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:versionCode="2" />\n`
+  `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:versionCode="${pkgCode}" />\n`
 );
 r = checkApkVersion({ manifestPath: noVName, packagePath: realPkg });
 ok('G3-b 负例：产物侧 manifest 里没有 versionName ⇒ 必红', r.ok === false && /解析不出/.test(r.why || ''), JSON.stringify(r.why));
+
+/* --- 卡 048 / R2-b：单调性（0.1.10 > 0.1.9）--- */
+let mono = checkVersionMonotonic({ currentVersion: '0.1.10', prevVersion: '0.1.9' });
+ok(
+  'G3 正例（R2-b）：0.1.10（110）> 0.1.9（109）⇒ ok',
+  mono.ok === true && mono.code === 110 && mono.prevCode === 109,
+  JSON.stringify(mono)
+);
+mono = checkVersionMonotonic({ currentVersion: '0.1.10', prevVersion: '0.1.10' });
+ok(
+  'G3 负例（R2-b）：同版重发（110 ≤ 110）⇒ 必红 —— ⭐ 这条才是真正防"忘了 bump version"的',
+  mono.ok === false && /未递增/.test(mono.why || ''),
+  JSON.stringify(mono.why)
+);
+mono = checkVersionMonotonic({ currentVersion: '0.1.9', prevVersion: '0.1.10' });
+ok('G3 负例（R2-b）：版本倒退（109 ≤ 110）⇒ 必红', mono.ok === false && /未递增/.test(mono.why || ''), JSON.stringify(mono.why));
+mono = checkVersionMonotonic({ currentVersion: '0.1.10', prevVersion: null });
+ok(
+  'G3 边界（R2-b）：无上一个 tag（首个版本）⇒ 放行，但**必须给出理由**（⛔ 不是静默跳过）',
+  mono.ok === true && /首个版本/.test(mono.note || ''),
+  JSON.stringify(mono)
+);
 
 /* ==================== 汇总 ==================== */
 let failed = 0;

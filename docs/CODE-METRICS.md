@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-06T14:16:21.062Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-07T16:00:33.527Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：32；函数总数：679；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：32；函数总数：690；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 679 个，超限 0 个。
+重构后当前：函数 690 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -53,6 +53,7 @@
 | tools/measure-xlsx-peak.mjs | measureTier | 234 | 8 | 9 |
 | src/docx.js | docxCollectWarnings | 292 | 8 | 8 |
 | src/ui.js | reportAssetFailures | 310 | 8 | 8 |
+| tools/apk-version-check.mjs | runCli | 223 | 8 | 8 |
 | tools/audit-delivery.mjs | main | 235 | 8 | 8 |
 | src/convert.js | convert | 108 | 8 | 7 |
 | src/convert.js | runConverter | 234 | 8 | 7 |
@@ -62,6 +63,7 @@
 | src/xlsx.js | isBuiltinDateId | 546 | 8 | 7 |
 | tools/android-permission-audit.mjs | checkAndroidPermissions | 66 | 8 | 7 |
 | tools/apk-artifact-check.mjs | checkApkArtifact | 63 | 8 | 7 |
+| tools/apk-version-check.mjs | checkApkVersion | 167 | 8 | 7 |
 | tools/privacy-gate.mjs | patchLineKind | 248 | 8 | 7 |
 | src/html2md.js | blockifyContainer | 151 | 7 | 13 |
 | src/xlsx.js | xlsxDegradeWarnings | 906 | 7 | 12 |
@@ -76,7 +78,6 @@
 | src/pdf.js | pdfConvert | 476 | 7 | 7 |
 | src/ui.js | downloadZip | 323 | 7 | 7 |
 | src/xlsx.js | xlsxParseSheetStream | 680 | 7 | 7 |
-| tools/apk-version-check.mjs | runCli | 107 | 7 | 7 |
 | tools/deploy-smoke.mjs | checkOneRef | 86 | 7 | 7 |
 | src/convert.js | ocrOnce | 44 | 7 | 6 |
 | src/convert.js | unsupportedError | 211 | 7 | 6 |
@@ -86,7 +87,6 @@
 | src/sniff.js | isGif | 243 | 7 | 6 |
 | src/xlsx.js | skipRPhBlock | 368 | 7 | 6 |
 | src/xlsx.js | formatNumericLiteral | 603 | 7 | 6 |
-| tools/apk-version-check.mjs | checkApkVersion | 79 | 7 | 6 |
 | tools/audit-delivery.mjs | viaItem | 150 | 7 | 6 |
 | tools/audit-delivery.mjs | bulkItem | 178 | 7 | 6 |
 | tools/baseline-check.mjs | loadActual | 96 | 7 | 6 |
@@ -117,6 +117,7 @@
 | tools/gen-handoff-baseline.mjs | scanBlockForExcludedFields | 161 | 6 | 8 |
 | src/pdf.js | groupRunsIntoLines | 213 | 6 | 7 |
 | src/pdf.js | monospaceFontsOf | 289 | 6 | 7 |
+| tools/apk-version-check.mjs | runMonotonicCli | 199 | 6 | 7 |
 | tools/baseline-check.mjs | compareDeliveryEntry | 228 | 6 | 7 |
 | src/convert.js | runOrExplain | 170 | 6 | 6 |
 | src/docx.js | ommlMathEntry | 151 | 6 | 6 |
@@ -150,7 +151,7 @@
 | src/xlsx.js | parseCellAt | 252 | 6 | 5 |
 | src/xlsx.js | extractInlineText | 418 | 6 | 5 |
 | tools/android-permission-audit.mjs | runCli | 105 | 6 | 5 |
-| tools/apk-version-check.mjs | readProductVersion | 62 | 6 | 5 |
+| tools/apk-version-check.mjs | readProductVersion | 86 | 6 | 5 |
 | tools/audit-delivery.mjs | versionErrors | 113 | 6 | 5 |
 | tools/baseline-check.mjs | checkMeasuredNode | 121 | 6 | 5 |
 | tools/baseline-check.mjs | compareArtifact | 175 | 6 | 5 |
@@ -211,6 +212,8 @@
 | src/xlsx.js | parseDimensionRef | 803 | 5 | 4 |
 | tools/android-permission-audit.mjs | diffPermissions | 52 | 5 | 4 |
 | tools/apk-artifact-check.mjs | runCli | 90 | 5 | 4 |
+| tools/apk-version-check.mjs | checkVersionMonotonic | 124 | 5 | 4 |
+| tools/apk-version-check.mjs | readPrevTagVersion | 142 | 5 | 4 |
 | tools/baseline-check.mjs | runCheck | 373 | 5 | 4 |
 | tools/check-pages-allowlist.mjs | judge | 57 | 5 | 4 |
 | tools/deploy-smoke.mjs | resolveInSite | 71 | 5 | 4 |
@@ -278,6 +281,8 @@
 | tools/android-permission-audit.mjs | readRegistry | 39 | 4 | 3 |
 | tools/android-permission-audit.mjs | (anonymous) | 58 | 4 | 3 |
 | tools/android-permission-audit.mjs | printAutoMerged | 99 | 4 | 3 |
+| tools/apk-version-check.mjs | versionCodeFrom | 65 | 4 | 3 |
+| tools/apk-version-check.mjs | checkArtifactVersionCode | 104 | 4 | 3 |
 | tools/audit-delivery.mjs | viaItems | 132 | 4 | 3 |
 | tools/baseline-check.mjs | attempt | 98 | 4 | 3 |
 | tools/baseline-check.mjs | divergedFromReleased | 197 | 4 | 3 |
@@ -341,8 +346,8 @@
 | src/xlsx.js | readSheetSafely | 745 | 3 | 2 |
 | src/xlsx.js | stylesDateRisk | 898 | 3 | 2 |
 | tools/android-permission-audit.mjs | readFlag | 86 | 3 | 2 |
-| tools/apk-version-check.mjs | parseManifestVersion | 52 | 3 | 2 |
-| tools/apk-version-check.mjs | readFlag | 108 | 3 | 2 |
+| tools/apk-version-check.mjs | parseManifestVersion | 76 | 3 | 2 |
+| tools/apk-version-check.mjs | readFlag | 224 | 3 | 2 |
 | tools/audit-delivery.mjs | checkVendorManifest | 81 | 3 | 2 |
 | tools/audit-delivery.mjs | sizeErrors | 104 | 3 | 2 |
 | tools/audit-delivery.mjs | versionNotes | 125 | 3 | 2 |
@@ -425,12 +430,13 @@
 | src/xlsx.js | isoDateOnly | 504 | 2 | 1 |
 | src/xlsx.js | truncationMessage | 699 | 2 | 1 |
 | src/xlsx.js | takeDimension | 824 | 2 | 1 |
-| tools/android-guard-selftest.mjs | ok | 31 | 2 | 1 |
+| tools/android-guard-selftest.mjs | ok | 35 | 2 | 1 |
 | tools/android-permission-audit.mjs | parseUsesPermissions | 30 | 2 | 1 |
 | tools/android-permission-audit.mjs | (anonymous) | 53 | 2 | 1 |
 | tools/apk-artifact-check.mjs | exitCodeFor | 47 | 2 | 1 |
-| tools/apk-version-check.mjs | attr | 53 | 2 | 1 |
-| tools/apk-version-check.mjs | rel | 105 | 2 | 1 |
+| tools/apk-version-check.mjs | attr | 77 | 2 | 1 |
+| tools/apk-version-check.mjs | (anonymous) | 158 | 2 | 1 |
+| tools/apk-version-check.mjs | rel | 196 | 2 | 1 |
 | tools/audit-delivery.mjs | low | 63 | 2 | 1 |
 | tools/audit-delivery.mjs | licensesText | 93 | 2 | 1 |
 | tools/audit-delivery.mjs | checkOneAsset | 98 | 2 | 1 |
@@ -598,12 +604,12 @@
 | src/xlsx.js | (anonymous) | 970 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 973 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 973 | 1 | 0 |
-| tools/android-guard-selftest.mjs | mkApk | 39 | 1 | 0 |
-| tools/android-guard-selftest.mjs | manifestXml | 86 | 1 | 0 |
-| tools/android-guard-selftest.mjs | (anonymous) | 88 | 1 | 0 |
-| tools/android-guard-selftest.mjs | writeFixture | 90 | 1 | 0 |
-| tools/android-guard-selftest.mjs | (anonymous) | 134 | 1 | 0 |
-| tools/android-guard-selftest.mjs | mergedXml | 159 | 1 | 0 |
+| tools/android-guard-selftest.mjs | mkApk | 43 | 1 | 0 |
+| tools/android-guard-selftest.mjs | manifestXml | 90 | 1 | 0 |
+| tools/android-guard-selftest.mjs | (anonymous) | 92 | 1 | 0 |
+| tools/android-guard-selftest.mjs | writeFixture | 94 | 1 | 0 |
+| tools/android-guard-selftest.mjs | (anonymous) | 138 | 1 | 0 |
+| tools/android-guard-selftest.mjs | mergedXml | 164 | 1 | 0 |
 | tools/android-permission-audit.mjs | (anonymous) | 56 | 1 | 0 |
 | tools/android-permission-audit.mjs | (anonymous) | 57 | 1 | 0 |
 | tools/android-permission-audit.mjs | (anonymous) | 58 | 1 | 0 |
@@ -612,6 +618,11 @@
 | tools/apk-artifact-check.mjs | (anonymous) | 78 | 1 | 0 |
 | tools/apk-artifact-check.mjs | fmt | 87 | 1 | 0 |
 | tools/apk-artifact-check.mjs | show | 88 | 1 | 0 |
+| tools/apk-version-check.mjs | (anonymous) | 70 | 1 | 0 |
+| tools/apk-version-check.mjs | (anonymous) | 154 | 1 | 0 |
+| tools/apk-version-check.mjs | (anonymous) | 156 | 1 | 0 |
+| tools/apk-version-check.mjs | (anonymous) | 157 | 1 | 0 |
+| tools/apk-version-check.mjs | (anonymous) | 159 | 1 | 0 |
 | tools/audit-delivery.mjs | sha256 | 64 | 1 | 0 |
 | tools/audit-delivery.mjs | (anonymous) | 147 | 1 | 0 |
 | tools/audit-delivery.mjs | (anonymous) | 221 | 1 | 0 |

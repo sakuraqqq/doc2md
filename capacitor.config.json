@@ -1,6 +1,6 @@
 {
   "appId": "io.github.sakuraqqq.doc2md",
-  "appName": "doc2md",
+  "appName": "文转MD助手",
   "webDir": "www",
   "server": {
     "androidScheme": "https"
