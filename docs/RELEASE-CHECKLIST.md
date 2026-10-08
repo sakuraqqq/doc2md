@@ -77,6 +77,27 @@ git push --dry-run origin v0.1.1
 > - ⚠️ **不递增的后果**：覆盖安装 `INSTALL_FAILED_VERSION_DOWNGRADE`（⚠️ **通识，本轮未读到官方原文**；
 >   卡 013 已用真机**实测反证**一次：装完新包后 `install -r` 装回旧包 ⇒ 必失败）。
 
+> ⭐ **release APK 构建（卡 049 · 批次 1「最后一公里」）—— ⚠️ 以下步骤由【用户在本机终端】执行**：
+> ```bash
+> # ① （可选，仅"本地发布"需要）放置签名配置 android/keystore.properties
+> #    ⚠️ 该文件**永不入库**（.gitignore 已拦）；键名如下，**值由你填**：
+> #      storeFile=<密钥库路径>
+> #      storePassword=<…>
+> #      keyAlias=<…>
+> #      keyPassword=<…>
+> #    ⛔ **路径本身也是秘密**（卡 049 用户口径）：建议密钥库放在**仓库之外**，storeFile 写**绝对路径**
+> #       ⇒ 连"仓库里/旁边有密钥库"这件事都不暴露；路径与口令一律**不要**粘进聊天 / 文档 / 回执 / 提交
+> # ② 构建：cd android && ./gradlew assembleRelease      （Windows：.\gradlew.bat assembleRelease）
+> # ③ 验签（有密钥时）：<SDK>\build-tools\<ver>\apksigner.bat verify --print-certs <apk>
+> # ④ 读元数据：<SDK>\build-tools\<ver>\aapt2.exe dump badging <apk>    # 看 application-label / versionCode
+> ```
+> - ⭐ **两模式都受支持**（判据 A1）：**有** `keystore.properties` ⇒ 产出**已签名** release APK；
+>   **没有** ⇒ **仍能构建**（产物**未签名** + 构建日志明确打印「未配置签名」）——
+>   ⚠️ 这条**必须保住**：**F-Droid 用它自己的密钥从源码构建** ⇒ 构建链**不得硬依赖**我方密钥
+>   （⛔ 别为了"本地能签"改成硬依赖）。
+> - ⚠️ **密钥内容与密钥库路径：一律不入库 / 不入回执 / 不进聊天**（凭据红线）：`.gitignore` 拦
+>   `*.jks` · `*.keystore` · `keystore.properties` ✓（含 `android/` 与仓根两处 ✓）。
+
 > **⚠️ v0.1.7 实发踩坑（2026-09-15，写死在此防再犯）**：
 > 1. **`gh release create` 需要默认仓库**：未设置时报 `X No default remote repository has been set` 而失败 → 修法 = 加 `--repo <owner>/<repo>`，或先 `gh repo set-default <owner>/<repo>`；
 >    也可以**直接网页发**（本项目 v0.1.7 即网页发布，最省事）。

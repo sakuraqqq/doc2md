@@ -52,10 +52,12 @@ captures/
 # Comment next line if keeping position of elements in Navigation Editor is relevant for you
 .idea/navEditor.xml
 
-# Keystore files
-# Uncomment the following lines if you do not want to check your keystore files in.
-#*.jks
-#*.keystore
+# Keystore files（⭐ 卡 049 启用：原三行是**注释掉的** ⇒ 密钥/口令文件一放进来就会被 `git add -A` 卷进提交）
+#   ⚠️ 不只是"文件内容"：**密钥库路径**同样属敏感（卡 049 用户口径）⇒ 建议密钥库放在**仓库之外**，
+#      只在 `keystore.properties`（本规则已拦）里写 `storeFile=<仓外绝对路径>`。
+*.jks
+*.keystore
+keystore.properties
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild

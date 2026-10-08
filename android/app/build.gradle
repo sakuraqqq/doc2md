@@ -46,6 +46,17 @@ def doc2mdVersionCode = {
     return segs[0] * 10000 + segs[1] * 100 + segs[2]
 }()
 
+// 卡 049 / A1：**release 签名（两模式）** —— 有 `keystore.properties` 则签名；**没有也照样能构建**。
+// ⚠️ 为什么"没有"也必须是合法状态：**F-Droid 用它自己的密钥从源码构建** ⇒ 构建链**不得硬依赖**我方密钥 ✓
+// ⚠️ 凭据红线：本文件（含任何口令）**永不入库**（`.gitignore` 拦 `*.jks` / `*.keystore` / `keystore.properties`）；
+//    口令只从属性文件读进内存，⛔ 不 print、⛔ 不写进任何产物。
+def doc2mdKeystoreProps = new Properties()
+def doc2mdKeystorePropsFile = rootProject.file('keystore.properties')   // = android/keystore.properties
+def doc2mdHasKeystore = doc2mdKeystorePropsFile.exists()
+if (doc2mdHasKeystore) {
+    doc2mdKeystorePropsFile.withInputStream { doc2mdKeystoreProps.load(it) }
+}
+
 android {
     namespace = "io.github.sakuraqqq.doc2md"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -67,9 +78,29 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // 卡 049 / A1(a)：**有** keystore.properties ⇒ 装配 release 签名配置
+    // ⚠️ 口令只在内存里流转（从属性文件读入），⛔ 不 print、⛔ 不写进任何产物/日志
+    signingConfigs {
+        if (doc2mdHasKeystore) {
+            release {
+                storeFile rootProject.file(doc2mdKeystoreProps['storeFile'])
+                storePassword doc2mdKeystoreProps['storePassword']
+                keyAlias doc2mdKeystoreProps['keyAlias']
+                keyPassword doc2mdKeystoreProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            if (doc2mdHasKeystore) {
+                signingConfig signingConfigs.release
+            } else {
+                // 卡 049 / A1(b)：**没有密钥也必须能构建**（F-Droid 用它自己的密钥从源码构建）——
+                // ⚠️ 这里是"**明确告知**"，⛔ 不是崩溃、⛔ 也不是静默（可跳过 = 会静默）
+                logger.lifecycle('[doc2md] 卡 049：未发现 keystore.properties ⇒ release 产物【未签名】' +
+                        '（本地发布请放置该文件；F-Droid 用它自己的密钥构建，无需我方密钥）')
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
