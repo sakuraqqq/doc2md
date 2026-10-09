@@ -314,6 +314,44 @@
 - **观察期**：**2026-09-16 起 → ≥2026-09-19 复盘**（重点：手机侧真机 WPS 系 PDF 的**行内顺序**、`Tm.a ≠ 1` 文档的行距/分列、既有正常 PDF 产物应与 v0.1.8 逐字节一致）。
 - ⚠️ **发布后漂移登记（2026-09-16 14:05 +08 实测；同日用户拍板处置 ②）**：push main 触发 **Pages 自动部署** ⇒ 线上 `index.html` 一度变为 **main 构建 121,406 B / `18EA70E4…79EB3`**（依赖 PR 落地批，页脚仍 `v0.1.9`），**不再是本版发布物 121,229 B / `F80E8626…F04D`**。该批**行为零变更**已由两层等价性台证明（函数级 0 差异 + 产物级 19/19 逐字节相同）⇒ 用户无感。**处置（用户拍板 ②）**：`deploy-pages.yml` 改为**仅 tag 推送时部署**（`on.push.tags: ['v*']` + `workflow_dispatch`），契约组 **H15** 守卫该口径（负对照必红）；「线上 == 发布物」恢复为可核对的不变量（**下次推 tag 时生效**）。**处置补充（用户 2026-09-17 拍板）**：**接受现状** —— 线上保持 `18EA70E4…`（main 构建）直到下次发版覆盖，**不手动 dispatch**；v0.1.9 观察期内的线上实测基准 = **121,406 B / `18EA70E4…`**。
 
+## v0.1.11 · 2026-10-09（**发版锚点批**：把 tag 与产物对齐 —— 治 `v0.1.10`「tag 里没有 APK 线改动」）
+
+- **版本号说明**：⭐ **四处同步**（照 v0.1.10 先例 · `RELEASE-CHECKLIST.md` §2 口径）：`package.json` **0.1.10 → 0.1.11** · `package-lock.json` **L3/L9 两处**（⭐ 用 `npm version 0.1.11 --no-git-tag-version` 一次改对 ✓）· `src/template.html` 页脚 `doc2md v0.1.10` → `doc2md v0.1.11` · **产物 `index.html` 重建**（`npm run build` ✓）。
+  > ⚠️ **为什么必须多处一起改**：版本串**硬编码在 `src/template.html`**，而 **`tools/build.mjs` 完全不读 `package.json`**（实测：对 `package.json` / `version` **零命中**）⇒ 只改 `package.json` 会发出一个**页脚仍写 `v0.1.10`** 的产物；而 **`deploy-pages.yml` L12 只在 tag 推送时部署**（`tags: ['v*']`）⇒ **线上会挂一个自称旧版本的发版** ✗。
+  > ⚠️⭐ **且它能骗过所有机械门禁**：契约**组 T** 判「哈希产物 → 现场重建 → 再哈希 → 相等」⇒ 只改 `package.json` 时重建产物与磁盘**一致** ⇒ **组 T 保持绿** ⇒ **CI 全绿而产物自报旧版本** ✗。另：`tools/verify-release-online.mjs` **L62** 会从线上产物里抽页脚版本串 ⇒ 版本串错 ⇒ **发版核对工具读到错版本** ✗。
+  > ⭐ **卡面修订留痕（2026-10-09 · 由执行线停工报告驱动 —— 同型第二次）**：卡 050 初版 inScope 只写「改 `package.json`」且 outOfScope 禁改 `src/` ⇒ **照字面做会发出自报版本号错误的产物**（与卡 040 **同一个错** ✗ —— 当时的结论**已写死在本文件 L326 与 `RELEASE-CHECKLIST §2`**）。执行线**停手报告**（**10 条可复算证据**：`package-lock.json` L3/L9 · 模板 L134 · 产物 L134 · `build.mjs` 零命中 · checklist §2 原文 · 本文件 L319–L321 · 组 T 会放行 · `verify-release-online.mjs` L62 · `deploy-pages.yml` L12 · `check-pages-allowlist` 步缺失）⇒ **调度线修订**：inScope 由 4 项扩为 **8 项**、outOfScope 放开模板页脚、acceptance 增 **`A1b`/`A7b`/`A9`**、交接单补两步 ✓。
+- **发版动因（`B039`）**：已发布的 **`v0.1.10`**（`c5e640d` · 2026-10-05）**不含 APK 线任何改动** —— 该 tag 里 `build.gradle` **无 `doc2mdHasKeystore` / 无 `signingConfigs`**、`strings.xml` 的**应用名仍是 `doc2md`**；而挂在该 release 下的 APK 是 **10-09 的代码**构建的 ⇒ ⚠️ **tag 与产物不是同一份代码**（F-Droid 按 tag 构建 ⇒ 会构建出**旧应用名** ✗，而应用名一致性是商店/软著红线）。本版 = 用户 2026-10-09 拍板「**甲：打新 tag**」的锚点 ✓。
+  > ⛔ **不动 `v0.1.10`**：除「已发布 tag 不该动」通例外，本仓还有硬理由 —— **`tools/baseline-check.mjs` 从 tag blob 现算产物基线** ⇒ **移动 tag 会直接打坏产物守卫** ✗✗。
+- **本版内容**（`v0.1.10..HEAD` = **15 提交**；两条线并行）：
+  - **APK/Android 线（本版主题）**：
+    - ⭐ **`4e5f723`（卡 048）`versionCode` 由 `package.json.version` 推导**（`major*10000 + minor*100 + patch`；同文件 L38/L43 **两道 `throw`**：非 `x.y.z` / 任一段 > 99 都**报错而非静默**）⇒ `package.json` 成为**数字唯一真相源**；并 **应用名改「文转MD助手」**（`strings.xml` 三处四行）。
+    - ⭐ **`af873be`（卡 049）release 两模式签名** —— 有 `keystore.properties` 则**真签名**／**缺则仍能构建**（⇒ F-Droid 用自己的密钥也能复现 ✓）+ **启用 `android/.gitignore` 的密钥类规则**（原先三行是**注释状态** ✗）+ `RELEASE-CHECKLIST` 补 release 步骤。⚠️ 密钥**路径本身**也按秘密对待（模板里只出现**键名**，值由用户填 ✓）。
+    - ⭐ **`ecc2b05` v6 应用图标**（折面 **M** · 蓝紫弥散渐变 + 右侧色散重影）—— **16 件 PNG 覆盖 + 5 件背景新增 + 2 份自适应 XML 背景改 `@mipmap`**。
+  - **网页线**：
+    - ⭐ **`0d6741a`（卡 045）文本通道三处更正** —— `A.3` **PDF 非 BMP 保住** · `A.4` **xlsx `<rPh>` 注音不进正文** · `A7.4` **OLE2 分型**（`meta.ole2Subtype` 五取值）。
+    - **`5b5dff5`（卡 044）保存落点改 `Download/WenZhuanMD/` + 一键全部保存**（两分支共用一个目录名常量 ✓）。
+    - **`bfd66fd`（卡 042）导出缺图不再静默**（收失败项 → 卡片内 `.warnings` + 状态栏；**产物字节零变化** ✓）。
+    - **`a2d211a`（卡 043）AI 模块设计与生命周期**（只设计不实现）。
+  - **文档/契约线**：**`54157f5`（卡 046）契约登记**（`meta.ole2Subtype` 五取值 + 契约组 **T45** 十条）+ `HANDOFF §8` 三处漂移更正；**`08bd193`（顺手档）`HANDOFF §5`** 补「**原生命令失败不会自动停**」命令坑（PS 7.6.6 实测 ⇒ 有副作用处必须显式判 `LASTEXITCODE`）。
+- **测试结果（2026-10-09 现场跑，⚠️ 不抄上一版）**：
+  - **构建**：`npm run build` ⇒ **exit 0**（`index.html` 143,605 chars）
+  - **lint**：`npm run lint` ⇒ **exit 0**（eslint 0 错 0 警）
+  - **metrics**：`npm run metrics` ⇒ **exit 0** · **文件 32 / 函数 690 / 超限 0** · **重复率 0.2%**（阈值 <5%）
+    > ⚠️ 本步**会重写 `docs/CODE-METRICS.md`** ⇒ 改动面因此多一个**工具生成的副产物**（已在回执登记 ✓；计数与上版一致，仅生成信息变化）。
+  - **契约（本机口径，TAP 摘要）**：`npm test` ⇒ **exit 0** · **328 tests / 326 pass / 0 fail / 2 skip**（skip = `real-cid-paper` 第三方样例不入库）
+  - **守卫**：`node tools/baseline-check.mjs` ⇒ **exit 0**（**5 项全 ok**）· `node tools/gen-handoff-baseline.mjs` ⇒ **无变化**（生成块 SHA256 `006844F8…`）· `node tools/apk-version-check.mjs`（**release + debug 两路**）⇒ **PASS**（`versionCode=111 == f(0.1.11)` · **R2-b `111 > 110`**，上一个 tag = **`v0.1.10`**）· `node tools/check-pages-allowlist.mjs` ⇒ **✅ 通过**（`["branch:main","tag:v*"]`）
+  - **APK**：`gradlew assembleRelease assembleDebug`（⭐ 前置：**`JAVA_HOME` ≥ 21** + **先 `gradlew --stop`** —— 2026-10-09 实测：本机默认 `JAVA_HOME=jdk-17` 而 Capacitor 要 21 ⇒ 报「无效的源发行版：21」✗）⇒ **BUILD SUCCESSFUL in 21s** · `apksigner verify --verbose` ⇒ **`Verifies`** / **v2 scheme true** / **Number of signers: 1** · `aapt2 dump badging` ⇒ `versionCode='111'` · `versionName='0.1.11'` · **`application-label:'文转MD助手'`**
+- **产物 SHA256**（本机回读实测）：
+  | 文件 | 大小 | SHA256（完整） |
+  |---|---|---|
+  | `index.html`（**本版**） | **144,738 B** | `2E3F9FE0C7C79C572B6E8EE247C4920BC325CDDD6584FD42FF42266DBE524621` |
+  | `index.html`（**线上现值** = v0.1.10 产物） | 137,867 B | `4C083197209C508F353002818A7484CDB1157FBA59509AC05693331F600904D2` |
+  | `app-release.apk`（⛔ 不入库） | **17,456,945 B** | `9C8439B036120B2A19438D8C0C5D702E0163893E6DFFDD7FE9D0099F59F5BAFC` |
+  > ⚠️ 本版与上版 `index.html` **字节数完全相同**（144,738 = 144,738 —— 因为 `0.1.10` → `0.1.11` **等长**）⇒ 正是本仓那句「**页脚串等长 ⇒ 字节数不变而哈希必变**」⇒ **一律以 SHA256 为准** ✓。
+  > ⭐ 线上现值核对（2026-10-09 实测）：`node tools/verify-release-online.mjs --expect 4C08…` ⇒ **✅ 绿** —— 线上 **137,867 B / `4C08…`**、页脚 `["doc2md v0.1.10"]`、`Last-Modified: 2026-10-04`。
+- **基线（`docs/BASELINE.json`）本卡【不动】—— 附理由**：该文件 `released` 节点口径 = 「**tag 指向提交**的 `index.html` blob」，`tools/baseline-check.mjs` 用 **`git rev-parse refs/tags/<tag>` 现算**比对 ⇒ 在 `v0.1.11` tag **尚不存在**时改它 ⇒ **守卫必红** ✗。⇒ **待用户打完 tag 后**再更新 `released`（`version` / `tag` / `tag_sha` / 字节 / `SHA256`）✓ —— 先例：`v0.1.10` 当时也未更新该节点 ✓。
+- **⚠️ 发布顺序（写死 · ⑤⑥⑧ 由用户终端执行）**：① bump + 模板页脚 + 重建产物 + 发版件（**执行线已完成**）→ ② 提交 → ③ **推 `main`** → ④ ⭐ **推 tag 之前**先跑 `node tools/check-pages-allowlist.mjs`（期望 ✅ 通过 —— **2026-10-05 事故：漏这步 ⇒ 线上冻结 19 天 11 小时**）→ ⑤ 在 **bump 那个提交**上打 `v0.1.11` → ⑥ 推 tag（⇒ **Pages 部署** + F-Droid 可复现构建）→ ⑦ `gh release create v0.1.11 <apk> --title "v0.1.11" --notes-file docs/release-notes-v0.1.11.md`（⭐ 把 **SHA256** 贴进说明）→ ⑧ 部署完成后 `node tools/verify-release-online.mjs --expect <本版 SHA256>` ⇒ 期望 ✅ 绿。
+
 ## v0.1.10 · 2026-10-05（大文件批：XLSX **流式化** + 解析前预检提示 + 批量失败隔离 —— 治「大文件把页面卡死」）
 
 - **版本号说明**：⭐ **四处同步**（按 `RELEASE-CHECKLIST.md` L39–41 口径）：`package.json` **0.1.9 → 0.1.10** · `package-lock.json` **L3/L9 两处** · `src/template.html` 页脚 `doc2md v0.1.9` → `doc2md v0.1.10` · **产物 `index.html` 重建**。
