@@ -157,6 +157,21 @@ export function scanBlockForForbidden(blockText) {
   return hits
 }
 
+/** A3 子项：`online.index_html` 里**线上特有**的值（= 与 `released` 不同者）——
+ * ⭐ 2026-10-09 修（由 v0.1.11 回填暴露）：当 `online` 与 `released` **一致**时（tag 部署后就是这个状态），
+ * 这两个值**必然**出现在块里 —— 因为块里印的就是 `released` 的同一个数字 ✗。
+ * 那不是「把线上现状写进块」，而是**值相同、无从区分**；原判据会误判成 A3 违规 ⇒ 生成器直接 exit 1 ✗。
+ * ⇒ 收紧为：**仅当与 released 不同**时才算"线上特有" ✓（这才是 A3 的本意 ✓）。
+ * 抽成独立函数同时压住外层复杂度（ESLint `complexity ≤ 10` ✓）。 */
+function onlineOnlyProblems(on, rel, blockText) {
+  const differs = (v, r) => r === undefined || String(v) !== String(r)
+  const out = []
+  if (differs(on.bytes, rel?.bytes) && blockText.includes(String(on.bytes))) out.push(`online.index_html.bytes：${on.bytes}`)
+  if (differs(on.sha256, rel?.sha256) && blockText.toUpperCase().includes(String(on.sha256).toUpperCase()))
+    out.push('online.index_html.sha256')
+  return out
+}
+
 /** A3：块内不得含 local_with_fixtures 的四段式计数 / main·HEAD 产物 / online.index_html */
 export function scanBlockForExcludedFields(blockText, baseline) {
   const problems = []
@@ -166,10 +181,7 @@ export function scanBlockForExcludedFields(blockText, baseline) {
     if (blockText.includes(four)) problems.push(`contract.local_with_fixtures 四段式：${four}`)
   }
   const on = baseline.online?.index_html
-  if (on) {
-    if (blockText.includes(String(on.bytes))) problems.push(`online.index_html.bytes：${on.bytes}`)
-    if (blockText.toUpperCase().includes(String(on.sha256).toUpperCase())) problems.push('online.index_html.sha256')
-  }
+  if (on) problems.push(...onlineOnlyProblems(on, baseline.released?.index_html, blockText))
   return problems
 }
 
