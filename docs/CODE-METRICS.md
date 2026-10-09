@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-09T15:19:20.819Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-09T15:49:49.876Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：32；函数总数：690；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：32；函数总数：693；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 690 个，超限 0 个。
+重构后当前：函数 693 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -364,7 +364,7 @@
 | tools/gen-handoff-baseline.mjs | specM1 | 271 | 3 | 2 |
 | tools/gen-handoff-baseline.mjs | assert | 278 | 3 | 2 |
 | tools/gen-icons.mjs | inFoldNotch | 60 | 3 | 2 |
-| tools/guard-selftest.mjs | mkSite | 23 | 3 | 2 |
+| tools/guard-selftest.mjs | mkSite | 24 | 3 | 2 |
 | tools/measure-xlsx-peak.mjs | readPssKb | 164 | 3 | 2 |
 | tools/measure-xlsx-peak.mjs | (anonymous) | 303 | 3 | 2 |
 | tools/measure-xlsx-peak.mjs | (anonymous) | 324 | 3 | 2 |
@@ -459,8 +459,8 @@
 | tools/gen-handoff-baseline.mjs | apply | 318 | 2 | 1 |
 | tools/gen-handoff-baseline.mjs | collectInvariantChecks | 336 | 2 | 1 |
 | tools/gen-icons.mjs | crc32 | 123 | 2 | 1 |
-| tools/guard-selftest.mjs | ok | 20 | 2 | 1 |
-| tools/guard-selftest.mjs | (anonymous) | 62 | 2 | 1 |
+| tools/guard-selftest.mjs | ok | 21 | 2 | 1 |
+| tools/guard-selftest.mjs | (anonymous) | 63 | 2 | 1 |
 | tools/install-hooks.mjs | opt | 19 | 2 | 1 |
 | tools/measure-xlsx-peak.mjs | linkOrCopy | 59 | 2 | 1 |
 | tools/metrics.mjs | (anonymous) | 69 | 2 | 1 |
@@ -661,15 +661,18 @@
 | tools/gen-handoff-baseline.mjs | ok | 363 | 1 | 0 |
 | tools/gen-icons.mjs | inRoundedCorner | 53 | 1 | 0 |
 | tools/gen-icons.mjs | chunk | 96 | 1 | 0 |
-| tools/guard-selftest.mjs | (anonymous) | 54 | 1 | 0 |
-| tools/guard-selftest.mjs | (anonymous) | 67 | 1 | 0 |
-| tools/guard-selftest.mjs | (anonymous) | 70 | 1 | 0 |
-| tools/guard-selftest.mjs | (anonymous) | 73 | 1 | 0 |
-| tools/guard-selftest.mjs | (anonymous) | 78 | 1 | 0 |
-| tools/guard-selftest.mjs | (anonymous) | 121 | 1 | 0 |
-| tools/guard-selftest.mjs | (anonymous) | 132 | 1 | 0 |
-| tools/guard-selftest.mjs | (anonymous) | 146 | 1 | 0 |
-| tools/guard-selftest.mjs | (anonymous) | 157 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 55 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 68 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 71 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 74 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 79 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 122 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 133 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 147 | 1 | 0 |
+| tools/guard-selftest.mjs | (anonymous) | 158 | 1 | 0 |
+| tools/guard-selftest.mjs | gitIn | 178 | 1 | 0 |
+| tools/guard-selftest.mjs | writeDoc | 182 | 1 | 0 |
+| tools/guard-selftest.mjs | runGate | 201 | 1 | 0 |
 | tools/measure-xlsx-peak.mjs | sha256 | 54 | 1 | 0 |
 | tools/measure-xlsx-peak.mjs | loadChromium | 111 | 1 | 0 |
 | tools/measure-xlsx-peak.mjs | launch | 119 | 1 | 0 |
@@ -712,7 +715,7 @@
 | tools/privacy-gate.mjs | (anonymous) | 371 | 1 | 0 |
 | tools/privacy-gate.mjs | has | 418 | 1 | 0 |
 | tools/privacy-gate.mjs | revExists | 453 | 1 | 0 |
-| tools/privacy-gate.mjs | (anonymous) | 501 | 1 | 0 |
+| tools/privacy-gate.mjs | (anonymous) | 515 | 1 | 0 |
 | tools/verify-ocr.mjs | (anonymous) | 36 | 1 | 0 |
 | tools/verify-ocr.mjs | (anonymous) | 38 | 1 | 0 |
 

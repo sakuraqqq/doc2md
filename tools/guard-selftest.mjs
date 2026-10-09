@@ -9,6 +9,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkSite } from './deploy-smoke.mjs';
 import { checkVendorManifest, deliveryVersions, DELIVERY_FACE, itemsFromAuditJson, judged } from './audit-delivery.mjs';
@@ -157,6 +158,70 @@ ok(
   rt.errors.some((e) => e.includes(`counts.pass = ${tc.pass}`)),
   JSON.stringify(rt.errors)
 );
+
+/* ---------- privacy-gate：range 模式端到端（2026-10-09 顺手档） ----------
+ * 为什么加：门禁的**规则层**已有 `privacy-gate.mjs --selftest`（17 正例 / 10 白名单 / 7 盲区），
+ * 但 **range 模式的端到端**从没被守过 —— 而 CI 用的正是 `--range`（tests.yml 的 Privacy gate 步）✓。
+ * 「门禁从没红过」这件事本身说明：**它能红这件事没有任何常驻证据** ⇒ 本段就是那个证据 ✓。
+ * 四类断言（全部用【合成】值，⛔ 不含任何真人数据）：
+ *   ① 干净区间 ⇒ exit 0（正例：证明"红"不是环境噪声）
+ *   ② 含合成敏感行 ⇒ exit 1（负例：真的会红）
+ *   ③ 命中类别必须出现 email / cn-mobile（证明命中的是**预期规则**，不是碰巧别的原因红了）
+ *   ④ ⭐ 空区间 ⇒ **必须不报"通过"**（2026-10-09 实测旧实现 `--range HEAD..HEAD` 静默 exit 0 ✗ —— 本断言即其回归锁）
+ * 夹具：`.tmp/guard-selftest/privacy-range/`（**独立 git 仓**，identity 就地配 ⇒ CI 干净环境也能跑 ✓；
+ * 提交一律 `--no-verify` ⇒ 不受本仓 `core.hooksPath=.githooks` 影响 ✓）。
+ */
+const NEG_DIR = path.join(TMP, 'privacy-range');
+fs.rmSync(NEG_DIR, { recursive: true, force: true });
+fs.mkdirSync(NEG_DIR, { recursive: true });
+/* eslint-disable-next-line sonarjs/no-os-command-from-path -- 命令名是固定字面量 `git`（不接受外部输入）；本仓 tools/ 只在 CI 与开发者本机受控环境运行 */
+const gitIn = (...args) => spawnSync('git', args, { cwd: NEG_DIR, encoding: 'utf8' });
+gitIn('init', '-q');
+gitIn('config', 'user.name', 'guard-selftest');
+/* ⚠️⭐ 身份也要**拼**（同款理由）：首版把夹具身份写成了「本地部分 + @ + 域名.后缀」的**字面量** ⇒
+ * **门禁当场命中本文件** ✗（实测：pre-commit 拦下提交，报的正是本文件该行的 `[email]` 类）。
+ * ⛔ 本条注释的**初版也曾把那个值原样写进来** —— "描述这个坑"本身就是再踩一次 ✗ ⇒ 现在只留**形状描述** ✓
+ * （形如「本地部分@域名.后缀」的 CJK 写法不构成命中：邮箱正则的本地部分只认 ASCII 字符类 ✓）。
+ * 另：`.invalid` 这类后缀**不影响命中**（规则自述「后缀无关」）⇒ 只有"无点域名"那类才故意不拦 ✓。 */
+gitIn('config', 'user.email', ['guard-selftest', 'example.invalid'].join('@'));
+const writeDoc = (t) => fs.writeFileSync(path.join(NEG_DIR, 'doc.md'), t, 'utf8');
+/* ⚠️⭐ 为什么这两个值要**拼出来**而不是写字面量：**本文件自己会被 privacy-gate 扫**（CI 的 `--range` 扫新增行、
+ * 本地 pre-commit/pre-push 同样扫）⇒ 写死一个 `本地部分@域名.后缀` 或 11 位手机号 ⇒ **门禁命中本测试文件本身** ✗。
+ * 同款先例：本文件 baseline 段那条「十六进制子串须避开 `1[3-9]\d{9}`」的注释 ✓。拼装后源码里**没有连续形态** ✓，
+ * 而夹具里落盘的是**真连续值** ⇒ 仍然能被扫到 ⇒ 断言依旧有牙 ✓。 */
+const SYNTH_MAIL = ['12345', 'xx.com'].join('@'); // → 合成邮箱（⛔ 不是任何真人）
+const SYNTH_MOBILE = ['138', '0013', '8000'].join(''); // → 合成手机号（⛔ 不是任何真人）
+writeDoc('干净的基线内容\n');
+gitIn('add', '-A');
+gitIn('commit', '-q', '--no-verify', '-m', 'base-clean');
+writeDoc('干净的基线内容\n再加一行完全干净的内容\n');
+gitIn('add', '-A');
+gitIn('commit', '-q', '--no-verify', '-m', 'clean-edit');
+// ⭐ 合成敏感行：邮箱形态用合成邮箱 —— ⛔ 不用 `@example.com`：保留示例域**实测不被命中** ✗
+writeDoc(`干净的基线内容\n再加一行完全干净的内容\nmail: ${SYNTH_MAIL}\nmobile: ${SYNTH_MOBILE}\n`);
+gitIn('add', '-A');
+gitIn('commit', '-q', '--no-verify', '-m', 'add-synthetic-email-and-mobile');
+
+const gatePath = path.join(ROOT, 'tools', 'privacy-gate.mjs');
+const runGate = (range) => spawnSync(process.execPath, [gatePath, '--range', range], { cwd: NEG_DIR, encoding: 'utf8' });
+
+let g = runGate('HEAD~2..HEAD~1');
+ok('privacy-gate 正例：干净区间 exit 0（红不是环境噪声）', g.status === 0, `status=${g.status} ${g.stderr.trim()}`);
+
+g = runGate('HEAD~1..HEAD');
+const gText = `${g.stdout}${g.stderr}`;
+ok('privacy-gate 负例：含合成敏感行必红（exit 1）', g.status === 1, `status=${g.status} ${gText.trim().slice(0, 160)}`);
+ok('privacy-gate 负例：命中类别含 email（合成邮箱）', /\[email\]/.test(gText), gText.trim().slice(0, 160));
+ok('privacy-gate 负例：命中类别含 cn-mobile（合成手机号）', /\[cn-mobile\]/.test(gText), gText.trim().slice(0, 160));
+
+g = runGate('HEAD..HEAD');
+const emptyText = `${g.stdout}${g.stderr}`;
+ok(
+  'privacy-gate 负例：空区间必须不报通过（旧实现静默 exit 0 ✗）',
+  g.status !== 0 && !emptyText.includes('✅'),
+  `status=${g.status} ${emptyText.trim().slice(0, 160)}`
+);
+fs.rmSync(NEG_DIR, { recursive: true, force: true });
 
 /* ---------- 汇总 ---------- */
 let failed = 0;

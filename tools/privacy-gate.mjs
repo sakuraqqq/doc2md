@@ -489,7 +489,21 @@ try {
       console.error(`✗ 隐私门禁：读不到范围（${r.err}）⇒ fail-closed。`)
       process.exit(2)
     }
-    findings = scanPatch(readFileSync(outFile, 'utf8'), { trackCommit: true })
+    const patchText = readFileSync(outFile, 'utf8')
+    /* ⭐ 空范围 ⇒ **不许报"通过"**（2026-10-09 实测：旧实现 `--range HEAD..HEAD` 会静默 exit 0 ✗）。
+     * 为什么**只在 --range** 里拦这一条：
+     *   · `--staged` 没有新增行、`--stdin-refs` 删远端引用 —— 这些"空"是**正常**的（见各自分支的注释）；
+     *   · 而 `--range` 是**显式**「扫这段提交」的请求 ⇒ 一个提交都没有 = 取基线失败，
+     *     而这正是 CI 里 BASE 回退链退化到最后一级（`git rev-parse HEAD` ⇒ `HEAD..HEAD`）的形态 ✗。
+     * 出口码 **2** = 与"读不到范围"同档的 fail-closed ⛔（**不用 1**：1 的语义是"发现了敏感内容"，两者必须分得开 ✓）。
+     * `--format=commit %H` 保证每个被扫到的提交都有一行 `commit <sha>` ⇒ 用它判"到底扫没扫到东西" ✓。 */
+    if (!/^commit [0-9a-f]{40}/m.test(patchText)) {
+      console.error(`✗ 隐私门禁：范围「${opt('--range')}」里**没有任何提交** ⇒ 未扫描到内容，拒绝报"通过"（fail-closed）。`)
+      console.error('  常见成因：BASE 与 HEAD 相同（CI 事件未给可用基线，且回退链退化到 `git rev-parse HEAD`）。')
+      console.error('  处置：给一个真实范围（如 `origin/main..HEAD`），或核对 CI 里 BASE 的取值。')
+      process.exit(2)
+    }
+    findings = scanPatch(patchText, { trackCommit: true })
   } else if (has('--all')) {
     mode = 'all（全量体检，只报告不拦）'
     const listFile = join(tmp, 'files.txt')
