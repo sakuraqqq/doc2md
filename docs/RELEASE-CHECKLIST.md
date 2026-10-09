@@ -87,8 +87,12 @@ git push --dry-run origin v0.1.1
 > #      keyPassword=<…>
 > #    ⛔ **路径本身也是秘密**（卡 049 用户口径）：建议密钥库放在**仓库之外**，storeFile 写**绝对路径**
 > #       ⇒ 连"仓库里/旁边有密钥库"这件事都不暴露；路径与口令一律**不要**粘进聊天 / 文档 / 回执 / 提交
+> #    ⚠️⭐ **前置（2026-10-09 实测）**：`JAVA_HOME` 必须是 **JDK ≥ 21**（本机默认 `jdk-17` ⇒ 报「无效的源发行版：21」✗），
+> #       且**先 `.\gradlew.bat --stop`** 再构建（旧 daemon 会带着旧 JDK 继续跑 ✗）
 > # ② 构建：cd android && ./gradlew assembleRelease      （Windows：.\gradlew.bat assembleRelease）
-> # ③ 验签（有密钥时）：<SDK>\build-tools\<ver>\apksigner.bat verify --print-certs <apk>
+> #    ⭐ 建议连 debug 一起构建（`assembleRelease assembleDebug`）⇒ 版本守卫的**默认落点**（debug 合并 manifest）也是新的 ✓
+> # ③ 验签（有密钥时）：<SDK>\build-tools\<ver>\apksigner.bat verify --verbose <apk>
+> #    ⛔ **不要用 `--print-certs`** —— 它会打印**证书 DN**（含身份信息）✗（2026-10-09 卡 050 A5 口径）
 > # ④ 读元数据：<SDK>\build-tools\<ver>\aapt2.exe dump badging <apk>    # 看 application-label / versionCode
 > ```
 > - ⭐ **两模式都受支持**（判据 A1）：**有** `keystore.properties` ⇒ 产出**已签名** release APK；
