@@ -77,6 +77,22 @@ git push --dry-run origin v0.1.1
 > - ⚠️ **不递增的后果**：覆盖安装 `INSTALL_FAILED_VERSION_DOWNGRADE`（⚠️ **通识，本轮未读到官方原文**；
 >   卡 013 已用真机**实测反证**一次：装完新包后 `install -r` 装回旧包 ⇒ 必失败）。
 
+> ⭐⭐ **APK 侧「产物同源」（卡 052 · 2026-10-10 用户拍「甲」+ 点名要门禁守卫）—— ⚠️ 发 APK 前【必跑】这条**：
+> ```bash
+> node tools/apk-artifact-check.mjs android/app/build/outputs/apk/release/app-release.apk
+> ```
+> - **判据**：从 **APK 内**解出 `assets/public/index.html` ⇒ 与**仓根 `index.html`** 比 **字节 + SHA256** ⇒ 一致 exit 0。
+> - **三态退出码**：`0` = 同源（通过）· `1` = 不同源（真红）· `2` = **未验**（没给 APK ⇒ ⛔ **不是通过**）。
+> - ⭐ **为什么必须写进本清单**：输入是 **APK 文件本身**，本仓 CI **不构建 APK** ⇒ ⛔ "记得就跑" = 等于没有
+>   ⇒ **只能靠本清单**（与上面 `apk-version-check` 同理）。
+> - ⭐ **它守的是什么**：`capacitor.config.json` 的 `webDir = "www"` ⇒ **打进 APK 的是 `www/`**。
+>   若 `npm run build`（写仓根）与 `npx cap sync`（拷 `www/`）之间漏了一步，**APK 里就是旧的 web 产物** ——
+>   ⚠️ **2026-10-10 实测正是如此**：`v0.1.11` 的 release APK 里是 **`v0.1.10`** 的产物（差 **2,780 B**），
+>   而**当时没有任何门禁能发现**（⇒ 卡 052 落了两道守卫：本步 + `npm run build` 的构建内自证）。
+> - ⭐ **配套（构建侧，已在必经路径上自动跑）**：`npm run build` 现在**同时写仓根与 `www/`**，
+>   并在结束时**从磁盘读回**两处比 SHA256，不等即非零退出 ⇒ 正常情况下本步应当**天生绿**；
+>   它红 ⇒ 说明有人**手工动了 `www/`**、或绕过了 `npm run build`（⛔ 别手工改 `www/`，它是产物）。
+
 > ⭐ **release APK 构建（卡 049 · 批次 1「最后一公里」）—— ⚠️ 以下步骤由【用户在本机终端】执行**：
 > ```bash
 > # ① （可选，仅"本地发布"需要）放置签名配置 android/keystore.properties
