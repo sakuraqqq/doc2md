@@ -49,11 +49,11 @@
       "bytes": 144738,
       "sha256": "2E3F9FE0C7C79C572B6E8EE247C4920BC325CDDD6584FD42FF42266DBE524621"
     },
-    "source_commit": "574a9be",
+    "source_commit": "e4de60e",
     "consistency_note": "线上 == 发布物（本次 tag 部署后已一致）：2026-10-09 15:42:17 GMT 部署完成，线上页脚 = doc2md v0.1.11。此前 v0.1.9→v0.1.10 期间的历史 divergence 已消除（原 divergence_reason 见 docs/RELEASE.md v0.1.10 节）。",
     "measured": {
       "at": "2026-10-09",
-      "source": "2026-10-09 实测 `node tools/verify-release-online.mjs --expect 2E3F9FE0C7C79C572B6E8EE247C4920BC325CDDD6584FD42FF42266DBE524621` ⇒ ✅ 绿（线上原始字节 → SHA256 = 144738 B / 2E3F9FE0…，与发布物逐字节一致）；source_commit = 当时 tag v0.1.11 指向的提交 574a9be（2026-10-10 tag 已移位到 main 上的 e4de60e；两者 tree 相同 522ba717e0b87a4941d2b25250d5ed83017bccd6，作为线上出处等价）"
+      "source": "2026-10-09 实测 `node tools/verify-release-online.mjs --expect 2E3F9FE0C7C79C572B6E8EE247C4920BC325CDDD6584FD42FF42266DBE524621` ⇒ ✅ 绿（线上原始字节 → SHA256 = 144738 B / 2E3F9FE0…，与发布物逐字节一致）；source_commit = **e4de60e**（main 上的落地提交）—— ⭐ **2026-10-10 由 574a9be 换成它，唯一原因是【可达性】**：`574a9be` 是发版分支头（`refs/heads/release/v0.1.11`），**既不是 tag、也不是 main 的祖先**；而它与 `e4de60e` 的 **tree 相同**（`522ba717e0b87a4941d2b25250d5ed83017bccd6`）⇒ 该提交的 index.html blob 逐字节相同 ⇒ **作为线上出处完全等价**。⚠️ 但 `574a9be` 在「只取 main + tags」的 clone（`--single-branch` / 新机器 / **Linux 侧单分支 clone**）上**根本取不到** ⇒ 守卫按设计报「无法现算 online」⇒ **假红**（⭐ 2026-10-10 Linux 侧独立复算实测踩到；两态已在隔离仓复现并留日志）。改用 `e4de60e` 后，**任何能取到 main 的 clone 都能现算**，无需再依赖某个分支 ref 的存在。"
     },
     "scope": "线上现状（外部状态）：脚本不联网核对现状，只现算 source_commit 的 blob 以证明该数字来自真实提交；线上现状由 RELEASE-CHECKLIST §3/§4 人工核对。⚠️ 与 released 不一致时 divergence_reason 必填；本版两者一致 ⇒ 用 consistency_note 记录核对方式"
   },
