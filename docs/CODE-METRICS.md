@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-09T15:52:35.098Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-10T11:38:00.344Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：32；函数总数：695；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：32；函数总数：699；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 695 个，超限 0 个。
+重构后当前：函数 699 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -249,6 +249,7 @@
 | tools/apk-artifact-check.mjs | firstDiff | 51 | 4 | 4 |
 | tools/audit-delivery.mjs | itemsFromAuditJson | 161 | 4 | 4 |
 | tools/audit-delivery.mjs | itemsFromBulk | 170 | 4 | 4 |
+| tools/build.mjs | syncEntry | 66 | 4 | 4 |
 | tools/gen-handoff-baseline.mjs | thousands | 54 | 4 | 4 |
 | tools/gen-handoff-baseline.mjs | scanBlockForExcludedFields | 176 | 4 | 4 |
 | src/app.js | (anonymous) | 77 | 4 | 3 |
@@ -357,6 +358,7 @@
 | tools/baseline-check.mjs | checkOnlineSource | 203 | 3 | 2 |
 | tools/baseline-check.mjs | (anonymous) | 251 | 3 | 2 |
 | tools/baseline-check.mjs | argValue | 405 | 3 | 2 |
+| tools/build.mjs | sameFile | 57 | 3 | 2 |
 | tools/ci-step-guard-check.mjs | applyProp | 67 | 3 | 2 |
 | tools/deploy-smoke.mjs | extractRefs | 32 | 3 | 2 |
 | tools/deploy-smoke.mjs | pushRef | 45 | 3 | 2 |
@@ -638,7 +640,9 @@
 | tools/baseline-check.mjs | mutate | 346 | 1 | 0 |
 | tools/baseline-check.mjs | mutate | 354 | 1 | 0 |
 | tools/baseline-check.mjs | (anonymous) | 394 | 1 | 0 |
-| tools/build.mjs | (anonymous) | 42 | 1 | 0 |
+| tools/build.mjs | (anonymous) | 43 | 1 | 0 |
+| tools/build.mjs | sha256 | 94 | 1 | 0 |
+| tools/build.mjs | (anonymous) | 105 | 1 | 0 |
 | tools/check-pages-allowlist.mjs | (anonymous) | 60 | 1 | 0 |
 | tools/ci-step-guard-check.mjs | normalizeIf | 34 | 1 | 0 |
 | tools/ci-step-guard-check.mjs | (anonymous) | 51 | 1 | 0 |
