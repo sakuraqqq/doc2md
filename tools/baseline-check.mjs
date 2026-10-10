@@ -12,7 +12,7 @@
 //      两个口径分行（本机带夹具 / CI 干净检出）。
 // 用法：
 //   node tools/baseline-check.mjs              → 全量校验（不符 exit 1）
-//   node tools/baseline-check.mjs --selftest   → 负例必红自测（3 条变异，全红才 exit 0）
+//   node tools/baseline-check.mjs --selftest   → 负例必红自测（4 条变异，全红才 exit 0；第 4 条 = 可达性）
 //   node tools/baseline-check.mjs --from-tap <tap 文件> --scope <口径>
 //                                              → **契约数 ↔ 实跑 TAP 对账**（卡 003；不符 exit 1）
 // 判定：exit 0 = 通过；exit 1 = 有漂移 / 缺溯源 / 与 TAP 不符；exit 2 = 用法或读文件错误。
@@ -68,6 +68,43 @@ function gitToBuffer(args) {
 function artifactOf(ref) {
   const buf = gitToBuffer(['cat-file', 'blob', `${ref}:index.html`]);
   return { bytes: buf.length, sha256: crypto.createHash('sha256').update(buf).digest('hex').toUpperCase() };
+}
+
+/** git 能否解析这个 rev（对象存在 / ref 存在）—— 不抛异常，返回布尔 */
+function revExists(rev) {
+  try {
+    gitToBuffer(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** ⭐ 可达性：该提交在「只取 main + tags」的 clone 上取得到吗？（2026-10-10 增补）
+ *  为什么需要它：`online.source_commit` 曾指向 **发版分支头**（`refs/heads/release/v0.1.11`）
+ *  —— 它**既不是 tag、也不是 main 的祖先** ⇒ 在 `--single-branch` / 新机器 / Linux 侧单分支 clone 上
+ *  对象**根本取不到** ⇒ 守卫报「无法现算」⇒ ⚠️ **看起来像守卫红，其实是环境依赖**（实测见 PR #58）。
+ *  判据：① 被某个 tag 指向（clone 带 tags 就有）② 是 main 形态 ref（或 HEAD）的祖先。二者任一即算可达。
+ *  ⚠️ **只用于 `online.source_commit`**：`released.tag_sha` 按定义就是 tag 的对象 ⇒ 对它恒真（= 装饰）。 */
+function reachabilityOf(sha) {
+  if (!revExists(sha)) return { ok: false, why: '本仓没有这个对象（rev-parse 解不出）' };
+  let pointed = '';
+  try {
+    pointed = gitToBuffer(['tag', '--points-at', sha]).toString('utf8').trim();
+  } catch {
+    // tag 查询失败（无 tag / 对象异常）⇒ 视为「没有 tag 指向」，继续查祖先关系
+  }
+  if (pointed) return { ok: true, how: `被 tag 指向：${pointed.split('\n')[0]}` };
+  for (const ref of ['refs/remotes/origin/main', 'refs/heads/main', 'HEAD']) {
+    if (!revExists(ref)) continue;
+    try {
+      gitToBuffer(['merge-base', '--is-ancestor', sha, ref]);
+      return { ok: true, how: `${ref} 的祖先` };
+    } catch {
+      /* 不是祖先 ⇒ 试下一个 ref */
+    }
+  }
+  return { ok: false, why: '既不是 tag 的对象，也不是 main/HEAD 的祖先' };
 }
 
 /** 目录/文件的文件数 + 总字节（磁盘现算；不跟随符号链接） */
@@ -205,6 +242,13 @@ function checkOnlineSource(o, actual, errors) {
     errors.push('online.source_commit 必填（线上值的出处提交 —— 现算比对的锚点）');
     return;
   }
+  // ⭐ 可达性（2026-10-10 增补）：出处必须在「只取 main + tags」的 clone 上也取得到
+  const reach = reachabilityOf(o.source_commit);
+  if (!reach.ok) {
+    errors.push(
+      `online.source_commit 不可达：${o.source_commit} —— ${reach.why} ⇒ 在「只取 main + tags」的 clone（--single-branch / 新机器）上对象取不到，守卫会报「无法现算」的假红。请改用 tag 指向的提交，或 main 上同 tree 的提交`
+    );
+  }
   if (actual.onlineSource) {
     compareArtifact(`online.index_html（出处 ${o.source_commit}）`, o.index_html, actual.onlineSource.artifact, errors);
   }
@@ -329,7 +373,8 @@ export function reconcileTap(tapText, data, scope) {
   return { ok: errors.length === 0, errors, checks };
 }
 
-/* ---------- C6 点名的三种篡改（负例必红；guard-selftest 与 --selftest 共用同一份定义） ---------- */
+/* ---------- 篡改负例（负例必红；guard-selftest 与 --selftest 共用同一份定义） ----------
+ * 前三条 = 卡 001 C6 点名的三种；⭐ 第 4 条 = 2026-10-10 增补（可达性 —— 见上方 reachabilityOf）。 */
 const flipChar = (s, i) => s.slice(0, i) + (s[i] === 'A' ? 'B' : 'A') + s.slice(i + 1);
 export const BASELINE_NEGATIVES = [
   {
@@ -353,6 +398,14 @@ export const BASELINE_NEGATIVES = [
     expect: /released\.tag_sha 漂移/,
     mutate: (d) => {
       d.released.tag_sha = flipChar(d.released.tag_sha, 0);
+      return d;
+    },
+  },
+  {
+    name: '改 source_commit 为一个取不到的提交（可达性 · 2026-10-10 增补）',
+    expect: /online\.source_commit 不可达/,
+    mutate: (d) => {
+      d.online.source_commit = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
       return d;
     },
   },

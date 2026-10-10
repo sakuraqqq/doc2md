@@ -124,7 +124,8 @@ v = checkVendorManifest(manifest, real.lock);
 ok('audit-delivery 正例：vendor 清单与实际一致', v.errors.length === 0, JSON.stringify(v.errors));
 
 /* ---------- baseline（docs/BASELINE.json · 2026-09-19 卡 001-C） ----------
- * 三个负例 = 卡 001 C6 点名的三种篡改：产物哈希改一位 / 契约数改一个 / tag_sha 改一位。
+ * 四个负例 = 卡 001 C6 点名的三种篡改（产物哈希改一位 / 契约数改一个 / tag_sha 改一位）
+ *   + ⭐ 2026-10-10 增补：source_commit 换成**取不到的提交**（可达性 —— 见 baseline-check.mjs 的 reachabilityOf）。
  * **守卫自己必须能被测红** —— 不加负例的守卫等于没有守卫。 */
 const baseline = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs', 'BASELINE.json'), 'utf8'));
 const baselineActual = loadActual(baseline);
