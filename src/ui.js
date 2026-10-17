@@ -141,11 +141,25 @@ function anchorDownload(blob, filename) {
  * ─────────────────────────────────────────────────────────────────────────────────── */
 /** 原生保存插件；不可用返回 null。判据 = 插件对象存在**且 `saveText` 是函数**
  * （"存在即原生"是错口径：插件在但方法缺失时应回落浏览器路径，而不是静默失败） */
-export function nativeSavePlugin() {
+function nativePluginObject() {
   const cap = typeof window === 'undefined' ? null : window.Capacitor;
   const plugins = cap && cap.Plugins;
-  const p = plugins && plugins.Doc2mdNative;
+  return (plugins && plugins.Doc2mdNative) || null;
+}
+export function nativeSavePlugin() {
+  const p = nativePluginObject();
   return p && typeof p.saveText === 'function' ? p : null;
+}
+/** 原生**二进制**写入插件（卡 055）；不可用返回 null。判据 = 分块三方法**都是函数**
+ * （「有 saveText 就算能写二进制」是错口径：老 APK 只有文本写入 ⇒ 必须回落「明说 + 指路」）。 */
+export function nativeBinaryPlugin() {
+  const p = nativePluginObject();
+  const usable =
+    p &&
+    typeof p.beginBinary === 'function' &&
+    typeof p.appendBinary === 'function' &&
+    typeof p.endBinary === 'function';
+  return usable ? p : null;
 }
 /** 是否跑在**原生壳**里（Capacitor 非 web）—— 「不再静默」的两条分支都以它为前提：
  * 原生壳里 `<a download>` **静默无效**（卡 008 的 A4 反证 + 源码级 `com/getcapacitor/**` 无 DownloadListener），
@@ -158,7 +172,10 @@ function isNativeRuntime() {
  * 表驱动 —— 文案集中一处，防静默分支再散落。 */
 const NATIVE_LIMIT = {
   noPlugin: '保存失败：本机未加载保存插件，文件未保存',
-  zip: '本机（APK）暂不支持 zip 保存，请改用「🖼 下载 .md（图片内嵌）」',
+  /* 卡 055（P1=A）**口径更正**：zip **已经能存**（原生二进制分块写入）⇒ 这句只在「原生壳里没有二进制
+   * 写入能力」时出现（老 APK / 插件未注册）。接线后「暂不支持 zip」已是**假话** ⇒ 改成如实说**能力边界**
+   * 并指路；卡 011 洞 B 的意图（不静默 + 给替代路径）不变。 */
+  zip: '保存失败：本机（APK）未提供 zip 写入能力，请改用「🖼 下载 .md（图片内嵌）」',
 };
 /** 原生壳里「成功」的回话（卡 011 第二轮 A8：**成功也要有回话**，否则用户仍会以为没反应）。
  * 卡 044（A6）：**文案必须写明真实落点** —— 落点已改为 `Download/WenZhuanMD/`（由原生插件建子目录）。 */
@@ -204,7 +221,7 @@ export function downloadMd(text, fileName) {
 }
 /* ── 卡 044：一次点击「全部保存」（多文件结果） ──────────────────────────────────
  * 范围（卡面写死）：**只覆盖「逐个保存 .md 产物」这条路径** —— 循环复用 `saveTextArtifact`；
- *   ⛔ 不新增 zip 能力（原生壳拒绝 zip 是**有意设计**，见 NATIVE_LIMIT.zip）
+ *   ⛔ 本入口不新增 zip 能力（zip 另有二进制通道：downloadZip + saveZipNative，卡 055 —— 一处只做一件事）
  *   ⛔ 不碰图片内嵌 / EMBED_MAX_BYTES 那条分支（超限照现状，那是另案）。
  * 为什么复用而不是自己拼：`saveTextArtifact` 已把「原生 / 浏览器 / 原生无插件」三个出口都处理过，
  *   本函数只负责「点一次 + 汇总一句」，⛔ 不另造第二套写文件实现（卡面 A4）。
@@ -319,32 +336,83 @@ function reportAssetFailures(btn, failed, mode) {
   setStatus(msg, true);
   if (card) assetFailSlot(card).textContent = '⚠ ' + msg;
 }
+/* ── 卡 055（P1=A · zip 原生接线）：二进制产物怎么写进原生 Downloads ──────────────────
+ * 病：`downloadZip` 在原生壳里只弹「暂不支持」就 return ⇒ 带图文档在 APK 上**拿不到 zip 结果**
+ *   （唯一出口是内嵌单文件 .md；图片合计 >20 MB 时那条也走 zip ⇒ **两个出口同时断**）。
+ * 药：插件加二进制分块写入（`beginBinary` / `appendBinary` / `endBinary`），这里按 512 KB 切片逐块过桥。
+ * ⚠️ 为什么是**分块**而不是整块 base64（由卡 055 的 B2 实测决定）：真机上量的"载荷项"被浮层重绘的
+ *   ±10 MB 噪声吞掉（**测不出来**）⇒ 按卡面预登记规则 R3 取**保守侧**：过桥瞬时内存做成常数级
+ *   （每块 base64 ≈ 0.68 MB），不随 zip 字节线性放大（整块方案在契约上限 20 MB 时约 5 份副本同时在内存）。
+ * ⚠️ 成功回话必须用**插件回报的真实文件名**（MediaStore 重名会改成 `x.zip (1)`）—— 卡 055 的 B3。 */
+const ZIP_CHUNK = 512 * 1024;
+async function saveZipNative(plugin, bytes, filename) {
+  let started = false;
+  try {
+    await plugin.beginBinary({ filename, mime: 'application/zip' });
+    started = true;
+    for (let off = 0; off < bytes.length; off += ZIP_CHUNK) {
+      await plugin.appendBinary({ data: bytesToB64(bytes.subarray(off, off + ZIP_CHUNK)) });
+    }
+    const res = await plugin.endBinary({ commit: true });
+    started = false; // 已正常收尾 ⇒ 不再回滚
+    nativeNotice(NATIVE_SAVED + ((res && res.filename) || filename));
+    return 'native';
+  } catch (e) {
+    if (started) {
+      try {
+        await plugin.endBinary({ commit: false }); // 回滚：不留半截文件（IS_PENDING 行必须删）
+      } catch {
+        // 回滚自身失败不掩盖主错误 —— 主错误由调用方 reportSaveError 报出
+      }
+    }
+    throw e;
+  }
+}
+/** 构建 zip 字节（.md 在根、图片进 assets/）—— 从 downloadZip 抽出（卡 055 的 B1 重构：
+ * 加原生分支后该函数复杂度 11 超 lint 上限；抽出后职责分开：本函数只管**字节**，调用方管**去向**）。
+ * ⚠️ `failed` 是**出参**（卡 042）：读取失败的资产名往这里塞，本函数不发任何提示。 */
+async function buildZipBytes(text, fileName, assets, failed) {
+  const F = window.fflate;
+  if (!F) throw new Error('fflate 未加载');
+  const base = baseName(fileName);
+  const files = {};
+  files[base + '.md'] = F.strToU8(text);
+  for (const a of assets || []) {
+    try {
+      files[a.name] = new Uint8Array(await a.blob.arrayBuffer());
+    } catch { failed.push(a.name + '（读取失败）'); } // 卡 042：照旧跳过，但**记下来**（不再静默）
+  }
+  return { z: F.zipSync(files), name: base + '.zip' };
+}
 // 下载 .md + 抽取图片（zip）：fflate 内联打包，本地生成，零外发（t6 ⑨a）
 export async function downloadZip(text, fileName, assets, btn) {
-  if (isNativeRuntime()) {
-    // 洞 B（卡 011）：zip 是二进制，原生插件目前只有文本写入 ⇒ 与其静默无反应，不如明说 + 指路
+  // 卡 055：原生壳里**能存 zip 了** —— 前提是插件提供二进制分块三方法。
+  // 插件在却缺方法（老 APK / 未注册）⇒ 仍按卡 011 的洞 B「明说 + 指路」，⛔ 不静默 return。
+  const nativePlugin = isNativeRuntime() ? nativeBinaryPlugin() : null;
+  if (isNativeRuntime() && !nativePlugin) {
     nativeNotice(NATIVE_LIMIT.zip, true);
     return;
   }
   const failed = []; // 卡 042：收「读取失败」的资产名（空 = 不报警）
+  let out;
   try {
-    const F = window.fflate;
-    if (!F) throw new Error('fflate 未加载');
-    const base = baseName(fileName);
-    const files = {};
-    files[base + '.md'] = F.strToU8(text);
-    for (const a of assets || []) {
-      try {
-        files[a.name] = new Uint8Array(await a.blob.arrayBuffer());
-      } catch { failed.push(a.name + '（读取失败）'); } // 卡 042：照旧跳过，但**记下来**（不再静默）
-    }
-    const z = F.zipSync(files);
-    anchorDownload(new Blob([z], { type: 'application/zip' }), base + '.zip');
+    out = await buildZipBytes(text, fileName, assets, failed);
   } catch {
     const old = btn.textContent;
     btn.textContent = '❌ 打包失败';
     setTimeout(() => { btn.textContent = old; }, 1500);
     return; // 卡 042：「整个打包失败」与「部分资产失败」是两条互斥通道（⛔ 别把整包失败也报成缺图）
+  }
+  if (nativePlugin) {
+    try {
+      // B5②：写入失败必须**明说**（⛔ 不静默、⛔ 不显示"成功"）⇒ 与文本路径共用 reportSaveError
+      await saveZipNative(nativePlugin, out.z, out.name);
+    } catch (e) {
+      reportSaveError(e);
+      return;
+    }
+  } else {
+    anchorDownload(new Blob([out.z], { type: 'application/zip' }), out.name);
   }
   reportAssetFailures(btn, failed, 'zip');
 }

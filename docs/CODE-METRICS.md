@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-10T12:44:23.380Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-17T09:15:49.746Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：32；函数总数：702；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：32；函数总数：706；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 702 个，超限 0 个。
+重构后当前：函数 706 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -36,23 +36,23 @@
 | src/ocr.js | ocrAssetsWarm | 22 | 9 | 11 |
 | tools/baseline-check.mjs | checkProvenance | 173 | 9 | 11 |
 | tools/measure-xlsx-peak.mjs | startPssSampler | 175 | 9 | 11 |
-| src/ui.js | renderResult | 464 | 9 | 10 |
+| src/ui.js | renderResult | 532 | 9 | 10 |
 | src/docx.js | ommlParts | 110 | 9 | 9 |
 | src/sniff.js | imageKind | 212 | 9 | 9 |
 | src/xlsx.js | areaLossWarning | 876 | 9 | 8 |
 | src/xlsx.js | parseRowCells | 268 | 8 | 14 |
-| src/ui.js | buildEmbedMap | 381 | 8 | 13 |
+| src/ui.js | buildEmbedMap | 449 | 8 | 13 |
 | tools/privacy-gate.mjs | loadAllowlist | 166 | 8 | 12 |
 | src/html2md.js | joinFrags | 25 | 8 | 10 |
 | tools/baseline-check.mjs | checkContract | 192 | 8 | 10 |
 | tools/baseline-check.mjs | runSelftest | 440 | 8 | 10 |
 | tools/measure-xlsx-peak.mjs | (anonymous) | 179 | 8 | 10 |
 | src/docx.js | ommlScript | 73 | 8 | 9 |
-| src/ui.js | saveAllArtifacts | 213 | 8 | 9 |
+| src/ui.js | saveAllArtifacts | 230 | 8 | 9 |
 | src/xlsx.js | cellToString | 630 | 8 | 9 |
 | tools/measure-xlsx-peak.mjs | measureTier | 234 | 8 | 9 |
 | src/docx.js | docxCollectWarnings | 292 | 8 | 8 |
-| src/ui.js | reportAssetFailures | 310 | 8 | 8 |
+| src/ui.js | reportAssetFailures | 327 | 8 | 8 |
 | tools/apk-version-check.mjs | runCli | 223 | 8 | 8 |
 | tools/audit-delivery.mjs | main | 235 | 8 | 8 |
 | src/convert.js | convert | 108 | 8 | 7 |
@@ -69,6 +69,7 @@
 | src/xlsx.js | xlsxDegradeWarnings | 906 | 7 | 12 |
 | tools/check-pages-allowlist.mjs | parseArgs | 25 | 7 | 11 |
 | tools/verify-release-online.mjs | parseArgs | 32 | 7 | 11 |
+| src/ui.js | saveZipNative | 348 | 7 | 9 |
 | tools/baseline-check.mjs | reachabilityOf | 89 | 7 | 9 |
 | tools/deploy-smoke.mjs | checkSite | 135 | 7 | 9 |
 | src/docx.js | ommlEnclosingPara | 143 | 7 | 8 |
@@ -77,7 +78,7 @@
 | src/app.js | handleFiles | 15 | 7 | 7 |
 | src/pdf.js | addGlyph | 68 | 7 | 7 |
 | src/pdf.js | pdfConvert | 476 | 7 | 7 |
-| src/ui.js | downloadZip | 323 | 7 | 7 |
+| src/ui.js | downloadZip | 388 | 7 | 7 |
 | src/xlsx.js | xlsxParseSheetStream | 680 | 7 | 7 |
 | tools/deploy-smoke.mjs | checkOneRef | 86 | 7 | 7 |
 | src/convert.js | ocrOnce | 44 | 7 | 6 |
@@ -125,8 +126,8 @@
 | src/pdf.js | pageTextWithOcr | 434 | 6 | 6 |
 | src/sniff.js | decodeText | 23 | 6 | 6 |
 | src/sniff.js | ctrlRatio | 273 | 6 | 6 |
-| src/ui.js | saveTextArtifact | 172 | 6 | 6 |
-| src/ui.js | assetsTotalBytes | 374 | 6 | 6 |
+| src/ui.js | saveTextArtifact | 189 | 6 | 6 |
+| src/ui.js | assetsTotalBytes | 442 | 6 | 6 |
 | src/xlsx.js | findEocd | 19 | 6 | 6 |
 | src/xlsx.js | xlsxWorkbookMap | 172 | 6 | 6 |
 | src/xlsx.js | rowColCount | 812 | 6 | 6 |
@@ -145,8 +146,7 @@
 | src/pdf.js | countAsciiGlyph | 59 | 6 | 5 |
 | src/pdf.js | isCjkChar | 186 | 6 | 5 |
 | src/pdf.js | needsSpace | 203 | 6 | 5 |
-| src/ui.js | nativeSavePlugin | 144 | 6 | 5 |
-| src/ui.js | buildActions | 436 | 6 | 5 |
+| src/ui.js | buildActions | 504 | 6 | 5 |
 | src/xlsx.js | zipEntryMeta | 94 | 6 | 5 |
 | src/xlsx.js | parseCellAt | 252 | 6 | 5 |
 | src/xlsx.js | extractInlineText | 418 | 6 | 5 |
@@ -188,6 +188,7 @@
 | src/app.js | safeHandleFiles | 71 | 5 | 5 |
 | src/docx.js | docxInjectLatex | 259 | 5 | 5 |
 | src/docx.js | (anonymous) | 261 | 5 | 5 |
+| src/ui.js | buildZipBytes | 374 | 5 | 5 |
 | src/xlsx.js | parseSheetTags | 137 | 5 | 5 |
 | tools/baseline-check.mjs | checkBaseline | 303 | 5 | 5 |
 | tools/deploy-smoke.mjs | collectSrcset | 54 | 5 | 5 |
@@ -201,9 +202,11 @@
 | src/sniff.js | trimMetaValue | 91 | 5 | 4 |
 | src/sniff.js | isPdfHead | 252 | 5 | 4 |
 | src/sniff.js | isZipHead | 260 | 5 | 4 |
-| src/ui.js | renderBatchSave | 239 | 5 | 4 |
-| src/ui.js | assetFailSlot | 297 | 5 | 4 |
-| src/ui.js | truncatePreview | 428 | 5 | 4 |
+| src/ui.js | nativePluginObject | 144 | 5 | 4 |
+| src/ui.js | nativeBinaryPlugin | 155 | 5 | 4 |
+| src/ui.js | renderBatchSave | 256 | 5 | 4 |
+| src/ui.js | assetFailSlot | 314 | 5 | 4 |
+| src/ui.js | truncatePreview | 496 | 5 | 4 |
 | src/xlsx.js | decodeXmlEntity | 213 | 5 | 4 |
 | src/xlsx.js | takeRowUnit | 316 | 5 | 4 |
 | src/xlsx.js | elemAt | 361 | 5 | 4 |
@@ -267,8 +270,8 @@
 | src/ocr.js | rotateImage90 | 102 | 4 | 3 |
 | src/pdf.js | ocrPageToText | 21 | 4 | 3 |
 | src/sniff.js | zipKind | 265 | 4 | 3 |
-| src/ui.js | isNativeRuntime | 153 | 4 | 3 |
-| src/ui.js | reportSaveError | 197 | 4 | 3 |
+| src/ui.js | isNativeRuntime | 167 | 4 | 3 |
+| src/ui.js | reportSaveError | 214 | 4 | 3 |
 | src/xlsx.js | inflateEntry | 82 | 4 | 3 |
 | src/xlsx.js | entryStream | 118 | 4 | 3 |
 | src/xlsx.js | parseDate1904 | 165 | 4 | 3 |
@@ -339,9 +342,10 @@
 | src/pdf.js | collectPage | 462 | 3 | 2 |
 | src/ui.js | setStatus | 16 | 3 | 2 |
 | src/ui.js | fmtSize | 98 | 3 | 2 |
-| src/ui.js | baseName | 168 | 3 | 2 |
-| src/ui.js | embedImagesIntoMd | 396 | 3 | 2 |
-| src/ui.js | downloadMdEmbedded | 402 | 3 | 2 |
+| src/ui.js | nativeSavePlugin | 149 | 3 | 2 |
+| src/ui.js | baseName | 185 | 3 | 2 |
+| src/ui.js | embedImagesIntoMd | 464 | 3 | 2 |
+| src/ui.js | downloadMdEmbedded | 470 | 3 | 2 |
 | src/xlsx.js | normalizeSheetTarget | 193 | 3 | 2 |
 | src/xlsx.js | xlsxSheetNames | 201 | 3 | 2 |
 | src/xlsx.js | textPuller | 292 | 3 | 2 |
@@ -423,10 +427,10 @@
 | src/sniff.js | utf16leInterleaved | 160 | 2 | 1 |
 | src/ui.js | (anonymous) | 68 | 2 | 1 |
 | src/ui.js | copyText | 103 | 2 | 1 |
-| src/ui.js | setEmbedMaxBytes | 358 | 2 | 1 |
-| src/ui.js | bytesToB64 | 359 | 2 | 1 |
-| src/ui.js | (anonymous) | 397 | 2 | 1 |
-| src/ui.js | (anonymous) | 456 | 2 | 1 |
+| src/ui.js | setEmbedMaxBytes | 426 | 2 | 1 |
+| src/ui.js | bytesToB64 | 427 | 2 | 1 |
+| src/ui.js | (anonymous) | 465 | 2 | 1 |
+| src/ui.js | (anonymous) | 524 | 2 | 1 |
 | src/xlsx.js | zipEntry | 111 | 2 | 1 |
 | src/xlsx.js | decodeXml | 218 | 2 | 1 |
 | src/xlsx.js | inRange | 357 | 2 | 1 |
@@ -576,16 +580,16 @@
 | src/ui.js | (anonymous) | 119 | 1 | 0 |
 | src/ui.js | anchorDownload | 123 | 1 | 0 |
 | src/ui.js | (anonymous) | 131 | 1 | 0 |
-| src/ui.js | downloadMd | 202 | 1 | 0 |
-| src/ui.js | (anonymous) | 264 | 1 | 0 |
-| src/ui.js | (anonymous) | 267 | 1 | 0 |
-| src/ui.js | (anonymous) | 270 | 1 | 0 |
-| src/ui.js | (anonymous) | 346 | 1 | 0 |
-| src/ui.js | getEmbedMaxBytes | 357 | 1 | 0 |
-| src/ui.js | escAssetName | 370 | 1 | 0 |
-| src/ui.js | (anonymous) | 416 | 1 | 0 |
-| src/ui.js | (anonymous) | 446 | 1 | 0 |
-| src/ui.js | (anonymous) | 452 | 1 | 0 |
+| src/ui.js | downloadMd | 219 | 1 | 0 |
+| src/ui.js | (anonymous) | 281 | 1 | 0 |
+| src/ui.js | (anonymous) | 284 | 1 | 0 |
+| src/ui.js | (anonymous) | 287 | 1 | 0 |
+| src/ui.js | (anonymous) | 403 | 1 | 0 |
+| src/ui.js | getEmbedMaxBytes | 425 | 1 | 0 |
+| src/ui.js | escAssetName | 438 | 1 | 0 |
+| src/ui.js | (anonymous) | 484 | 1 | 0 |
+| src/ui.js | (anonymous) | 514 | 1 | 0 |
+| src/ui.js | (anonymous) | 520 | 1 | 0 |
 | src/xlsx.js | centralEntryAt | 28 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 86 | 1 | 0 |
 | src/xlsx.js | start | 122 | 1 | 0 |
