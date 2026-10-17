@@ -1826,11 +1826,19 @@ ${xlsxRowsToMd(kept)}`);
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 3e3);
   }
-  function nativeSavePlugin() {
+  function nativePluginObject() {
     const cap = typeof window === "undefined" ? null : window.Capacitor;
     const plugins = cap && cap.Plugins;
-    const p = plugins && plugins.Doc2mdNative;
+    return plugins && plugins.Doc2mdNative || null;
+  }
+  function nativeSavePlugin() {
+    const p = nativePluginObject();
     return p && typeof p.saveText === "function" ? p : null;
+  }
+  function nativeBinaryPlugin() {
+    const p = nativePluginObject();
+    const usable = p && typeof p.beginBinary === "function" && typeof p.appendBinary === "function" && typeof p.endBinary === "function";
+    return usable ? p : null;
   }
   function isNativeRuntime() {
     const cap = typeof window === "undefined" ? null : window.Capacitor;
@@ -1838,7 +1846,10 @@ ${xlsxRowsToMd(kept)}`);
   }
   var NATIVE_LIMIT = {
     noPlugin: "\u4FDD\u5B58\u5931\u8D25\uFF1A\u672C\u673A\u672A\u52A0\u8F7D\u4FDD\u5B58\u63D2\u4EF6\uFF0C\u6587\u4EF6\u672A\u4FDD\u5B58",
-    zip: "\u672C\u673A\uFF08APK\uFF09\u6682\u4E0D\u652F\u6301 zip \u4FDD\u5B58\uFF0C\u8BF7\u6539\u7528\u300C\u{1F5BC} \u4E0B\u8F7D .md\uFF08\u56FE\u7247\u5185\u5D4C\uFF09\u300D"
+    /* 卡 055（P1=A）**口径更正**：zip **已经能存**（原生二进制分块写入）⇒ 这句只在「原生壳里没有二进制
+     * 写入能力」时出现（老 APK / 插件未注册）。接线后「暂不支持 zip」已是**假话** ⇒ 改成如实说**能力边界**
+     * 并指路；卡 011 洞 B 的意图（不静默 + 给替代路径）不变。 */
+    zip: "\u4FDD\u5B58\u5931\u8D25\uFF1A\u672C\u673A\uFF08APK\uFF09\u672A\u63D0\u4F9B zip \u5199\u5165\u80FD\u529B\uFF0C\u8BF7\u6539\u7528\u300C\u{1F5BC} \u4E0B\u8F7D .md\uFF08\u56FE\u7247\u5185\u5D4C\uFF09\u300D"
   };
   var NATIVE_SAVED = "\u2705 \u5DF2\u4FDD\u5B58\u5230\u300C\u4E0B\u8F7D/WenZhuanMD\u300D\uFF1A";
   function baseName(fileName) {
@@ -1953,27 +1964,54 @@ ${xlsxRowsToMd(kept)}`);
     setStatus(msg, true);
     if (card) assetFailSlot(card).textContent = "\u26A0 " + msg;
   }
+  var ZIP_CHUNK = 512 * 1024;
+  async function saveZipNative(plugin, bytes, filename) {
+    let started = false;
+    try {
+      await plugin.beginBinary({ filename, mime: "application/zip" });
+      started = true;
+      for (let off = 0; off < bytes.length; off += ZIP_CHUNK) {
+        await plugin.appendBinary({ data: bytesToB64(bytes.subarray(off, off + ZIP_CHUNK)) });
+      }
+      const res = await plugin.endBinary({ commit: true });
+      started = false;
+      nativeNotice(NATIVE_SAVED + (res && res.filename || filename));
+      return "native";
+    } catch (e) {
+      if (started) {
+        try {
+          await plugin.endBinary({ commit: false });
+        } catch {
+        }
+      }
+      throw e;
+    }
+  }
+  async function buildZipBytes(text, fileName, assets, failed) {
+    const F = window.fflate;
+    if (!F) throw new Error("fflate \u672A\u52A0\u8F7D");
+    const base = baseName(fileName);
+    const files = {};
+    files[base + ".md"] = F.strToU8(text);
+    for (const a of assets || []) {
+      try {
+        files[a.name] = new Uint8Array(await a.blob.arrayBuffer());
+      } catch {
+        failed.push(a.name + "\uFF08\u8BFB\u53D6\u5931\u8D25\uFF09");
+      }
+    }
+    return { z: F.zipSync(files), name: base + ".zip" };
+  }
   async function downloadZip(text, fileName, assets, btn) {
-    if (isNativeRuntime()) {
+    const nativePlugin = isNativeRuntime() ? nativeBinaryPlugin() : null;
+    if (isNativeRuntime() && !nativePlugin) {
       nativeNotice(NATIVE_LIMIT.zip, true);
       return;
     }
     const failed = [];
+    let out;
     try {
-      const F = window.fflate;
-      if (!F) throw new Error("fflate \u672A\u52A0\u8F7D");
-      const base = baseName(fileName);
-      const files = {};
-      files[base + ".md"] = F.strToU8(text);
-      for (const a of assets || []) {
-        try {
-          files[a.name] = new Uint8Array(await a.blob.arrayBuffer());
-        } catch {
-          failed.push(a.name + "\uFF08\u8BFB\u53D6\u5931\u8D25\uFF09");
-        }
-      }
-      const z = F.zipSync(files);
-      anchorDownload(new Blob([z], { type: "application/zip" }), base + ".zip");
+      out = await buildZipBytes(text, fileName, assets, failed);
     } catch {
       const old = btn.textContent;
       btn.textContent = "\u274C \u6253\u5305\u5931\u8D25";
@@ -1981,6 +2019,16 @@ ${xlsxRowsToMd(kept)}`);
         btn.textContent = old;
       }, 1500);
       return;
+    }
+    if (nativePlugin) {
+      try {
+        await saveZipNative(nativePlugin, out.z, out.name);
+      } catch (e) {
+        reportSaveError(e);
+        return;
+      }
+    } else {
+      anchorDownload(new Blob([out.z], { type: "application/zip" }), out.name);
     }
     reportAssetFailures(btn, failed, "zip");
   }

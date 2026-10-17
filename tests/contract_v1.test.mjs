@@ -5333,13 +5333,18 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
       );
       const btnZip = p2.locator('.card-actions button', { hasText: 'zip' });
       await btnZip.waitFor({ state: 'visible', timeout: 10000 });
-      await t.test('Z3-2 洞 B：原生平台上的 zip 主按钮 ⇒ 明说「暂不支持 zip」并指出替代路径', async () => {
+      // ⭐ 卡 055 口径变更（P1=A：zip 原生接线）：zip 在 APK 上**已能存**（二进制分块写入）⇒
+      //   本条的触发条件从「原生平台」收窄为「原生平台 + **没有二进制写入能力**」（老 APK / 未注册）。
+      //   「暂不支持 zip」在接线后已成假话 ⇒ 文案改成如实的**能力边界**；
+      //   「不静默 + 指路」这条契约意图**不变**（卡 011 的洞 B 仍然守着）。
+      await t.test('Z3-2 洞 B（卡 055 修正）：原生平台 + 无二进制写入插件 ⇒ 明说「未提供 zip 写入能力」并指出替代路径', async () => {
         const dlP = p2.waitForEvent('download', { timeout: 2500 }).catch(() => null);
         await btnZip.click();
         const dl = await dlP;
         const status = await p2.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
         assert.ok(dl === null, '原生平台 zip 仍走 <a download>（WebView 里无效 ⇒ 等于静默）');
-        assert.ok(/暂不支持\s*zip/.test(status), `状态栏未出现 zip 不支持提示，实际=${JSON.stringify(status)}`);
+        assert.ok(status.includes('未提供 zip 写入能力'), `状态栏未如实说明能力边界，实际=${JSON.stringify(status)}`);
+        assert.ok(!status.includes('暂不支持'), `接线后「暂不支持 zip」已成假话，实际=${JSON.stringify(status)}`);
         assert.ok(status.includes('图片内嵌'), `提示未给出替代路径，实际=${JSON.stringify(status)}`);
       });
 
@@ -5401,6 +5406,100 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
         const status = await p3.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
         assert.ok(dl === null, '原生插件写入失败后回落了 <a download>（WebView 里无效 ⇒ 等于静默）');
         assert.ok(status.includes('保存失败'), `写入失败无可见提示，实际=${JSON.stringify(status)}`);
+      });
+
+      // —— Z3-5 / Z3-6（卡 055 · P1=A）：「zip 的原生二进制出口」——
+      //   桥的写法 = **分块** begin/append/end（每块 base64 ≤0.7 MB），不是整块 base64。
+      //   为什么是分块：卡 055 的 B2 在真机上量到"载荷项测不出来"（1.06 MB 载荷的增量被浮层重绘
+      //   的 ±10 MB 噪声吞掉）⇒ 按卡面预登记规则 R3 取**保守侧**：把过桥瞬时内存做成常数级。
+      const ctx4 = await browser.newContext({ acceptDownloads: true });
+      const p4 = await ctx4.newPage();
+      await p4.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await p4.locator('input[type=file]').setInputFiles(nodePath.join(DATA, 'sample-images.docx'));
+      await p4.waitForFunction(
+        (tok) => {
+          for (const el of document.querySelectorAll('textarea, input, pre, code')) {
+            if ((el.value || el.textContent || '').includes(tok)) return true;
+          }
+          return false;
+        },
+        'DOC2MD-IMG-2026',
+        { timeout: 20000 }
+      );
+      const btnZip4 = p4.locator('.card-actions button', { hasText: 'zip' });
+      await btnZip4.waitFor({ state: 'visible', timeout: 10000 });
+      const stubBinary = (mode) =>
+        p4.evaluate((m) => {
+          window.__z3bin = { begin: null, chunks: [], commit: null };
+          window.Capacitor = {
+            getPlatform: () => 'android',
+            Plugins: {
+              Doc2mdNative: {
+                beginBinary: (arg) => {
+                  window.__z3bin.begin = arg;
+                  return Promise.resolve({ filename: arg && arg.filename });
+                },
+                appendBinary: (arg) => {
+                  if (m === 'fail') return Promise.reject(new Error('write failed: EACCES'));
+                  window.__z3bin.chunks.push(arg && arg.data);
+                  return Promise.resolve({ bytes: window.__z3bin.chunks.length });
+                },
+                endBinary: (arg) => {
+                  window.__z3bin.commit = Boolean(arg && arg.commit);
+                  return Promise.resolve({ filename: 'sample-images.zip (1)', bytes: 810000 });
+                },
+              },
+            },
+          };
+        }, mode);
+
+      await t.test('Z3-5 卡 055：原生 + 插件有二进制方法 ⇒ zip 走分块直写；成功回话用插件回报的**真实**文件名；无下载事件', async () => {
+        await stubBinary('ok');
+        const dlP = p4.waitForEvent('download', { timeout: 2500 }).catch(() => null);
+        await btnZip4.click();
+        const dl = await dlP;
+        await p4
+          .waitForFunction(() => /已保存/.test((document.querySelector('#status') || {}).textContent || ''), { timeout: 8000 })
+          .catch(() => {});
+        const got = await p4.evaluate(() => {
+          const b = window.__z3bin;
+          const parts = b.chunks.map((c) =>
+            Uint8Array.from(atob(c), (ch) => ch.charCodeAt(0))
+          );
+          return {
+            begin: b.begin,
+            nChunks: b.chunks.length,
+            commit: b.commit,
+            total: parts.reduce((n, u) => n + u.length, 0),
+            head: parts.length ? Array.from(parts[0].slice(0, 4)) : [],
+          };
+        });
+        const status = await p4.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
+        assert.ok(dl === null, '原生二进制分支仍走了 <a download>（WebView 里无效 ⇒ 等于静默）');
+        assert.equal(got.begin && got.begin.filename, 'sample-images.zip', `beginBinary 未收到请求文件名，实际=${JSON.stringify(got.begin)}`);
+        assert.equal(got.begin && got.begin.mime, 'application/zip', `mime 必须是 application/zip，实际=${JSON.stringify(got.begin)}`);
+        assert.ok(got.nChunks >= 2, `zip 未走分块（图片合计 794,720 B 按 512 KB 切应 ≥2 块），实际块数=${got.nChunks}`);
+        assert.deepEqual(got.head, [0x50, 0x4b, 0x03, 0x04], `拼接后的字节不是 zip（PK 头），实际=${JSON.stringify(got.head)}`);
+        assert.ok(got.total > 700000, `拼接后的字节数偏小（图片合计 794,720 B），实际=${got.total}`);
+        assert.equal(got.commit, true, '提交标志不是 true');
+        assert.ok(status.includes('已保存'), `写入成功后状态栏无成功回话，实际=${JSON.stringify(status)}`);
+        assert.ok(status.includes('sample-images.zip (1)'), `成功回话未用插件回报的真实文件名（B3 口径），实际=${JSON.stringify(status)}`);
+      });
+
+      await t.test('Z3-6 卡 055：原生 + 插件写入抛错 ⇒ 明说失败、不得显示成功、并回滚（endBinary commit=false）', async () => {
+        await stubBinary('fail');
+        const dlP = p4.waitForEvent('download', { timeout: 2500 }).catch(() => null);
+        await btnZip4.click();
+        const dl = await dlP;
+        await p4
+          .waitForFunction(() => /保存失败/.test((document.querySelector('#status') || {}).textContent || ''), { timeout: 8000 })
+          .catch(() => {});
+        const status = await p4.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
+        const rollback = await p4.evaluate(() => window.__z3bin.commit);
+        assert.ok(dl === null, '写入失败后回落了 <a download>（WebView 里无效 ⇒ 等于静默）');
+        assert.ok(status.includes('保存失败'), `写入失败无可见提示，实际=${JSON.stringify(status)}`);
+        assert.ok(!status.includes('已保存'), `写入失败却显示了成功，实际=${JSON.stringify(status)}`);
+        assert.equal(rollback, false, '写入失败未回滚（endBinary 的 commit 应为 false），实得=' + JSON.stringify(rollback));
       });
     } finally {
       await browser.close();
