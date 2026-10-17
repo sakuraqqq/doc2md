@@ -4,27 +4,27 @@
   "contract": {
     "local_with_fixtures": {
       "counts": {
-        "total": 330,
-        "pass": 328,
+        "total": 338,
+        "pass": 336,
         "fail": 0,
         "skip": 2
       },
       "measured": {
-        "at": "2026-10-17",
-        "source": "npm test（本机实跑，TAP 摘要）：# tests 330 / # pass 328 / # fail 0 / # skipped 2 —— ⭐ **卡 055**（zip 原生接线）在组 **Z3** 新增 **Z3-5/Z3-6** 两条（分块直写 / 失败回滚），并把 **Z3-2** 的文案断言改到新口径（「暂不支持 zip」→「未提供 zip 写入能力」+ 反向断言）；**其余旧断言零改动**。前值：330−2 = 328/326/0/2（卡 045 后）"
+        "at": "2026-10-18",
+        "source": "npm test（本机实跑，TAP 摘要，2026-10-18 · 卡 056）：# tests 338 / # pass 336 / # fail 0 / # skipped 2 —— ⭐ **卡 056** 新增契约组 **Z6**（1 组壳 + 7 子断言 = 8 条：三 Tab 切换 / 首屏无 hero / 页脚进关于 / 文件页空态 / 外观三档 / safe-area）+ **收窄 H2** 判定口径（只豁免 <a href>，条数不变）。以下为**前值**（卡 055）： ⭐ **卡 055**（zip 原生接线）在组 **Z3** 新增 **Z3-5/Z3-6** 两条（分块直写 / 失败回滚），并把 **Z3-2** 的文案断言改到新口径（「暂不支持 zip」→「未提供 zip 写入能力」+ 反向断言）；**其余旧断言零改动**。前值：330−2 = 328/326/0/2（卡 045 后）"
       },
       "scope": "本机口径：.私档/传输-手机-20260918 四档夹具在位 ⇒ 组 Y 真跑（组壳+Y1+Y2+Y3，全绿）；卡 002 前为 271/3（组 Y 预期先红：Y2 无 meta.scan · Y3 超 5s · 组壳）。与 CI 口径不可混用"
     },
     "ci_clean_checkout": {
       "counts": {
-        "total": 327,
-        "pass": 324,
+        "total": 335,
+        "pass": 332,
         "fail": 0,
         "skip": 3
       },
       "measured": {
-        "at": "2026-10-17",
-        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：**卡 055 实测一次 = # tests 327 / # pass 324 / # fail 0 / # skipped 3**，与「由 local_with_fixtures 330/328/0/2 按 total −3 / pass −4 / skip +1 推得」完全一致 ⇒ 本次是**实测值，不是映射推得**；② 真实 CI runner 由第 15 步 `Contract ↔ BASELINE.json reconciliation` 对账（卡 042 的 run `37233758141` / `37233882200`、卡 043 / 044 / 045 各 run 均 success；卡 045 由 run `37482095522` 对账确认 = green）。⚠️ 本机曾出现 **download-event 类断言**假红（2026-10-06 条：run A = Q4、run B = I4；高负载下的抖动，`docs/DEV-NOTES.md`）—— 卡 055 的两轮全量运行**未复现**该类假红"
+        "at": "2026-10-18",
+        "source": "① 本机复现 CI 口径（`DOC2MD_BIG_FIXTURES` 指向仓库内不存在目录 ⇒ 组 Y 整组 skip）：**卡 056 实测一次 = # tests 335 / # pass 332 / # fail 0 / # skipped 3**（前值 = 卡 055 的 327/324/0/3），与「由 local_with_fixtures 330/328/0/2 按 total −3 / pass −4 / skip +1 推得」完全一致 ⇒ 本次是**实测值，不是映射推得**；② 真实 CI runner 由第 15 步 `Contract ↔ BASELINE.json reconciliation` 对账（卡 042 的 run `37233758141` / `37233882200`、卡 043 / 044 / 045 各 run 均 success；卡 045 由 run `37482095522` 对账确认 = green）。⚠️ 本机曾出现 **download-event 类断言**假红（2026-10-06 条：run A = Q4、run B = I4；高负载下的抖动，`docs/DEV-NOTES.md`）—— 卡 055 的两轮全量运行**未复现**该类假红"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }

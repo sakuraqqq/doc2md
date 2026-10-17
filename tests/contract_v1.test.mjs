@@ -1582,14 +1582,20 @@ test('契约组 G7：第八轮 §1.2/§1.3/§1.6/§3.1（1904 日期系统 / 单
 // 离线静态断言（无浏览器依赖）：读 index.html 源码文本。
 // 断言（断言语义）：
 //   H1 源码不含 'doc2md.local'（伪域名 corePath——红线：任何外域请求都是违约）。
-//   H2 **fetchable 外域 URL ⊆ 白名单**（口径修正 2026-09-05 用户拍板，见 CONTRACT.md §6 T-6）：
+//   H2 **可被自动请求的外域 URL ⊆ 白名单**（口径 2026-09-05 定；⭐ 2026-10-18 收窄一次，用户拍板）：
 //     白名单 = 解析性命名空间标识符的主人（域名级）——schemas.openxmlformats.org、www.w3.org。
 //     理由：xmlns/DTD/schemaLocation 声明符只作 XML 命名空间标识（如 w:document 的
 //     xmlns="http://schemas.openxmlformats.org/…"），从不出现在 fetch、URL 构造或任何网络请求路径；
 //     运行时零外发由 C4（页面请求监听，全量 assert）兜底——若未来任一字面量变成实际网络请求 → C4 立即红。
 //     注：t10 发现 esbuild 常量折叠把 t6 的拆串（'http'+'://schemas…'）折叠回完整 URL 字面量——
 //     语义未变（仍非网络请求），仅源码形态变化 → 白名单定版（域名级判定）。
-//   判定实现：提取全部 `http(s)://` 字面量 → hostname 不在白名单域名集 = fetchable 嫌疑 → 违约。
+//     ⭐ **2026-10-18 收窄**（卡 056 门面三 Tab 带来设置页外链；用户拍板「选 1」）：判定对象从「全部 URL
+//       字面量」改为「**可被自动请求的** URL 字面量」—— `<a href="https://…">` 是**用户主动点击的导航**
+//       （浏览器不预取、页面不自动请求），从扫描中**剥离**后再判；同一 URL 若出现在 href 之外
+//       （fetch / import / src / 普通字符串）**照样判违约**。⛔ 这不是放宽白名单：白名单域名集**一个没加**，
+//       零外发仍由 C4（运行时请求监听）与 sw.js 同源门兜底。
+//   判定实现：先按锚点 href 的正则把 `<a … href="https://…">` 剥掉 → 再从**剩余源码**提取全部
+//     `http(s)://` 字面量 → hostname 不在白名单域名集 = 可被自动请求的外域 URL → 违约。
 //   H13 **供应链安全不变量**（2026-09-16 依赖体检批）：src/pdf.js 的 getDocument 必须
 //     `isEvalSupported: false` —— CVE-2024-4367 / GHSA-wgrm-67xf-hhpq（HIGH）只在默认 true 下可触发
 //     （恶意 PDF → 任意 JS 执行）；官方 Workaround 即设为 false。npm audit 只看版本号 ⇒ 仍报 high，
@@ -1608,13 +1614,18 @@ test('契约组 H：corePath 同源 / 零外域 fetchable URL / SW v4 分段缓�
   await t.test('H1 源码不含 doc2md.local（伪域名 corePath = 外域请求违约，红线）', () => {
     assert.ok(!src.includes('doc2md.local'), "index.html 含 'doc2md.local'（corePath 伪域名）——外域请求违约（审查报告 §2.1）；应改为同源绝对 URL");
   });
-  await t.test('H2 fetchable 外域 URL ⊆ 白名单（域名级：解析性命名空间标识符豁免）', () => {
-    const urls = [...src.matchAll(/https?:\/\/[^\s"'<>`)]+/g)].map((m) => m[0]);
+  await t.test('H2 可被自动请求的外域 URL ⊆ 白名单（<a href> 为用户主动导航，剥离后判）', () => {
+    const anchorHrefs = [...src.matchAll(/<a\b[^>]*?\bhref="(https?:\/\/[^"]+)"/g)].map((m) => m[1]);
+    for (const h of anchorHrefs) {
+      assert.ok(/^https?:\/\//.test(h), '锚点 href 必须是绝对 http(s) URL：' + h);
+    }
+    const stripped = src.replace(/<a\b[^>]*?\bhref="https?:\/\/[^"]+"/g, '<a');
+    const urls = [...stripped.matchAll(/https?:\/\/[^\s"'<>`)]+/g)].map((m) => m[0]);
     const external = urls.filter((u) => {
       const host = (u.match(/^https?:\/\/([^/:]+)/) || [])[1];
       return !H_URL_WHITELIST_HOSTS.has(host);
     });
-    assert.deepEqual(external, [], `源码含白名单外的外域 URL（fetchable 嫌疑）：${JSON.stringify(external)}（解析性命名空间标识符 = ${JSON.stringify([...H_URL_WHITELIST_HOSTS])} 白名单；其余出现即违约；运行时零外发由 C4 兜底）`);
+    assert.deepEqual(external, [], '源码含白名单外的【可被自动请求的】外域 URL（fetchable 嫌疑）：' + JSON.stringify(external) + '（解析性命名空间标识符 = ' + JSON.stringify([...H_URL_WHITELIST_HOSTS]) + ' 白名单；<a href> 已剥离；运行时零外发由 C4 兜底）');
   });
   // SW v4 分段缓存（P1 二批 ⑤，审查报告 §2.2）：PRECACHE 只保留应用外壳；
   // 大体积 OCR 资源（wasm core×2 + 语言包×2 ≈15MB）改为运行时缓存（首次 OCR 后离线可用）。
@@ -5993,6 +6004,200 @@ test('契约组 T45：文本通道三处更正（卡 045）', async (t) => {
           `合成件（魔数 + NUL，无流名）应判 unknown，实测 ${JSON.stringify(o2.meta && o2.meta.ole2Subtype)}`
         );
       });
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 Z6：门面骨架 —— 三 Tab / 首屏功能优先 / 页脚进「关于」/ 文件页空态 / safe-area（卡 056）
+//   先红：改前 index.html 里 role="tablist" 命中 0 ⇒ Z6-0 必红；改后转绿。
+//   ⚠️ 口径（写死，避免「测到 DOM 没测到人眼」）：
+//     · 「首页不含版本号」= #panel-convert 的文本不含版本，且全页没有 <footer>（SPA 只有一份 DOM，
+//       其余面板本来就含版本号 ⇒ 只能按【面板】判，⛔ 不能按整页文本判）
+//     · 「无虚线拖放框」= #dropzone 的 computed border-style 不含 dashed（元素仍在：app.js 的接线挂在它上面）
+//     · 「跟随系统是真监听」= 用 emulateMedia 翻系统色，按钮停在「跟随系统」时 data-theme 必须跟着变
+// ---------------------------------------------------------------------------
+test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关于 / 文件空态 / safe-area）—— 卡 056 契约先红', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  const src = fs.readFileSync(PAGE, 'utf8');
+
+  await t.test('Z6-0 前置（先红断言）：底部导航 role="tablist" 存在且恰 3 个 tab、每 tab 有 aria-controls', () => {
+    assert.match(src, /role="tablist"/, '源码没有 role="tablist" —— 三 Tab 骨架未落地（改前实测 0 命中）');
+    const tabCount = (src.match(/role="tab"/g) || []).length;
+    assert.equal(tabCount, 3, 'role="tab" 数量应为 3，实测 ' + tabCount);
+    assert.match(src, /aria-controls="panel-convert"/, '缺 aria-controls="panel-convert"');
+    assert.match(src, /aria-controls="panel-files"/, '缺 aria-controls="panel-files"');
+    assert.match(src, /aria-controls="panel-settings"/, '缺 aria-controls="panel-settings"');
+  });
+
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message);
+      return;
+    }
+    try {
+      const ctx = await browser.newContext({ viewport: { width: 412, height: 892 } });
+      const page = await ctx.newPage();
+      const errs = [];
+      page.on('pageerror', (e) => errs.push(String(e.message)));
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      await t.test('Z6-1 A2 三 Tab 可切换：aria-selected 与面板 visible 同步；键盘左右方向键可切；面板语义齐', async () => {
+        const tabs = page.locator('[role="tab"]');
+        assert.equal(await tabs.count(), 3, '底部导航不是 3 项');
+        const labels = (await tabs.allTextContents()).map((s) => s.trim());
+        assert.deepEqual(labels, ['转换', '文件', '设置'], 'Tab 文案应为 转换/文件/设置，实测 ' + JSON.stringify(labels));
+        const state = () =>
+          page.evaluate(() => {
+            const t = [...document.querySelectorAll('[role="tab"]')];
+            const p = [...document.querySelectorAll('[role="tabpanel"]')];
+            return {
+              sel: t.map((x) => x.getAttribute('aria-selected')),
+              shown: p.map((x) => !x.hidden && getComputedStyle(x).display !== 'none'),
+              ids: p.map((x) => x.id),
+              labelled: p.map((x) => x.getAttribute('aria-labelledby')),
+            };
+          });
+        const s0 = await state();
+        assert.deepEqual(s0.sel, ['true', 'false', 'false'], '初始应停在「转换」');
+        assert.deepEqual(s0.shown, [true, false, false], '初始只应显示转换面板');
+        assert.deepEqual(s0.ids, ['panel-convert', 'panel-files', 'panel-settings'], '面板 id 不符');
+        assert.deepEqual(s0.labelled, ['tab-convert', 'tab-files', 'tab-settings'], '面板缺 aria-labelledby 或指向不对');
+
+        await page.click('#tab-files');
+        const s1 = await state();
+        assert.deepEqual(s1.sel, ['false', 'true', 'false'], '点「文件」后 aria-selected 未同步');
+        assert.deepEqual(s1.shown, [false, true, false], '点「文件」后面板 visible 未同步');
+
+        await page.focus('#tab-files');
+        await page.keyboard.press('ArrowRight');
+        const s2 = await state();
+        assert.deepEqual(s2.sel, ['false', 'false', 'true'], '方向键 → 未切到「设置」');
+        await page.keyboard.press('ArrowLeft');
+        const s3 = await state();
+        assert.deepEqual(s3.sel, ['false', 'true', 'false'], '方向键 ← 未切回「文件」');
+        assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
+      });
+
+      await t.test('Z6-2 A3 首屏无 hero：无居中大标题 / 无徽章胶囊 / 无虚线框；主操作是选择文档卡片，后接上次转换', async () => {
+        await page.click('#tab-convert');
+        const hero = await page.evaluate(() => {
+          const conv = document.getElementById('panel-convert');
+          const dz = document.getElementById('dropzone');
+          return {
+            appbarTitle: (document.querySelector('.appbar h1') || {}).textContent || '',
+            headerInPanel: conv.querySelectorAll('header h1').length,
+            badges: document.querySelectorAll('.badges, .badge').length,
+            borderStyle: getComputedStyle(dz).borderTopStyle,
+            pickerText: dz.textContent.replace(/\s+/g, ' ').trim(),
+            lastTitle: (document.getElementById('lastTitle') || {}).textContent || '',
+            dzTop: dz.getBoundingClientRect().top,
+            lastTop: document.getElementById('lastEmpty').getBoundingClientRect().top,
+          };
+        });
+        assert.equal(hero.appbarTitle, '文转MD助手', 'app bar 标题应为「文转MD助手」，实测 ' + hero.appbarTitle);
+        assert.equal(hero.headerInPanel, 0, '转换面板里仍有 hero 大标题');
+        assert.equal(hero.badges, 0, '仍有胶囊徽章（.badges/.badge）');
+        assert.ok(!hero.borderStyle.includes('dashed'), '#dropzone 仍是虚线框（border-style=' + hero.borderStyle + '）');
+        assert.ok(hero.pickerText.includes('选择文档'), '主操作卡片缺「选择文档」，实测 ' + hero.pickerText);
+        assert.ok(hero.lastTitle.includes('上次转换'), '缺「上次转换」区块');
+        assert.ok(hero.lastTop > hero.dzTop, '顺序不符：上次转换应在选择文档卡片之下');
+      });
+
+      await t.test('Z6-3 A4 页脚信息从首页移除、只在「设置 › 关于」：无 footer；转换面板不含版本/许可；关于含版本', async () => {
+        const r = await page.evaluate(() => {
+          const conv = (document.getElementById('panel-convert') || {}).textContent || '';
+          const set = (document.getElementById('panel-settings') || {}).textContent || '';
+          return {
+            footers: document.querySelectorAll('footer').length,
+            convVersion: conv.includes('v0.1.12'),
+            convLicense: /许可|MIT/.test(conv),
+            setVersion: set.includes('v0.1.12'),
+            setLicense: /MIT|许可/.test(set),
+            setAbout: set.includes('关于'),
+          };
+        });
+        assert.equal(r.footers, 0, '页面里仍有 <footer>（页脚信息应搬进「设置 › 关于」）');
+        assert.equal(r.convVersion, false, '转换面板仍含版本号');
+        assert.equal(r.convLicense, false, '转换面板仍含许可声明');
+        assert.equal(r.setVersion, true, '「关于」缺版本号（A4 的正证据）');
+        assert.equal(r.setLicense, true, '「关于」缺许可信息');
+        assert.equal(r.setAbout, true, '设置页缺「关于」组');
+      });
+
+      await t.test('Z6-4 A5 文件页空态壳：空态文案 + 「去转换」跳回转换；⛔ 不放假数据', async () => {
+        await page.click('#tab-files');
+        const empty = await page.evaluate(() => {
+          const box = document.getElementById('filesEmpty');
+          return {
+            visible: !!box && getComputedStyle(box).display !== 'none',
+            text: (box || {}).textContent || '',
+            cards: document.querySelectorAll('#panel-files .card').length,
+          };
+        });
+        assert.equal(empty.visible, true, '文件页空态不可见');
+        assert.ok(empty.text.includes('还没有转换记录'), '空态缺文案，实测 ' + JSON.stringify(empty.text.replace(/\s+/g, ' ')));
+        assert.equal(empty.cards, 0, '文件页出现了卡片（假数据）——列表渲染归后续卡');
+        await page.click('#goConvert');
+        const back = await page.evaluate(() => ({
+          sel: document.getElementById('tab-convert').getAttribute('aria-selected'),
+          shown: !document.getElementById('panel-convert').hidden,
+        }));
+        assert.equal(back.sel, 'true', '「去转换」没有把 Tab 切回转换');
+        assert.equal(back.shown, true, '「去转换」后转换面板仍不可见');
+      });
+
+      await t.test('Z6-5 A6 设置四组齐 + 外观三档 + 「跟随系统」是真监听（emulateMedia 翻系统色必须生效）', async () => {
+        await page.click('#tab-settings');
+        const groups = await page.evaluate(() => {
+          const set = (document.getElementById('panel-settings') || {}).textContent || '';
+          return {
+            four: ['外观', '历史', '反馈', '关于'].filter((k) => set.includes(k)),
+            themeBtns: document.querySelectorAll('[data-theme-set]').length,
+          };
+        });
+        assert.deepEqual(groups.four, ['外观', '历史', '反馈', '关于'], '设置页四组缺项，实测 ' + JSON.stringify(groups.four));
+        assert.equal(groups.themeBtns, 3, '外观档位不是 3 个');
+
+        await page.click('[data-theme-set="system"]');
+        await page.emulateMedia({ colorScheme: 'light' });
+        await page.waitForTimeout(120);
+        assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'light', '跟随系统：系统转浅色后未跟随（不是真监听）');
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.waitForTimeout(120);
+        assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark', '跟随系统：系统转深色后未跟随');
+
+        await page.click('[data-theme-set="light"]');
+        await page.waitForTimeout(120);
+        assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'light', '选「浅色」后主题未落定');
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.waitForTimeout(120);
+        assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'light', '选「浅色」后仍被系统色覆盖（选择未固定）');
+      });
+
+      await t.test('Z6-6 A7 safe-area 基础：viewport-fit=cover + env(safe-area-inset-*) + 不硬编码状态栏高度', () => {
+        assert.match(src, /name="viewport"[^>]*viewport-fit=cover/, 'viewport 缺 viewport-fit=cover');
+        assert.match(src, /env\(safe-area-inset-top/, 'CSS 未使用 env(safe-area-inset-top)');
+        assert.match(src, /env\(safe-area-inset-bottom/, 'CSS 未使用 env(safe-area-inset-bottom)');
+        assert.ok(!/--status-bar-height:\s*30px|padding-top:\s*30px/.test(src), '出现硬编码的 30px 状态栏高度（该值应来自原生 inset）');
+      });
+
+      await ctx.close();
     } finally {
       await browser.close();
     }

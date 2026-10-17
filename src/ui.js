@@ -575,5 +575,123 @@ export function renderResult(file, result) {
   resultsEl.appendChild(card);
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
+/* ── 批次 2 · 门面骨架（卡 056）：三 Tab / 外观三档 / 文件页空态 ──────────────────
+ * 范围（卡面 inScope）：把 Web 首屏从「落地页」改成三 Tab App 骨架。⛔ 不含历史数据面（另卡）、
+ *   ⛔ 不含原生系统栏与 edge-to-edge（另卡）。
+ * ⚠️ app.js 一字未动 —— 它依赖的 dropzone / fileInput / hintEl 三个导出与元素 id 全部保持不变
+ *   （#dropzone 现在是「选择文档」卡片，不再是虚线拖放框；点击与拖放接线仍在 app.js）。
+ * 主题：三档（跟随系统 / 浅 / 深）持久化在 localStorage；「跟随系统」用真实的 matchMedia 监听，
+ *   系统切换时立即生效 —— 不是只在初始化时读一次。
+ * ⚠️ 浅色令牌在 CSS 里用 rgb() 写（见 template.html 注释），深色仍是 #hex ⇒ pwa-audit 的对比度仍量深色；
+ *   浅色对比度由契约组 Z6 单独量。 */
+const THEME_KEY = 'doc2md-theme';
+const THEME_CHOICES = ['system', 'light', 'dark'];
+const navEl = document.querySelector('.navbar');
+
+function tabButtons() {
+  return Array.from(document.querySelectorAll('.navbar .navitem'));
+}
+function panelOf(tab) {
+  const id = tab.getAttribute('aria-controls');
+  return id ? document.getElementById(id) : null;
+}
+/** 切到某个 Tab：aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面） */
+export function activateTab(name) {
+  const tabs = tabButtons();
+  if (!tabs.length) return null;
+  const target = tabs.find((t) => t.dataset.tab === name) || tabs[0];
+  for (const t of tabs) {
+    const on = t === target;
+    t.setAttribute('aria-selected', on ? 'true' : 'false');
+    t.tabIndex = on ? 0 : -1;
+    const panel = panelOf(t);
+    if (panel) {
+      panel.classList.toggle('active', on);
+      if (on) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', '');
+    }
+  }
+  return target.dataset.tab || null;
+}
+function focusTab(step) {
+  const tabs = tabButtons();
+  const i = tabs.indexOf(document.activeElement);
+  const next = tabs[(i + step + tabs.length) % tabs.length];
+  if (next) { next.focus(); activateTab(next.dataset.tab); }
+}
+const themeMq = typeof window !== 'undefined' && window.matchMedia
+  ? window.matchMedia('(prefers-color-scheme: light)')
+  : null;
+let themeChoice = 'system';
+function resolveTheme(choice) {
+  if (choice === 'light' || choice === 'dark') return choice;
+  return themeMq && themeMq.matches ? 'light' : 'dark';
+}
+function paintThemeButtons() {
+  for (const b of document.querySelectorAll('[data-theme-set]')) {
+    b.setAttribute('aria-pressed', b.dataset.themeSet === themeChoice ? 'true' : 'false');
+  }
+}
+/** 应用主题。choice ∈ system|light|dark；persist=true 时写入 localStorage。 */
+export function applyTheme(choice, persist) {
+  themeChoice = THEME_CHOICES.includes(choice) ? choice : 'system';
+  document.documentElement.dataset.theme = resolveTheme(themeChoice);
+  paintThemeButtons();
+  if (persist) {
+    try { localStorage.setItem(THEME_KEY, themeChoice); } catch { /* 隐私模式下忽略 */ }
+  }
+  return themeChoice;
+}
+function storedTheme() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return THEME_CHOICES.includes(v) ? v : 'system';
+  } catch { return 'system'; }
+}
+function jumpTab(index) {
+  const tabs = tabButtons();
+  const t = index < 0 ? tabs[tabs.length - 1] : tabs[index];
+  if (!t) return;
+  t.focus();
+  activateTab(t.dataset.tab);
+}
+/** 底部导航的键盘导航（←/→/↑/↓ 走相邻，Home/End 走首尾）—— WAI-ARIA tabs 的自动激活式 */
+function onNavKey(e) {
+  const k = e.key;
+  const next = k === 'ArrowRight' || k === 'ArrowDown';
+  const prev = k === 'ArrowLeft' || k === 'ArrowUp';
+  const edge = k === 'Home' || k === 'End';
+  if (!next && !prev && !edge) return;
+  e.preventDefault();
+  if (edge) jumpTab(k === 'Home' ? 0 : -1);
+  else focusTab(next ? 1 : -1);
+}
+function initTabs() {
+  for (const t of tabButtons()) {
+    t.addEventListener('click', () => activateTab(t.dataset.tab));
+  }
+  if (navEl) navEl.addEventListener('keydown', onNavKey);
+}
+function initTheme() {
+  for (const b of document.querySelectorAll('[data-theme-set]')) {
+    b.addEventListener('click', () => applyTheme(b.dataset.themeSet, true));
+  }
+  if (!themeMq) return;
+  const onChange = () => { if (themeChoice === 'system') applyTheme('system', false); };
+  if (typeof themeMq.addEventListener === 'function') themeMq.addEventListener('change', onChange);
+  else if (typeof themeMq.addListener === 'function') themeMq.addListener(onChange);
+}
+/** 三 Tab + 外观 + 文件页空态的接线（模块顶层执行：bundle 注入 body 尾部，DOM 已就绪）
+ * ⚠️ 拆成 initTabs / initTheme 三个小函数：合并写时 initShell 的圈复杂度 17（阈值 10）会被 metrics 判红。 */
+function initShell() {
+  initTabs();
+  initTheme();
+  const goConvert = document.getElementById('goConvert');
+  if (goConvert) goConvert.addEventListener('click', () => activateTab('convert'));
+  applyTheme(storedTheme(), false);
+  activateTab('convert');
+}
+initShell();
+
 // UI 域对外句柄（事件接线在 app.js 使用）
 export { dropzone, fileInput, hintEl };
