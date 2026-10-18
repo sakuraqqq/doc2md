@@ -314,6 +314,31 @@
 - **观察期**：**2026-09-16 起 → ≥2026-09-19 复盘**（重点：手机侧真机 WPS 系 PDF 的**行内顺序**、`Tm.a ≠ 1` 文档的行距/分列、既有正常 PDF 产物应与 v0.1.8 逐字节一致）。
 - ⚠️ **发布后漂移登记（2026-09-16 14:05 +08 实测；同日用户拍板处置 ②）**：push main 触发 **Pages 自动部署** ⇒ 线上 `index.html` 一度变为 **main 构建 121,406 B / `18EA70E4…79EB3`**（依赖 PR 落地批，页脚仍 `v0.1.9`），**不再是本版发布物 121,229 B / `F80E8626…F04D`**。该批**行为零变更**已由两层等价性台证明（函数级 0 差异 + 产物级 19/19 逐字节相同）⇒ 用户无感。**处置（用户拍板 ②）**：`deploy-pages.yml` 改为**仅 tag 推送时部署**（`on.push.tags: ['v*']` + `workflow_dispatch`），契约组 **H15** 守卫该口径（负对照必红）；「线上 == 发布物」恢复为可核对的不变量（**下次推 tag 时生效**）。**处置补充（用户 2026-09-17 拍板）**：**接受现状** —— 线上保持 `18EA70E4…`（main 构建）直到下次发版覆盖，**不手动 dispatch**；v0.1.9 观察期内的线上实测基准 = **121,406 B / `18EA70E4…`**。
 
+## v0.1.12 · 2026-10-18（**卡 058 R1–R3**：Markdown 预览 + 紧凑结果列表 + 紧凑选择卡）
+
+- **来源**：PR **#67**（MERGED 2026-10-18T15:30:54Z）→ squash **3c6e1056de9daf3d71017190d6fa3c2306737d4f** / tag **v0.1.12**（同一提交，远端 tag SHA 一致）
+- **本版内容**：
+  - **R1 全屏查看器**：结果行点开全屏；预览 / 原文切换；原文为只读 textarea 并撑满全屏。
+  - **R2 紧凑结果列表**：90px/行；文件名、类型、大小、耗时、状态；搜索；单选/全选/取消/半选；三点菜单（查看/复制/zip 下载/内嵌下载）；选择驱动底部批量条（复制按文件名分段，保存只处理成功行）；失败行无菜单、选择框禁用。
+  - **R3 紧凑选择卡**：空态 107px、有结果自动收紧 92px；保留格式、50MB、本地处理提示；点击与桌面拖放接线不变。
+- **测试结果**：
+  - 契约（本机）：npm test → **361 / 359 / 0 / 2**（skip = 第三方 real-cid-paper / 组 Y 夹具口径见 BASELINE）
+  - 契约（CI 口径）：**358 / 355 / 0 / 3**
+  - PWA：48/48
+  - lint：0 error / 0 warning；metrics：33 文件 / 806 函数 / 超限 0 / 重复率 0.2%
+  - baseline：5/5；两口径 TAP 对账 PASS
+  - APK：20,284,588 B / 48ACB6B0C1BFC2BDC93C891E554AE386ACF7021AC287AF46EDB8ED5194D7F57D（两道守卫 PASS；包内 index 同源）
+- **产物 SHA256**：
+  | 文件 | 大小 | SHA256（完整） |
+  |---|---|---|
+  | index.html | **196,090 B** | **68B539A9FA19EFF178200E827115A5450903B467E507832FF9ABF99247001278** |
+  | manifest.json | 730 B | D5B46A975B60640318252A39D4C83D2766A62E9A3E907E182945C7C89B858E98 |
+  | sw.js | 4,360 B | （见仓库文件） |
+- **发布动作**：私档工具 发布流程.ps1 完成 push → PR #67 → CI → squash 合并 → main 同步；随后 git tag v0.1.12 + git push origin v0.1.12（用户终端）。Pages run **39140875937 success**（28s）；线上 verify-release-online 绿（196,090 B / 68B539A9…）。
+- **观察期**：开始 2026-10-18 → 复盘 ≥2026-10-21（重点：100 文件列表、批量复制/保存、紧凑选择卡；手机原生选择器与桌面拖放）。
+- **已知问题（非本版产品面）**：tag push 的 tests run **39140875954** 红在 Privacy gate —— tag 事件 github.event.before 全零，回退 merge-base origin/main HEAD = HEAD ⇒ 空范围 fail-closed；PR/main checks 绿、Pages/线上不受影响。修复方向 = tag 事件取 HEAD~1；另开 CI PR。
+- **备注**：BASELINE.json 的 released/online 已回写 v0.1.12（本版 tag / 线上实测）；tag 不移动、不重建（baseline-check 从 tag blob 现算）。
+
 ## v0.1.11 · 2026-10-09（**发版锚点批**：把 tag 与产物对齐 —— 治 `v0.1.10`「tag 里没有 APK 线改动」）
 
 - **版本号说明**：⭐ **四处同步**（照 v0.1.10 先例 · `RELEASE-CHECKLIST.md` §2 口径）：`package.json` **0.1.10 → 0.1.11** · `package-lock.json` **L3/L9 两处**（⭐ 用 `npm version 0.1.11 --no-git-tag-version` 一次改对 ✓）· `src/template.html` 页脚 `doc2md v0.1.10` → `doc2md v0.1.11` · **产物 `index.html` 重建**（`npm run build` ✓）。
