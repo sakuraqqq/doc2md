@@ -6545,43 +6545,71 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.ok(big.ms < 3000, '超限图处理耗时 ' + big.ms + ' ms（应快速拒绝，不冻结页面）');
       });
 
-      await t.test('Z7-5 A6 默认渲染 / 切原始逐字一致 / 切回一致 / 空文本空态', async () => {
+      await t.test('Z7-5 A6 文件卡 / 全屏预览 / 原文逐字一致 / 关闭', async () => {
         const content = '# 标题\n\n- 一\n- 二\n\n~~删~~\n';
         await page.evaluate(() => { document.getElementById('results').innerHTML = ''; });
         await page.setInputFiles('input[type=file]', { name: 'toggle.txt', mimeType: 'text/plain', buffer: Buffer.from(content, 'utf8') });
-        await page.waitForSelector('.card .md-preview', { timeout: 15000 });
-        const first = await page.evaluate(() => {
-          const card = document.querySelector('.card');
-          const p = card.querySelector('.md-preview');
-          const ta = card.querySelector('textarea.md');
+        await page.waitForSelector('.card .file-open', { timeout: 15000 });
+        const md = await page.evaluate(async (text) => (await window.__doc2md.convert(new File([text], 'toggle.txt', { type: 'text/plain' }))).markdown, content);
+        const card = await page.evaluate(() => {
+          const c = document.querySelector('.card');
+          const ta = c.querySelector('textarea.md');
           return {
-            previewShown: !!p && !p.hidden && getComputedStyle(p).display !== 'none',
-            taShown: !!ta && !ta.hidden && getComputedStyle(ta).display !== 'none',
-            html: p ? p.innerHTML : '',
-            buttons: [...card.querySelectorAll('.md-switch button')].map((b) => b.textContent.trim()),
+            inlinePreview: c.querySelectorAll('.md-preview').length,
+            hasOpen: !!c.querySelector('.file-open'),
+            hiddenValue: ta ? ta.value : null,
+            taHidden: ta ? !!ta.hidden : false,
           };
         });
-        assert.equal(first.previewShown, true, '默认未显示渲染预览');
-        assert.equal(first.taShown, false, '默认仍显示原始 textarea');
-        assert.deepEqual(first.buttons, ['渲染', '原始'], '切换控件文案不符：' + JSON.stringify(first.buttons));
-        const md = await page.evaluate(async (text) => (await window.__doc2md.convert(new File([text], 'toggle.txt', { type: 'text/plain' }))).markdown, content);
-        await page.locator('.card .md-switch button', { hasText: '原始' }).click();
-        const raw = await page.evaluate(() => {
-          const card = document.querySelector('.card');
-          const ta = card.querySelector('textarea.md');
-          const p = card.querySelector('.md-preview');
-          return { val: ta.value, taShown: !ta.hidden, previewShown: !p.hidden };
-        });
-        assert.equal(raw.taShown, true, '切原始后 textarea 未显示');
-        assert.equal(raw.previewShown, false, '切原始后预览仍显示');
-        assert.equal(raw.val, md, 'textarea.value 与源文本不一致');
-        await page.locator('.card .md-switch button', { hasText: '渲染' }).click();
-        const back = await page.evaluate(() => ({
-          html: document.querySelector('.card .md-preview').innerHTML,
-          previewShown: !document.querySelector('.card .md-preview').hidden,
+        assert.equal(card.inlinePreview, 0, '卡内仍有内嵌预览小窗（应改为文件卡）');
+        assert.equal(card.hasOpen, true, '文件卡缺「查看」入口');
+        assert.equal(card.hiddenValue, md, '卡片隐藏 textarea 与源文本不一致（Q 组口径）');
+        assert.equal(card.taHidden, true, 'Q 组 textarea 未隐藏');
+        await page.locator('.card .file-open').click();
+        await page.waitForSelector('#mdViewer:not([hidden])', { timeout: 5000 });
+        const first = await page.evaluate(() => ({
+          name: document.getElementById('mdViewerName').textContent,
+          preview: !!document.querySelector('#mdViewerBody .md-preview'),
+          html: (document.querySelector('#mdViewerBody .md-preview') || {}).innerHTML || '',
+          previewPressed: document.getElementById('mdViewerPreview').getAttribute('aria-pressed'),
+          rawPressed: document.getElementById('mdViewerRaw').getAttribute('aria-pressed'),
         }));
-        assert.equal(back.previewShown, true, '切回渲染后预览未显示');
-        assert.equal(back.html, first.html, '切回渲染后结果与首次不一致');
+        assert.equal(first.name, 'toggle.txt', '全屏查看器标题不是文件名');
+        assert.equal(first.preview, true, '全屏查看器默认未显示预览');
+        assert.ok(first.html.includes('<h1'), '全屏预览未渲染标题');
+        assert.equal(first.previewPressed, 'true', '默认「预览」未按下');
+        assert.equal(first.rawPressed, 'false', '默认「原文」不应按下');
+        await page.click('#mdViewerRaw');
+        const raw = await page.evaluate(() => {
+          const ta = document.querySelector('#mdViewerBody textarea.md-viewer-raw');
+          const body = document.getElementById('mdViewerBody').getBoundingClientRect();
+          const box = ta ? ta.getBoundingClientRect() : null;
+          return {
+            value: ta ? ta.value : null,
+            readOnly: ta ? ta.readOnly : null,
+            mode: document.getElementById('mdViewerBody').dataset.mode,
+            taH: box ? Math.round(box.height) : null,
+            bodyH: Math.round(body.height),
+          };
+        });
+        assert.equal(raw.value, md, '原文 textarea 与源文本不一致');
+        assert.equal(raw.readOnly, true, '原文 textarea 不是只读');
+        assert.equal(raw.mode, 'raw', '查看器模式未切到 raw');
+        assert.ok(raw.taH >= raw.bodyH - 40, '原文 textarea 未撑满全屏：taH=' + raw.taH + ' / bodyH=' + raw.bodyH);
+        await page.click('#mdViewerPreview');
+        const back = await page.evaluate(() => ({
+          html: (document.querySelector('#mdViewerBody .md-preview') || {}).innerHTML || '',
+          mode: document.getElementById('mdViewerBody').dataset.mode,
+        }));
+        assert.equal(back.html, first.html, '切回预览后结果与首次不一致');
+        assert.equal(back.mode, 'preview', '查看器模式未切回 preview');
+        await page.click('#mdViewerClose');
+        const closed = await page.evaluate(() => ({
+          hidden: document.getElementById('mdViewer').hidden,
+          bodyClass: document.body.classList.contains('md-viewer-open'),
+        }));
+        assert.equal(closed.hidden, true, '关闭后查看器仍显示');
+        assert.equal(closed.bodyClass, false, '关闭后页面滚动锁未释放');
         const empty = await page.evaluate(() => {
           const d = document.createElement('div');
           document.body.append(d);
@@ -6633,6 +6661,34 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.ok(r.ms < 5000, '1MB 渲染耗时异常：' + r.ms + ' ms');
         assert.ok(r.ms < 500 || r.cut, '1MB 渲染 ' + r.ms.toFixed(1) + ' ms > 500ms 且未截断（A8 要求自带截断并明示）');
         if (r.cut) assert.ok(r.text.includes('预览已截断'), '截断未在 UI 明示：' + r.text);
+      });
+
+      await t.test('Z7-9 A6+ 批量「全部保存」固定条在视口内（一键下载不再被顶出屏幕）', async () => {
+        await page.evaluate(() => {
+          document.getElementById('results').innerHTML = '';
+          document.body.classList.remove('has-batch');
+        });
+        await page.setInputFiles('input[type=file]', [
+          nodePath.join(DATA, 'sample.txt'),
+          nodePath.join(DATA, 'sample.html'),
+          nodePath.join(DATA, 'sample.xlsx'),
+        ]);
+        await page.waitForFunction(() => /完成：/.test((document.querySelector('#status') || {}).textContent || ''), null, { timeout: 30000 });
+        await page.waitForSelector('.batch-bar', { timeout: 5000 });
+        const r = await page.evaluate(() => {
+          const bar = document.querySelector('.batch-bar');
+          const b = bar.getBoundingClientRect();
+          return {
+            visible: b.top >= 0 && b.bottom <= window.innerHeight,
+            text: bar.textContent.replace(/\s+/g, ' ').trim(),
+            bodyClass: document.body.classList.contains('has-batch'),
+            btn: (bar.querySelector('button') || {}).textContent || '',
+          };
+        });
+        assert.equal(r.visible, true, '批量「全部保存」条不在视口内：' + JSON.stringify(r));
+        assert.ok(r.text.includes('全部保存'), '批量条缺「全部保存」：' + r.text);
+        assert.ok(r.btn.includes('全部保存'), '批量条按钮文案不符：' + r.btn);
+        assert.equal(r.bodyClass, true, '批量条存在但 body 缺 has-batch');
       });
 
       await t.test('Z7-8 A13 离线首开：SW v5 PRECACHE 含两库，断网重载后渲染预览可用', async () => {

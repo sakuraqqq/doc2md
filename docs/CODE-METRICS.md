@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-18T13:05:16.404Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-18T13:46:15.045Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：33；函数总数：760；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：33；函数总数：765；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 760 个，超限 0 个。
+重构后当前：函数 765 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -27,42 +27,43 @@
 |---|---|---|---|---|
 | tools/metrics.mjs | loadIgnoreFilter | 53 | 10 | 13 |
 | tools/deploy-smoke.mjs | checkManifest | 112 | 10 | 12 |
-| src/ui.js | onNavKey | 777 | 10 | 11 |
+| src/ui.js | onNavKey | 832 | 10 | 11 |
 | src/xlsx.js | xlsxByLib | 927 | 10 | 11 |
 | src/xlsx.js | sigDigitsOf | 585 | 10 | 10 |
 | tools/measure-xlsx-peak.mjs | main | 276 | 10 | 10 |
 | tools/verify-release-online.mjs | main | 67 | 10 | 10 |
 | src/markdown-preview.js | renderMarkdown | 137 | 10 | 9 |
 | tools/baseline-check.mjs | runFromTap | 464 | 10 | 9 |
-| src/ui.js | activateTab | 717 | 9 | 13 |
+| src/ui.js | activateTab | 772 | 9 | 13 |
 | tools/measure-xlsx-peak.mjs | launchBrowser | 117 | 9 | 12 |
 | src/ocr.js | ocrAssetsWarm | 22 | 9 | 11 |
+| src/ui.js | renderViewerMode | 591 | 9 | 11 |
 | tools/baseline-check.mjs | checkProvenance | 173 | 9 | 11 |
 | tools/measure-xlsx-peak.mjs | startPssSampler | 175 | 9 | 11 |
-| src/ui.js | renderResult | 652 | 9 | 10 |
+| src/ui.js | renderResult | 707 | 9 | 10 |
 | src/docx.js | ommlParts | 110 | 9 | 9 |
 | src/sniff.js | imageKind | 212 | 9 | 9 |
-| src/ui.js | showToast | 43 | 9 | 8 |
+| src/ui.js | showToast | 49 | 9 | 8 |
 | src/xlsx.js | areaLossWarning | 876 | 9 | 8 |
 | src/xlsx.js | parseRowCells | 268 | 8 | 14 |
-| src/ui.js | buildEmbedMap | 515 | 8 | 13 |
+| src/ui.js | buildEmbedMap | 531 | 8 | 13 |
 | tools/privacy-gate.mjs | loadAllowlist | 166 | 8 | 12 |
 | src/html2md.js | joinFrags | 25 | 8 | 10 |
 | tools/baseline-check.mjs | checkContract | 192 | 8 | 10 |
 | tools/baseline-check.mjs | runSelftest | 440 | 8 | 10 |
 | tools/measure-xlsx-peak.mjs | (anonymous) | 179 | 8 | 10 |
 | src/docx.js | ommlScript | 73 | 8 | 9 |
-| src/ui.js | saveAllArtifacts | 284 | 8 | 9 |
+| src/ui.js | saveAllArtifacts | 290 | 8 | 9 |
 | src/xlsx.js | cellToString | 630 | 8 | 9 |
 | tools/measure-xlsx-peak.mjs | measureTier | 234 | 8 | 9 |
 | src/docx.js | docxCollectWarnings | 292 | 8 | 8 |
-| src/ui.js | reportAssetFailures | 393 | 8 | 8 |
+| src/ui.js | reportAssetFailures | 409 | 8 | 8 |
 | tools/apk-version-check.mjs | runCli | 223 | 8 | 8 |
 | tools/audit-delivery.mjs | main | 237 | 8 | 8 |
 | src/convert.js | convert | 108 | 8 | 7 |
 | src/convert.js | runConverter | 234 | 8 | 7 |
 | src/sniff.js | sniff | 189 | 8 | 7 |
-| src/ui.js | diagBoot | 98 | 8 | 7 |
+| src/ui.js | diagBoot | 104 | 8 | 7 |
 | src/xlsx.js | takeT | 382 | 8 | 7 |
 | src/xlsx.js | isBuiltinDateId | 546 | 8 | 7 |
 | tools/android-permission-audit.mjs | checkAndroidPermissions | 66 | 8 | 7 |
@@ -73,7 +74,7 @@
 | src/xlsx.js | xlsxDegradeWarnings | 906 | 7 | 12 |
 | tools/check-pages-allowlist.mjs | parseArgs | 25 | 7 | 11 |
 | tools/verify-release-online.mjs | parseArgs | 32 | 7 | 11 |
-| src/ui.js | saveZipNative | 414 | 7 | 9 |
+| src/ui.js | saveZipNative | 430 | 7 | 9 |
 | tools/baseline-check.mjs | reachabilityOf | 89 | 7 | 9 |
 | tools/deploy-smoke.mjs | checkSite | 135 | 7 | 9 |
 | src/docx.js | ommlEnclosingPara | 143 | 7 | 8 |
@@ -82,7 +83,7 @@
 | src/app.js | handleFiles | 16 | 7 | 7 |
 | src/pdf.js | addGlyph | 68 | 7 | 7 |
 | src/pdf.js | pdfConvert | 476 | 7 | 7 |
-| src/ui.js | downloadZip | 454 | 7 | 7 |
+| src/ui.js | downloadZip | 470 | 7 | 7 |
 | src/xlsx.js | xlsxParseSheetStream | 680 | 7 | 7 |
 | tools/deploy-smoke.mjs | checkOneRef | 86 | 7 | 7 |
 | src/convert.js | ocrOnce | 44 | 7 | 6 |
@@ -91,6 +92,7 @@
 | src/sniff.js | charsetLabelOf | 77 | 7 | 6 |
 | src/sniff.js | isBmp | 234 | 7 | 6 |
 | src/sniff.js | isGif | 243 | 7 | 6 |
+| src/ui.js | renderBatchSave | 328 | 7 | 6 |
 | src/xlsx.js | skipRPhBlock | 368 | 7 | 6 |
 | src/xlsx.js | formatNumericLiteral | 603 | 7 | 6 |
 | tools/audit-delivery.mjs | viaItem | 152 | 7 | 6 |
@@ -130,8 +132,8 @@
 | src/pdf.js | pageTextWithOcr | 434 | 6 | 6 |
 | src/sniff.js | decodeText | 23 | 6 | 6 |
 | src/sniff.js | ctrlRatio | 273 | 6 | 6 |
-| src/ui.js | saveTextArtifact | 240 | 6 | 6 |
-| src/ui.js | assetsTotalBytes | 508 | 6 | 6 |
+| src/ui.js | saveTextArtifact | 246 | 6 | 6 |
+| src/ui.js | assetsTotalBytes | 524 | 6 | 6 |
 | src/xlsx.js | findEocd | 19 | 6 | 6 |
 | src/xlsx.js | xlsxWorkbookMap | 172 | 6 | 6 |
 | src/xlsx.js | rowColCount | 812 | 6 | 6 |
@@ -150,8 +152,9 @@
 | src/pdf.js | countAsciiGlyph | 59 | 6 | 5 |
 | src/pdf.js | isCjkChar | 186 | 6 | 5 |
 | src/pdf.js | needsSpace | 203 | 6 | 5 |
-| src/ui.js | buildActions | 619 | 6 | 5 |
-| src/ui.js | initTheme | 793 | 6 | 5 |
+| src/ui.js | buildActions | 674 | 6 | 5 |
+| src/ui.js | initTheme | 848 | 6 | 5 |
+| src/ui.js | initMarkdownViewer | 893 | 6 | 5 |
 | src/xlsx.js | zipEntryMeta | 94 | 6 | 5 |
 | src/xlsx.js | parseCellAt | 252 | 6 | 5 |
 | src/xlsx.js | extractInlineText | 418 | 6 | 5 |
@@ -194,7 +197,7 @@
 | src/app.js | safeHandleFiles | 72 | 5 | 5 |
 | src/docx.js | docxInjectLatex | 259 | 5 | 5 |
 | src/docx.js | (anonymous) | 261 | 5 | 5 |
-| src/ui.js | buildZipBytes | 440 | 5 | 5 |
+| src/ui.js | buildZipBytes | 456 | 5 | 5 |
 | src/xlsx.js | parseSheetTags | 137 | 5 | 5 |
 | tools/baseline-check.mjs | checkBaseline | 303 | 5 | 5 |
 | tools/deploy-smoke.mjs | collectSrcset | 54 | 5 | 5 |
@@ -210,14 +213,14 @@
 | src/sniff.js | trimMetaValue | 91 | 5 | 4 |
 | src/sniff.js | isPdfHead | 252 | 5 | 4 |
 | src/sniff.js | isZipHead | 260 | 5 | 4 |
-| src/ui.js | nativePluginObject | 195 | 5 | 4 |
-| src/ui.js | nativeBinaryPlugin | 206 | 5 | 4 |
-| src/ui.js | revealResultsTail | 312 | 5 | 4 |
-| src/ui.js | renderBatchSave | 321 | 5 | 4 |
-| src/ui.js | assetFailSlot | 380 | 5 | 4 |
-| src/ui.js | truncatePreview | 562 | 5 | 4 |
-| src/ui.js | resolveTheme | 744 | 5 | 4 |
-| src/ui.js | themeOrigin | 809 | 5 | 4 |
+| src/ui.js | nativePluginObject | 201 | 5 | 4 |
+| src/ui.js | nativeBinaryPlugin | 212 | 5 | 4 |
+| src/ui.js | revealResultsTail | 319 | 5 | 4 |
+| src/ui.js | assetFailSlot | 396 | 5 | 4 |
+| src/ui.js | truncatePreview | 578 | 5 | 4 |
+| src/ui.js | openMarkdownViewer | 617 | 5 | 4 |
+| src/ui.js | resolveTheme | 799 | 5 | 4 |
+| src/ui.js | themeOrigin | 864 | 5 | 4 |
 | src/xlsx.js | decodeXmlEntity | 213 | 5 | 4 |
 | src/xlsx.js | takeRowUnit | 316 | 5 | 4 |
 | src/xlsx.js | elemAt | 361 | 5 | 4 |
@@ -259,9 +262,7 @@
 | src/ocr.js | (anonymous) | 48 | 4 | 4 |
 | src/pdf.js | pdfPageRuns | 174 | 4 | 4 |
 | src/sniff.js | startsWith | 11 | 4 | 4 |
-| src/ui.js | buildPreviewSwitch | 572 | 4 | 4 |
-| src/ui.js | buildPreviewBody | 599 | 4 | 4 |
-| src/ui.js | applyTheme | 754 | 4 | 4 |
+| src/ui.js | applyTheme | 809 | 4 | 4 |
 | src/xlsx.js | parseRelsMap | 151 | 4 | 4 |
 | src/xlsx.js | parseNumFmtCodes | 522 | 4 | 4 |
 | tools/apk-artifact-check.mjs | firstDiff | 51 | 4 | 4 |
@@ -286,12 +287,13 @@
 | src/ocr.js | rotateImage90 | 102 | 4 | 3 |
 | src/pdf.js | ocrPageToText | 21 | 4 | 3 |
 | src/sniff.js | zipKind | 265 | 4 | 3 |
-| src/ui.js | setStatus | 17 | 4 | 3 |
-| src/ui.js | exportDiagLog | 111 | 4 | 3 |
-| src/ui.js | isNativeRuntime | 218 | 4 | 3 |
-| src/ui.js | reportSaveError | 267 | 4 | 3 |
-| src/ui.js | diagConvert | 648 | 4 | 3 |
-| src/ui.js | playReveal | 816 | 4 | 3 |
+| src/ui.js | setStatus | 23 | 4 | 3 |
+| src/ui.js | exportDiagLog | 117 | 4 | 3 |
+| src/ui.js | isNativeRuntime | 224 | 4 | 3 |
+| src/ui.js | reportSaveError | 273 | 4 | 3 |
+| src/ui.js | closeMarkdownViewer | 628 | 4 | 3 |
+| src/ui.js | diagConvert | 703 | 4 | 3 |
+| src/ui.js | playReveal | 871 | 4 | 3 |
 | src/xlsx.js | inflateEntry | 82 | 4 | 3 |
 | src/xlsx.js | entryStream | 118 | 4 | 3 |
 | src/xlsx.js | parseDate1904 | 165 | 4 | 3 |
@@ -334,8 +336,7 @@
 | src/pdf.js | documentMonospaceFonts | 406 | 3 | 3 |
 | src/sniff.js | countFffd | 131 | 3 | 3 |
 | src/sniff.js | countNonAscii | 137 | 3 | 3 |
-| src/ui.js | setMode | 578 | 3 | 3 |
-| src/ui.js | paintThemeButtons | 748 | 3 | 3 |
+| src/ui.js | paintThemeButtons | 803 | 3 | 3 |
 | src/xlsx.js | parseXfIds | 535 | 3 | 3 |
 | tools/baseline-check.mjs | checkNumberLeaf | 184 | 3 | 3 |
 | tools/baseline-check.mjs | tapDiffs | 353 | 3 | 3 |
@@ -365,17 +366,17 @@
 | src/pdf.js | (anonymous) | 150 | 3 | 2 |
 | src/pdf.js | runsToPageText | 344 | 3 | 2 |
 | src/pdf.js | collectPage | 462 | 3 | 2 |
-| src/ui.js | diag | 93 | 3 | 2 |
-| src/ui.js | fmtSize | 149 | 3 | 2 |
-| src/ui.js | nativeSavePlugin | 200 | 3 | 2 |
-| src/ui.js | baseName | 236 | 3 | 2 |
-| src/ui.js | embedImagesIntoMd | 530 | 3 | 2 |
-| src/ui.js | downloadMdEmbedded | 536 | 3 | 2 |
-| src/ui.js | storedTheme | 763 | 3 | 2 |
-| src/ui.js | jumpTab | 769 | 3 | 2 |
-| src/ui.js | initTabs | 787 | 3 | 2 |
-| src/ui.js | switchTheme | 826 | 3 | 2 |
-| src/ui.js | initShell | 838 | 3 | 2 |
+| src/ui.js | diag | 99 | 3 | 2 |
+| src/ui.js | fmtSize | 155 | 3 | 2 |
+| src/ui.js | nativeSavePlugin | 206 | 3 | 2 |
+| src/ui.js | baseName | 242 | 3 | 2 |
+| src/ui.js | embedImagesIntoMd | 546 | 3 | 2 |
+| src/ui.js | downloadMdEmbedded | 552 | 3 | 2 |
+| src/ui.js | storedTheme | 818 | 3 | 2 |
+| src/ui.js | jumpTab | 824 | 3 | 2 |
+| src/ui.js | initTabs | 842 | 3 | 2 |
+| src/ui.js | switchTheme | 881 | 3 | 2 |
+| src/ui.js | initShell | 902 | 3 | 2 |
 | src/xlsx.js | normalizeSheetTarget | 193 | 3 | 2 |
 | src/xlsx.js | xlsxSheetNames | 201 | 3 | 2 |
 | src/xlsx.js | textPuller | 292 | 3 | 2 |
@@ -460,17 +461,18 @@
 | src/sniff.js | swapUtf16be | 52 | 2 | 1 |
 | src/sniff.js | tryDecode | 98 | 2 | 1 |
 | src/sniff.js | utf16leInterleaved | 160 | 2 | 1 |
-| src/ui.js | (anonymous) | 74 | 2 | 1 |
-| src/ui.js | buildDiagLog | 106 | 2 | 1 |
-| src/ui.js | copyText | 154 | 2 | 1 |
-| src/ui.js | setEmbedMaxBytes | 492 | 2 | 1 |
-| src/ui.js | bytesToB64 | 493 | 2 | 1 |
-| src/ui.js | (anonymous) | 531 | 2 | 1 |
-| src/ui.js | (anonymous) | 639 | 2 | 1 |
-| src/ui.js | panelOf | 712 | 2 | 1 |
-| src/ui.js | focusTab | 734 | 2 | 1 |
-| src/ui.js | onChange | 798 | 2 | 1 |
-| src/ui.js | prefersReducedMotion | 804 | 2 | 1 |
+| src/ui.js | (anonymous) | 80 | 2 | 1 |
+| src/ui.js | buildDiagLog | 112 | 2 | 1 |
+| src/ui.js | copyText | 160 | 2 | 1 |
+| src/ui.js | setEmbedMaxBytes | 508 | 2 | 1 |
+| src/ui.js | bytesToB64 | 509 | 2 | 1 |
+| src/ui.js | (anonymous) | 547 | 2 | 1 |
+| src/ui.js | (anonymous) | 694 | 2 | 1 |
+| src/ui.js | panelOf | 767 | 2 | 1 |
+| src/ui.js | focusTab | 789 | 2 | 1 |
+| src/ui.js | onChange | 853 | 2 | 1 |
+| src/ui.js | prefersReducedMotion | 859 | 2 | 1 |
+| src/ui.js | (anonymous) | 898 | 2 | 1 |
 | src/xlsx.js | zipEntry | 111 | 2 | 1 |
 | src/xlsx.js | decodeXml | 218 | 2 | 1 |
 | src/xlsx.js | inRange | 357 | 2 | 1 |
@@ -613,37 +615,40 @@
 | src/sniff.js | leU16 | 226 | 1 | 0 |
 | src/sniff.js | leU32 | 229 | 1 | 0 |
 | src/ui.js | $ | 10 | 1 | 0 |
-| src/ui.js | nativeNotice | 80 | 1 | 0 |
-| src/ui.js | pad | 114 | 1 | 0 |
-| src/ui.js | nextPaint | 134 | 1 | 0 |
-| src/ui.js | (anonymous) | 135 | 1 | 0 |
-| src/ui.js | (anonymous) | 136 | 1 | 0 |
-| src/ui.js | preflightNotice | 141 | 1 | 0 |
-| src/ui.js | (anonymous) | 145 | 1 | 0 |
-| src/ui.js | (anonymous) | 170 | 1 | 0 |
-| src/ui.js | anchorDownload | 174 | 1 | 0 |
-| src/ui.js | (anonymous) | 182 | 1 | 0 |
-| src/ui.js | downloadMd | 273 | 1 | 0 |
-| src/ui.js | (anonymous) | 347 | 1 | 0 |
-| src/ui.js | (anonymous) | 350 | 1 | 0 |
-| src/ui.js | (anonymous) | 353 | 1 | 0 |
-| src/ui.js | (anonymous) | 469 | 1 | 0 |
-| src/ui.js | getEmbedMaxBytes | 491 | 1 | 0 |
-| src/ui.js | escAssetName | 504 | 1 | 0 |
-| src/ui.js | (anonymous) | 550 | 1 | 0 |
-| src/ui.js | (anonymous) | 591 | 1 | 0 |
-| src/ui.js | (anonymous) | 629 | 1 | 0 |
-| src/ui.js | (anonymous) | 635 | 1 | 0 |
-| src/ui.js | tabButtons | 709 | 1 | 0 |
-| src/ui.js | (anonymous) | 720 | 1 | 0 |
-| src/ui.js | (anonymous) | 789 | 1 | 0 |
-| src/ui.js | (anonymous) | 795 | 1 | 0 |
-| src/ui.js | (anonymous) | 819 | 1 | 0 |
-| src/ui.js | (anonymous) | 824 | 1 | 0 |
-| src/ui.js | (anonymous) | 832 | 1 | 0 |
-| src/ui.js | (anonymous) | 843 | 1 | 0 |
-| src/ui.js | (anonymous) | 846 | 1 | 0 |
-| src/ui.js | (anonymous) | 847 | 1 | 0 |
+| src/ui.js | nativeNotice | 86 | 1 | 0 |
+| src/ui.js | pad | 120 | 1 | 0 |
+| src/ui.js | nextPaint | 140 | 1 | 0 |
+| src/ui.js | (anonymous) | 141 | 1 | 0 |
+| src/ui.js | (anonymous) | 142 | 1 | 0 |
+| src/ui.js | preflightNotice | 147 | 1 | 0 |
+| src/ui.js | (anonymous) | 151 | 1 | 0 |
+| src/ui.js | (anonymous) | 176 | 1 | 0 |
+| src/ui.js | anchorDownload | 180 | 1 | 0 |
+| src/ui.js | (anonymous) | 188 | 1 | 0 |
+| src/ui.js | downloadMd | 279 | 1 | 0 |
+| src/ui.js | (anonymous) | 357 | 1 | 0 |
+| src/ui.js | (anonymous) | 360 | 1 | 0 |
+| src/ui.js | (anonymous) | 363 | 1 | 0 |
+| src/ui.js | (anonymous) | 485 | 1 | 0 |
+| src/ui.js | getEmbedMaxBytes | 507 | 1 | 0 |
+| src/ui.js | escAssetName | 520 | 1 | 0 |
+| src/ui.js | (anonymous) | 566 | 1 | 0 |
+| src/ui.js | buildFileCard | 638 | 1 | 0 |
+| src/ui.js | (anonymous) | 663 | 1 | 0 |
+| src/ui.js | (anonymous) | 684 | 1 | 0 |
+| src/ui.js | (anonymous) | 690 | 1 | 0 |
+| src/ui.js | tabButtons | 764 | 1 | 0 |
+| src/ui.js | (anonymous) | 775 | 1 | 0 |
+| src/ui.js | (anonymous) | 844 | 1 | 0 |
+| src/ui.js | (anonymous) | 850 | 1 | 0 |
+| src/ui.js | (anonymous) | 874 | 1 | 0 |
+| src/ui.js | (anonymous) | 879 | 1 | 0 |
+| src/ui.js | (anonymous) | 887 | 1 | 0 |
+| src/ui.js | (anonymous) | 896 | 1 | 0 |
+| src/ui.js | (anonymous) | 897 | 1 | 0 |
+| src/ui.js | (anonymous) | 908 | 1 | 0 |
+| src/ui.js | (anonymous) | 911 | 1 | 0 |
+| src/ui.js | (anonymous) | 912 | 1 | 0 |
 | src/xlsx.js | centralEntryAt | 28 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 86 | 1 | 0 |
 | src/xlsx.js | start | 122 | 1 | 0 |

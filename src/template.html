@@ -196,13 +196,18 @@
     font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; line-height: 1.55;
     padding: 10px; tab-size: 2;
   }
-  /* ── Markdown 渲染预览（卡 058）：默认渲染；原始态仍复用 textarea.md（Q 组口径） ── */
-  .md-switch { display: flex; gap: 6px; justify-content: flex-end; margin-bottom: 8px; }
-  .md-switch-btn {
-    border: 1px solid var(--border); background: var(--panel2); color: var(--muted);
-    border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 12.5px; cursor: pointer;
+  /* ── 文件卡 + 全屏 Markdown 查看器（卡 058 返工）：卡内不再放预览小窗 ── */
+  .file-open {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 14px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel2); color: var(--text); font: inherit; text-align: left; cursor: pointer;
   }
-  .md-switch-btn[aria-pressed="true"] { color: var(--accent-soft); border-color: var(--accent); background: rgba(79,140,255,.14); font-weight: 600; }
+  .file-open:hover { border-color: var(--accent); }
+  .file-open-icon { font-size: 22px; line-height: 1; }
+  .file-open-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .file-open-title { font-size: 14.5px; font-weight: 600; }
+  .file-open-sub { font-size: 12.5px; color: var(--muted); }
+  .file-open-chev { color: var(--muted); font-size: 20px; line-height: 1; }
   .md-preview {
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
     padding: 12px 14px; font-size: 14px; line-height: 1.7;
@@ -234,6 +239,24 @@
   .md-cut, .md-empty { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
   .md-preview-error { color: var(--err); }
 
+  /* ── 全屏查看器 ── */
+  .md-viewer {
+    position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
+    background: var(--bg); color: var(--text); padding-top: var(--safe-top);
+  }
+  body.md-viewer-open { overflow: hidden; }
+  .md-viewer-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .md-viewer-close { border: 0; background: transparent; color: var(--text); font-size: 18px; line-height: 1; padding: 10px; cursor: pointer; }
+  .md-viewer-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .md-viewer-body { flex: 1; overflow: auto; padding: 14px 16px; }
+  .md-viewer-body[data-mode="raw"] { display: flex; flex-direction: column; overflow: hidden; }
+  .md-viewer .md-preview { border: 0; border-radius: 0; background: transparent; min-height: 0; padding: 0; }
+  .md-viewer-raw { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0; resize: none; border: 0; border-radius: 0; background: var(--bg); }
+  .md-viewer-foot { padding: 10px 16px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--panel); }
+  .md-viewer-foot .seg-btn { min-height: 40px; }
+  .batch-bar { position: fixed; left: 12px; right: 12px; z-index: 15; bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px); margin: 0 auto; max-width: 928px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+  .batch-spacer { flex: 0 0 auto; }
+
   .card-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
   .warnings { margin: 8px 0 0; font-size: 12px; color: var(--warn); }
   .empty-hint { color: var(--muted); font-size: 13px; text-align: center; padding: 18px 8px; }
@@ -250,6 +273,8 @@
     .card-head .meta { margin-left: 0; text-align: left; width: 100%; }
     textarea.md { font-size: 14px; }
     .md-preview { font-size: 15px; }
+    .batch-bar { left: 8px; right: 8px; }
+    .md-viewer-body { padding: 12px; }
     .seg-btn { min-height: 44px; font-size: 14px; }
   }
 </style>
@@ -369,6 +394,20 @@
     <span class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.2 2.4 2.6-.6.7 2.6 2.6.7-.6 2.6L21 12l-2.4 1.2.6 2.6-2.6.7-.7 2.6-2.6-.6L12 21l-1.2-2.4-2.6.6-.7-2.6-2.6-.7.6-2.6L3 12l2.4-1.2-.6-2.6 2.6-.7.7-2.6 2.6.6z"/><circle cx="12" cy="12" r="3.4"/></svg></span><span>设置</span>
   </button>
 </nav>
+
+<div class="md-viewer" id="mdViewer" role="dialog" aria-modal="true" aria-label="Markdown 预览" hidden>
+  <header class="md-viewer-bar">
+    <button class="md-viewer-close" id="mdViewerClose" type="button" aria-label="关闭预览">✕</button>
+    <span class="md-viewer-name" id="mdViewerName"></span>
+  </header>
+  <div class="md-viewer-body" id="mdViewerBody"></div>
+  <div class="md-viewer-foot">
+    <div class="seg" role="group" aria-label="预览模式">
+      <button class="seg-btn" type="button" id="mdViewerPreview" aria-pressed="true">预览</button>
+      <button class="seg-btn" type="button" id="mdViewerRaw" aria-pressed="false">原文</button>
+    </div>
+  </div>
+</div>
 
 <!-- T9′ 首载彻底优化（DD-15）：内联库 → 同源分文件（零外发：全同源相对路径；file:// 双击同目录可加载；SW 分段缓存见 sw.js v4） -->
 <script src="./vendor/mammoth.browser.min.js"></script>

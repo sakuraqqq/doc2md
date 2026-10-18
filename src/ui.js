@@ -13,6 +13,12 @@ const fileInput = $('#fileInput');
 const statusEl = $('#status');
 const resultsEl = $('#results');
 const hintEl = $('#hint');
+const mdViewer = $('#mdViewer');
+const mdViewerName = $('#mdViewerName');
+const mdViewerBody = $('#mdViewerBody');
+const mdViewerClose = $('#mdViewerClose');
+const mdViewerPreview = $('#mdViewerPreview');
+const mdViewerRaw = $('#mdViewerRaw');
 
 export function setStatus(msg, isError) {
   statusEl.textContent = msg || '';
@@ -307,6 +313,7 @@ export async function saveAllArtifacts(items) {
  *  （重复按钮既是噪音、也让"哪个是真的"变得含糊；卡面的实质要求是"一次点击存全部"）。
  * 只在 ≥2 个成功结果时出现：单个结果，该卡自带的保存按钮就够。 */
 let batchBar = null;
+let batchSpacer = null;
 /** 一批转换结束（app.js 在 for 循环之后固定调用一次 renderBatchSave）后，把**最后一张**结果带进视口。
  * 只在它确实不在视口里时滚；滚动是一次性的，不再「每完成一个滚一次」。 */
 function revealResultsTail() {
@@ -321,14 +328,17 @@ function revealResultsTail() {
 export function renderBatchSave(items) {
   revealResultsTail();
   if (batchBar && batchBar.parentNode) batchBar.parentNode.removeChild(batchBar);
+  if (batchSpacer && batchSpacer.parentNode) batchSpacer.parentNode.removeChild(batchSpacer);
   batchBar = null;
+  batchSpacer = null;
+  document.body.classList.remove('has-batch');
   const list = items || [];
   if (list.length < 2) return;
   /* ⚠️ 卡面外的硬约束（2026-10-06 实测撞上）：⛔ 本入口**不得使用 `.card-actions`** ——
    * 契约 Z4-0 数的是 `#results .card-actions`（断言恰 3），多一个就把"多文件现场"前提顶掉。
    * ⇒ 改用既有 `.card-head` + `.card-body` 承载（⛔ 不动 template.html，也不改断言）。 */
   const bar = document.createElement('div');
-  bar.className = 'card';
+  bar.className = 'card batch-bar';
   const head = document.createElement('div');
   head.className = 'card-head';
   const name = document.createElement('span');
@@ -357,6 +367,12 @@ export function renderBatchSave(items) {
   bar.appendChild(body);
   resultsEl.insertBefore(bar, resultsEl.firstChild);
   batchBar = bar;
+  const spacer = document.createElement('div');
+  spacer.className = 'batch-spacer';
+  spacer.style.height = bar.offsetHeight + 'px';
+  resultsEl.appendChild(spacer);
+  batchSpacer = spacer;
+  document.body.classList.add('has-batch');
 }
 /* ── 卡 042（`R9-5`）：导出的「缺图」从静默 → 有信号 ────────────────────────────────
  * 病（改前实测）：资产（图片）读取失败时，zip 与内嵌两条路径的 `catch` 都是空的 —— zip 少一张图、
@@ -567,52 +583,91 @@ export function truncatePreview(text, max = PREVIEW_MAX_CHARS) {
   if (c >= 0xd800 && c <= 0xdbff) cut -= 1; // 不切代理对（UTF-16 边界，与审查 §2.6 同口径）
   return s.slice(0, cut) + '\n\n' + PREVIEW_CUT_HINT;
 }
-/** 结果卡片的「渲染 / 原始」切换（卡 058）：默认渲染；原始态复用既有 textarea.md（Q 组仍读它）。
- *  ⚠️ 切换只切显隐，不重建 DOM —— A6 要求「再切回渲染结果与首次一致」。 */
-function buildPreviewSwitch(preview, textarea) {
-  const bar = document.createElement('div');
-  bar.className = 'md-switch';
-  bar.setAttribute('role', 'group');
-  bar.setAttribute('aria-label', '预览模式');
-  const buttons = {};
-  const setMode = (mode) => {
-    const rendered = mode === 'rendered';
-    preview.hidden = !rendered;
-    textarea.hidden = rendered;
-    for (const key of Object.keys(buttons)) {
-      buttons[key].setAttribute('aria-pressed', key === mode ? 'true' : 'false');
+/** 全屏 Markdown 查看器（卡 058 返工）：卡片只留「查看」，点开才渲染；原始态是只读 textarea。
+ *  ⚠️ 不做可写编辑：用户要的「编辑版本」= 最原始的、没渲染的 markdown；复制/下载仍走完整原文。 */
+let viewerState = null;
+let viewerTrigger = null;
+
+function renderViewerMode(mode) {
+  if (!viewerState || !mdViewerBody) return;
+  const isPreview = mode === 'preview';
+  if (mdViewerPreview) mdViewerPreview.setAttribute('aria-pressed', String(isPreview));
+  if (mdViewerRaw) mdViewerRaw.setAttribute('aria-pressed', String(!isPreview));
+  mdViewerBody.innerHTML = '';
+  if (isPreview) {
+    const box = document.createElement('div');
+    box.className = 'md-preview';
+    try {
+      mountPreview(box, viewerState.text);
+    } catch (e) {
+      box.className = 'md-preview md-preview-error';
+      box.textContent = '预览渲染失败：' + (e && e.message ? e.message : '未知错误');
     }
-  };
-  for (const item of [{ id: 'rendered', label: '渲染' }, { id: 'raw', label: '原始' }]) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'md-switch-btn';
-    btn.textContent = item.label;
-    btn.addEventListener('click', () => setMode(item.id));
-    buttons[item.id] = btn;
-    bar.appendChild(btn);
+    mdViewerBody.appendChild(box);
+  } else {
+    const ta = document.createElement('textarea');
+    ta.className = 'md md-viewer-raw';
+    ta.readOnly = true;
+    ta.value = truncatePreview(viewerState.text);
+    mdViewerBody.appendChild(ta);
   }
-  setMode('rendered');
-  return bar;
+  mdViewerBody.dataset.mode = mode;
 }
-/** 一组「切换条 + 渲染态 + 原始态」；原始 textarea.md 保留 Q 组口径（1MB 截断 + 固定提示）。 */
-function buildPreviewBody(fullText) {
-  const preview = document.createElement('div');
-  preview.className = 'md-preview';
-  try {
-    mountPreview(preview, fullText);
-  } catch (e) {
-    preview.className = 'md-preview md-preview-error';
-    preview.textContent = '预览渲染失败：' + (e && e.message ? e.message : '未知错误');
-  }
+
+function openMarkdownViewer(state, trigger) {
+  if (!mdViewer) return;
+  viewerState = state;
+  viewerTrigger = trigger || document.activeElement;
+  if (mdViewerName) mdViewerName.textContent = state.fileName;
+  mdViewer.hidden = false;
+  document.body.classList.add('md-viewer-open');
+  renderViewerMode('preview');
+  if (mdViewerClose) mdViewerClose.focus();
+}
+
+function closeMarkdownViewer() {
+  if (!mdViewer) return;
+  mdViewer.hidden = true;
+  document.body.classList.remove('md-viewer-open');
+  viewerState = null;
+  if (viewerTrigger && typeof viewerTrigger.focus === 'function') viewerTrigger.focus();
+  viewerTrigger = null;
+}
+
+/** 结果卡 = 文件卡：一行「查看 Markdown」+ 隐藏 textarea（Q 组口径仍读它）。 */
+function buildFileCard(file, fullText) {
+  const wrap = document.createElement('div');
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'file-open';
+  open.setAttribute('aria-label', '查看 ' + file.name + ' 的 Markdown 预览');
+  const icon = document.createElement('span');
+  icon.className = 'file-open-icon';
+  icon.textContent = '📄';
+  const main = document.createElement('span');
+  main.className = 'file-open-main';
+  const title = document.createElement('span');
+  title.className = 'file-open-title';
+  title.textContent = '查看 Markdown';
+  const sub = document.createElement('span');
+  sub.className = 'file-open-sub';
+  sub.textContent = '渲染预览 · 可切原文';
+  main.appendChild(title);
+  main.appendChild(sub);
+  const chev = document.createElement('span');
+  chev.className = 'file-open-chev';
+  chev.textContent = '›';
+  open.appendChild(icon);
+  open.appendChild(main);
+  open.appendChild(chev);
+  open.addEventListener('click', () => openMarkdownViewer({ fileName: file.name, text: fullText }, open));
+  wrap.appendChild(open);
   const ta = document.createElement('textarea');
   ta.className = 'md';
   ta.readOnly = true;
   ta.value = truncatePreview(fullText);
   ta.hidden = true;
-  const wrap = document.createElement('div');
-  wrap.appendChild(buildPreviewSwitch(preview, ta));
-  wrap.appendChild(preview);
+  ta.setAttribute('aria-hidden', 'true');
   wrap.appendChild(ta);
   return wrap;
 }
@@ -678,7 +733,7 @@ export function renderResult(file, result) {
     body.appendChild(errEl);
   } else {
     const fullText = String(result.markdown == null ? '' : result.markdown); // 完整文本（复制/下载用）
-    body.appendChild(buildPreviewBody(fullText));
+    body.appendChild(buildFileCard(file, fullText));
     if (result.meta.warnings && result.meta.warnings.length) {
       const w = document.createElement('div');
       w.className = 'warnings';
@@ -835,9 +890,19 @@ export function switchTheme(choice, btn) {
 }
 /** 三 Tab + 外观 + 文件页空态的接线（模块顶层执行：bundle 注入 body 尾部，DOM 已就绪）
  * ⚠️ 拆成 initTabs / initTheme 三个小函数：合并写时 initShell 的圈复杂度 17（阈值 10）会被 metrics 判红。 */
+function initMarkdownViewer() {
+  if (!mdViewer) return;
+  if (mdViewerClose) mdViewerClose.addEventListener('click', closeMarkdownViewer);
+  if (mdViewerPreview) mdViewerPreview.addEventListener('click', () => renderViewerMode('preview'));
+  if (mdViewerRaw) mdViewerRaw.addEventListener('click', () => renderViewerMode('raw'));
+  mdViewer.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMarkdownViewer();
+  });
+}
 function initShell() {
   initTabs();
   initTheme();
+  initMarkdownViewer();
   diagBoot();
   const goConvert = document.getElementById('goConvert');
   if (goConvert) goConvert.addEventListener('click', () => activateTab('convert'));
