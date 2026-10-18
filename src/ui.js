@@ -16,6 +16,7 @@ const hintEl = $('#hint');
 export function setStatus(msg, isError) {
   statusEl.textContent = msg || '';
   statusEl.className = isError ? 'error' : '';
+  if (msg) diag('status', String(msg).slice(0, 120));
 }
 
 /* ── 视口内提示浮层（A10 · 卡 011 第三轮，用户真机实测打回） ──────────────────────────
@@ -34,7 +35,7 @@ export function setStatus(msg, isError) {
  * ⚠️ 只在**原生壳的「保存」回话**里调用 —— Web 侧浏览器**自带**下载完成反馈，再加一层就是
  *   一个动作两条成功提示（用户已明确否掉）。
  */
-const TOAST_MS = 6000;
+const TOAST_MS = 3200; // 2026-10-18（真机反馈）：6s → 3.2s —— 「存完想立刻点底栏，却被浮层挡着看不着」
 let toastEl = null;
 let toastTimer = null;
 /** 在当前视口内弹一条提示（`position:fixed` ⇒ 与滚动位置无关） */
@@ -48,7 +49,6 @@ function showToast(msg, isError) {
       'position:fixed',
       'left:12px',
       'right:12px',
-      'bottom:24px',
       'z-index:9999',
       'padding:12px 14px',
       'border-radius:10px',
@@ -60,6 +60,11 @@ function showToast(msg, isError) {
     ].join(';');
     document.body.appendChild(toastEl);
   }
+  /* 浮层底边 = 底部导航高度 + 12px：导航自 2026-10-18 起是 fixed，浮层压在它上面就"看不着 Tab"了。
+   * 每次现算（旋转/安全区变化后导航高度会变）。 */
+  const nav = document.querySelector('.navbar');
+  const navH = nav ? nav.getBoundingClientRect().height : 0;
+  toastEl.style.bottom = Math.round(navH + 12) + 'px';
   toastEl.textContent = msg;
   toastEl.style.background = isError ? '#7f1d1d' : '#1f2937';
   toastEl.style.color = isError ? '#fee2e2' : '#f9fafb';
@@ -74,6 +79,51 @@ function showToast(msg, isError) {
 function nativeNotice(msg, isError) {
   setStatus(msg, isError);
   showToast(msg, isError);
+}
+
+/* ── 诊断日志（卡 056 · 用户 2026-10-18 校正设计）──────────────────────────────────
+ * 「错误报告」= **导出一个日志文件**，不是跳转（跳转只留一个 GitHub Issues 入口就够了）。
+ * ⛔ 收集口径（隐私红线）：只收「版本 / 平台 / 事件类型 / 错误文案 / 计数 / 耗时」——
+ *    **绝不收文件名、文件内容、路径、设备标识**。文件名常含隐私，连失败的文件名也不进日志。
+ * 只存内存环形缓冲（≤200 条，页面关闭即丢）；用户点「错误报告」时才落成一个 .log。 */
+const DIAG_MAX = 200;
+const diagLog = [];
+/** 记一条诊断事件（不落盘、不外发） */
+function diag(kind, msg) {
+  const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  diagLog.push(t + ' ' + kind + (msg ? ' ' + msg : ''));
+  if (diagLog.length > DIAG_MAX) diagLog.shift();
+}
+function diagBoot() {
+  const ver = ((document.getElementById('versionText') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+  diag('boot', 'version=' + (ver || '?') + ' runtime=' + (isNativeRuntime() ? 'native' : 'web'));
+  const ua = String(navigator.userAgent || '');
+  diag('env', 'ua=' + (ua.length > 120 ? ua.slice(0, 120) + '…' : ua));
+  diag('env', 'viewport=' + window.innerWidth + 'x' + window.innerHeight + ' dpr=' + (window.devicePixelRatio || 1));
+}
+/** 组装日志文本（导出与断言共用；⛔ 不含文件名/路径/内容） */
+export function buildDiagLog() {
+  const head = ['doc2md 诊断日志', '生成时间: ' + new Date().toLocaleString('zh-CN', { hour12: false }), '--- 事件 ---'];
+  return head.concat(diagLog.length ? diagLog.slice() : ['(无事件记录)']).join('\n') + '\n';
+}
+/** 导出诊断日志：原生走插件直写 Download/（文件名后缀 .log），浏览器走 <a download> */
+export async function exportDiagLog() {
+  const text = buildDiagLog();
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  // 文件名用**本地时间**（与日志头一致；此前用 toISOString 落的是 UTC，用户会看到两个时间对不上）
+  const stamp = '' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+  const name = 'doc2md-' + stamp + '.log';
+  const plugin = nativeSavePlugin();
+  if (plugin) {
+    const res = await plugin.saveText({ filename: name, text, mime: 'text/plain;charset=utf-8' });
+    diag('export', 'native');
+    nativeNotice('已导出诊断日志：' + ((res && res.filename) || name));
+    return 'native';
+  }
+  diag('export', 'anchor');
+  anchorDownload(new Blob([text], { type: 'text/plain;charset=utf-8' }), name);
+  return 'anchor';
 }
 
 /* A10（2026-09-19 卡 002）：**解析前先画提示 → 双让帧 → 再开始解析**。
@@ -197,6 +247,7 @@ export async function saveTextArtifact(text, fileName, mime = 'text/markdown;cha
     //    **不是** MediaStore 改名后的真实名 —— 真机连点两次实测：落盘 `x.md` 与 `x.md (1)`，提示**两次都显示 `x.md`**
     //    （**指向一个不存在的文件**）。修法（插件回报插入后的 `DISPLAY_NAME`）动 `android/` ⇒ 卡外，见台账 §十二 R-A。
     const saved = NATIVE_SAVED + ((res && res.filename) || base + '.md');
+    diag('save', 'native');
     nativeNotice(saved);
     return 'native';
   }
@@ -205,6 +256,7 @@ export async function saveTextArtifact(text, fileName, mime = 'text/markdown;cha
     nativeNotice(NATIVE_LIMIT.noPlugin, true);
     return 'blocked';
   }
+  diag('save', 'anchor');
   anchorDownload(new Blob([text], { type: mime }), base + '.md');
   return 'anchor';
 }
@@ -213,6 +265,7 @@ export async function saveTextArtifact(text, fileName, mime = 'text/markdown;cha
  * ⚠️ Web 侧**不加浮层**（本卡要求 Web 零变化；且浏览器路径本来就有自己的反馈）。 */
 function reportSaveError(e) {
   const msg = '保存失败：' + (e && e.message ? e.message : e);
+  diag('save', 'fail');
   setStatus(msg, true);
   if (isNativeRuntime()) showToast(msg, true);
 }
@@ -253,7 +306,19 @@ export async function saveAllArtifacts(items) {
  *  （重复按钮既是噪音、也让"哪个是真的"变得含糊；卡面的实质要求是"一次点击存全部"）。
  * 只在 ≥2 个成功结果时出现：单个结果，该卡自带的保存按钮就够。 */
 let batchBar = null;
+/** 一批转换结束（app.js 在 for 循环之后固定调用一次 renderBatchSave）后，把**最后一张**结果带进视口。
+ * 只在它确实不在视口里时滚；滚动是一次性的，不再「每完成一个滚一次」。 */
+function revealResultsTail() {
+  const cards = resultsEl.querySelectorAll('.card');
+  const card = cards[cards.length - 1];
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  const vh = window.innerHeight || 0;
+  if (r.top >= 0 && r.bottom <= vh) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
 export function renderBatchSave(items) {
+  revealResultsTail();
   if (batchBar && batchBar.parentNode) batchBar.parentNode.removeChild(batchBar);
   batchBar = null;
   const list = items || [];
@@ -529,6 +594,11 @@ function buildActions(file, result, fullText) {
   actions.appendChild(btnDl);
   return actions;
 }
+/** 记一条转换结果：只记类型/成败/耗时 —— ⛔ 不记文件名（隐私） */
+function diagConvert(result) {
+  const type = result.meta.type || '?';
+  diag('convert', (result.error ? 'fail' : 'ok') + ' type=' + type + ' ms=' + (result.meta.elapsedMs || 0));
+}
 export function renderResult(file, result) {
   const card = document.createElement('div');
   card.className = 'card';
@@ -573,7 +643,168 @@ export function renderResult(file, result) {
   }
   card.appendChild(body);
   resultsEl.appendChild(card);
-  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  diagConvert(result);
+  // ⚠️ 这里**不滚**（2026-10-18 真机反馈：多选时每完成一个就滚一次，正在看上面那张的人被拽走）。
+  //    改为在一批结束时由 renderBatchSave 定位一次 —— 见 revealResultsTail()。
 }
+/* ── 批次 2 · 门面骨架（卡 056）：三 Tab / 外观三档 / 文件页空态 ──────────────────
+ * 范围（卡面 inScope）：把 Web 首屏从「落地页」改成三 Tab App 骨架。⛔ 不含历史数据面（另卡）、
+ *   ⛔ 不含原生系统栏与 edge-to-edge（另卡）。
+ * ⚠️ app.js 一字未动 —— 它依赖的 dropzone / fileInput / hintEl 三个导出与元素 id 全部保持不变
+ *   （#dropzone 现在是「选择文档」卡片，不再是虚线拖放框；点击与拖放接线仍在 app.js）。
+ * 主题：三档（跟随系统 / 浅 / 深）持久化在 localStorage；「跟随系统」用真实的 matchMedia 监听，
+ *   系统切换时立即生效 —— 不是只在初始化时读一次。
+ * ⚠️ 浅色令牌在 CSS 里用 rgb() 写（见 template.html 注释），深色仍是 #hex ⇒ pwa-audit 的对比度仍量深色；
+ *   浅色对比度由契约组 Z6 单独量。 */
+const THEME_KEY = 'doc2md-theme';
+const THEME_CHOICES = ['system', 'light', 'dark'];
+const navEl = document.querySelector('.navbar');
+
+function tabButtons() {
+  return Array.from(document.querySelectorAll('.navbar .navitem'));
+}
+function panelOf(tab) {
+  const id = tab.getAttribute('aria-controls');
+  return id ? document.getElementById(id) : null;
+}
+/** 切到某个 Tab：aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面） */
+export function activateTab(name) {
+  const tabs = tabButtons();
+  if (!tabs.length) return null;
+  const target = tabs.find((t) => t.dataset.tab === name) || tabs[0];
+  for (const t of tabs) {
+    const on = t === target;
+    t.setAttribute('aria-selected', on ? 'true' : 'false');
+    t.tabIndex = on ? 0 : -1;
+    const panel = panelOf(t);
+    if (panel) {
+      panel.classList.toggle('active', on);
+      if (on) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', '');
+    }
+  }
+  return target.dataset.tab || null;
+}
+function focusTab(step) {
+  const tabs = tabButtons();
+  const i = tabs.indexOf(document.activeElement);
+  const next = tabs[(i + step + tabs.length) % tabs.length];
+  if (next) { next.focus(); activateTab(next.dataset.tab); }
+}
+const themeMq = typeof window !== 'undefined' && window.matchMedia
+  ? window.matchMedia('(prefers-color-scheme: light)')
+  : null;
+let themeChoice = 'system';
+function resolveTheme(choice) {
+  if (choice === 'light' || choice === 'dark') return choice;
+  return themeMq && themeMq.matches ? 'light' : 'dark';
+}
+function paintThemeButtons() {
+  for (const b of document.querySelectorAll('[data-theme-set]')) {
+    b.setAttribute('aria-pressed', b.dataset.themeSet === themeChoice ? 'true' : 'false');
+  }
+}
+/** 应用主题。choice ∈ system|light|dark；persist=true 时写入 localStorage。 */
+export function applyTheme(choice, persist) {
+  themeChoice = THEME_CHOICES.includes(choice) ? choice : 'system';
+  document.documentElement.dataset.theme = resolveTheme(themeChoice);
+  paintThemeButtons();
+  if (persist) {
+    try { localStorage.setItem(THEME_KEY, themeChoice); } catch { /* 隐私模式下忽略 */ }
+  }
+  return themeChoice;
+}
+function storedTheme() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return THEME_CHOICES.includes(v) ? v : 'system';
+  } catch { return 'system'; }
+}
+function jumpTab(index) {
+  const tabs = tabButtons();
+  const t = index < 0 ? tabs[tabs.length - 1] : tabs[index];
+  if (!t) return;
+  t.focus();
+  activateTab(t.dataset.tab);
+}
+/** 底部导航的键盘导航（←/→/↑/↓ 走相邻，Home/End 走首尾）—— WAI-ARIA tabs 的自动激活式 */
+function onNavKey(e) {
+  const k = e.key;
+  const next = k === 'ArrowRight' || k === 'ArrowDown';
+  const prev = k === 'ArrowLeft' || k === 'ArrowUp';
+  const edge = k === 'Home' || k === 'End';
+  if (!next && !prev && !edge) return;
+  e.preventDefault();
+  if (edge) jumpTab(k === 'Home' ? 0 : -1);
+  else focusTab(next ? 1 : -1);
+}
+function initTabs() {
+  for (const t of tabButtons()) {
+    t.addEventListener('click', () => activateTab(t.dataset.tab));
+  }
+  if (navEl) navEl.addEventListener('keydown', onNavKey);
+}
+function initTheme() {
+  for (const b of document.querySelectorAll('[data-theme-set]')) {
+    b.addEventListener('click', () => switchTheme(b.dataset.themeSet, b));
+  }
+  if (!themeMq) return;
+  const onChange = () => { if (themeChoice === 'system') applyTheme('system', false); };
+  if (typeof themeMq.addEventListener === 'function') themeMq.addEventListener('change', onChange);
+  else if (typeof themeMq.addListener === 'function') themeMq.addListener(onChange);
+}
+/** 主题切换的「圆形揭幕」（原型 v8 的艺术样式）：从被点的按钮位置绽开，380ms。
+ * 不支持 View Transitions（或用户开了"减少动态效果"）时直接切 —— ⛔ 不因为动效把功能做挂。 */
+function prefersReducedMotion() {
+  return typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+/** 圆幕的圆心（被点的按钮中心）与半径（覆盖到最远角） */
+function themeOrigin(btn) {
+  const r = btn && btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
+  const x = r ? Math.round(r.left + r.width / 2) : Math.round(window.innerWidth / 2);
+  const y = r ? Math.round(r.top + r.height / 2) : 0;
+  const radius = Math.ceil(Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y)));
+  return { x, y, radius };
+}
+function playReveal(vt, o) {
+  const ready = vt && vt.ready;
+  if (!ready || typeof ready.then !== 'function') return;
+  ready.then(() => {
+    document.documentElement.animate(
+      { clipPath: ['circle(0px at ' + o.x + 'px ' + o.y + 'px)', 'circle(' + o.radius + 'px at ' + o.x + 'px ' + o.y + 'px)'] },
+      { duration: 380, easing: 'cubic-bezier(.2,0,0,1)', pseudoElement: '::view-transition-new(root)' }
+    );
+  }).catch(() => { /* 过渡被取消不影响已生效的主题 */ });
+}
+export function switchTheme(choice, btn) {
+  if (typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
+    applyTheme(choice, true);
+    return null;
+  }
+  const o = themeOrigin(btn);
+  const vt = document.startViewTransition(() => applyTheme(choice, true));
+  playReveal(vt, o);
+  return vt;
+}
+/** 三 Tab + 外观 + 文件页空态的接线（模块顶层执行：bundle 注入 body 尾部，DOM 已就绪）
+ * ⚠️ 拆成 initTabs / initTheme 三个小函数：合并写时 initShell 的圈复杂度 17（阈值 10）会被 metrics 判红。 */
+function initShell() {
+  initTabs();
+  initTheme();
+  diagBoot();
+  const goConvert = document.getElementById('goConvert');
+  if (goConvert) goConvert.addEventListener('click', () => activateTab('convert'));
+  const exportLog = document.getElementById('exportLog');
+  if (exportLog) {
+    exportLog.addEventListener('click', () => {
+      exportDiagLog().catch(() => setStatus('诊断日志导出失败', true));
+    });
+  }
+  applyTheme(storedTheme(), false);
+  activateTab('convert');
+}
+initShell();
+
 // UI 域对外句柄（事件接线在 app.js 使用）
 export { dropzone, fileInput, hintEl };

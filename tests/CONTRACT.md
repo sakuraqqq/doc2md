@@ -149,12 +149,17 @@
 
 ### 契约组 H — corePath 同源 / 零外域字面量 / SW v4 分段缓存（2026-09-05 新增：契约先红 t4；审查报告 §2.1/§2.2，红线相关）
 
+> ⭐ **2026-10-18 口径收窄一次**：H2 的判定对象从「全部 URL 字面量」改为「**可被自动请求的** URL 字面量」——
+> `<a href="https://…">` 为用户主动点击的导航（浏览器不预取、页面不自动请求），从扫描中剥离后再生效；
+> 同一 URL 出现在 href 之外（fetch / import / src / 普通字符串）**照样判违约**；白名单域名集**一个没加**。
+> 授权 = 用户 2026-10-18 拍板「选 1」（卡 056 门面三 Tab 带来设置页外链）；登记见 §6 **T-8**。
+
 离线静态断言（读 index.html/sw.js 源码，无浏览器依赖）。H3-H6 为 t7 独立验收新增（任务授权：SW v4 分段缓存 PRECACHE 清单断言）。
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
 | H1 | 源码不含 `doc2md.local`（伪域名 corePath = 外域请求违约） | !includes | 🟢 绿（t5 5707557：corePath 同源化 `new URL('./vendor/', location.href)`；patch 降级为外域抛错双保险） |
-| H2 | `fetchable` 外域 URL ⊆ 白名单（域名级：`schemas.openxmlformats.org`/`www.w3.org` = 解析性命名空间标识符——xmlns/DTD 声明符，非网络请求；从不出现在 fetch/URL 构造；运行时零外发由 C4 兜底） | hostname ∈ 白名单 | 🟢 绿（**t11 口径修正，见 §6 T-6**：eee7ca1 构建产物实测唯一字面量 `http://schemas.openxmlformats.org/` 被白名单放行；t10 发现 esbuild 常量折叠把拆串折叠回完整 URL——语义未变，源码形态变化所致） |
+| H2 | **可被自动请求的**外域 URL ⊆ 白名单（域名级：`schemas.openxmlformats.org`/`www.w3.org` = 解析性命名空间标识符——xmlns/DTD 声明符，非网络请求；从不出现在 fetch/URL 构造；运行时零外发由 C4 兜底）。⭐ **2026-10-18 收窄**：`<a href>` 剥离后判（用户主动导航 vs 自动请求），见 §6 **T-8** | hostname ∈ 白名单（锚点 href 已剥离） | 🟢 绿（**t11 口径修正，见 §6 T-6**；**卡 056 再收窄一次，见 §6 T-8**：设置页 GitHub 外链以 `<a href>` 形式存在 ⇒ 剥离后扫描零命中，白名单域名集未增） |
 | H3 | sw.js `CACHE_NAME = 'doc2md-sw-v4'`（分段缓存版本，PRECACHE 变更必须 bump） | match | 🟢 绿（t7 新增断言，离线实测通过） |
 | H4 | PRECACHE 不含 OCR 大资源（core wasm ×2 + langs 语言包 ×2） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过——v4 起运行时缓存） |
 | H5 | PRECACHE 包含应用外壳（index/manifest/图标/4 主库 + pdf/tess worker 入口） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过） |
@@ -689,6 +694,36 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 
 **两相实测（本机 · 卡 013）**：**先红** `node --test --test-reporter=tap --test-name-pattern="契约组 Z5" tests/contract_v1.test.mjs` → **`# tests 4 / # pass 1 / # fail 3`**（红在 **Z5-1 / Z5-2** 与组壳；**Z5-3 先红阶段即绿** = 现场前提成立）→ **后绿**全量 **317 / 315 / 0 / 2**（带夹具）/ **314 / 311 / 0 / 3**（干净检出，按同一映射推得，待真 CI run 对账）。
 
+### 契约组 Z6 — 门面骨架：三 Tab / 功能优先首屏 / 页脚进「关于」/ 文件页空态 / safe-area（卡 056；2026-10-18 契约先红）
+
+来源：批次 2 的门面改造（设计输入 = 原型 v8；用户 2026-10-18 拍板：三 Tab、Tab 名「文件」、外观三档、落点文案）。本组把「首屏长什么样」从设计输入变成**可判条件**。
+
+**口径（写死，三条防「测到 DOM 没测到人眼」）**：
+
+- **「首页不含版本号」只能按面板判**：SPA 只有一份 DOM，`#panel-settings › 关于` 本来就含版本 ⇒ 断言 = `#panel-convert` 文本不含版本 **且** 全页没有 `<footer>`；⛔ 不能按整页文本判。
+- **「无虚线拖放框」= 元素仍在、样式不是虚线**：`#dropzone` 不能删（`app.js` 的点击/拖放接线挂在它上面，本卡 inScope 不含 `app.js`），断言取 computed `border-style` 不含 `dashed`。
+- **「跟随系统是真监听」必须动态验**：停在「跟随系统」时用 `emulateMedia` 翻系统色，`data-theme` 必须跟着变；选「浅色」后系统转深色**不得**覆盖用户选择。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| Z6-0 | 底部导航 `role="tablist"` + 恰 3 个 `role="tab"` + 每个 tab 有 `aria-controls` | 源码静态 | ✅ 绿（**先红**：`源码没有 role="tablist" —— 三 Tab 骨架未落地（改前实测 0 命中）`） |
+| Z6-1 | 三 Tab 可切换：`aria-selected` 与面板 visible 同步；左右方向键可切；面板有 `role=tabpanel` + `aria-labelledby` | 运行时 DOM | ✅ 绿 |
+| Z6-2 | 首屏无 hero：无面板内 `header h1` / 无 `.badges`·`.badge` / `#dropzone` 非虚线；app bar 标题 = 「文转MD助手」；主操作卡片含「选择文档」；「上次转换」在其下 | 运行时 DOM | ✅ 绿 |
+| Z6-3 | 页脚信息只在「设置 › 关于」：全页无 `<footer>`；`#panel-convert` 不含版本/许可；`#panel-settings` 含版本与许可 | 运行时 DOM | ✅ 绿 |
+| Z6-4 | 文件页空态：`#filesEmpty` 可见 + 含「还没有转换记录」+ `#panel-files` **无** `.card`（⛔ 假数据）；`#goConvert` 跳回转换 Tab | 运行时 DOM | ✅ 绿 |
+| Z6-5 | 设置四组齐（外观/历史/反馈/关于）+ 外观三档；跟随系统时 `emulateMedia` 翻色 ⇒ `data-theme` 跟随；选浅色后不被系统覆盖 | 运行时 DOM | ✅ 绿 |
+| Z6-6 | safe-area 基础：`viewport-fit=cover` + `env(safe-area-inset-top/bottom)` 出现 + 无硬编码 30px 状态栏高度 | 源码静态 | ✅ 绿 |
+| Z6-7 | 主题切换走 **View Transitions 圆形揭幕**（`startViewTransition` 被调用 + `::view-transition-new(root)` 动画在场；老内核降级但主题必须落定） | 运行时 DOM | ✅ 绿 |
+| Z6-8 | 反馈组「错误报告」= **导出诊断日志**（`doc2md-<yyyyMMdd>-<HHmmss>.log`）：含标题/版本/环境/事件；⛔ 不含文件名、路径、内容 | 下载事件 + 内容 | ✅ 绿 |
+| Z6-9 | ⭐ **多选转换不再逐条滚动**：一批（3 个文件）只定位一次（`scrollIntoView` 调用数 = 1） | 运行时 DOM | ✅ 绿 |
+
+**用户 2026-10-18 真机反馈的三处校正**（同批落地，均由断言锁住）：
+1. **「错误报告」的定义校正** —— 用户原话：「我想的是点错误报告后会下载一个 app 的日志文件。跳转的话 github issue 一个就够了」⇒ 反馈组改为「导出诊断日志 + 单一 GitHub Issues 入口」（原先两个都是跳转链接，其中"错误报告"跳的是 `issues/new`，属实现方对 A6 的误读）。日志只收版本/平台/错误文案/耗时，**不收文件名与内容**（隐私裁量写进代码注释与 Z6-8）。
+2. **浮层（Toast）遮挡底栏** —— 6s 且压在 `position:fixed` 的底部导航上 ⇒ 改为 **3.2s** + 底边 = 导航高度 + 12px（`pointer-events:none` 原本就有，可点穿但"看不着"）。
+3. **多选转换逐条滚动** —— 每个结果 `scrollIntoView` 一次，正在看上面那张的人被拽走 ⇒ 改为**一批结束定位一次**（Z6-9）。
+
+**两相实测（本机 · 卡 056）**：**先红**（把 `index.html` 换回改前产物 = 146,624 B）⇒ `node --test --test-reporter=tap --test-name-pattern="契约组 Z6" tests/contract_v1.test.mjs` → **`# tests 8 / # pass 0 / # fail 8`**（红在 **Z6-0**：`源码没有 role="tablist" —— 三 Tab 骨架未落地（改前实测 0 命中）`，其后子测试随之全红）→ 恢复新产物（162,472 B / `0CD1DAE6…`）**后绿 `8 / 8`**。
+
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |
@@ -832,6 +867,7 @@ npm run gen:samples           # 重新生成样例（确定性）
 | T-4 | package.json 归属 | ✅ **已拍板**：四脚本语义保留（`test` / `test:direct` / `test:contract` / `gen:samples`）；devDependencies 合并追加不改语义 | 其他线扩展 package.json 时按此合并 |
 | T-5 | docx 保留 GFM 表格 | ✅ **已拍板**（2026-09-04 用户）：docx 转换保留 GFM 表格，路径 = **mammoth→HTML→复用 HTML→MD 转换器** | 已落地为 C6 断言（docx 用例附加）：表格行 ≥2 + `| --- |` 分隔行 + 表头单元格文本「项目」「状态」；样例 sample.docx 已含 2×2 中文表格（无需改样例）；先红后绿：B 线 t10 按此路径实现后转绿 |
 | T-6 | H2 白名单口径（2026-09-05 用户拍板，t10 发现 esbuild 常量折叠） | ✅ **已拍板**：断言语义改为「index.html 中 **fetchable 外域 URL ⊆ 白名单**」——白名单登记**解析性命名空间标识符**（域名级：`schemas.openxmlformats.org`、`www.w3.org`；理由注释：xmlns/DTD/schemaLocation 声明符，非网络请求、从不出现在 fetch/URL 构造）；运行时零外发由 C4（请求监听）兜底 | **已落地**（t11）：H2 改为域名级白名单判定（`H_URL_WHITELIST_HOSTS`）+ fetchable 语义注释；eee7ca1 构建产物实测复绿。**口径变更记录**：t10 发现 t6 的拆串（`'http'+'://schemas…'`）被 esbuild 常量折叠回完整 URL 字面量——语义未变（仍非网络请求），仅源码形态变化 → 白名单定版（域名级）；新增白名单域名须先在此拍板 |
+| T-8 | **H2 口径收窄：只豁免 `<a href>`**（2026-10-18 用户拍板「选 1」；起因 = 卡 056 门面三 Tab 的设置页外链） | ✅ **已拍板**：H2 的判定对象从「index.html 中**全部** URL 字面量」收窄为「**可被自动请求的** URL 字面量」—— `<a href="https://…">` 是**用户主动点击的导航**（浏览器不预取、页面不自动请求），实现上先剥离锚点 href 再扫；同一 URL 若出现在 href 之外（fetch / import / src / 普通字符串）**照样判违约**。⛔ **不是放宽**：白名单域名集**一个没加**；零外发仍由 C4（运行时请求监听）与 sw.js 同源门兜底 | H2 换成新实现（剥离 → 扫描）；本表加本行；H 组标题与 H2 行同步改写 |
 | T-7 | 导出/预览护栏阈值（2026-09-08 用户拍板，第六轮审查 §2.4 + B 组预览项） | ✅ **已拍板**：① 单文件内嵌上限 **20MB**——超限**自动切 zip 下载**（不报错、不静默）；② 预览截断 **1MB** + 固定提示文案「（预览已截断，完整内容请复制/下载）」，**不加「查看完整」按钮**（复制/下载仍为完整内容） | 落地为契约组 Q；上限经 `window.__doc2md.embedMaxBytes` 读写（测试调低上限验证超限分支，默认值 20MB 由 Q3 锁）；预览提示文案与阈值同属断言，调整即改口径 |
 
 ## 7. 红绿状态与转绿路径（如实）
