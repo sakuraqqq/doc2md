@@ -6274,6 +6274,29 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.equal(r.siv, 1, '批量转换期间 scrollIntoView 被调用了 ' + r.siv + ' 次（应为 1：只在一批结束时定位一次）');
       });
 
+
+      await t.test('Z6-10 卡片外观统一：设置页行分组由 .list 容器裁圆角（行自身不得带边框/圆角）', async () => {
+        await page.click('#tab-settings');
+        const r = await page.evaluate(() => {
+          const lists = [...document.querySelectorAll('#panel-settings .list')];
+          const rows = [...document.querySelectorAll('#panel-settings .row')];
+          const orphan = rows.filter((x) => !x.closest('.list')).length;
+          const rowBad = rows
+            .filter((x) => {
+              const cs = getComputedStyle(x);
+              const radii = [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomLeftRadius, cs.borderBottomRightRadius];
+              const widths = [cs.borderTopWidth, cs.borderLeftWidth, cs.borderRightWidth];
+              return radii.some((v) => v !== '0px') || widths.some((v) => v !== '0px');
+            })
+            .map((x) => ((x.querySelector('.row-name') || {}).textContent || '?').trim());
+          return { lists: lists.length, rows: rows.length, orphan, rowBad, rad: lists.map((x) => getComputedStyle(x).borderTopLeftRadius) };
+        });
+        assert.ok(r.lists >= 3, '设置页行分组容器不足（应为 历史/反馈/关于 各一个）：' + r.lists);
+        assert.equal(r.orphan, 0, '有行不在 .list 容器里（会各自吃 UA 边框与圆角）：' + r.orphan);
+        assert.deepEqual(r.rowBad, [], '这些行自带边框或圆角（应由容器裁，行自身一律 0）：' + JSON.stringify(r.rowBad));
+        for (const v of r.rad) assert.notEqual(v, '0px', '分组容器缺圆角：' + v);
+      });
+
       await ctx.close();
     } finally {
       await browser.close();
