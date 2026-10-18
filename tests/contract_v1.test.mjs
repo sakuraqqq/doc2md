@@ -6197,6 +6197,83 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.ok(!/--status-bar-height:\s*30px|padding-top:\s*30px/.test(src), '出现硬编码的 30px 状态栏高度（该值应来自原生 inset）');
       });
 
+
+      await t.test('Z6-7 A6+ 主题切换走「圆形揭幕」：startViewTransition 被调用且有 ::view-transition-new(root) 动画', async () => {
+        await page.click('#tab-settings');
+        const vt = await page.evaluate(() => {
+          const has = typeof document.startViewTransition === 'function';
+          window.__vtCalls = 0;
+          if (has) {
+            const orig = document.startViewTransition.bind(document);
+            document.startViewTransition = (cb) => { window.__vtCalls += 1; return orig(cb); };
+          }
+          return { has };
+        });
+        if (!vt.has) {
+          // 老内核没有这个 API ⇒ 断言「优雅降级」而不是假装通过
+          await page.click('[data-theme-set="dark"]');
+          await page.waitForTimeout(120);
+          assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark', '没有 View Transitions 时主题切换也不能失效');
+          return;
+        }
+        await page.click('[data-theme-set="dark"]');
+        await page.waitForTimeout(150);
+        const r = await page.evaluate(() => {
+          const anims = document.getAnimations ? document.getAnimations() : [];
+          return {
+            calls: window.__vtCalls,
+            pseudo: anims.filter((a) => a.effect && a.effect.pseudoElement).map((a) => a.effect.pseudoElement),
+            theme: document.documentElement.dataset.theme,
+          };
+        });
+        assert.equal(r.calls, 1, '主题切换没有走 startViewTransition（圆形揭幕缺失）');
+        assert.ok(r.pseudo.includes('::view-transition-new(root)'), '没有 ::view-transition-new(root) 的动画（圆幕没上场）：' + JSON.stringify(r.pseudo));
+        assert.equal(r.theme, 'dark', '揭幕动画没把主题落定');
+      });
+
+      await t.test('Z6-8 反馈组「错误报告」= 导出诊断日志（.log）：含版本与事件，⛔ 不含文件名/路径', async () => {
+        const [dl] = await Promise.all([
+          page.waitForEvent('download', { timeout: 8000 }),
+          page.click('#exportLog'),
+        ]);
+        const file = await dl.path();
+        const txt = fs.readFileSync(file, 'utf8');
+        const name = dl.suggestedFilename();
+        assert.match(name, /^doc2md-\d{8}-\d{6}\.log$/, '日志文件名不是 doc2md-<yyyyMMdd>-<HHmmss>.log：' + name);
+        assert.ok(txt.includes('doc2md 诊断日志'), '日志缺标题');
+        assert.ok(/version=doc2md v\d/.test(txt), '日志缺版本行');
+        assert.ok(txt.includes('--- 事件 ---'), '日志缺事件段');
+        assert.ok(/env viewport=\d+x\d+/.test(txt), '日志缺视口（环境行）');
+        for (const leak of ['sample.txt', 'sample.html', 'C:\\', 'Download/']) {
+          assert.ok(!txt.includes(leak), '日志里出现了不该有的内容（文件名/路径）：' + leak);
+        }
+      });
+
+      await t.test('Z6-9 多选转换：结果出现时不再逐条滚动 —— 一批只定位一次（scrollIntoView 调用数 = 1）', async () => {
+        await page.click('#tab-convert');
+        await page.evaluate(() => {
+          window.__siv = 0;
+          const orig = Element.prototype.scrollIntoView;
+          Element.prototype.scrollIntoView = function (...a) {
+            window.__siv += 1;
+            return orig.apply(this, a);
+          };
+        });
+        await page.setInputFiles('input[type=file]', [
+          nodePath.join(DATA, 'sample.txt'),
+          nodePath.join(DATA, 'sample.html'),
+          nodePath.join(DATA, 'sample.xlsx'),
+        ]);
+        await page.waitForFunction(
+          () => /完成：/.test((document.querySelector('#status') || {}).textContent || ''),
+          { timeout: 20000 }
+        );
+        await page.waitForTimeout(400);
+        const r = await page.evaluate(() => ({ siv: window.__siv, cards: document.querySelectorAll('#results .card').length }));
+        assert.ok(r.cards >= 3, '批量结果卡片不足（前置不成立）：' + r.cards);
+        assert.equal(r.siv, 1, '批量转换期间 scrollIntoView 被调用了 ' + r.siv + ' 次（应为 1：只在一批结束时定位一次）');
+      });
+
       await ctx.close();
     } finally {
       await browser.close();

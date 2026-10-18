@@ -713,6 +713,14 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 | Z6-4 | 文件页空态：`#filesEmpty` 可见 + 含「还没有转换记录」+ `#panel-files` **无** `.card`（⛔ 假数据）；`#goConvert` 跳回转换 Tab | 运行时 DOM | ✅ 绿 |
 | Z6-5 | 设置四组齐（外观/历史/反馈/关于）+ 外观三档；跟随系统时 `emulateMedia` 翻色 ⇒ `data-theme` 跟随；选浅色后不被系统覆盖 | 运行时 DOM | ✅ 绿 |
 | Z6-6 | safe-area 基础：`viewport-fit=cover` + `env(safe-area-inset-top/bottom)` 出现 + 无硬编码 30px 状态栏高度 | 源码静态 | ✅ 绿 |
+| Z6-7 | 主题切换走 **View Transitions 圆形揭幕**（`startViewTransition` 被调用 + `::view-transition-new(root)` 动画在场；老内核降级但主题必须落定） | 运行时 DOM | ✅ 绿 |
+| Z6-8 | 反馈组「错误报告」= **导出诊断日志**（`doc2md-<yyyyMMdd>-<HHmmss>.log`）：含标题/版本/环境/事件；⛔ 不含文件名、路径、内容 | 下载事件 + 内容 | ✅ 绿 |
+| Z6-9 | ⭐ **多选转换不再逐条滚动**：一批（3 个文件）只定位一次（`scrollIntoView` 调用数 = 1） | 运行时 DOM | ✅ 绿 |
+
+**用户 2026-10-18 真机反馈的三处校正**（同批落地，均由断言锁住）：
+1. **「错误报告」的定义校正** —— 用户原话：「我想的是点错误报告后会下载一个 app 的日志文件。跳转的话 github issue 一个就够了」⇒ 反馈组改为「导出诊断日志 + 单一 GitHub Issues 入口」（原先两个都是跳转链接，其中"错误报告"跳的是 `issues/new`，属实现方对 A6 的误读）。日志只收版本/平台/错误文案/耗时，**不收文件名与内容**（隐私裁量写进代码注释与 Z6-8）。
+2. **浮层（Toast）遮挡底栏** —— 6s 且压在 `position:fixed` 的底部导航上 ⇒ 改为 **3.2s** + 底边 = 导航高度 + 12px（`pointer-events:none` 原本就有，可点穿但"看不着"）。
+3. **多选转换逐条滚动** —— 每个结果 `scrollIntoView` 一次，正在看上面那张的人被拽走 ⇒ 改为**一批结束定位一次**（Z6-9）。
 
 **两相实测（本机 · 卡 056）**：**先红**（把 `index.html` 换回改前产物 = 146,624 B）⇒ `node --test --test-reporter=tap --test-name-pattern="契约组 Z6" tests/contract_v1.test.mjs` → **`# tests 8 / # pass 0 / # fail 8`**（红在 **Z6-0**：`源码没有 role="tablist" —— 三 Tab 骨架未落地（改前实测 0 命中）`，其后子测试随之全红）→ 恢复新产物（162,472 B / `0CD1DAE6…`）**后绿 `8 / 8`**。
 

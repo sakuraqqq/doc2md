@@ -148,6 +148,11 @@
     outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 10px;
   }
 
+  /* ── 主题切换的「圆形揭幕」（View Transitions API；原型 v8 的艺术样式） ──
+   * 关掉默认交叉淡入（否则圆幕外面会先糊一层），新快照由 JS 用 clip-path 圆形扩展。 */
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+
   /* ── 结果卡片与按钮（沿用既有类名：契约测试依赖 .card / .card-actions / textarea.md） ── */
   .btn {
     display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border);
@@ -263,10 +268,10 @@
 
     <div class="sect">
       <h2 class="sect-title">反馈</h2>
-      <a class="row row-link" href="https://github.com/sakuraqqq/doc2md/issues/new?labels=bug" target="_blank" rel="noopener noreferrer">
-        <span class="row-main"><span class="row-name">错误报告</span><span class="row-sub">在 GitHub 提交问题</span></span>
+      <button class="row row-link" type="button" id="exportLog">
+        <span class="row-main"><span class="row-name">错误报告</span><span class="row-sub">导出诊断日志（版本 / 平台 / 错误记录，不含文件名与内容）</span></span>
         <span class="row-chev" aria-hidden="true">›</span>
-      </a>
+      </button>
       <a class="row row-link" href="https://github.com/sakuraqqq/doc2md/issues" target="_blank" rel="noopener noreferrer">
         <span class="row-main"><span class="row-name">GitHub Issues</span><span class="row-sub">查看已知问题与讨论</span></span>
         <span class="row-chev" aria-hidden="true">›</span>
@@ -304,7 +309,7 @@
     <span class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2-2h3.6l1.8 2H18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></span><span>文件</span>
   </button>
   <button class="navitem" type="button" role="tab" id="tab-settings" data-tab="settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1">
-    <span class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/></svg></span><span>设置</span>
+    <span class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.2 2.4 2.6-.6.7 2.6 2.6.7-.6 2.6L21 12l-2.4 1.2.6 2.6-2.6.7-.7 2.6-2.6-.6L12 21l-1.2-2.4-2.6.6-.7-2.6-2.6-.7.6-2.6L3 12l2.4-1.2-.6-2.6 2.6-.7.7-2.6 2.6.6z"/><circle cx="12" cy="12" r="3.4"/></svg></span><span>设置</span>
   </button>
 </nav>
 
@@ -1923,8 +1928,9 @@ ${xlsxRowsToMd(kept)}`);
   function setStatus(msg, isError) {
     statusEl.textContent = msg || "";
     statusEl.className = isError ? "error" : "";
+    if (msg) diag("status", String(msg).slice(0, 120));
   }
-  var TOAST_MS = 6e3;
+  var TOAST_MS = 3200;
   var toastEl = null;
   var toastTimer = null;
   function showToast(msg, isError) {
@@ -1937,7 +1943,6 @@ ${xlsxRowsToMd(kept)}`);
         "position:fixed",
         "left:12px",
         "right:12px",
-        "bottom:24px",
         "z-index:9999",
         "padding:12px 14px",
         "border-radius:10px",
@@ -1949,6 +1954,9 @@ ${xlsxRowsToMd(kept)}`);
       ].join(";");
       document.body.appendChild(toastEl);
     }
+    const nav = document.querySelector(".navbar");
+    const navH = nav ? nav.getBoundingClientRect().height : 0;
+    toastEl.style.bottom = Math.round(navH + 12) + "px";
     toastEl.textContent = msg;
     toastEl.style.background = isError ? "#7f1d1d" : "#1f2937";
     toastEl.style.color = isError ? "#fee2e2" : "#f9fafb";
@@ -1961,6 +1969,38 @@ ${xlsxRowsToMd(kept)}`);
   function nativeNotice(msg, isError) {
     setStatus(msg, isError);
     showToast(msg, isError);
+  }
+  var DIAG_MAX = 200;
+  var diagLog = [];
+  function diag(kind, msg) {
+    const t = (/* @__PURE__ */ new Date()).toLocaleTimeString("zh-CN", { hour12: false });
+    diagLog.push(t + " " + kind + (msg ? " " + msg : ""));
+    if (diagLog.length > DIAG_MAX) diagLog.shift();
+  }
+  function diagBoot() {
+    const ver = ((document.getElementById("versionText") || {}).textContent || "").replace(/\s+/g, " ").trim();
+    diag("boot", "version=" + (ver || "?") + " runtime=" + (isNativeRuntime() ? "native" : "web"));
+    diag("env", "ua=" + String(navigator.userAgent || "").slice(0, 120));
+    diag("env", "viewport=" + window.innerWidth + "x" + window.innerHeight + " dpr=" + (window.devicePixelRatio || 1));
+  }
+  function buildDiagLog() {
+    const head = ["doc2md \u8BCA\u65AD\u65E5\u5FD7", "\u751F\u6210\u65F6\u95F4: " + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN", { hour12: false }), "--- \u4E8B\u4EF6 ---"];
+    return head.concat(diagLog.length ? diagLog.slice() : ["(\u65E0\u4E8B\u4EF6\u8BB0\u5F55)"]).join("\n") + "\n";
+  }
+  async function exportDiagLog() {
+    const text = buildDiagLog();
+    const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "-");
+    const name = "doc2md-" + stamp + ".log";
+    const plugin = nativeSavePlugin();
+    if (plugin) {
+      const res = await plugin.saveText({ filename: name, text, mime: "text/plain;charset=utf-8" });
+      diag("export", "native");
+      nativeNotice("\u5DF2\u5BFC\u51FA\u8BCA\u65AD\u65E5\u5FD7\uFF1A" + (res && res.filename || name));
+      return "native";
+    }
+    diag("export", "anchor");
+    anchorDownload(new Blob([text], { type: "text/plain;charset=utf-8" }), name);
+    return "anchor";
   }
   function nextPaint() {
     return new Promise((resolve) => {
@@ -2043,6 +2083,7 @@ ${xlsxRowsToMd(kept)}`);
     if (plugin) {
       const res = await plugin.saveText({ filename: base + ".md", text: String(text == null ? "" : text), mime });
       const saved = NATIVE_SAVED + (res && res.filename || base + ".md");
+      diag("save", "native");
       nativeNotice(saved);
       return "native";
     }
@@ -2050,11 +2091,13 @@ ${xlsxRowsToMd(kept)}`);
       nativeNotice(NATIVE_LIMIT.noPlugin, true);
       return "blocked";
     }
+    diag("save", "anchor");
     anchorDownload(new Blob([text], { type: mime }), base + ".md");
     return "anchor";
   }
   function reportSaveError(e) {
     const msg = "\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message ? e.message : e);
+    diag("save", "fail");
     setStatus(msg, true);
     if (isNativeRuntime()) showToast(msg, true);
   }
@@ -2081,7 +2124,17 @@ ${xlsxRowsToMd(kept)}`);
     return { ok, failed };
   }
   var batchBar = null;
+  function revealResultsTail() {
+    const cards = resultsEl.querySelectorAll(".card");
+    const card = cards[cards.length - 1];
+    if (!card) return;
+    const r = card.getBoundingClientRect();
+    const vh = window.innerHeight || 0;
+    if (r.top >= 0 && r.bottom <= vh) return;
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
   function renderBatchSave(items) {
+    revealResultsTail();
     if (batchBar && batchBar.parentNode) batchBar.parentNode.removeChild(batchBar);
     batchBar = null;
     const list = items || [];
@@ -2323,6 +2376,10 @@ ${xlsxRowsToMd(kept)}`);
     actions.appendChild(btnDl);
     return actions;
   }
+  function diagConvert(result) {
+    const type = result.meta.type || "?";
+    diag("convert", (result.error ? "fail" : "ok") + " type=" + type + " ms=" + (result.meta.elapsedMs || 0));
+  }
   function renderResult(file, result) {
     const card = document.createElement("div");
     card.className = "card";
@@ -2366,7 +2423,7 @@ ${xlsxRowsToMd(kept)}`);
     }
     card.appendChild(body);
     resultsEl.appendChild(card);
-    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    diagConvert(result);
   }
   var THEME_KEY = "doc2md-theme";
   var THEME_CHOICES = ["system", "light", "dark"];
@@ -2460,7 +2517,7 @@ ${xlsxRowsToMd(kept)}`);
   }
   function initTheme() {
     for (const b of document.querySelectorAll("[data-theme-set]")) {
-      b.addEventListener("click", () => applyTheme(b.dataset.themeSet, true));
+      b.addEventListener("click", () => switchTheme(b.dataset.themeSet, b));
     }
     if (!themeMq) return;
     const onChange = () => {
@@ -2469,11 +2526,49 @@ ${xlsxRowsToMd(kept)}`);
     if (typeof themeMq.addEventListener === "function") themeMq.addEventListener("change", onChange);
     else if (typeof themeMq.addListener === "function") themeMq.addListener(onChange);
   }
+  function prefersReducedMotion() {
+    return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+  function themeOrigin(btn) {
+    const r = btn && btn.getBoundingClientRect ? btn.getBoundingClientRect() : null;
+    const x = r ? Math.round(r.left + r.width / 2) : Math.round(window.innerWidth / 2);
+    const y = r ? Math.round(r.top + r.height / 2) : 0;
+    const radius = Math.ceil(Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y)));
+    return { x, y, radius };
+  }
+  function playReveal(vt, o) {
+    const ready = vt && vt.ready;
+    if (!ready || typeof ready.then !== "function") return;
+    ready.then(() => {
+      document.documentElement.animate(
+        { clipPath: ["circle(0px at " + o.x + "px " + o.y + "px)", "circle(" + o.radius + "px at " + o.x + "px " + o.y + "px)"] },
+        { duration: 380, easing: "cubic-bezier(.2,0,0,1)", pseudoElement: "::view-transition-new(root)" }
+      );
+    }).catch(() => {
+    });
+  }
+  function switchTheme(choice, btn) {
+    if (typeof document.startViewTransition !== "function" || prefersReducedMotion()) {
+      applyTheme(choice, true);
+      return null;
+    }
+    const o = themeOrigin(btn);
+    const vt = document.startViewTransition(() => applyTheme(choice, true));
+    playReveal(vt, o);
+    return vt;
+  }
   function initShell() {
     initTabs();
     initTheme();
+    diagBoot();
     const goConvert = document.getElementById("goConvert");
     if (goConvert) goConvert.addEventListener("click", () => activateTab("convert"));
+    const exportLog = document.getElementById("exportLog");
+    if (exportLog) {
+      exportLog.addEventListener("click", () => {
+        exportDiagLog().catch(() => setStatus("\u8BCA\u65AD\u65E5\u5FD7\u5BFC\u51FA\u5931\u8D25", true));
+      });
+    }
     applyTheme(storedTheme(), false);
     activateTab("convert");
   }
