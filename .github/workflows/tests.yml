@@ -79,9 +79,20 @@ jobs:
         run: |
           set -euo pipefail
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
-          if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-            echo "[privacy-ci] 事件未给可用基线（新分支 / force-push）⇒ 退化到与默认分支的合并基点"
-            BASE="$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse --verify -q HEAD~1 || git rev-parse HEAD)"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            # tag push 的 before 恒为全零；tag 指向 main 最新 squash 提交时
+            # merge-base origin/main HEAD 会退化成 HEAD ⇒ 空范围。tag 事件取父提交作基线。
+            if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+              echo "[privacy-ci] tag 事件无 before ⇒ 取 tag 指向提交的父提交作基线"
+              BASE="$(git rev-parse --verify -q HEAD~1 || true)"
+            else
+              echo "[privacy-ci] 事件未给可用基线（新分支 / force-push）⇒ 退化到与默认分支的合并基点"
+              BASE="$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse --verify -q HEAD~1 || git rev-parse HEAD)"
+            fi
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "${GITHUB_SHA}" ]; then
+            echo "[privacy-ci] 基线为空或等于 HEAD ⇒ 拒绝空范围（fail-closed）"
+            exit 2
           fi
           echo "[privacy-ci] 扫描范围端点（只回显 SHA 前缀）：${BASE:0:12} .. ${GITHUB_SHA:0:12}"
           node tools/privacy-gate.mjs --range "${BASE}..${GITHUB_SHA}"
