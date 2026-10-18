@@ -95,7 +95,7 @@ ok(!!mediaM, '@media (max-width:600px) 块存在');
 if (mediaM) {
   const block = mediaM[1];
   ok(/\.btn \{ min-height: 44px/.test(block), '触控目标 .btn min-height 44px');
-  ok(/#dropzone \{ min-height: 300px/.test(block), '大拖放区 min-height 300px');
+  ok(/#dropzone \{ min-height: 0/.test(block), '选择文档紧凑卡片（不再 min-height:300px）');
   ok(/\.card-actions \.btn \{ flex: 1 1 auto/.test(block), '卡片按钮 flex 撑满（触控宽度）');
   ok(/textarea\.md \{ font-size: 14px/.test(block), '输出区字号 14px');
 }

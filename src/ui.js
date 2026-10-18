@@ -5,6 +5,7 @@
  *   仅向 convert.js **注册**一个钩子（注入方向：ui → convert，convert 不反向依赖 DOM 域）。
  */
 import { setPreflightHook } from './convert.js';
+import { mountPreview } from './markdown-preview.js';
 
 export const $ = (sel) => document.querySelector(sel);
 const dropzone = $('#dropzone');
@@ -12,6 +13,25 @@ const fileInput = $('#fileInput');
 const statusEl = $('#status');
 const resultsEl = $('#results');
 const hintEl = $('#hint');
+const mdViewer = $('#mdViewer');
+const mdViewerName = $('#mdViewerName');
+const mdViewerBody = $('#mdViewerBody');
+const mdViewerClose = $('#mdViewerClose');
+const mdViewerPreview = $('#mdViewerPreview');
+const mdViewerRaw = $('#mdViewerRaw');
+const pickerTitle = $('#pickerTitle');
+const resultsPanel = $('#resultsPanel');
+const resultsCount = $('#resultsCount');
+const resultsSearch = $('#resultsSearch');
+const selectAllEl = $('#selectAll');
+const selectAllBtn = $('#selectAllBtn');
+const selectedCountEl = $('#selectedCount');
+const batchBar = $('#batchBar');
+const batchCount = $('#batchCount');
+const batchCopy = $('#batchCopy');
+const batchSave = $('#batchSave');
+const batchClose = $('#batchClose');
+const batchSpacer = $('#batchSpacer');
 
 export function setStatus(msg, isError) {
   statusEl.textContent = msg || '';
@@ -161,8 +181,14 @@ export async function copyText(text, btn) {
     ta.style.opacity = '0';
     document.body.appendChild(ta);
     ta.select();
-    document.execCommand('copy');
+    let ok;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
     ta.remove();
+    if (!ok) throw new Error('复制失败：剪贴板不可用');
   }
   const old = btn.textContent;
   btn.textContent = '✅ 已复制';
@@ -302,12 +328,109 @@ export async function saveAllArtifacts(items) {
   if (isNativeRuntime()) showToast(msg, failed > 0);
   return { ok, failed };
 }
-/** 批次入口（卡 044）：页面上**一个**「全部保存」，⛔ 不在每张卡上重复 N 个按钮
- *  （重复按钮既是噪音、也让"哪个是真的"变得含糊；卡面的实质要求是"一次点击存全部"）。
- * 只在 ≥2 个成功结果时出现：单个结果，该卡自带的保存按钮就够。 */
-let batchBar = null;
-/** 一批转换结束（app.js 在 for 循环之后固定调用一次 renderBatchSave）后，把**最后一张**结果带进视口。
- * 只在它确实不在视口里时滚；滚动是一次性的，不再「每完成一个滚一次」。 */
+/** 转换结果列表状态（卡 058 返工 R2）：行 = 数据模型；选择状态按行 id 清理。 */
+const resultRows = [];
+let nextRowId = 1;
+let openRowMenu = null;
+
+function selectedRows() {
+  return resultRows.filter((r) => r.selected);
+}
+function selectedSuccessRows() {
+  return resultRows.filter((r) => r.selected && r.success);
+}
+function closeRowMenu() {
+  if (!openRowMenu) return;
+  openRowMenu.menu.hidden = true;
+  openRowMenu.btn.setAttribute('aria-expanded', 'false');
+  openRowMenu = null;
+}
+function syncBatchBar() {
+  const selected = selectedRows();
+  const successes = selectedSuccessRows();
+  selectedCountEl.textContent = String(selected.length);
+  batchCount.textContent = String(selected.length);
+  const show = selected.length > 0;
+  batchBar.hidden = !show;
+  batchCopy.disabled = successes.length === 0;
+  batchSave.disabled = successes.length === 0;
+  batchSpacer.style.height = show ? batchBar.offsetHeight + 'px' : '0px';
+  document.body.classList.toggle('has-batch', show);
+}
+function syncSelectAll() {
+  const visible = resultRows.filter((r) => r.success && !r.el.hidden);
+  const selected = visible.filter((r) => r.selected).length;
+  const all = visible.length > 0 && selected === visible.length;
+  selectAllEl.checked = all;
+  selectAllEl.indeterminate = selected > 0 && selected < visible.length;
+  selectAllBtn.textContent = all ? '取消全选' : '全选';
+}
+function updateResultsChrome() {
+  const hasResults = resultRows.length > 0;
+  resultsPanel.hidden = !hasResults;
+  hintEl.style.display = hasResults ? 'none' : '';
+  document.body.classList.toggle('has-results', hasResults);
+  if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
+  const lastSect = document.getElementById('lastTitle');
+  if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = hasResults;
+  resultsCount.textContent = '已完成 ' + resultRows.length + ' 个文件';
+  syncSelectAll();
+  syncBatchBar();
+}
+function setRowSelected(row, on, defer) {
+  if (!row.success) return;
+  row.selected = on;
+  row.checkbox.checked = on;
+  row.el.classList.toggle('selected', on);
+  if (!defer) updateResultsChrome();
+}
+function toggleAllVisible(on) {
+  for (const row of resultRows) {
+    if (row.success && !row.el.hidden) setRowSelected(row, on, true);
+  }
+  updateResultsChrome();
+}
+function applySearch() {
+  const q = String(resultsSearch.value || '').trim().toLowerCase();
+  for (const row of resultRows) {
+    row.el.hidden = q !== '' && !row.file.name.toLowerCase().includes(q);
+  }
+  updateResultsChrome();
+}
+function clearSelection() {
+  for (const row of resultRows) setRowSelected(row, false, true);
+  updateResultsChrome();
+}
+async function copySelected() {
+  const rows = selectedSuccessRows();
+  if (!rows.length) return;
+  // 多文件规则：按文件名分段合并（===== 文件名 =====），⛔ 不把不同文件混成一段。
+  const text = rows.length === 1
+    ? rows[0].text
+    : rows.map((r) => '===== ' + r.file.name + ' =====\n\n' + r.text).join('\n\n');
+  batchCopy.disabled = true;
+  try {
+    await copyText(text, batchCopy);
+    setStatus('✅ 已复制 ' + rows.length + ' 个文件的内容' + (rows.length > 1 ? '（按文件名分段）' : ''));
+  } catch {
+    setStatus('复制失败：剪贴板不可用', true);
+  } finally {
+    batchCopy.disabled = false;
+  }
+}
+async function saveSelected() {
+  const rows = selectedSuccessRows();
+  if (!rows.length) return;
+  batchSave.disabled = true;
+  try {
+    await saveAllArtifacts(rows.map((r) => ({ text: r.text, fileName: r.file.name })));
+  } catch {
+    setStatus('批量保存失败', true);
+  } finally {
+    batchSave.disabled = false;
+  }
+}
+/** 一批转换结束（app.js 固定调用一次）：只把最后一行带进视口；不再创建批量卡。 */
 function revealResultsTail() {
   const cards = resultsEl.querySelectorAll('.card');
   const card = cards[cards.length - 1];
@@ -317,45 +440,27 @@ function revealResultsTail() {
   if (r.top >= 0 && r.bottom <= vh) return;
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
-export function renderBatchSave(items) {
+export function renderBatchSave() {
   revealResultsTail();
-  if (batchBar && batchBar.parentNode) batchBar.parentNode.removeChild(batchBar);
-  batchBar = null;
-  const list = items || [];
-  if (list.length < 2) return;
-  /* ⚠️ 卡面外的硬约束（2026-10-06 实测撞上）：⛔ 本入口**不得使用 `.card-actions`** ——
-   * 契约 Z4-0 数的是 `#results .card-actions`（断言恰 3），多一个就把"多文件现场"前提顶掉。
-   * ⇒ 改用既有 `.card-head` + `.card-body` 承载（⛔ 不动 template.html，也不改断言）。 */
-  const bar = document.createElement('div');
-  bar.className = 'card';
-  const head = document.createElement('div');
-  head.className = 'card-head';
-  const name = document.createElement('span');
-  name.className = 'name';
-  name.textContent = '批量保存';
-  const meta = document.createElement('span');
-  meta.className = 'meta';
-  meta.textContent = '共 ' + list.length + ' 个可用结果 · 逐个存 .md';
-  head.appendChild(name);
-  head.appendChild(meta);
-  const body = document.createElement('div');
-  body.className = 'card-body';
-  const btn = document.createElement('button');
-  btn.className = 'btn primary';
-  btn.textContent = '💾 全部保存 ' + list.length + ' 个 .md';
-  btn.addEventListener('click', () => {
-    btn.disabled = true;
-    const p = saveAllArtifacts(list);
-    p.finally(() => {
-      btn.disabled = false;
-    });
-    p.catch(() => {}); // 兜底：逐件失败已在函数内计数，⛔ 不让异常逃逸成 unhandled rejection
+  updateResultsChrome();
+}
+function initResultsControls() {
+  selectAllEl.addEventListener('change', () => toggleAllVisible(selectAllEl.checked));
+  selectAllBtn.addEventListener('click', () => {
+    const visible = resultRows.filter((r) => r.success && !r.el.hidden);
+    const all = visible.length > 0 && visible.every((r) => r.selected);
+    toggleAllVisible(!all);
   });
-  body.appendChild(btn);
-  bar.appendChild(head);
-  bar.appendChild(body);
-  resultsEl.insertBefore(bar, resultsEl.firstChild);
-  batchBar = bar;
+  resultsSearch.addEventListener('input', applySearch);
+  batchCopy.addEventListener('click', () => { copySelected().catch(() => {}); });
+  batchSave.addEventListener('click', () => { saveSelected().catch(() => {}); });
+  batchClose.addEventListener('click', clearSelection);
+  document.addEventListener('click', (e) => {
+    if (openRowMenu && !e.target.closest('.row-menu') && !e.target.closest('.row-menu-btn')) closeRowMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeRowMenu();
+  });
 }
 /* ── 卡 042（`R9-5`）：导出的「缺图」从静默 → 有信号 ────────────────────────────────
  * 病（改前实测）：资产（图片）读取失败时，zip 与内嵌两条路径的 `catch` 都是空的 —— zip 少一张图、
@@ -566,33 +671,222 @@ export function truncatePreview(text, max = PREVIEW_MAX_CHARS) {
   if (c >= 0xd800 && c <= 0xdbff) cut -= 1; // 不切代理对（UTF-16 边界，与审查 §2.6 同口径）
   return s.slice(0, cut) + '\n\n' + PREVIEW_CUT_HINT;
 }
-function buildActions(file, result, fullText) {
-  const actions = document.createElement('div');
-  actions.className = 'card-actions';
-  const hasAssets = result.meta.assets && result.meta.assets.length > 0;
-  // 方案 A（2026-09-07 拍板）：导出二选一——有附件时「.md+图片 zip」为默认主入口（md 在 zip 根、assets/ 子目录），
-  // 「下载 .md」= 单文件内嵌（图片 base64 自包含，次按钮；超 20MB 自动切 zip）；无附件时保持普通 .md 直下
-  if (hasAssets) {
-    const btnZip = document.createElement('button');
-    btnZip.className = 'btn primary';
-    btnZip.textContent = '📦 下载 .md + 图片（zip）';
-    btnZip.addEventListener('click', () => downloadZip(fullText, file.name, result.meta.assets, btnZip));
-    actions.appendChild(btnZip);
+/** 全屏 Markdown 查看器（卡 058 返工）：卡片只留「查看」，点开才渲染；原始态是只读 textarea。
+ *  ⚠️ 不做可写编辑：用户要的「编辑版本」= 最原始的、没渲染的 markdown；复制/下载仍走完整原文。 */
+let viewerState = null;
+let viewerTrigger = null;
+
+function renderViewerMode(mode) {
+  if (!viewerState || !mdViewerBody) return;
+  const isPreview = mode === 'preview';
+  if (mdViewerPreview) mdViewerPreview.setAttribute('aria-pressed', String(isPreview));
+  if (mdViewerRaw) mdViewerRaw.setAttribute('aria-pressed', String(!isPreview));
+  mdViewerBody.innerHTML = '';
+  if (isPreview) {
+    const box = document.createElement('div');
+    box.className = 'md-preview';
+    try {
+      mountPreview(box, viewerState.text);
+    } catch (e) {
+      box.className = 'md-preview md-preview-error';
+      box.textContent = '预览渲染失败：' + (e && e.message ? e.message : '未知错误');
+    }
+    mdViewerBody.appendChild(box);
+  } else {
+    const ta = document.createElement('textarea');
+    ta.className = 'md md-viewer-raw';
+    ta.readOnly = true;
+    ta.value = truncatePreview(viewerState.text);
+    mdViewerBody.appendChild(ta);
   }
-  const btnCopy = document.createElement('button');
-  btnCopy.className = 'btn';
-  btnCopy.textContent = '📋 复制 Markdown';
-  btnCopy.addEventListener('click', () => copyText(fullText, btnCopy));
-  const btnDl = document.createElement('button');
-  btnDl.className = 'btn' + (hasAssets ? '' : ' primary');
-  btnDl.textContent = hasAssets ? '🖼 下载 .md（图片内嵌）' : '⬇ 下载 .md';
-  btnDl.addEventListener('click', () => {
-    if (hasAssets) downloadMdEmbedded(fullText, file.name, result.meta.assets, btnDl);
-    else downloadMd(fullText, file.name);
+  mdViewerBody.dataset.mode = mode;
+}
+
+function openMarkdownViewer(state, trigger) {
+  if (!mdViewer) return;
+  viewerState = state;
+  viewerTrigger = trigger || document.activeElement;
+  if (mdViewerName) mdViewerName.textContent = state.fileName;
+  mdViewer.hidden = false;
+  document.body.classList.add('md-viewer-open');
+  renderViewerMode('preview');
+  if (mdViewerClose) mdViewerClose.focus();
+}
+
+function closeMarkdownViewer() {
+  if (!mdViewer) return;
+  mdViewer.hidden = true;
+  document.body.classList.remove('md-viewer-open');
+  viewerState = null;
+  if (viewerTrigger && typeof viewerTrigger.focus === 'function') viewerTrigger.focus();
+  viewerTrigger = null;
+}
+
+/** 三点菜单：查看 / 复制 / 下载（失败文件不生成菜单）。 */
+function buildRowMenu(row) {
+  const menu = document.createElement('div');
+  menu.className = 'row-menu';
+  menu.id = 'row-menu-' + row.id;
+  menu.setAttribute('role', 'menu');
+  menu.hidden = true;
+  const add = (label, fn) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'menuitem');
+    btn.textContent = label;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeRowMenu();
+      fn(btn);
+    });
+    menu.appendChild(btn);
+  };
+  add('查看 Markdown', () => openMarkdownViewer({ fileName: row.file.name, text: row.text }, row.menuBtn));
+  add('复制 Markdown', (btn) => {
+    copyText(row.text, btn)
+      .then(() => setStatus('✅ 已复制：' + row.file.name))
+      .catch(() => setStatus('复制失败：剪贴板不可用', true));
   });
-  actions.appendChild(btnCopy);
-  actions.appendChild(btnDl);
-  return actions;
+  const assets = row.result.meta.assets || [];
+  if (assets.length) add('下载 .md + 图片（zip）', (btn) => { downloadZip(row.text, row.file.name, assets, btn); });
+  add(assets.length ? '下载 .md（图片内嵌）' : '下载 .md', (btn) => {
+    if (assets.length) downloadMdEmbedded(row.text, row.file.name, assets, btn);
+    else downloadMd(row.text, row.file.name);
+  });
+  return menu;
+}
+function toggleRowMenu(row) {
+  if (openRowMenu && openRowMenu.row === row) { closeRowMenu(); return; }
+  closeRowMenu();
+  row.menu.hidden = false;
+  row.menuBtn.setAttribute('aria-expanded', 'true');
+  openRowMenu = { row: row, menu: row.menu, btn: row.menuBtn };
+  const first = row.menu.querySelector('button');
+  if (first) first.focus();
+}
+function typeLabel(result, success) {
+  if (!success) return '失败';
+  return (result.meta.type || '?').toUpperCase();
+}
+function metaText(file, result) {
+  const ms = result.meta.elapsedMs ? ' · ' + result.meta.elapsedMs + ' ms' : '';
+  return fmtSize(file.size) + ms;
+}
+function makeRowHead(row) {
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'row-select';
+  checkbox.disabled = !row.success;
+  checkbox.setAttribute('aria-label', '选择 ' + row.file.name);
+  row.checkbox = checkbox;
+  const name = document.createElement('span');
+  name.className = 'name';
+  name.textContent = row.file.name;
+  name.title = row.file.name;
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  if (!row.success) chip.classList.add('err');
+  chip.textContent = typeLabel(row.result, row.success);
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  meta.textContent = metaText(row.file, row.result);
+  head.appendChild(checkbox);
+  head.appendChild(name);
+  head.appendChild(chip);
+  head.appendChild(meta);
+  return head;
+}
+function makeRowBody(row) {
+  const body = document.createElement('div');
+  body.className = 'card-body result-row-body';
+  const sub = document.createElement('div');
+  sub.className = 'result-row-sub';
+  const status = document.createElement('span');
+  status.className = row.success ? 'ok' : 'err';
+  status.textContent = row.success ? 'Markdown 已就绪' : '转换失败';
+  sub.appendChild(status);
+  if (!row.success) {
+    const err = document.createElement('div');
+    err.className = 'warnings';
+    err.style.color = 'var(--err)';
+    err.textContent = '❌ ' + row.result.error;
+    sub.appendChild(err);
+  } else {
+    const preview = document.createElement('button');
+    preview.type = 'button';
+    preview.className = 'row-preview';
+    preview.textContent = '查看预览 ›';
+    preview.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openMarkdownViewer({ fileName: row.file.name, text: row.text }, preview);
+    });
+    sub.appendChild(preview);
+    const ta = document.createElement('textarea');
+    ta.className = 'md';
+    ta.readOnly = true;
+    ta.value = truncatePreview(row.text);
+    ta.hidden = true;
+    ta.setAttribute('aria-hidden', 'true');
+    body.appendChild(ta);
+  }
+  body.insertBefore(sub, body.firstChild);
+  if (row.result.meta.warnings && row.result.meta.warnings.length) {
+    const w = document.createElement('div');
+    w.className = 'warnings';
+    w.textContent = '⚠ ' + row.result.meta.warnings.join('；');
+    body.appendChild(w);
+  }
+  return body;
+}
+function wireSuccessRow(row, card, head) {
+  const menuBtn = document.createElement('button');
+  menuBtn.type = 'button';
+  menuBtn.className = 'row-menu-btn';
+  menuBtn.textContent = '⋮';
+  menuBtn.setAttribute('aria-haspopup', 'menu');
+  menuBtn.setAttribute('aria-expanded', 'false');
+  menuBtn.setAttribute('aria-controls', 'row-menu-' + row.id);
+  menuBtn.setAttribute('aria-label', '更多操作：' + row.file.name);
+  menuBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleRowMenu(row); });
+  head.appendChild(menuBtn);
+  row.menuBtn = menuBtn;
+  row.menu = buildRowMenu(row);
+  card.appendChild(row.menu);
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('button,input,textarea,.row-menu')) return;
+    openMarkdownViewer({ fileName: row.file.name, text: row.text }, card);
+  });
+}
+function createResultRow(file, result) {
+  const success = !result.error;
+  let text = '';
+  if (success) text = String(result.markdown == null ? '' : result.markdown);
+  const card = document.createElement('div');
+  card.className = 'card result-row' + (success ? '' : ' failed');
+  const row = {
+    id: nextRowId++,
+    file: file,
+    result: result,
+    text: text,
+    success: success,
+    selected: false,
+    checkbox: null,
+    el: card,
+    menu: null,
+    menuBtn: null,
+  };
+  const head = makeRowHead(row);
+  const body = makeRowBody(row);
+  card.appendChild(head);
+  card.appendChild(body);
+  if (success) wireSuccessRow(row, card, head);
+  row.checkbox.addEventListener('click', (e) => e.stopPropagation());
+  row.checkbox.addEventListener('change', () => setRowSelected(row, row.checkbox.checked));
+  resultRows.push(row);
+  resultsEl.appendChild(card);
+  return row;
 }
 /** 记一条转换结果：只记类型/成败/耗时 —— ⛔ 不记文件名（隐私） */
 function diagConvert(result) {
@@ -600,52 +894,10 @@ function diagConvert(result) {
   diag('convert', (result.error ? 'fail' : 'ok') + ' type=' + type + ' ms=' + (result.meta.elapsedMs || 0));
 }
 export function renderResult(file, result) {
-  const card = document.createElement('div');
-  card.className = 'card';
-  const head = document.createElement('div');
-  head.className = 'card-head';
-  const name = document.createElement('span');
-  name.className = 'name';
-  name.textContent = file.name;
-  head.appendChild(name);
-  const chip = document.createElement('span');
-  chip.className = 'chip' + (result.error ? ' err' : '');
-  chip.textContent = result.error ? '转换失败' : (result.meta.type || '?').toUpperCase();
-  head.appendChild(chip);
-  const meta = document.createElement('span');
-  meta.className = 'meta';
-  meta.textContent = fmtSize(file.size) + (result.meta.elapsedMs ? ' · ' + result.meta.elapsedMs + ' ms' : '');
-  head.appendChild(meta);
-  card.appendChild(head);
-
-  const body = document.createElement('div');
-  body.className = 'card-body';
-  if (result.error) {
-    const errEl = document.createElement('div');
-    errEl.className = 'warnings';
-    errEl.style.color = 'var(--err)';
-    errEl.textContent = '❌ ' + result.error;
-    body.appendChild(errEl);
-  } else {
-    const ta = document.createElement('textarea');
-    ta.className = 'md';
-    ta.readOnly = true;
-    const fullText = String(result.markdown == null ? '' : result.markdown); // 完整文本（复制/下载用）
-    ta.value = truncatePreview(fullText); // 预览截断 1MB（契约组 Q）
-    body.appendChild(ta);
-    if (result.meta.warnings && result.meta.warnings.length) {
-      const w = document.createElement('div');
-      w.className = 'warnings';
-      w.textContent = '⚠ ' + result.meta.warnings.join('；');
-      body.appendChild(w);
-    }
-    body.appendChild(buildActions(file, result, fullText));
-  }
-  card.appendChild(body);
-  resultsEl.appendChild(card);
+  createResultRow(file, result);
+  updateResultsChrome();
   diagConvert(result);
-  // ⚠️ 这里**不滚**（2026-10-18 真机反馈：多选时每完成一个就滚一次，正在看上面那张的人被拽走）。
-  //    改为在一批结束时由 renderBatchSave 定位一次 —— 见 revealResultsTail()。
+  // ⚠️ 这里不滚（2026-10-18 真机反馈：多选时每完成一个就滚一次）—— 批次结束由 renderBatchSave 定位一次。
 }
 /* ── 批次 2 · 门面骨架（卡 056）：三 Tab / 外观三档 / 文件页空态 ──────────────────
  * 范围（卡面 inScope）：把 Web 首屏从「落地页」改成三 Tab App 骨架。⛔ 不含历史数据面（另卡）、
@@ -789,9 +1041,20 @@ export function switchTheme(choice, btn) {
 }
 /** 三 Tab + 外观 + 文件页空态的接线（模块顶层执行：bundle 注入 body 尾部，DOM 已就绪）
  * ⚠️ 拆成 initTabs / initTheme 三个小函数：合并写时 initShell 的圈复杂度 17（阈值 10）会被 metrics 判红。 */
+function initMarkdownViewer() {
+  if (!mdViewer) return;
+  if (mdViewerClose) mdViewerClose.addEventListener('click', closeMarkdownViewer);
+  if (mdViewerPreview) mdViewerPreview.addEventListener('click', () => renderViewerMode('preview'));
+  if (mdViewerRaw) mdViewerRaw.addEventListener('click', () => renderViewerMode('raw'));
+  mdViewer.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMarkdownViewer();
+  });
+}
 function initShell() {
   initTabs();
   initTheme();
+  initMarkdownViewer();
+  initResultsControls();
   diagBoot();
   const goConvert = document.getElementById('goConvert');
   if (goConvert) goConvert.addEventListener('click', () => activateTab('convert'));

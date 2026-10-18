@@ -81,6 +81,26 @@
       "version": "6.1.2",
       "versionSource": "npm tarball 逐字节一致（2026-09-17 实测）",
       "lockVersion": "6.1.2"
+    },
+    {
+      "file": "vendor/marked.min.js",
+      "pkg": "marked",
+      "license": "MIT",
+      "size": 48323,
+      "sha256": "671B6E18FB42B2223DA8D75B8B9326D19E50F07DAE42A2CF3B533324871D0982",
+      "version": "18.1.1",
+      "versionSource": "npm tarball lib/marked.umd.js → esbuild minify（版本取自 lock）",
+      "lockVersion": "18.1.1"
+    },
+    {
+      "file": "vendor/dompurify.min.js",
+      "pkg": "dompurify",
+      "license": "Apache-2.0",
+      "size": 29828,
+      "sha256": "CD37898F9782ADF54820C413191B5691803F0F137C799D6EDCFD38523B4C2C31",
+      "version": "3.4.17",
+      "versionSource": "vendor 文件内自述 + lock 一致",
+      "lockVersion": "3.4.17"
     }
   ],
   "cmaps": {

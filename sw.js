@@ -1,6 +1,6 @@
 /* ============================================================
  * sw.js — doc2md service worker（PWA 离线缓存）
- * 版本：doc2md-sw-v4（P1 二批 ⑤ 分段缓存：PRECACHE 只保留应用外壳——
+ * 版本：doc2md-sw-v5（卡 058：PRECACHE 增加 Markdown 渲染两库；v4 起分段缓存，PRECACHE 只保留应用外壳——
  *       index/manifest/图标 + 转换器主库与 worker 入口；剔除两个 wasm core 与语言包）
  * 红线：零外发 —— 只缓存/响应同源请求；绝不 fetch 外域资源；SW 自身零外部依赖。
  * 策略：install 预缓存（PRECACHE，Promise.allSettled——单资源失败不阻塞安装）+ 同源 GET
@@ -9,7 +9,7 @@
  * 注意：service worker 仅在 http(s)/localhost 生效（file:// 双击打开时静默跳过，
  *       此时页面以同目录相对路径加载 vendor/ 与 langs/，天然离线可用）。
  * ============================================================ */
-const CACHE_NAME = 'doc2md-sw-v4';
+const CACHE_NAME = 'doc2md-sw-v5';
 const PRECACHE = [
   './',
   './index.html',
@@ -24,12 +24,14 @@ const PRECACHE = [
   './vendor/tesseract.tesseract.min.js',
   './vendor/tesseract.worker.min.js',
   './vendor/read-excel-file.min.js',
+  './vendor/marked.min.js',
+  './vendor/dompurify.min.js',
   // v4 起不再预缓存（运行时缓存，首次 OCR 后离线可用）：
   //   ./vendor/tesseract-core-simd-lstm.wasm.js
   //   ./vendor/tesseract-core-lstm.wasm.js  （两 core 二选一，预缓存 2 个 ≈8MB 浪费）
   //   ./langs/eng.traineddata / chi_sim.traineddata（合计 ≈7.4MB）
   // t27：vendor/cmaps/（168 .bcmap ≈1.1MB，pdf.js CID 字体编码资产）同样走运行时缓存——
-  //       首次 CID PDF 转换时同源加载即被下方 cache-first 路径写入（H3 契约锁 CACHE_NAME v4，PRECACHE 不变）
+  //       首次 CID PDF 转换时同源加载即被下方 cache-first 路径写入（H3 契约锁 CACHE_NAME v5，PRECACHE 不含 cmaps）
 ];
 
 self.addEventListener('install', (event) => {

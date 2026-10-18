@@ -1,6 +1,6 @@
 # docs/licenses.md — 复用库许可核对表（逐库查证）
 
-> 结论先行：**6 个复用库全部为宽松许可（MIT / Apache-2.0 / BSD-2-Clause），均可商用**；分发时必须保留各库版权声明（内联文件头部注释 + README 引用）。
+> 结论先行：**复用库全部为宽松许可（MIT / Apache-2.0 / BSD / MIT-数据），均可商用**（卡 058 新增 marked / DOMPurify）；分发时必须保留各库版权声明（内联文件头部注释 + README 引用）。
 > 查证日期：2026-05-21（基线 commit 日）。查证方式：官方仓库 LICENSE 原文（browser 读取）/ npm registry 元数据 / 本地安装包 package.json 字段——**全部一手证据，非凭印象**。
 
 ## 核对表
@@ -17,10 +17,12 @@
 | 8 | tessdata（语言包数据） | npm: @tesseract.js-data/{eng,chi_sim}@1.0.0（naptha/tessdata 发布通道） | 4.0.0_best_int（eng/chi_sim，base64 内联） | **MIT** | 本地安装包 package.json `"license": "MIT"`（一手证据）；上游数据源自 tesseract-ocr/tessdata（Apache-2.0），本项目跟随 npm 包声明 | ✅ 可商用，保留声明 |
 | 9 | Adobe cmaps（`vendor/cmaps/`，t27 引入） | pdfjs-dist 官方资产（github.com/mozilla/pdf.js 打包分发；上游 Adobe 1990-2009 cmaps 集） | 168 `.bcmap` + `LICENSE`（t11 §2.1 登记） | **BSD-3-Clause 类**（允许再分发、需保留版权声明与免责条款） | `vendor/cmaps/LICENSE` 原文（一手证据）：`Copyright 1990-2009 Adobe Systems Incorporated. All rights reserved.` + "Redistribution and use in source and binary forms…"（ BSD-3 条款形态） | ✅ 可商用；随 `vendor/cmaps/` 分发即附 LICENSE 原文（已随仓库提交，无需额外动作） |
 | 10 | Material Components for Android（`com.google.android.material:material`，卡 057 引入） | github.com/material-components/material-components-android（Google Maven: com/google/android/material/material） | **1.14.0**（Android 原生侧，**不进** `vendor/` 交付面） | **Apache-2.0** | Google Maven `1.14.0` 正式版存在（group-index 实测）+ 库内 `LICENSE` 为 Apache-2.0 | ✅ 可商用；随 APK 分发时须保留 Apache-2.0 声明（见下方义务 3） |
+| 11 | marked（`vendor/marked.min.js`，卡 058 引入） | github.com/markedjs/marked（npm: marked） | **18.1.1**（npm tarball `lib/marked.umd.js` → esbuild minify） | **MIT** | ① npm tarball `marked-18.1.1.tgz` SHA-512 与 registry `dist.integrity` 逐字节一致（2026-10-18 实测）；② 包内 `LICENSE` 原文（MIT）；③ `lib/marked.umd.js` 头部自述 v18.1.1 + MIT | ✅ 可商用；`vendor/marked.LICENSE` 随分发 |
+| 12 | DOMPurify（`vendor/dompurify.min.js`，卡 058 引入） | github.com/cure53/DOMPurify（npm: dompurify） | **3.4.17**（npm tarball `dist/purify.min.js` 逐字节） | **Apache-2.0**（双许可 `MPL-2.0 OR Apache-2.0`，本项目取 Apache-2.0 分支） | ① npm tarball `dompurify-3.4.17.tgz` SHA-512 与 registry `dist.integrity` 一致（2026-10-18 实测）；② 包内 `LICENSE` 为 Apache-2.0 全文；③ min 文件头部自述 3.4.17 | ✅ 可商用；`vendor/dompurify.LICENSE` 随分发 |
 
 ## 使用与分发义务（本项目执行清单）
 
-1. **版权声明随分发（2026-09-09 补录，实测状态）**：`vendor/` 现有许可文件——`pdfjs.LICENSE`（Apache-2.0）· `mammoth.LICENSE`（BSD-2-Clause）· `read-excel-file.LICENSE`（MIT）· `tesseract.LICENSE`（Apache-2.0）· `tesseract.min.js.LICENSE.txt` + `worker.min.js.LICENSE.txt`（对应两个 tesseract 构建件头部注释所指）· `cmaps/LICENSE`（Adobe BSD-3 类，库内原有）。`pdfjs.pdf.min.js` / `pdfjs.pdf.worker.min.js` 文件头自带 `@licstart` 版权声明；`mammoth.browser.min.js` / `read-excel-file.min.js` 压缩件头部无声明（以随附 LICENSE 履行）。
+1. **版权声明随分发（2026-09-09 补录，实测状态）**：`vendor/` 现有许可文件——`pdfjs.LICENSE`（Apache-2.0）· `mammoth.LICENSE`（BSD-2-Clause）· `read-excel-file.LICENSE`（MIT）· `tesseract.LICENSE`（Apache-2.0）· `tesseract.min.js.LICENSE.txt` + `worker.min.js.LICENSE.txt`（对应两个 tesseract 构建件头部注释所指）· `cmaps/LICENSE`（Adobe BSD-3 类，库内原有）· `marked.LICENSE`（MIT，卡 058）· `dompurify.LICENSE`（Apache-2.0 全文，卡 058）。`pdfjs.pdf.min.js` / `pdfjs.pdf.worker.min.js` 文件头自带 `@licstart` 版权声明；`mammoth.browser.min.js` / `read-excel-file.min.js` 压缩件头部无声明（以随附 LICENSE 履行）。
 2. **后续内联的库同样处理**：文件头注释写「包名 版本 许可 来源仓库」，或随分发附 `<库名>.LICENSE` 文本。
 3. **Apache-2.0 义务**：发布物（含 GitHub Release 的 tgz/zip 与最终分发物）附 Apache-2.0 许可证文本副本——**已履行（2026-09-09）**：`vendor/pdfjs.LICENSE` + `vendor/tesseract.LICENSE`（tesseract.js 上游无独立 NOTICE，未附）。
 4. **README 引用**：README.md「许可与合规」节指向本表（不做全文复制，状态性内容以本表为唯一权威源）。
