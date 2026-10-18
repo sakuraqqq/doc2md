@@ -41,6 +41,8 @@ export const DELIVERY_FACE = [
   'tesseract.js',
   'tesseract.js-core',
   'read-excel-file',
+  'marked',
+  'dompurify',
   '@tesseract.js-data/eng',
   '@tesseract.js-data/chi_sim',
 ];

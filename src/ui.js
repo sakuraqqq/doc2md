@@ -5,6 +5,7 @@
  *   仅向 convert.js **注册**一个钩子（注入方向：ui → convert，convert 不反向依赖 DOM 域）。
  */
 import { setPreflightHook } from './convert.js';
+import { mountPreview } from './markdown-preview.js';
 
 export const $ = (sel) => document.querySelector(sel);
 const dropzone = $('#dropzone');
@@ -566,6 +567,55 @@ export function truncatePreview(text, max = PREVIEW_MAX_CHARS) {
   if (c >= 0xd800 && c <= 0xdbff) cut -= 1; // 不切代理对（UTF-16 边界，与审查 §2.6 同口径）
   return s.slice(0, cut) + '\n\n' + PREVIEW_CUT_HINT;
 }
+/** 结果卡片的「渲染 / 原始」切换（卡 058）：默认渲染；原始态复用既有 textarea.md（Q 组仍读它）。
+ *  ⚠️ 切换只切显隐，不重建 DOM —— A6 要求「再切回渲染结果与首次一致」。 */
+function buildPreviewSwitch(preview, textarea) {
+  const bar = document.createElement('div');
+  bar.className = 'md-switch';
+  bar.setAttribute('role', 'group');
+  bar.setAttribute('aria-label', '预览模式');
+  const buttons = {};
+  const setMode = (mode) => {
+    const rendered = mode === 'rendered';
+    preview.hidden = !rendered;
+    textarea.hidden = rendered;
+    for (const key of Object.keys(buttons)) {
+      buttons[key].setAttribute('aria-pressed', key === mode ? 'true' : 'false');
+    }
+  };
+  for (const item of [{ id: 'rendered', label: '渲染' }, { id: 'raw', label: '原始' }]) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'md-switch-btn';
+    btn.textContent = item.label;
+    btn.addEventListener('click', () => setMode(item.id));
+    buttons[item.id] = btn;
+    bar.appendChild(btn);
+  }
+  setMode('rendered');
+  return bar;
+}
+/** 一组「切换条 + 渲染态 + 原始态」；原始 textarea.md 保留 Q 组口径（1MB 截断 + 固定提示）。 */
+function buildPreviewBody(fullText) {
+  const preview = document.createElement('div');
+  preview.className = 'md-preview';
+  try {
+    mountPreview(preview, fullText);
+  } catch (e) {
+    preview.className = 'md-preview md-preview-error';
+    preview.textContent = '预览渲染失败：' + (e && e.message ? e.message : '未知错误');
+  }
+  const ta = document.createElement('textarea');
+  ta.className = 'md';
+  ta.readOnly = true;
+  ta.value = truncatePreview(fullText);
+  ta.hidden = true;
+  const wrap = document.createElement('div');
+  wrap.appendChild(buildPreviewSwitch(preview, ta));
+  wrap.appendChild(preview);
+  wrap.appendChild(ta);
+  return wrap;
+}
 function buildActions(file, result, fullText) {
   const actions = document.createElement('div');
   actions.className = 'card-actions';
@@ -627,12 +677,8 @@ export function renderResult(file, result) {
     errEl.textContent = '❌ ' + result.error;
     body.appendChild(errEl);
   } else {
-    const ta = document.createElement('textarea');
-    ta.className = 'md';
-    ta.readOnly = true;
     const fullText = String(result.markdown == null ? '' : result.markdown); // 完整文本（复制/下载用）
-    ta.value = truncatePreview(fullText); // 预览截断 1MB（契约组 Q）
-    body.appendChild(ta);
+    body.appendChild(buildPreviewBody(fullText));
     if (result.meta.warnings && result.meta.warnings.length) {
       const w = document.createElement('div');
       w.className = 'warnings';

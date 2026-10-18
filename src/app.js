@@ -11,6 +11,7 @@ import { collapseCjkSpaces } from './cjk.js';
 import { htmlToMarkdown } from './html2md.js';
 import { decodeText, sniff } from './sniff.js';
 import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes } from './ui.js';
+import { mountPreview, renderMarkdown } from './markdown-preview.js';
 
 export async function handleFiles(files) {
   const list = Array.from(files || []);
@@ -99,6 +100,8 @@ window.__doc2md = {
   decodeText,
   MAX_BYTES,
   collapseCjkSpaces,
+  renderMarkdown,
+  mountPreview,
   get embedMaxBytes() { return getEmbedMaxBytes(); },
   set embedMaxBytes(n) { setEmbedMaxBytes(n); },
 };
