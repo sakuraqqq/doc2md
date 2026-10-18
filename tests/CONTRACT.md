@@ -712,10 +712,12 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 | Z6-3 | 页脚信息只在「设置 › 关于」：全页无 `<footer>`；`#panel-convert` 不含版本/许可；`#panel-settings` 含版本与许可 | 运行时 DOM | ✅ 绿 |
 | Z6-4 | 文件页空态：`#filesEmpty` 可见 + 含「还没有转换记录」+ `#panel-files` **无** `.card`（⛔ 假数据）；`#goConvert` 跳回转换 Tab | 运行时 DOM | ✅ 绿 |
 | Z6-5 | 设置四组齐（外观/历史/反馈/关于）+ 外观三档；跟随系统时 `emulateMedia` 翻色 ⇒ `data-theme` 跟随；选浅色后不被系统覆盖 | 运行时 DOM | ✅ 绿 |
-| Z6-6 | safe-area 基础：`viewport-fit=cover` + `env(safe-area-inset-top/bottom)` 出现 + 无硬编码 30px 状态栏高度 | 源码静态 | ✅ 绿 |
+| Z6-6 | safe-area 基础：`viewport-fit=cover` + `env(safe-area-inset-top/bottom)` 出现 + 无硬编码 30px 状态栏高度。⭐ **返工 R2（2026-10-18 对抗测试 F4）**：**先剥 HTML/CSS 注释再判**，并带**两个负例**（删真声明 / 只留注释的样本）— 否则注释里的形态能顶替实现 | 源码静态（剥注释） | ✅ 绿 |
 | Z6-7 | 主题切换走 **View Transitions 圆形揭幕**（`startViewTransition` 被调用 + `::view-transition-new(root)` 动画在场；老内核降级但主题必须落定） | 运行时 DOM | ✅ 绿 |
 | Z6-8 | 反馈组「错误报告」= **导出诊断日志**（`doc2md-<yyyyMMdd>-<HHmmss>.log`）：含标题/版本/环境/事件；⛔ 不含文件名、路径、内容 | 下载事件 + 内容 | ✅ 绿 |
 | Z6-9 | ⭐ **多选转换不再逐条滚动**：一批（3 个文件）只定位一次（`scrollIntoView` 调用数 = 1） | 运行时 DOM | ✅ 绿 |
+| Z6-10 | **卡片外观统一**：设置页行分组由 `.list` 容器裁圆角；行自身边框/四角必须为 0 | 运行时 DOM | ✅ 绿（**先红**：`设置页行分组容器不足（应为 历史/反馈/关于 各一个）：0`） |
+| Z6-11 | ⭐ **monochrome / Splash 不得来自默认模板**（对抗测试 F1/P0 守卫）：① `drawable-v24/ic_launcher_foreground.xml`（Android Studio 机器人模板）**不存在**；② monochrome 不含机器人路径特征（`M66.94,46.02`/`62.94,56.92`/`45.06,56.92`）且 pathData 长度 ≠ 642；③ 深浅两套 `styles.xml` 的 `windowSplashScreenAnimatedIcon` 必须指向 `@mipmap/ic_launcher_foreground`（真图标），**不得**是 `@drawable/ic_launcher_foreground` | 源码静态 | ✅ 绿（**返工 R1**；旧状态会红：模板存在 + monochrome 逐字节等于机器人路径） |
 
 **用户 2026-10-18 真机反馈的三处校正**（同批落地，均由断言锁住）：
 1. **「错误报告」的定义校正** —— 用户原话：「我想的是点错误报告后会下载一个 app 的日志文件。跳转的话 github issue 一个就够了」⇒ 反馈组改为「导出诊断日志 + 单一 GitHub Issues 入口」（原先两个都是跳转链接，其中"错误报告"跳的是 `issues/new`，属实现方对 A6 的误读）。日志只收版本/平台/错误文案/耗时，**不收文件名与内容**（隐私裁量写进代码注释与 Z6-8）。
