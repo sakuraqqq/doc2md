@@ -6190,11 +6190,27 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'light', '选「浅色」后仍被系统色覆盖（选择未固定）');
       });
 
-      await t.test('Z6-6 A7 safe-area 基础：viewport-fit=cover + env(safe-area-inset-*) + 不硬编码状态栏高度', () => {
-        assert.match(src, /name="viewport"[^>]*viewport-fit=cover/, 'viewport 缺 viewport-fit=cover');
-        assert.match(src, /env\(safe-area-inset-top/, 'CSS 未使用 env(safe-area-inset-top)');
-        assert.match(src, /env\(safe-area-inset-bottom/, 'CSS 未使用 env(safe-area-inset-bottom)');
-        assert.ok(!/--status-bar-height:\s*30px|padding-top:\s*30px/.test(src), '出现硬编码的 30px 状态栏高度（该值应来自原生 inset）');
+      await t.test('Z6-6 A7 safe-area 基础（★先剥 HTML/CSS 注释再判 + 注释不能顶替真 CSS 的负例）', () => {
+        /* 卡 057 · 返工 R2（对抗测试 F4/P2）：原断言直接读 index.html 原文，
+         * 而文件里的 CSS 注释本身写着 env(safe-area-inset-*) ⇒ 「删掉真 CSS、只留注释」也能绿。
+         * 修法：先剥注释再判；并现场构造负例证明"只留注释"会被抓到。 */
+        const stripComments = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        const bare = stripComments(src);
+        assert.match(bare, /name="viewport"[^>]*viewport-fit=cover/, 'viewport 缺 viewport-fit=cover（剥注释后）');
+        assert.match(bare, /env\(safe-area-inset-top/, 'CSS 未使用 env(safe-area-inset-top)（剥注释后）');
+        assert.match(bare, /env\(safe-area-inset-bottom/, 'CSS 未使用 env(safe-area-inset-bottom)（剥注释后）');
+        assert.ok(!/--status-bar-height:\s*30px|padding-top:\s*30px/.test(bare), '出现硬编码的 30px 状态栏高度（该值应来自原生 inset）');
+
+        // 负例 A（对真实产物）：删掉真正的 --safe-top 声明 ⇒ 剥注释后必须**不再**匹配
+        const removed = src.replace(/--safe-top:\s*max\([^;]+;/, '');
+        assert.notEqual(removed, src, '负例构造失败：index.html 里找不到 --safe-top 的 max(env(...), ...) 声明');
+        assert.ok(!stripComments(removed).includes('env(safe-area-inset-top'), '负例不成立：删掉真 CSS 后仍匹配 env(safe-area-inset-top)');
+
+        // 负例 B（对"剥注释"这一层本身）：构造「只有注释、没有真 CSS」的样本
+        //   ⇒ 不剥注释时会被误判为通过；剥完必须不匹配。
+        const fakeOnlyComment = '<style>/* --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px)); */</style>';
+        assert.ok(fakeOnlyComment.includes('env(safe-area-inset-top'), '负例 B 构造失败');
+        assert.ok(!stripComments(fakeOnlyComment).includes('env(safe-area-inset-top'), '剥注释器失效：注释里的"实现"被当成了真实现（F4 的攻击面）');
       });
 
 
@@ -6295,6 +6311,31 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.equal(r.orphan, 0, '有行不在 .list 容器里（会各自吃 UA 边框与圆角）：' + r.orphan);
         assert.deepEqual(r.rowBad, [], '这些行自带边框或圆角（应由容器裁，行自身一律 0）：' + JSON.stringify(r.rowBad));
         for (const v of r.rad) assert.notEqual(v, '0px', '分组容器缺圆角：' + v);
+      });
+
+
+      await t.test('Z6-11 monochrome / Splash 不得来自默认模板（对抗测试 F1/P0 守卫）', () => {
+        /* 卡 057 · 返工 R1：drawable-v24/ic_launcher_foreground.xml 是 **Android Studio 默认模板（机器人）**，
+         * 曾被 @drawable 解析命中 ⇒ Splash 与 monochrome 都成了机器人。此处三条守卫：
+         * ① 模板文件必须不存在；② monochrome 不得含机器人路径特征；③ Splash 必须引用 mipmap 真图标。 */
+        const RES = nodePath.join(ROOT, 'android', 'app', 'src', 'main', 'res');
+        const legacy = nodePath.join(RES, 'drawable-v24', 'ic_launcher_foreground.xml');
+        assert.equal(fs.existsSync(legacy), false, '机器人模板 drawable-v24/ic_launcher_foreground.xml 仍存在（会被 @drawable 命中，再次变成机器人）');
+
+        const monoPath = nodePath.join(RES, 'drawable', 'ic_launcher_monochrome.xml');
+        assert.ok(fs.existsSync(monoPath), 'monochrome 矢量不存在');
+        const mono = fs.readFileSync(monoPath, 'utf8');
+        for (const sig of ['M66.94,46.02', '62.94,56.92', '45.06,56.92']) {
+          assert.ok(!mono.includes(sig), 'monochrome 含机器人路径特征（默认模板残留）：' + sig);
+        }
+        const pd = (mono.match(/android:pathData="([^"]+)"/) || [])[1] || '';
+        assert.ok(pd.length > 20 && pd.length < 400, 'monochrome pathData 长度异常（' + pd.length + '；机器人那条是 642 字符）');
+
+        for (const f of ['values', 'values-night']) {
+          const styles = fs.readFileSync(nodePath.join(RES, f, 'styles.xml'), 'utf8');
+          assert.ok(!/@drawable\/ic_launcher_foreground</.test(styles), f + '/styles.xml 的 Splash 仍引用 @drawable/ic_launcher_foreground（会命中模板）');
+          assert.match(styles, /windowSplashScreenAnimatedIcon">@mipmap\/ic_launcher_foreground</, f + '/styles.xml 的 Splash 没有引用 mipmap 真图标');
+        }
       });
 
       await ctx.close();
