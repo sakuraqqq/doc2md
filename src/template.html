@@ -24,10 +24,14 @@
     --accent-soft: #8ab6ff; /* chip 文字亮蓝：on rgba(79,140,255,.15)+panel2 对比度 ≈6.7:1（≥4.5） */
     --ok: #3ecf8e; --err: #ff6b6b; --warn: #ffb454; --radius: 12px;
     --bar-h: 56px; --nav-h: 64px;
-    --safe-top: env(safe-area-inset-top, 0px);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --safe-left: env(safe-area-inset-left, 0px);
-    --safe-right: env(safe-area-inset-right, 0px);
+    /* 卡 057 / A5（edge-to-edge）：两路来源取大者 ——
+     *   env(safe-area-inset-*)     WebView ≥140 且 meta viewport-fit=cover 时由 Chromium 直接提供
+     *   var(--safe-area-inset-*)  Capacitor SystemBars（insetsHandling=css）注入的 CSS 变量
+     * ⚠️ 只认 env() 的话，WebView 老于 140 时 insets 恒为 0 ⇒ 内容会钻到状态栏/手势条底下。 */
+    --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+    --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+    --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+    --safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
     --dur-fast: 200ms; --dur-base: 280ms;
     --ease-standard: cubic-bezier(.2, 0, 0, 1);
     --ease-spatial: cubic-bezier(.27, 1.06, .18, 1);

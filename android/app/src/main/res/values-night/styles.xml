@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- 卡 057 / A3：深色（values-night）—— 与 Web 深色令牌同源（背景 #0F1115 / 面板 #171A21 / 主色 #4F8CFF）。
+         ⚠️ 同名 style 在 night 里是**整体替换**（不是合并）⇒ 这里把两个 style 的条目都写全。 -->
+    <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#A9C7FF</item>
+        <item name="colorOnPrimary">#002F66</item>
+        <item name="colorSecondary">#8AB6FF</item>
+        <item name="colorSurface">#171A21</item>
+        <item name="colorOnSurface">#E6E9F0</item>
+        <item name="android:colorBackground">#0F1115</item>
+        <item name="colorPrimaryDark">#3B6FD4</item>
+        <item name="colorAccent">#4F8CFF</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#0F1115</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme</item>
+    </style>
+</resources>
