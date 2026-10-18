@@ -6115,6 +6115,7 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
             pickerText: dz.textContent.replace(/\s+/g, ' ').trim(),
             lastTitle: (document.getElementById('lastTitle') || {}).textContent || '',
             dzTop: dz.getBoundingClientRect().top,
+            dzHeight: Math.round(dz.getBoundingClientRect().height),
             lastTop: document.getElementById('lastEmpty').getBoundingClientRect().top,
           };
         });
@@ -6123,6 +6124,9 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.equal(hero.badges, 0, '仍有胶囊徽章（.badges/.badge）');
         assert.ok(!hero.borderStyle.includes('dashed'), '#dropzone 仍是虚线框（border-style=' + hero.borderStyle + '）');
         assert.ok(hero.pickerText.includes('选择文档'), '主操作卡片缺「选择文档」，实测 ' + hero.pickerText);
+        assert.ok(hero.pickerText.includes('PDF'), '选择卡片缺格式说明，实测 ' + hero.pickerText);
+        assert.ok(hero.pickerText.includes('50 MB'), '选择卡片缺文件大小限制，实测 ' + hero.pickerText);
+        assert.ok(hero.dzHeight < 200, '选择卡片高度=' + hero.dzHeight + 'px（应 <200，不能占满首屏）');
         assert.ok(hero.lastTitle.includes('上次转换'), '缺「上次转换」区块');
         assert.ok(hero.lastTop > hero.dzTop, '顺序不符：上次转换应在选择文档卡片之下');
       });

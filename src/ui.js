@@ -19,6 +19,7 @@ const mdViewerBody = $('#mdViewerBody');
 const mdViewerClose = $('#mdViewerClose');
 const mdViewerPreview = $('#mdViewerPreview');
 const mdViewerRaw = $('#mdViewerRaw');
+const pickerTitle = $('#pickerTitle');
 const resultsPanel = $('#resultsPanel');
 const resultsCount = $('#resultsCount');
 const resultsSearch = $('#resultsSearch');
@@ -365,10 +366,13 @@ function syncSelectAll() {
   selectAllBtn.textContent = all ? '取消全选' : '全选';
 }
 function updateResultsChrome() {
-  resultsPanel.hidden = resultRows.length === 0;
-  hintEl.style.display = resultRows.length ? 'none' : '';
+  const hasResults = resultRows.length > 0;
+  resultsPanel.hidden = !hasResults;
+  hintEl.style.display = hasResults ? 'none' : '';
+  document.body.classList.toggle('has-results', hasResults);
+  if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
   const lastSect = document.getElementById('lastTitle');
-  if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = resultRows.length > 0;
+  if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = hasResults;
   resultsCount.textContent = '已完成 ' + resultRows.length + ' 个文件';
   syncSelectAll();
   syncBatchBar();

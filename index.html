@@ -81,18 +81,30 @@
   /* ── 「选择文档」卡片（替代旧的虚线拖放框；仍复用 #dropzone 这个元素，
    *    因为 app.js 的点击/拖放接线挂在它上面 —— 卡 056 inScope 不含 app.js） ── */
   #dropzone {
-    width: 100%; display: flex; flex-direction: column; align-items: center; gap: 6px;
-    padding: 22px 16px; border: 1px solid var(--border); border-radius: var(--radius);
-    background: var(--panel); color: var(--text); font: inherit; text-align: center;
-    cursor: pointer; min-height: 132px; justify-content: center;
+    width: 100%; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto; align-items: center; gap: 8px 12px;
+    padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--panel); color: var(--text); font: inherit; text-align: left;
+    cursor: pointer; min-height: 0;
     transition: background .15s, border-color .15s, transform .15s;
   }
   #dropzone:hover, #dropzone.over { border-color: var(--accent); background: var(--panel2); }
   #dropzone:active { transform: scale(.995); }
-  #dropzone .picker-icon { font-size: 26px; line-height: 1; }
-  #dropzone .picker-title { font-size: 17px; font-weight: 600; }
-  #dropzone .picker-sub { color: var(--muted); font-size: 12.5px; }
-  #dropzone .picker-rail { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  #dropzone .picker-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 10px; background: rgba(79,140,255,.14); color: var(--accent-soft); }
+  #dropzone .picker-icon svg { width: 24px; height: 24px; }
+  #dropzone .picker-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  #dropzone .picker-title { font-size: 16px; font-weight: 600; }
+  #dropzone .picker-sub { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  #dropzone .picker-chev { color: var(--muted); font-size: 22px; line-height: 1; padding-right: 2px; }
+  #dropzone .picker-foot { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--border); margin-top: 2px; padding-top: 8px; color: var(--muted); font-size: 12px; }
+  #dropzone .picker-lock { display: grid; place-items: center; width: 14px; height: 14px; color: var(--ok); }
+  #dropzone .picker-lock svg { width: 13px; height: 13px; }
+  /* 已有结果：自动收紧为“继续添加文档”，保留隐私行但去掉格式长句 */
+  body.has-results #dropzone { grid-template-columns: 38px minmax(0, 1fr) auto; padding: 9px 12px; gap: 6px 10px; }
+  body.has-results #dropzone .picker-icon { width: 38px; height: 38px; }
+  body.has-results #dropzone .picker-icon svg { width: 21px; height: 21px; }
+  body.has-results #dropzone .picker-sub { display: none; }
+  body.has-results #dropzone .picker-foot { padding-top: 6px; }
 
   /* ── 区块 / 行 / 段控 ── */
   .sect { margin-top: 18px; }
@@ -303,9 +315,9 @@
     .appbar { padding-left: 12px; padding-right: 12px; }
     .content { padding-left: 12px; padding-right: 12px; }
     .btn { min-height: 44px; padding: 10px 16px; font-size: 14px; }
-    #dropzone { min-height: 300px; padding: 36px 16px; }
-    #dropzone .picker-title { font-size: 20px; }
-    #dropzone .picker-sub { font-size: 13px; padding: 0 4px; }
+    #dropzone { min-height: 0; padding: 11px 12px; grid-template-columns: 42px minmax(0, 1fr) auto; }
+    #dropzone .picker-title { font-size: 16px; }
+    #dropzone .picker-sub { font-size: 12px; padding: 0; }
     .card-actions .btn { flex: 1 1 auto; justify-content: center; }
     .card-head .meta { margin-left: 0; text-align: left; width: 100%; }
     textarea.md { font-size: 14px; }
@@ -329,10 +341,15 @@
   <!-- ── 转换 ───────────────────────────────────────────────────────────── -->
   <section class="tabpanel active" id="panel-convert" role="tabpanel" aria-labelledby="tab-convert" tabindex="0">
     <button id="dropzone" type="button" title="点击选择文件，或拖入文件">
-      <span class="picker-icon" aria-hidden="true">📄</span>
-      <span class="picker-title">选择文档</span>
-      <span class="picker-sub">PDF · DOCX · XLSX · 图片 OCR · TXT / HTML ｜ ≤50MB</span>
-      <span class="picker-rail">全部转换在本机完成，文件不出设备</span>
+      <span class="picker-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5h6l2 2h9v9.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 18z"/><path d="M3.5 9h17"/></svg>
+      </span>
+      <span class="picker-main">
+        <span class="picker-title" id="pickerTitle">选择文档</span>
+        <span class="picker-sub">PDF · DOCX · XLSX · 图片 OCR · TXT / HTML</span>
+      </span>
+      <span class="picker-chev" aria-hidden="true">›</span>
+      <span class="picker-foot"><span class="picker-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span> 本地处理 · 单文件最大 50 MB</span>
     </button>
     <input type="file" id="fileInput" hidden multiple accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tiff,.txt,.html,.htm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/*,text/plain,text/html">
     <div id="status" role="status" aria-live="polite"></div>
@@ -2208,6 +2225,7 @@ ${xlsxRowsToMd(kept)}`);
   var mdViewerClose = $("#mdViewerClose");
   var mdViewerPreview = $("#mdViewerPreview");
   var mdViewerRaw = $("#mdViewerRaw");
+  var pickerTitle = $("#pickerTitle");
   var resultsPanel = $("#resultsPanel");
   var resultsCount = $("#resultsCount");
   var resultsSearch = $("#resultsSearch");
@@ -2463,10 +2481,13 @@ ${xlsxRowsToMd(kept)}`);
     selectAllBtn.textContent = all ? "\u53D6\u6D88\u5168\u9009" : "\u5168\u9009";
   }
   function updateResultsChrome() {
-    resultsPanel.hidden = resultRows.length === 0;
-    hintEl.style.display = resultRows.length ? "none" : "";
+    const hasResults = resultRows.length > 0;
+    resultsPanel.hidden = !hasResults;
+    hintEl.style.display = hasResults ? "none" : "";
+    document.body.classList.toggle("has-results", hasResults);
+    if (pickerTitle) pickerTitle.textContent = hasResults ? "\u7EE7\u7EED\u6DFB\u52A0\u6587\u6863" : "\u9009\u62E9\u6587\u6863";
     const lastSect = document.getElementById("lastTitle");
-    if (lastSect && lastSect.closest(".sect")) lastSect.closest(".sect").hidden = resultRows.length > 0;
+    if (lastSect && lastSect.closest(".sect")) lastSect.closest(".sect").hidden = hasResults;
     resultsCount.textContent = "\u5DF2\u5B8C\u6210 " + resultRows.length + " \u4E2A\u6587\u4EF6";
     syncSelectAll();
     syncBatchBar();
