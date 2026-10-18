@@ -1,22 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
-        <!-- Customize your theme here. -->
-        <item name="colorPrimary">@color/colorPrimary</item>
-        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
-        <item name="colorAccent">@color/colorAccent</item>
+    <!-- 卡 057 / A2：AppTheme 换成 Material 3 DayNight（此前是 Theme.AppCompat.Light.DarkActionBar）。
+         ⚠️ 颜色写成**内联十六进制**而不是新建 values/colors.xml —— 本卡 inScope 只列 styles.xml；
+            取值与 Web 侧令牌同源（src/template.html 的 :root）。
+         ⚠️ 顺带删掉未被引用的 AppTheme.NoActionBar（童子军：死代码）。 -->
+    <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#4F8CFF</item>
+        <item name="colorOnPrimary">#002F66</item>
+        <item name="colorSecondary">#3B6FD4</item>
+        <item name="colorSurface">#FFFFFF</item>
+        <item name="colorOnSurface">#181C23</item>
+        <item name="android:colorBackground">#F8F9FD</item>
+        <item name="colorPrimaryDark">#2F5EA8</item>
+        <item name="colorAccent">#4F8CFF</item>
+        <!-- 卡 057 / A5：系统栏透明 —— 真正的 edge-to-edge 由 MainActivity 的 EdgeToEdge.enable(this) 打开，
+             insets 由 Capacitor SystemBars（insetsHandling=css）注入成 CSS 变量（safe-area-inset-*）。 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="windowActionBar">false</item>
-        <item name="windowNoTitle">true</item>
-        <item name="android:background">@null</item>
-    </style>
-
-
+    <!-- 卡 057 / A4：Splash 正规化 —— parent 已是 Theme.SplashScreen；
+         补 postSplashScreenTheme 指向 AppTheme（启动后切换到正式主题），
+         并用 windowSplashScreenBackground/AnimatedIcon 统一出图；
+         ⛔ 去掉旧的 android:background=@drawable/splash（11 个旧 PNG splash 不再参与启动）。 -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">#FFFFFF</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme</item>
     </style>
 </resources>

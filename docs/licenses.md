@@ -16,6 +16,7 @@
 | 7 | tesseract.js-core | npm: tesseract.js-core（github.com/naptha/tesseract.js-core） | 本地 **6.1.2**（wasm 单文件内联 ×2：lstm / simd-lstm） | **Apache-2.0** | 本地安装包 package.json `"license": "Apache-2.0"`；**版本证据（2026-09-17 实测）**：`npm pack tesseract.js-core@6.1.2` 解包后与 `vendor/tesseract-core-{lstm,simd-lstm}.wasm.js` **逐字节一致**（SHA256 相同）—— ⚠️ 本行原记 **6.0.0 系陈旧**（vendor 实际跟的是 lock 的 6.1.2），本次依赖体检交叉校验抓出并订正 | ✅ 可商用；附 Apache-2.0 文本与声明 |
 | 8 | tessdata（语言包数据） | npm: @tesseract.js-data/{eng,chi_sim}@1.0.0（naptha/tessdata 发布通道） | 4.0.0_best_int（eng/chi_sim，base64 内联） | **MIT** | 本地安装包 package.json `"license": "MIT"`（一手证据）；上游数据源自 tesseract-ocr/tessdata（Apache-2.0），本项目跟随 npm 包声明 | ✅ 可商用，保留声明 |
 | 9 | Adobe cmaps（`vendor/cmaps/`，t27 引入） | pdfjs-dist 官方资产（github.com/mozilla/pdf.js 打包分发；上游 Adobe 1990-2009 cmaps 集） | 168 `.bcmap` + `LICENSE`（t11 §2.1 登记） | **BSD-3-Clause 类**（允许再分发、需保留版权声明与免责条款） | `vendor/cmaps/LICENSE` 原文（一手证据）：`Copyright 1990-2009 Adobe Systems Incorporated. All rights reserved.` + "Redistribution and use in source and binary forms…"（ BSD-3 条款形态） | ✅ 可商用；随 `vendor/cmaps/` 分发即附 LICENSE 原文（已随仓库提交，无需额外动作） |
+| 10 | Material Components for Android（`com.google.android.material:material`，卡 057 引入） | github.com/material-components/material-components-android（Google Maven: com/google/android/material/material） | **1.14.0**（Android 原生侧，**不进** `vendor/` 交付面） | **Apache-2.0** | Google Maven `1.14.0` 正式版存在（group-index 实测）+ 库内 `LICENSE` 为 Apache-2.0 | ✅ 可商用；随 APK 分发时须保留 Apache-2.0 声明（见下方义务 3） |
 
 ## 使用与分发义务（本项目执行清单）
 
