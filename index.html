@@ -1980,7 +1980,8 @@ ${xlsxRowsToMd(kept)}`);
   function diagBoot() {
     const ver = ((document.getElementById("versionText") || {}).textContent || "").replace(/\s+/g, " ").trim();
     diag("boot", "version=" + (ver || "?") + " runtime=" + (isNativeRuntime() ? "native" : "web"));
-    diag("env", "ua=" + String(navigator.userAgent || "").slice(0, 120));
+    const ua = String(navigator.userAgent || "");
+    diag("env", "ua=" + (ua.length > 120 ? ua.slice(0, 120) + "\u2026" : ua));
     diag("env", "viewport=" + window.innerWidth + "x" + window.innerHeight + " dpr=" + (window.devicePixelRatio || 1));
   }
   function buildDiagLog() {
@@ -1989,7 +1990,9 @@ ${xlsxRowsToMd(kept)}`);
   }
   async function exportDiagLog() {
     const text = buildDiagLog();
-    const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[-:]/g, "").replace(/\..+/, "").replace("T", "-");
+    const d = /* @__PURE__ */ new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const stamp = "" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "-" + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
     const name = "doc2md-" + stamp + ".log";
     const plugin = nativeSavePlugin();
     if (plugin) {

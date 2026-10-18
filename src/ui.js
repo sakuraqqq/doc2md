@@ -97,7 +97,8 @@ function diag(kind, msg) {
 function diagBoot() {
   const ver = ((document.getElementById('versionText') || {}).textContent || '').replace(/\s+/g, ' ').trim();
   diag('boot', 'version=' + (ver || '?') + ' runtime=' + (isNativeRuntime() ? 'native' : 'web'));
-  diag('env', 'ua=' + String(navigator.userAgent || '').slice(0, 120));
+  const ua = String(navigator.userAgent || '');
+  diag('env', 'ua=' + (ua.length > 120 ? ua.slice(0, 120) + '…' : ua));
   diag('env', 'viewport=' + window.innerWidth + 'x' + window.innerHeight + ' dpr=' + (window.devicePixelRatio || 1));
 }
 /** 组装日志文本（导出与断言共用；⛔ 不含文件名/路径/内容） */
@@ -108,7 +109,10 @@ export function buildDiagLog() {
 /** 导出诊断日志：原生走插件直写 Download/（文件名后缀 .log），浏览器走 <a download> */
 export async function exportDiagLog() {
   const text = buildDiagLog();
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  // 文件名用**本地时间**（与日志头一致；此前用 toISOString 落的是 UTC，用户会看到两个时间对不上）
+  const stamp = '' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
   const name = 'doc2md-' + stamp + '.log';
   const plugin = nativeSavePlugin();
   if (plugin) {
