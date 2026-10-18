@@ -295,6 +295,13 @@ async function launchBrowser(chromium) {
   throw browserUnavailableError;
 }
 
+/** 打开结果行三点菜单并点击指定操作（卡 058 R2 列表 UI 的统一下载/复制入口）。 */
+async function clickRowMenuAction(page, card, label) {
+  await card.locator('.row-menu-btn').click();
+  const item = page.locator('.row-menu:visible button', { hasText: label }).first();
+  await item.click();
+}
+
 /**
  * GFM 表格结构断言（纯函数，可离线验证）。
  * 拍板（2026-09-04 用户）：docx 保留 GFM 表格——表格行 ≥2 + 表头分隔行（| --- |）+ 表头单元格文本。
@@ -1937,20 +1944,21 @@ test('契约组 I：docx 图片全抽取 + 导出二选一（sample-images.docx�
           'DOC2MD-IMG-2026',
           { timeout: 20000 }
         );
-        // 逐个点击下载区按钮，仅下载型入口产生 download 事件（复制类按钮无事件 → 跳过但记录）
-        const buttons = dlPage.locator('.card-actions button');
-        const n = await buttons.count();
+        // 三点菜单：读取下载型入口 → 逐个点击 → 产物核验（卡 058 R2 列表 UI）。
+        const resultCard = dlPage.locator('#results .card').last();
+        await resultCard.locator('.row-menu-btn').click();
+        const menuLabels = (await dlPage.locator('.row-menu:visible button').allTextContents()).map((s) => s.trim());
+        await dlPage.keyboard.press('Escape');
+        const downloadLabels = menuLabels.filter((l) => l.startsWith('下载'));
         const downloads = [];
-        for (let i = 0; i < n; i++) {
-          const label = ((await buttons.nth(i).textContent()) || '').trim();
-          const isPrimary = await buttons.nth(i).evaluate((el) => el.classList.contains('primary'));
+        for (const label of downloadLabels) {
           const dlPromise = dlPage.waitForEvent('download', { timeout: 5000 }).catch(() => null);
-          await buttons.nth(i).click();
+          await clickRowMenuAction(dlPage, resultCard, label);
           const dl = await dlPromise;
-          if (dl) downloads.push({ label, isPrimary, dl });
+          if (dl) downloads.push({ label, dl });
         }
-        await t.test('I4 导出契约·两入口（zip 默认 / 单文件 .md）：下载事件恰 2 个且产物 .zip/.md 各一，zip 为默认（primary 主入口）', () => {
-          assert.ok(n >= 2, `下载区按钮数=${n}（期望 ≥2 下载入口）`);
+        await t.test('I4 导出契约·两入口（zip 默认 / 单文件 .md）：菜单下载事件恰 2 个且产物 .zip/.md 各一，zip 为菜单首个下载入口', () => {
+          assert.ok(downloadLabels.length >= 2, `下载型菜单项=${downloadLabels.length}（期望 ≥2 下载入口）：${JSON.stringify(menuLabels)}`);
           assert.equal(
             downloads.length,
             2,
@@ -1960,7 +1968,7 @@ test('契约组 I：docx 图片全抽取 + 导出二选一（sample-images.docx�
           const mdD = downloads.find((d) => d.dl.suggestedFilename().endsWith('.md'));
           assert.ok(zipD, '缺 zip 下载入口（默认导出 = .md+图片 zip）');
           assert.ok(mdD, '缺单文件 md 下载入口（可选单文件 = 图片内嵌 base64）');
-          assert.ok(zipD.isPrimary, `zip 入口非默认主入口（primary）：${JSON.stringify(downloads.map((d) => ({ l: d.label, p: d.isPrimary })))}——「默认」口径 = 主入口标称（实现方换呈现须先拍板）`);
+          assert.ok(downloads[0].dl.suggestedFilename().endsWith('.zip'), `zip 不是菜单首个下载入口：${JSON.stringify(downloads.map((d) => d.label))}——「默认」口径 = 菜单顺序第一`);
         });
         const zipD = downloads.find((d) => d.dl.suggestedFilename().endsWith('.zip'));
         const mdD = downloads.find((d) => d.dl.suggestedFilename().endsWith('.md'));
@@ -2778,9 +2786,9 @@ test('契约组 Q：预览截断 1MB + 单文件内嵌上限 20MB 自动切 zip 
         });
 
         await t.test('Q2 导出仍完整：点「下载 .md」→ 产物含尾令牌 + 正文全长保留', async () => {
-          const btn = page.locator('.card-actions button', { hasText: '下载 .md' }).last();
+          const card = page.locator('#results .card').last();
           const dlP = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
-          await btn.click();
+          await clickRowMenuAction(page, card, '下载 .md');
           const dl = await dlP;
           assert.ok(dl, '点击「下载 .md」未产生下载事件');
           assert.ok(dl.suggestedFilename().endsWith('.md'), `产物非 .md：${dl.suggestedFilename()}`);
@@ -2800,10 +2808,9 @@ test('契约组 Q：预览截断 1MB + 单文件内嵌上限 20MB 自动切 zip 
         await page.locator('input[type=file]').setInputFiles(nodePath.join(DATA, 'sample-images.docx'));
         await page.waitForFunction(() => document.querySelectorAll('textarea.md').length >= 2, { timeout: 30000 });
         await t.test('Q4 超限自动切 zip：产物 .zip（md+assets 成对）+ 状态提示含「超过内嵌上限」', async () => {
-          const card = page.locator('.card').last();
-          const btn = card.locator('.card-actions button', { hasText: '下载 .md' }).last();
+          const card = page.locator('#results .card').last();
           const dlP = page.waitForEvent('download', { timeout: 20000 }).catch(() => null);
-          await btn.click();
+          await clickRowMenuAction(page, card, '下载 .md（图片内嵌）');
           const dl = await dlP;
           assert.ok(dl, '点击「下载 .md（图片内嵌）」未产生下载事件');
           assert.ok(
@@ -5207,15 +5214,15 @@ test('契约组 Z2：「保存」环节的原生/浏览器分流（无 Capacitor
         'DOC2MD-TXT-OK-2026',
         { timeout: 20000 }
       );
-      // 无附件夹具 ⇒ 下载区只有「复制」与「⬇ 下载 .md」（纯文本 .md 路径 = 本卡 A1 点的那颗按钮）
-      const btn = page.locator('.card-actions button', { hasText: '下载 .md' });
-      await btn.waitFor({ state: 'visible', timeout: 10000 });
+      // 无附件夹具 ⇒ 三点菜单里的「下载 .md」（纯文本 .md 路径 = 本卡 A1 点的那项）
+      const rowCard = page.locator('#results .card').last();
+      await rowCard.locator('.row-menu-btn').waitFor({ state: 'visible', timeout: 10000 });
 
       await t.test('Z2-1 Web 侧不变：无 Capacitor ⇒ 点「⬇ 下载 .md」仍走 <a download>，产物含令牌', async () => {
         const hasCap = await page.evaluate(() => Boolean(window.Capacitor && window.Capacitor.Plugins));
         assert.equal(hasCap, false, '浏览器环境不该有 window.Capacitor.Plugins（有则本断言前提不成立）');
         const dlP = page.waitForEvent('download', { timeout: 10000 }).catch(() => null);
-        await btn.click();
+        await clickRowMenuAction(page, rowCard, '下载 .md');
         const dl = await dlP;
         assert.ok(dl, '无 Capacitor 时点「下载 .md」没有产生 download 事件 —— Web 路径被 feature-detect 误伤');
         assert.ok(dl.suggestedFilename().endsWith('.md'), `下载文件名=${dl.suggestedFilename()}`);
@@ -5238,7 +5245,7 @@ test('契约组 Z2：「保存」环节的原生/浏览器分流（无 Capacitor
           };
         });
         const dlP = page.waitForEvent('download', { timeout: 2500 }).catch(() => null);
-        await btn.click();
+        await clickRowMenuAction(page, rowCard, '下载 .md');
         const dl = await dlP;
         await page.waitForFunction(() => window.__z2calls.length > 0, { timeout: 5000 }).catch(() => {});
         const calls = await page.evaluate(() => window.__z2calls);
@@ -5268,7 +5275,7 @@ test('契约组 Z2：「保存」环节的原生/浏览器分流（无 Capacitor
           };
         });
         const dlP = page.waitForEvent('download', { timeout: 10000 }).catch(() => null);
-        await btn.click();
+        await clickRowMenuAction(page, rowCard, '下载 .md');
         const dl = await dlP;
         assert.ok(dl, '桩缺 saveText 时没有回落到 <a download>（把「插件存在」当成了「能保存」）');
         const calls = await page.evaluate(() => window.__z2calls);
@@ -5315,11 +5322,11 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
         'DOC2MD-TXT-OK-2026',
         { timeout: 20000 }
       );
-      const btnMd = p1.locator('.card-actions button', { hasText: '下载 .md' });
-      await btnMd.waitFor({ state: 'visible', timeout: 10000 });
+      const row1 = p1.locator('#results .card').last();
+      await row1.locator('.row-menu-btn').waitFor({ state: 'visible', timeout: 10000 });
       await t.test('Z3-1 洞 A：原生平台 + 无插件 ⇒ 点「⬇ 下载 .md」出现可见提示（不得静默回落）', async () => {
         const dlP = p1.waitForEvent('download', { timeout: 2500 }).catch(() => null);
-        await btnMd.click();
+        await clickRowMenuAction(p1, row1, '下载 .md');
         const dl = await dlP;
         const status = await p1.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
         assert.ok(dl === null, '原生平台无插件时仍走了 <a download>（WebView 里那条本来就无效 ⇒ 等于静默）');
@@ -5342,15 +5349,15 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
         'DOC2MD-IMG-2026',
         { timeout: 20000 }
       );
-      const btnZip = p2.locator('.card-actions button', { hasText: 'zip' });
-      await btnZip.waitFor({ state: 'visible', timeout: 10000 });
+      const row2 = p2.locator('#results .card').last();
+      await row2.locator('.row-menu-btn').waitFor({ state: 'visible', timeout: 10000 });
       // ⭐ 卡 055 口径变更（P1=A：zip 原生接线）：zip 在 APK 上**已能存**（二进制分块写入）⇒
       //   本条的触发条件从「原生平台」收窄为「原生平台 + **没有二进制写入能力**」（老 APK / 未注册）。
       //   「暂不支持 zip」在接线后已成假话 ⇒ 文案改成如实的**能力边界**；
       //   「不静默 + 指路」这条契约意图**不变**（卡 011 的洞 B 仍然守着）。
       await t.test('Z3-2 洞 B（卡 055 修正）：原生平台 + 无二进制写入插件 ⇒ 明说「未提供 zip 写入能力」并指出替代路径', async () => {
         const dlP = p2.waitForEvent('download', { timeout: 2500 }).catch(() => null);
-        await btnZip.click();
+        await clickRowMenuAction(p2, row2, '下载 .md + 图片（zip）');
         const dl = await dlP;
         const status = await p2.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
         assert.ok(dl === null, '原生平台 zip 仍走 <a download>（WebView 里无效 ⇒ 等于静默）');
@@ -5375,8 +5382,8 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
         'DOC2MD-TXT-OK-2026',
         { timeout: 20000 }
       );
-      const btn3 = p3.locator('.card-actions button', { hasText: '下载 .md' });
-      await btn3.waitFor({ state: 'visible', timeout: 10000 });
+      const row3 = p3.locator('#results .card').last();
+      await row3.locator('.row-menu-btn').waitFor({ state: 'visible', timeout: 10000 });
       const stubPlugin = (mode) =>
         p3.evaluate((m) => {
           window.Capacitor = {
@@ -5399,7 +5406,7 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
       await t.test('Z3-3 A8：原生 + 插件可用 + 写入成功 ⇒ 状态栏有成功回话（含文件名），不得无声', async () => {
         await stubPlugin('ok');
         const dlP = p3.waitForEvent('download', { timeout: 2500 }).catch(() => null);
-        await btn3.click();
+        await clickRowMenuAction(p3, row3, '下载 .md');
         const dl = await dlP;
         await p3.waitForFunction(() => /已保存/.test((document.querySelector('#status') || {}).textContent || ''), { timeout: 5000 }).catch(() => {});
         const status = await p3.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
@@ -5411,7 +5418,7 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
       await t.test('Z3-4 A9：原生 + 插件在但写入失败 ⇒ 必须可见失败提示，且不得回落 <a download>', async () => {
         await stubPlugin('fail');
         const dlP = p3.waitForEvent('download', { timeout: 2500 }).catch(() => null);
-        await btn3.click();
+        await clickRowMenuAction(p3, row3, '下载 .md');
         const dl = await dlP;
         await p3.waitForFunction(() => /保存失败/.test((document.querySelector('#status') || {}).textContent || ''), { timeout: 5000 }).catch(() => {});
         const status = await p3.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
@@ -5437,8 +5444,8 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
         'DOC2MD-IMG-2026',
         { timeout: 20000 }
       );
-      const btnZip4 = p4.locator('.card-actions button', { hasText: 'zip' });
-      await btnZip4.waitFor({ state: 'visible', timeout: 10000 });
+      const row4 = p4.locator('#results .card').last();
+      await row4.locator('.row-menu-btn').waitFor({ state: 'visible', timeout: 10000 });
       const stubBinary = (mode) =>
         p4.evaluate((m) => {
           window.__z3bin = { begin: null, chunks: [], commit: null };
@@ -5467,7 +5474,7 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
       await t.test('Z3-5 卡 055：原生 + 插件有二进制方法 ⇒ zip 走分块直写；成功回话用插件回报的**真实**文件名；无下载事件', async () => {
         await stubBinary('ok');
         const dlP = p4.waitForEvent('download', { timeout: 2500 }).catch(() => null);
-        await btnZip4.click();
+        await clickRowMenuAction(p4, row4, '下载 .md + 图片（zip）');
         const dl = await dlP;
         await p4
           .waitForFunction(() => /已保存/.test((document.querySelector('#status') || {}).textContent || ''), { timeout: 8000 })
@@ -5500,7 +5507,7 @@ test('契约组 Z3：保存环节不再静默（native 桩下：无插件 ⇒ �
       await t.test('Z3-6 卡 055：原生 + 插件写入抛错 ⇒ 明说失败、不得显示成功、并回滚（endBinary commit=false）', async () => {
         await stubBinary('fail');
         const dlP = p4.waitForEvent('download', { timeout: 2500 }).catch(() => null);
-        await btnZip4.click();
+        await clickRowMenuAction(p4, row4, '下载 .md + 图片（zip）');
         const dl = await dlP;
         await p4
           .waitForFunction(() => /保存失败/.test((document.querySelector('#status') || {}).textContent || ''), { timeout: 8000 })
@@ -5540,7 +5547,8 @@ test('契约组 Z4：保存反馈必须落在当前视口内（多文件 + 滚�
     const chromium = await loadPlaywright();
     const browser = await launchBrowser(chromium);
     try {
-      const MULTI = ['sample.txt', 'sample.html', 'sample-truncated.txt'];
+      // 3 行已能装进视口（紧凑列表）⇒ 用 10 个文件制造"滚到底部"的现场（Z4 的前提）。
+      const MULTI = ['sample.txt', 'sample.html', 'sample-truncated.txt', 'sample.xlsx', 'sample.txt', 'sample.html', 'sample-truncated.txt', 'sample.xlsx', 'sample.txt', 'sample.html'];
       const TXT_TOKEN = 'DOC2MD-TXT-OK-2026';
       const stubNative = (page, mode) =>
         page.evaluate((m) => {
@@ -5580,7 +5588,7 @@ test('契约组 Z4：保存反馈必须落在当前视口内（多文件 + 滚�
           const r = s ? s.getBoundingClientRect() : null;
           return {
             cards: document.querySelectorAll('#results .card').length,
-            actionRows: document.querySelectorAll('#results .card-actions').length,
+            menuButtons: document.querySelectorAll('#results .row-menu-btn').length,
             scrollY: Math.round(window.scrollY),
             innerHeight: window.innerHeight,
             statusRect: r && { top: Math.round(r.top), bottom: Math.round(r.bottom) },
@@ -5612,12 +5620,12 @@ test('契约组 Z4：保存反馈必须落在当前视口内（多文件 + 滚�
       const pA = await ctxA.newPage();
       await openMultiScrolled(pA);
       await stubNative(pA, 'ok');
-      const btnA = pA.locator('#results .card-actions button', { hasText: '下载 .md' }).last();
-      await btnA.waitFor({ state: 'visible', timeout: 10000 });
+      const rowA = pA.locator('#results .card').last();
+      await rowA.locator('.row-menu-btn').waitFor({ state: 'visible', timeout: 10000 });
       const g0 = await siteGeometry(pA);
 
-      await t.test('Z4-0 现场前提：3 张卡 + 已滚到底部 ⇒ 旧载体 #status 确实已在视口外（把用户的抱怨钉成可判条件）', () => {
-        assert.equal(g0.actionRows, 3, `操作行数=${g0.actionRows}（期望 3 —— 少于 3 就复现不出"多文件"现场）`);
+      await t.test('Z4-0 现场前提：3 个文件行 + 已滚到底部 ⇒ 旧载体 #status 确实已在视口外（把用户的抱怨钉成可判条件）', () => {
+        assert.equal(g0.menuButtons, MULTI.length, `行菜单数=${g0.menuButtons}（期望 ${MULTI.length} —— 少于 3 就复现不出"多文件"现场）`);
         assert.ok(g0.scrollY > 0, `scrollY=${g0.scrollY}（期望 > 0 —— 页面没滚起来就什么都没证明）`);
         assert.equal(
           g0.statusInViewport,
@@ -5627,7 +5635,7 @@ test('契约组 Z4：保存反馈必须落在当前视口内（多文件 + 滚�
       });
 
       await t.test('Z4-1 A10：点最后一张卡的「⬇ 下载 .md」⇒ 提示必须出现在当前视口内（用户无需滚动）', async () => {
-        await btnA.click();
+        await clickRowMenuAction(pA, rowA, '下载 .md');
         await pA.waitForTimeout(600);
         const tg = await toastGeometry(pA);
         assert.ok(tg.exists, '视口内提示元素不存在 —— 反馈仍只在文档流顶部的 #status 里（用户滚下去就看不见）');
@@ -5651,11 +5659,11 @@ test('契约组 Z4：保存反馈必须落在当前视口内（多文件 + 滚�
       const pB = await ctxB.newPage();
       await openMultiScrolled(pB);
       await stubNative(pB, 'fail');
-      const btnB = pB.locator('#results .card-actions button', { hasText: '下载 .md' }).last();
-      await btnB.waitFor({ state: 'visible', timeout: 10000 });
+      const rowB = pB.locator('#results .card').last();
+      await rowB.locator('.row-menu-btn').waitFor({ state: 'visible', timeout: 10000 });
 
       await t.test('Z4-4 A10：写入失败同样必须落在视口内（失败文案也不能只在页面顶部）', async () => {
-        await btnB.click();
+        await clickRowMenuAction(pB, rowB, '下载 .md');
         await pB.waitForTimeout(600);
         const tg = await toastGeometry(pB);
         assert.ok(
@@ -5669,14 +5677,14 @@ test('契约组 Z4：保存反馈必须落在当前视口内（多文件 + 滚�
       const ctxC = await browser.newContext({ acceptDownloads: true });
       const pC = await ctxC.newPage();
       await openMultiScrolled(pC);
-      const btnC = pC.locator('#results .card-actions button', { hasText: '下载 .md' }).last();
-      await btnC.waitFor({ state: 'visible', timeout: 10000 });
+      const rowC = pC.locator('#results .card').last();
+      await rowC.locator('.row-menu-btn').waitFor({ state: 'visible', timeout: 10000 });
 
       await t.test('Z4-3 回归闸：Web 分支零变化 —— 不出现浮层（浏览器自带下载完成反馈，再加一层 = 双重反馈）', async () => {
         const hasCap = await pC.evaluate(() => Boolean(window.Capacitor));
         assert.equal(hasCap, false, '浏览器环境不该有 window.Capacitor（有则本断言前提不成立）');
         const dlP = pC.waitForEvent('download', { timeout: 10000 }).catch(() => null);
-        await btnC.click();
+        await clickRowMenuAction(pC, rowC, '下载 .md');
         const dl = await dlP;
         assert.ok(dl, '无 Capacitor 时点「下载 .md」没有产生 download 事件 —— Web 路径被浮层改动误伤');
         await pC.waitForTimeout(400);
@@ -6287,7 +6295,7 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         await page.waitForTimeout(400);
         const r = await page.evaluate(() => ({ siv: window.__siv, cards: document.querySelectorAll('#results .card').length }));
         assert.ok(r.cards >= 3, '批量结果卡片不足（前置不成立）：' + r.cards);
-        assert.equal(r.siv, 1, '批量转换期间 scrollIntoView 被调用了 ' + r.siv + ' 次（应为 1：只在一批结束时定位一次）');
+        assert.ok(r.siv <= 1, '批量转换期间 scrollIntoView 被调用了 ' + r.siv + ' 次（应 ≤1：0 = 末行已在视口，1 = 一批结束仅定位一次；⛔ 不得逐条滚）');
       });
 
 
@@ -6549,14 +6557,14 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         const content = '# 标题\n\n- 一\n- 二\n\n~~删~~\n';
         await page.evaluate(() => { document.getElementById('results').innerHTML = ''; });
         await page.setInputFiles('input[type=file]', { name: 'toggle.txt', mimeType: 'text/plain', buffer: Buffer.from(content, 'utf8') });
-        await page.waitForSelector('.card .file-open', { timeout: 15000 });
+        await page.waitForSelector('.card .row-preview', { timeout: 15000 });
         const md = await page.evaluate(async (text) => (await window.__doc2md.convert(new File([text], 'toggle.txt', { type: 'text/plain' }))).markdown, content);
         const card = await page.evaluate(() => {
           const c = document.querySelector('.card');
           const ta = c.querySelector('textarea.md');
           return {
             inlinePreview: c.querySelectorAll('.md-preview').length,
-            hasOpen: !!c.querySelector('.file-open'),
+            hasOpen: !!c.querySelector('.row-preview'),
             hiddenValue: ta ? ta.value : null,
             taHidden: ta ? !!ta.hidden : false,
           };
@@ -6565,7 +6573,7 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.equal(card.hasOpen, true, '文件卡缺「查看」入口');
         assert.equal(card.hiddenValue, md, '卡片隐藏 textarea 与源文本不一致（Q 组口径）');
         assert.equal(card.taHidden, true, 'Q 组 textarea 未隐藏');
-        await page.locator('.card .file-open').click();
+        await page.locator('.card .row-preview').first().click();
         await page.waitForSelector('#mdViewer:not([hidden])', { timeout: 5000 });
         const first = await page.evaluate(() => ({
           name: document.getElementById('mdViewerName').textContent,
@@ -6663,29 +6671,29 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         if (r.cut) assert.ok(r.text.includes('预览已截断'), '截断未在 UI 明示：' + r.text);
       });
 
-      await t.test('Z7-9 A6+ 批量「全部保存」固定条在视口内（一键下载不再被顶出屏幕）', async () => {
-        await page.evaluate(() => {
-          document.getElementById('results').innerHTML = '';
-          document.body.classList.remove('has-batch');
-        });
+      await t.test('Z7-9 A6+ 选择后批量「全部保存」固定条在视口内（一键下载不再被顶出屏幕）', async () => {
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
         await page.setInputFiles('input[type=file]', [
           nodePath.join(DATA, 'sample.txt'),
           nodePath.join(DATA, 'sample.html'),
           nodePath.join(DATA, 'sample.xlsx'),
         ]);
         await page.waitForFunction(() => /完成：/.test((document.querySelector('#status') || {}).textContent || ''), null, { timeout: 30000 });
-        await page.waitForSelector('.batch-bar', { timeout: 5000 });
+        await page.locator('#selectAllBtn').click();
+        await page.waitForSelector('#batchBar:not([hidden])', { timeout: 5000 });
         const r = await page.evaluate(() => {
-          const bar = document.querySelector('.batch-bar');
+          const bar = document.getElementById('batchBar');
           const b = bar.getBoundingClientRect();
           return {
             visible: b.top >= 0 && b.bottom <= window.innerHeight,
             text: bar.textContent.replace(/\s+/g, ' ').trim(),
             bodyClass: document.body.classList.contains('has-batch'),
-            btn: (bar.querySelector('button') || {}).textContent || '',
+            btn: (document.getElementById('batchSave') || {}).textContent || '',
+            selected: document.getElementById('batchCount').textContent,
           };
         });
         assert.equal(r.visible, true, '批量「全部保存」条不在视口内：' + JSON.stringify(r));
+        assert.equal(r.selected, '3', '全选后已选数量不是 3：' + r.selected);
         assert.ok(r.text.includes('全部保存'), '批量条缺「全部保存」：' + r.text);
         assert.ok(r.btn.includes('全部保存'), '批量条按钮文案不符：' + r.btn);
         assert.equal(r.bodyClass, true, '批量条存在但 body 缺 has-batch');
@@ -6721,6 +6729,215 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
           await ctx2.setOffline(false).catch(() => {});
           await ctx2.close();
         }
+      });
+
+      assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
+      await ctx.close();
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 Z8：转换结果列表（紧凑 / 多选 / 三点菜单 / 批量 / 100 文件）—— 卡 058 R2
+//   口径：结果行默认折叠；行内只有 checkbox + 文件名/类型/大小/状态 + 三点菜单；
+//   点行主体开全屏查看器；选择状态驱动底部批量操作；100 行不出现每行大按钮。
+//   交互参考：Material Selection（勾选 + 批量工具条）与 WAI-ARIA Menu Button
+//   （aria-haspopup / aria-expanded / role=menu）；只取结构，不引入依赖。
+// ---------------------------------------------------------------------------
+test('契约组 Z8：转换结果列表（紧凑 / 多选 / 菜单 / 批量 / 100 文件）—— 卡 058 R2', async (t) => {
+  assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
+  let chromium;
+  try { chromium = await loadPlaywright(); } catch (e) { assert.fail(e.message); return; }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try { browser = await launchBrowser(chromium); } catch (e) { assert.fail(e.message); return; }
+    try {
+      const ctx = await browser.newContext({ acceptDownloads: true });
+      const page = await ctx.newPage();
+      const errs = [];
+      page.on('pageerror', (e) => errs.push(String(e.message)));
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      const files100 = Array.from({ length: 100 }, (_, i) => ({
+        name: 'z8-' + i + '.txt',
+        mimeType: 'text/plain',
+        buffer: Buffer.from('# 文件 ' + i + '\n\n内容 ' + i + '\n', 'utf8'),
+      }));
+
+      await t.test('Z8-0 100 个文件：紧凑行 / 行高 ≤100 / 无每行大按钮 / 计数正确', async () => {
+        const t0 = Date.now();
+        await page.setInputFiles('input[type=file]', files100);
+        await page.waitForFunction(
+          () => /完成：共 100 个文件/.test((document.querySelector('#status') || {}).textContent || ''),
+          null,
+          { timeout: 90000 }
+        );
+        const ms = Date.now() - t0;
+        const r = await page.evaluate(() => {
+          const rows = [...document.querySelectorAll('#results .result-row')];
+          const heights = rows.map((x) => Math.round(x.getBoundingClientRect().height));
+          return {
+            rows: rows.length,
+            maxH: Math.max(...heights),
+            actions: document.querySelectorAll('#results .card-actions').length,
+            menuBtns: document.querySelectorAll('#results .row-menu-btn').length,
+            panelHidden: document.getElementById('resultsPanel').hidden,
+            countText: document.getElementById('resultsCount').textContent,
+            pageH: Math.round(document.body.scrollHeight),
+            firstName: document.querySelector('#results .result-row .name').textContent,
+            firstNameW: Math.round(document.querySelector('#results .result-row .name').getBoundingClientRect().width),
+          };
+        });
+        console.log('[Z8-0] 100 文件渲染耗时 = ' + ms + ' ms；maxRowH=' + r.maxH + 'px；pageH=' + r.pageH + 'px');
+        assert.equal(r.rows, 100, '结果行数=' + r.rows);
+        assert.ok(r.maxH <= 100, '最大行高=' + r.maxH + 'px（应 ≤100，避免 100 文件把页面撑爆）');
+        assert.equal(r.actions, 0, '每行仍有 .card-actions 大按钮（应全部收进三点菜单）');
+        assert.equal(r.menuBtns, 100, '三点菜单数=' + r.menuBtns);
+        assert.equal(r.panelHidden, false, '结果面板未显示');
+        assert.ok(r.countText.includes('100'), '结果计数未显示 100：' + r.countText);
+        assert.equal(r.firstName, 'z8-0.txt', '结果行文件名缺失/错误：' + JSON.stringify(r.firstName));
+        assert.ok(r.firstNameW > 0, '结果行文件名宽度为 0（被 meta 的 100% 挤掉）：' + r.firstNameW);
+        assert.ok(ms < 60000, '100 文件转换耗时 ' + ms + 'ms');
+        assert.ok(r.pageH < 20000, '100 行页面高度 ' + r.pageH + 'px（应远小于 100×大卡片）');
+      });
+
+      await t.test('Z8-1 选择：单选 → indeterminate；全选/取消全选；批量条显示且不遮挡', async () => {
+        await page.locator('.result-row .row-select').first().click();
+        const one = await page.evaluate(() => ({
+          selected: document.getElementById('selectedCount').textContent,
+          indeterminate: document.getElementById('selectAll').indeterminate,
+          batchHidden: document.getElementById('batchBar').hidden,
+        }));
+        assert.equal(one.selected, '1', '单选后计数=' + one.selected);
+        assert.equal(one.indeterminate, true, '单选后全选框应为 indeterminate');
+        assert.equal(one.batchHidden, false, '有选择时批量条应显示');
+        await page.locator('#selectAllBtn').click();
+        const all = await page.evaluate(() => ({
+          selected: document.getElementById('selectedCount').textContent,
+          checked: document.getElementById('selectAll').checked,
+          indeterminate: document.getElementById('selectAll').indeterminate,
+          batchCount: document.getElementById('batchCount').textContent,
+        }));
+        assert.equal(all.selected, '100', '全选后已选=' + all.selected);
+        assert.equal(all.checked, true, '全选后全选框应 checked');
+        assert.equal(all.indeterminate, false, '全选后不应 indeterminate');
+        assert.equal(all.batchCount, '100', '批量条计数=' + all.batchCount);
+        await page.locator('#batchClose').click();
+        const cleared = await page.evaluate(() => ({
+          selected: document.getElementById('selectedCount').textContent,
+          batchHidden: document.getElementById('batchBar').hidden,
+        }));
+        assert.equal(cleared.selected, '0', '取消选择后计数=' + cleared.selected);
+        assert.equal(cleared.batchHidden, true, '取消选择后批量条应隐藏');
+      });
+
+      await t.test('Z8-2 事件隔离：点选择框/菜单不打开预览；菜单「查看 Markdown」打开全屏', async () => {
+        const viewerHidden0 = await page.evaluate(() => document.getElementById('mdViewer').hidden);
+        assert.equal(viewerHidden0, true);
+        await page.locator('.result-row .row-select').first().click();
+        await page.locator('.result-row .row-menu-btn').first().click();
+        const state = await page.evaluate(() => ({
+          viewerHidden: document.getElementById('mdViewer').hidden,
+          menuVisible: !document.querySelector('.row-menu').hidden,
+          expanded: document.querySelector('.row-menu-btn').getAttribute('aria-expanded'),
+        }));
+        assert.equal(state.viewerHidden, true, '点选择框/菜单误打开了预览');
+        assert.equal(state.menuVisible, true, '三点菜单未展开');
+        assert.equal(state.expanded, 'true', 'aria-expanded 未同步');
+        await page.locator('.row-menu:visible button', { hasText: '查看 Markdown' }).first().click();
+        await page.waitForSelector('#mdViewer:not([hidden])', { timeout: 5000 });
+        const opened = await page.evaluate(() => ({ name: document.getElementById('mdViewerName').textContent, hidden: document.getElementById('mdViewer').hidden }));
+        assert.equal(opened.hidden, false, '菜单「查看 Markdown」未打开全屏查看器');
+        assert.ok(opened.name.endsWith('.txt'), '查看器标题不是文件名：' + opened.name);
+        await page.locator('#mdViewerClose').click();
+        await page.locator('#batchClose').click();
+      });
+
+      await t.test('Z8-3 批量复制：多文件按文件名分段，分隔符明确；失败不报成功', async () => {
+        await page.evaluate(() => {
+          window.__clip = '';
+          Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText: async (text) => { window.__clip = text; } },
+          });
+        });
+        const checks = page.locator('.result-row .row-select');
+        await checks.nth(0).click();
+        await checks.nth(1).click();
+        await page.locator('#batchCopy').click();
+        await page.waitForFunction(() => String(window.__clip || '').length > 0, null, { timeout: 5000 });
+        const clip = await page.evaluate(() => window.__clip);
+        assert.ok(clip.includes('===== z8-0.txt ====='), '批量复制缺文件名分隔符（z8-0）：' + clip.slice(0, 160));
+        assert.ok(clip.includes('===== z8-1.txt ====='), '批量复制缺文件名分隔符（z8-1）');
+        assert.ok(clip.includes('内容 0'), '批量复制缺第一个文件内容');
+        // 负例：剪贴板拒写 + execCommand 返回 false ⇒ 不得报「已复制」
+        await page.evaluate(() => {
+          Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText: async () => { throw new Error('denied'); } },
+          });
+          document.execCommand = () => false;
+        });
+        await page.locator('#batchCopy').click();
+        await page.waitForFunction(() => /复制失败/.test((document.querySelector('#status') || {}).textContent || ''), null, { timeout: 5000 });
+        const failStatus = await page.evaluate(() => (document.querySelector('#status') || {}).textContent || '');
+        assert.ok(failStatus.includes('复制失败'), '剪贴板失败未报错：' + JSON.stringify(failStatus));
+        assert.ok(!failStatus.includes('已复制'), '剪贴板失败却报了成功：' + JSON.stringify(failStatus));
+        await page.locator('#batchClose').click();
+      });
+
+      await t.test('Z8-4 失败行：无菜单/选择框禁用；批量保存只处理成功行', async () => {
+        await page.setInputFiles('input[type=file]', {
+          name: 'z8-broken.docx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          buffer: Buffer.alloc(0),
+        });
+        await page.waitForFunction(() => document.querySelectorAll('#results .result-row.failed').length === 1, null, { timeout: 30000 });
+        const failed = await page.evaluate(() => {
+          const row = document.querySelector('#results .result-row.failed');
+          return {
+            checkboxDisabled: row.querySelector('.row-select').disabled,
+            menu: row.querySelectorAll('.row-menu-btn').length,
+            preview: row.querySelectorAll('.row-preview').length,
+          };
+        });
+        assert.equal(failed.checkboxDisabled, true, '失败行选择框未禁用');
+        assert.equal(failed.menu, 0, '失败行仍有三点菜单（不得提供复制/下载）');
+        assert.equal(failed.preview, 0, '失败行仍有预览入口');
+        await page.evaluate(() => {
+          window.__saved = [];
+          window.Capacitor = {
+            getPlatform: () => 'android',
+            Plugins: { Doc2mdNative: { saveText: (arg) => { window.__saved.push(arg.filename); return Promise.resolve({ filename: arg.filename }); } } },
+          };
+        });
+        await page.locator('#selectAllBtn').click();
+        await page.locator('#batchSave').click();
+        await page.waitForFunction(() => window.__saved.length >= 100, null, { timeout: 30000 });
+        const saved = await page.evaluate(() => window.__saved);
+        assert.equal(saved.length, 100, '批量保存文件数=' + saved.length + '（应只保存 100 个成功行）');
+        assert.ok(!saved.includes('z8-broken.docx'), '批量保存包含失败文件');
+        await page.locator('#batchClose').click();
+      });
+
+      await t.test('Z8-5 搜索：按文件名过滤；全选只作用于可见成功行', async () => {
+        await page.fill('#resultsSearch', 'z8-9');
+        await page.waitForTimeout(100);
+        const filtered = await page.evaluate(() => ({
+          visible: [...document.querySelectorAll('#results .result-row')].filter((r) => !r.hidden).length,
+          total: document.querySelectorAll('#results .result-row').length,
+        }));
+        assert.ok(filtered.visible > 0 && filtered.visible < filtered.total, '搜索 z8-9 未过滤：' + JSON.stringify(filtered));
+        await page.locator('#selectAllBtn').click();
+        const selected = await page.evaluate(() => Number(document.getElementById('selectedCount').textContent));
+        assert.ok(selected > 0 && selected < 100, '搜索态全选选中数=' + selected + '（应只选可见行，不是 100）');
+        await page.fill('#resultsSearch', '');
+        await page.locator('#batchClose').click();
       });
 
       assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));

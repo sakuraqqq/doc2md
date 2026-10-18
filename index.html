@@ -177,7 +177,7 @@
   .btn.primary:hover { background: var(--accent); }
   #status { margin: 12px 2px 0; font-size: 13px; color: var(--muted); min-height: 20px; }
   #status.error { color: var(--err); }
-  #results { display: flex; flex-direction: column; gap: 14px; }
+  #results { display: flex; flex-direction: column; gap: 8px; }
   #results:not(:empty) { margin-top: 14px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
   .card-head {
@@ -257,6 +257,43 @@
   .batch-bar { position: fixed; left: 12px; right: 12px; z-index: 15; bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px); margin: 0 auto; max-width: 928px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
   .batch-spacer { flex: 0 0 auto; }
 
+  /* ── 转换结果列表（卡 058 返工 R2）：紧凑行 + 多选 + 三点菜单 ── */
+  .results-panel { margin-top: 14px; }
+  .results-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .results-head h2 { font-size: 17px; margin: 0; }
+  .results-count { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .results-search { position: relative; margin: 10px 0 6px; }
+  .results-search svg { position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8; }
+  #resultsSearch { width: 100%; padding: 10px 12px 10px 38px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font: inherit; font-size: 14px; }
+  .results-selectbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 8px; color: var(--muted); font-size: 12.5px; }
+  .results-selectall { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .results-selectall input, .row-select { width: 20px; height: 20px; accent-color: var(--accent); flex: 0 0 auto; }
+  .linkbtn { border: 0; background: transparent; color: var(--accent-soft); font: inherit; font-size: 12.5px; cursor: pointer; padding: 6px; }
+  .results-list { display: flex; flex-direction: column; gap: 8px; }
+  .result-row { position: relative; overflow: visible; }
+  .result-row .card-head { align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 0; background: var(--panel); flex-wrap: nowrap; }
+  .result-row .name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .result-row .chip { flex: 0 0 auto; }
+  .result-row .meta { flex: 0 0 auto; margin-left: 0; white-space: nowrap; }
+  /* 手机媒体查询里 .card-head .meta 是 width:100%（为普通卡片的换行让位）；结果行必须收回 auto，否则文件名被挤成 0 宽。 */
+  .result-row .card-head .meta { width: auto; }
+  .result-row.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .row-menu-btn { flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; padding: 6px; cursor: pointer; border-radius: 50%; }
+  .result-row .card-body { padding: 0 10px 8px; }
+  .result-row-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0; color: var(--muted); font-size: 12.5px; }
+  .result-row-sub .ok { color: var(--ok); }
+  .result-row-sub .err { color: var(--err); }
+  .row-preview { border: 0; background: transparent; color: var(--accent-soft); font: inherit; font-size: 12.5px; padding: 6px; cursor: pointer; }
+  .row-menu { position: absolute; right: 6px; top: 52px; z-index: 20; min-width: 220px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35); padding: 6px; }
+  .row-menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+  .row-menu button:hover { background: var(--panel); }
+  .batch-bar { padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+  .batch-info { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .batch-sub { color: var(--muted); font-size: 12px; }
+  .batch-close { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 20px; padding: 4px 8px; cursor: pointer; }
+  .batch-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .batch-actions .btn { flex: 1 1 0; justify-content: center; }
+
   .card-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
   .warnings { margin: 8px 0 0; font-size: 12px; color: var(--warn); }
   .empty-hint { color: var(--muted); font-size: 13px; text-align: center; padding: 18px 8px; }
@@ -274,6 +311,7 @@
     textarea.md { font-size: 14px; }
     .md-preview { font-size: 15px; }
     .batch-bar { left: 8px; right: 8px; }
+    .batch-actions { flex-direction: column; }
     .md-viewer-body { padding: 12px; }
     .seg-btn { min-height: 44px; font-size: 14px; }
   }
@@ -304,8 +342,35 @@
       <p class="sect-empty" id="lastEmpty">还没有转换记录 —— 转换完成后会显示在这里。</p>
     </section>
 
-    <div id="results"></div>
+    <section class="results-panel" id="resultsPanel" hidden aria-labelledby="resultsTitle">
+      <div class="results-head">
+        <h2 id="resultsTitle">转换结果</h2>
+        <span class="results-count" id="resultsCount">已完成 0 个文件</span>
+      </div>
+      <div class="results-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+        <input id="resultsSearch" type="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
+      </div>
+      <div class="results-selectbar">
+        <label class="results-selectall"><input type="checkbox" id="selectAll"><span>已选择 <b id="selectedCount">0</b> 个</span></label>
+        <button type="button" class="linkbtn" id="selectAllBtn">全选</button>
+      </div>
+      <div id="results" class="results-list"></div>
+      <div class="batch-spacer" id="batchSpacer"></div>
+    </section>
     <div class="empty-hint" id="hint">把文件拖进上方的区域，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
+
+    <div class="batch-bar" id="batchBar" role="region" aria-label="批量操作" hidden>
+      <div class="batch-info">
+        <span>已选择 <b id="batchCount">0</b> 个文件</span>
+        <span class="batch-sub">批量操作</span>
+        <button type="button" class="batch-close" id="batchClose" aria-label="取消选择">×</button>
+      </div>
+      <div class="batch-actions">
+        <button type="button" class="btn" id="batchCopy">📋 复制内容</button>
+        <button type="button" class="btn primary" id="batchSave">💾 全部保存 .md</button>
+      </div>
+    </div>
   </section>
 
   <!-- ── 文件 ───────────────────────────────────────────────────────────── -->
@@ -2143,6 +2208,18 @@ ${xlsxRowsToMd(kept)}`);
   var mdViewerClose = $("#mdViewerClose");
   var mdViewerPreview = $("#mdViewerPreview");
   var mdViewerRaw = $("#mdViewerRaw");
+  var resultsPanel = $("#resultsPanel");
+  var resultsCount = $("#resultsCount");
+  var resultsSearch = $("#resultsSearch");
+  var selectAllEl = $("#selectAll");
+  var selectAllBtn = $("#selectAllBtn");
+  var selectedCountEl = $("#selectedCount");
+  var batchBar = $("#batchBar");
+  var batchCount = $("#batchCount");
+  var batchCopy = $("#batchCopy");
+  var batchSave = $("#batchSave");
+  var batchClose = $("#batchClose");
+  var batchSpacer = $("#batchSpacer");
   function setStatus(msg, isError) {
     statusEl.textContent = msg || "";
     statusEl.className = isError ? "error" : "";
@@ -2250,8 +2327,14 @@ ${xlsxRowsToMd(kept)}`);
       ta.style.opacity = "0";
       document.body.appendChild(ta);
       ta.select();
-      document.execCommand("copy");
+      let ok;
+      try {
+        ok = document.execCommand("copy");
+      } catch {
+        ok = false;
+      }
       ta.remove();
+      if (!ok) throw new Error("\u590D\u5236\u5931\u8D25\uFF1A\u526A\u8D34\u677F\u4E0D\u53EF\u7528");
     }
     const old = btn.textContent;
     btn.textContent = "\u2705 \u5DF2\u590D\u5236";
@@ -2344,8 +2427,100 @@ ${xlsxRowsToMd(kept)}`);
     if (isNativeRuntime()) showToast(msg, failed > 0);
     return { ok, failed };
   }
-  var batchBar = null;
-  var batchSpacer = null;
+  var resultRows = [];
+  var nextRowId = 1;
+  var openRowMenu = null;
+  function selectedRows() {
+    return resultRows.filter((r) => r.selected);
+  }
+  function selectedSuccessRows() {
+    return resultRows.filter((r) => r.selected && r.success);
+  }
+  function closeRowMenu() {
+    if (!openRowMenu) return;
+    openRowMenu.menu.hidden = true;
+    openRowMenu.btn.setAttribute("aria-expanded", "false");
+    openRowMenu = null;
+  }
+  function syncBatchBar() {
+    const selected = selectedRows();
+    const successes = selectedSuccessRows();
+    selectedCountEl.textContent = String(selected.length);
+    batchCount.textContent = String(selected.length);
+    const show = selected.length > 0;
+    batchBar.hidden = !show;
+    batchCopy.disabled = successes.length === 0;
+    batchSave.disabled = successes.length === 0;
+    batchSpacer.style.height = show ? batchBar.offsetHeight + "px" : "0px";
+    document.body.classList.toggle("has-batch", show);
+  }
+  function syncSelectAll() {
+    const visible = resultRows.filter((r) => r.success && !r.el.hidden);
+    const selected = visible.filter((r) => r.selected).length;
+    const all = visible.length > 0 && selected === visible.length;
+    selectAllEl.checked = all;
+    selectAllEl.indeterminate = selected > 0 && selected < visible.length;
+    selectAllBtn.textContent = all ? "\u53D6\u6D88\u5168\u9009" : "\u5168\u9009";
+  }
+  function updateResultsChrome() {
+    resultsPanel.hidden = resultRows.length === 0;
+    hintEl.style.display = resultRows.length ? "none" : "";
+    const lastSect = document.getElementById("lastTitle");
+    if (lastSect && lastSect.closest(".sect")) lastSect.closest(".sect").hidden = resultRows.length > 0;
+    resultsCount.textContent = "\u5DF2\u5B8C\u6210 " + resultRows.length + " \u4E2A\u6587\u4EF6";
+    syncSelectAll();
+    syncBatchBar();
+  }
+  function setRowSelected(row, on, defer) {
+    if (!row.success) return;
+    row.selected = on;
+    row.checkbox.checked = on;
+    row.el.classList.toggle("selected", on);
+    if (!defer) updateResultsChrome();
+  }
+  function toggleAllVisible(on) {
+    for (const row of resultRows) {
+      if (row.success && !row.el.hidden) setRowSelected(row, on, true);
+    }
+    updateResultsChrome();
+  }
+  function applySearch() {
+    const q = String(resultsSearch.value || "").trim().toLowerCase();
+    for (const row of resultRows) {
+      row.el.hidden = q !== "" && !row.file.name.toLowerCase().includes(q);
+    }
+    updateResultsChrome();
+  }
+  function clearSelection() {
+    for (const row of resultRows) setRowSelected(row, false, true);
+    updateResultsChrome();
+  }
+  async function copySelected() {
+    const rows = selectedSuccessRows();
+    if (!rows.length) return;
+    const text = rows.length === 1 ? rows[0].text : rows.map((r) => "===== " + r.file.name + " =====\n\n" + r.text).join("\n\n");
+    batchCopy.disabled = true;
+    try {
+      await copyText(text, batchCopy);
+      setStatus("\u2705 \u5DF2\u590D\u5236 " + rows.length + " \u4E2A\u6587\u4EF6\u7684\u5185\u5BB9" + (rows.length > 1 ? "\uFF08\u6309\u6587\u4EF6\u540D\u5206\u6BB5\uFF09" : ""));
+    } catch {
+      setStatus("\u590D\u5236\u5931\u8D25\uFF1A\u526A\u8D34\u677F\u4E0D\u53EF\u7528", true);
+    } finally {
+      batchCopy.disabled = false;
+    }
+  }
+  async function saveSelected() {
+    const rows = selectedSuccessRows();
+    if (!rows.length) return;
+    batchSave.disabled = true;
+    try {
+      await saveAllArtifacts(rows.map((r) => ({ text: r.text, fileName: r.file.name })));
+    } catch {
+      setStatus("\u6279\u91CF\u4FDD\u5B58\u5931\u8D25", true);
+    } finally {
+      batchSave.disabled = false;
+    }
+  }
   function revealResultsTail() {
     const cards = resultsEl.querySelectorAll(".card");
     const card = cards[cards.length - 1];
@@ -2355,52 +2530,33 @@ ${xlsxRowsToMd(kept)}`);
     if (r.top >= 0 && r.bottom <= vh) return;
     card.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
-  function renderBatchSave(items) {
+  function renderBatchSave() {
     revealResultsTail();
-    if (batchBar && batchBar.parentNode) batchBar.parentNode.removeChild(batchBar);
-    if (batchSpacer && batchSpacer.parentNode) batchSpacer.parentNode.removeChild(batchSpacer);
-    batchBar = null;
-    batchSpacer = null;
-    document.body.classList.remove("has-batch");
-    const list = items || [];
-    if (list.length < 2) return;
-    const bar = document.createElement("div");
-    bar.className = "card batch-bar";
-    const head = document.createElement("div");
-    head.className = "card-head";
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = "\u6279\u91CF\u4FDD\u5B58";
-    const meta = document.createElement("span");
-    meta.className = "meta";
-    meta.textContent = "\u5171 " + list.length + " \u4E2A\u53EF\u7528\u7ED3\u679C \xB7 \u9010\u4E2A\u5B58 .md";
-    head.appendChild(name);
-    head.appendChild(meta);
-    const body = document.createElement("div");
-    body.className = "card-body";
-    const btn = document.createElement("button");
-    btn.className = "btn primary";
-    btn.textContent = "\u{1F4BE} \u5168\u90E8\u4FDD\u5B58 " + list.length + " \u4E2A .md";
-    btn.addEventListener("click", () => {
-      btn.disabled = true;
-      const p = saveAllArtifacts(list);
-      p.finally(() => {
-        btn.disabled = false;
-      });
-      p.catch(() => {
+    updateResultsChrome();
+  }
+  function initResultsControls() {
+    selectAllEl.addEventListener("change", () => toggleAllVisible(selectAllEl.checked));
+    selectAllBtn.addEventListener("click", () => {
+      const visible = resultRows.filter((r) => r.success && !r.el.hidden);
+      const all = visible.length > 0 && visible.every((r) => r.selected);
+      toggleAllVisible(!all);
+    });
+    resultsSearch.addEventListener("input", applySearch);
+    batchCopy.addEventListener("click", () => {
+      copySelected().catch(() => {
       });
     });
-    body.appendChild(btn);
-    bar.appendChild(head);
-    bar.appendChild(body);
-    resultsEl.insertBefore(bar, resultsEl.firstChild);
-    batchBar = bar;
-    const spacer = document.createElement("div");
-    spacer.className = "batch-spacer";
-    spacer.style.height = bar.offsetHeight + "px";
-    resultsEl.appendChild(spacer);
-    batchSpacer = spacer;
-    document.body.classList.add("has-batch");
+    batchSave.addEventListener("click", () => {
+      saveSelected().catch(() => {
+      });
+    });
+    batchClose.addEventListener("click", clearSelection);
+    document.addEventListener("click", (e) => {
+      if (openRowMenu && !e.target.closest(".row-menu") && !e.target.closest(".row-menu-btn")) closeRowMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeRowMenu();
+    });
   }
   var ASSET_FAIL_TEXT = {
     zip: { verb: "\u6253\u5305", tail: "\u5176\u4F59\u56FE\u7247\u5DF2\u7167\u5E38\u6253\u5305" },
@@ -2626,111 +2782,184 @@ ${xlsxRowsToMd(kept)}`);
     if (viewerTrigger && typeof viewerTrigger.focus === "function") viewerTrigger.focus();
     viewerTrigger = null;
   }
-  function buildFileCard(file, fullText) {
-    const wrap = document.createElement("div");
-    const open = document.createElement("button");
-    open.type = "button";
-    open.className = "file-open";
-    open.setAttribute("aria-label", "\u67E5\u770B " + file.name + " \u7684 Markdown \u9884\u89C8");
-    const icon = document.createElement("span");
-    icon.className = "file-open-icon";
-    icon.textContent = "\u{1F4C4}";
-    const main = document.createElement("span");
-    main.className = "file-open-main";
-    const title = document.createElement("span");
-    title.className = "file-open-title";
-    title.textContent = "\u67E5\u770B Markdown";
-    const sub = document.createElement("span");
-    sub.className = "file-open-sub";
-    sub.textContent = "\u6E32\u67D3\u9884\u89C8 \xB7 \u53EF\u5207\u539F\u6587";
-    main.appendChild(title);
-    main.appendChild(sub);
-    const chev = document.createElement("span");
-    chev.className = "file-open-chev";
-    chev.textContent = "\u203A";
-    open.appendChild(icon);
-    open.appendChild(main);
-    open.appendChild(chev);
-    open.addEventListener("click", () => openMarkdownViewer({ fileName: file.name, text: fullText }, open));
-    wrap.appendChild(open);
-    const ta = document.createElement("textarea");
-    ta.className = "md";
-    ta.readOnly = true;
-    ta.value = truncatePreview(fullText);
-    ta.hidden = true;
-    ta.setAttribute("aria-hidden", "true");
-    wrap.appendChild(ta);
-    return wrap;
-  }
-  function buildActions(file, result, fullText) {
-    const actions = document.createElement("div");
-    actions.className = "card-actions";
-    const hasAssets = result.meta.assets && result.meta.assets.length > 0;
-    if (hasAssets) {
-      const btnZip = document.createElement("button");
-      btnZip.className = "btn primary";
-      btnZip.textContent = "\u{1F4E6} \u4E0B\u8F7D .md + \u56FE\u7247\uFF08zip\uFF09";
-      btnZip.addEventListener("click", () => downloadZip(fullText, file.name, result.meta.assets, btnZip));
-      actions.appendChild(btnZip);
-    }
-    const btnCopy = document.createElement("button");
-    btnCopy.className = "btn";
-    btnCopy.textContent = "\u{1F4CB} \u590D\u5236 Markdown";
-    btnCopy.addEventListener("click", () => copyText(fullText, btnCopy));
-    const btnDl = document.createElement("button");
-    btnDl.className = "btn" + (hasAssets ? "" : " primary");
-    btnDl.textContent = hasAssets ? "\u{1F5BC} \u4E0B\u8F7D .md\uFF08\u56FE\u7247\u5185\u5D4C\uFF09" : "\u2B07 \u4E0B\u8F7D .md";
-    btnDl.addEventListener("click", () => {
-      if (hasAssets) downloadMdEmbedded(fullText, file.name, result.meta.assets, btnDl);
-      else downloadMd(fullText, file.name);
+  function buildRowMenu(row) {
+    const menu = document.createElement("div");
+    menu.className = "row-menu";
+    menu.id = "row-menu-" + row.id;
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+    const add = (label, fn) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.setAttribute("role", "menuitem");
+      btn.textContent = label;
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeRowMenu();
+        fn(btn);
+      });
+      menu.appendChild(btn);
+    };
+    add("\u67E5\u770B Markdown", () => openMarkdownViewer({ fileName: row.file.name, text: row.text }, row.menuBtn));
+    add("\u590D\u5236 Markdown", (btn) => {
+      copyText(row.text, btn).then(() => setStatus("\u2705 \u5DF2\u590D\u5236\uFF1A" + row.file.name)).catch(() => setStatus("\u590D\u5236\u5931\u8D25\uFF1A\u526A\u8D34\u677F\u4E0D\u53EF\u7528", true));
     });
-    actions.appendChild(btnCopy);
-    actions.appendChild(btnDl);
-    return actions;
+    const assets = row.result.meta.assets || [];
+    if (assets.length) add("\u4E0B\u8F7D .md + \u56FE\u7247\uFF08zip\uFF09", (btn) => {
+      downloadZip(row.text, row.file.name, assets, btn);
+    });
+    add(assets.length ? "\u4E0B\u8F7D .md\uFF08\u56FE\u7247\u5185\u5D4C\uFF09" : "\u4E0B\u8F7D .md", (btn) => {
+      if (assets.length) downloadMdEmbedded(row.text, row.file.name, assets, btn);
+      else downloadMd(row.text, row.file.name);
+    });
+    return menu;
+  }
+  function toggleRowMenu(row) {
+    if (openRowMenu && openRowMenu.row === row) {
+      closeRowMenu();
+      return;
+    }
+    closeRowMenu();
+    row.menu.hidden = false;
+    row.menuBtn.setAttribute("aria-expanded", "true");
+    openRowMenu = { row, menu: row.menu, btn: row.menuBtn };
+    const first = row.menu.querySelector("button");
+    if (first) first.focus();
+  }
+  function typeLabel(result, success) {
+    if (!success) return "\u5931\u8D25";
+    return (result.meta.type || "?").toUpperCase();
+  }
+  function metaText(file, result) {
+    const ms = result.meta.elapsedMs ? " \xB7 " + result.meta.elapsedMs + " ms" : "";
+    return fmtSize(file.size) + ms;
+  }
+  function makeRowHead(row) {
+    const head = document.createElement("div");
+    head.className = "card-head";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "row-select";
+    checkbox.disabled = !row.success;
+    checkbox.setAttribute("aria-label", "\u9009\u62E9 " + row.file.name);
+    row.checkbox = checkbox;
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = row.file.name;
+    name.title = row.file.name;
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    if (!row.success) chip.classList.add("err");
+    chip.textContent = typeLabel(row.result, row.success);
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = metaText(row.file, row.result);
+    head.appendChild(checkbox);
+    head.appendChild(name);
+    head.appendChild(chip);
+    head.appendChild(meta);
+    return head;
+  }
+  function makeRowBody(row) {
+    const body = document.createElement("div");
+    body.className = "card-body result-row-body";
+    const sub = document.createElement("div");
+    sub.className = "result-row-sub";
+    const status = document.createElement("span");
+    status.className = row.success ? "ok" : "err";
+    status.textContent = row.success ? "Markdown \u5DF2\u5C31\u7EEA" : "\u8F6C\u6362\u5931\u8D25";
+    sub.appendChild(status);
+    if (!row.success) {
+      const err = document.createElement("div");
+      err.className = "warnings";
+      err.style.color = "var(--err)";
+      err.textContent = "\u274C " + row.result.error;
+      sub.appendChild(err);
+    } else {
+      const preview = document.createElement("button");
+      preview.type = "button";
+      preview.className = "row-preview";
+      preview.textContent = "\u67E5\u770B\u9884\u89C8 \u203A";
+      preview.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openMarkdownViewer({ fileName: row.file.name, text: row.text }, preview);
+      });
+      sub.appendChild(preview);
+      const ta = document.createElement("textarea");
+      ta.className = "md";
+      ta.readOnly = true;
+      ta.value = truncatePreview(row.text);
+      ta.hidden = true;
+      ta.setAttribute("aria-hidden", "true");
+      body.appendChild(ta);
+    }
+    body.insertBefore(sub, body.firstChild);
+    if (row.result.meta.warnings && row.result.meta.warnings.length) {
+      const w = document.createElement("div");
+      w.className = "warnings";
+      w.textContent = "\u26A0 " + row.result.meta.warnings.join("\uFF1B");
+      body.appendChild(w);
+    }
+    return body;
+  }
+  function wireSuccessRow(row, card, head) {
+    const menuBtn = document.createElement("button");
+    menuBtn.type = "button";
+    menuBtn.className = "row-menu-btn";
+    menuBtn.textContent = "\u22EE";
+    menuBtn.setAttribute("aria-haspopup", "menu");
+    menuBtn.setAttribute("aria-expanded", "false");
+    menuBtn.setAttribute("aria-controls", "row-menu-" + row.id);
+    menuBtn.setAttribute("aria-label", "\u66F4\u591A\u64CD\u4F5C\uFF1A" + row.file.name);
+    menuBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleRowMenu(row);
+    });
+    head.appendChild(menuBtn);
+    row.menuBtn = menuBtn;
+    row.menu = buildRowMenu(row);
+    card.appendChild(row.menu);
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("button,input,textarea,.row-menu")) return;
+      openMarkdownViewer({ fileName: row.file.name, text: row.text }, card);
+    });
+  }
+  function createResultRow(file, result) {
+    const success = !result.error;
+    let text = "";
+    if (success) text = String(result.markdown == null ? "" : result.markdown);
+    const card = document.createElement("div");
+    card.className = "card result-row" + (success ? "" : " failed");
+    const row = {
+      id: nextRowId++,
+      file,
+      result,
+      text,
+      success,
+      selected: false,
+      checkbox: null,
+      el: card,
+      menu: null,
+      menuBtn: null
+    };
+    const head = makeRowHead(row);
+    const body = makeRowBody(row);
+    card.appendChild(head);
+    card.appendChild(body);
+    if (success) wireSuccessRow(row, card, head);
+    row.checkbox.addEventListener("click", (e) => e.stopPropagation());
+    row.checkbox.addEventListener("change", () => setRowSelected(row, row.checkbox.checked));
+    resultRows.push(row);
+    resultsEl.appendChild(card);
+    return row;
   }
   function diagConvert(result) {
     const type = result.meta.type || "?";
     diag("convert", (result.error ? "fail" : "ok") + " type=" + type + " ms=" + (result.meta.elapsedMs || 0));
   }
   function renderResult(file, result) {
-    const card = document.createElement("div");
-    card.className = "card";
-    const head = document.createElement("div");
-    head.className = "card-head";
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = file.name;
-    head.appendChild(name);
-    const chip = document.createElement("span");
-    chip.className = "chip" + (result.error ? " err" : "");
-    chip.textContent = result.error ? "\u8F6C\u6362\u5931\u8D25" : (result.meta.type || "?").toUpperCase();
-    head.appendChild(chip);
-    const meta = document.createElement("span");
-    meta.className = "meta";
-    meta.textContent = fmtSize(file.size) + (result.meta.elapsedMs ? " \xB7 " + result.meta.elapsedMs + " ms" : "");
-    head.appendChild(meta);
-    card.appendChild(head);
-    const body = document.createElement("div");
-    body.className = "card-body";
-    if (result.error) {
-      const errEl = document.createElement("div");
-      errEl.className = "warnings";
-      errEl.style.color = "var(--err)";
-      errEl.textContent = "\u274C " + result.error;
-      body.appendChild(errEl);
-    } else {
-      const fullText = String(result.markdown == null ? "" : result.markdown);
-      body.appendChild(buildFileCard(file, fullText));
-      if (result.meta.warnings && result.meta.warnings.length) {
-        const w = document.createElement("div");
-        w.className = "warnings";
-        w.textContent = "\u26A0 " + result.meta.warnings.join("\uFF1B");
-        body.appendChild(w);
-      }
-      body.appendChild(buildActions(file, result, fullText));
-    }
-    card.appendChild(body);
-    resultsEl.appendChild(card);
+    createResultRow(file, result);
+    updateResultsChrome();
     diagConvert(result);
   }
   var THEME_KEY = "doc2md-theme";
@@ -2878,6 +3107,7 @@ ${xlsxRowsToMd(kept)}`);
     initTabs();
     initTheme();
     initMarkdownViewer();
+    initResultsControls();
     diagBoot();
     const goConvert = document.getElementById("goConvert");
     if (goConvert) goConvert.addEventListener("click", () => activateTab("convert"));

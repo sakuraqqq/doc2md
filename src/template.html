@@ -177,7 +177,7 @@
   .btn.primary:hover { background: var(--accent); }
   #status { margin: 12px 2px 0; font-size: 13px; color: var(--muted); min-height: 20px; }
   #status.error { color: var(--err); }
-  #results { display: flex; flex-direction: column; gap: 14px; }
+  #results { display: flex; flex-direction: column; gap: 8px; }
   #results:not(:empty) { margin-top: 14px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
   .card-head {
@@ -257,6 +257,43 @@
   .batch-bar { position: fixed; left: 12px; right: 12px; z-index: 15; bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px); margin: 0 auto; max-width: 928px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
   .batch-spacer { flex: 0 0 auto; }
 
+  /* ── 转换结果列表（卡 058 返工 R2）：紧凑行 + 多选 + 三点菜单 ── */
+  .results-panel { margin-top: 14px; }
+  .results-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .results-head h2 { font-size: 17px; margin: 0; }
+  .results-count { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+  .results-search { position: relative; margin: 10px 0 6px; }
+  .results-search svg { position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8; }
+  #resultsSearch { width: 100%; padding: 10px 12px 10px 38px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font: inherit; font-size: 14px; }
+  .results-selectbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 8px; color: var(--muted); font-size: 12.5px; }
+  .results-selectall { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .results-selectall input, .row-select { width: 20px; height: 20px; accent-color: var(--accent); flex: 0 0 auto; }
+  .linkbtn { border: 0; background: transparent; color: var(--accent-soft); font: inherit; font-size: 12.5px; cursor: pointer; padding: 6px; }
+  .results-list { display: flex; flex-direction: column; gap: 8px; }
+  .result-row { position: relative; overflow: visible; }
+  .result-row .card-head { align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 0; background: var(--panel); flex-wrap: nowrap; }
+  .result-row .name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .result-row .chip { flex: 0 0 auto; }
+  .result-row .meta { flex: 0 0 auto; margin-left: 0; white-space: nowrap; }
+  /* 手机媒体查询里 .card-head .meta 是 width:100%（为普通卡片的换行让位）；结果行必须收回 auto，否则文件名被挤成 0 宽。 */
+  .result-row .card-head .meta { width: auto; }
+  .result-row.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .row-menu-btn { flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; padding: 6px; cursor: pointer; border-radius: 50%; }
+  .result-row .card-body { padding: 0 10px 8px; }
+  .result-row-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0; color: var(--muted); font-size: 12.5px; }
+  .result-row-sub .ok { color: var(--ok); }
+  .result-row-sub .err { color: var(--err); }
+  .row-preview { border: 0; background: transparent; color: var(--accent-soft); font: inherit; font-size: 12.5px; padding: 6px; cursor: pointer; }
+  .row-menu { position: absolute; right: 6px; top: 52px; z-index: 20; min-width: 220px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35); padding: 6px; }
+  .row-menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+  .row-menu button:hover { background: var(--panel); }
+  .batch-bar { padding: 10px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+  .batch-info { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .batch-sub { color: var(--muted); font-size: 12px; }
+  .batch-close { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 20px; padding: 4px 8px; cursor: pointer; }
+  .batch-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .batch-actions .btn { flex: 1 1 0; justify-content: center; }
+
   .card-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
   .warnings { margin: 8px 0 0; font-size: 12px; color: var(--warn); }
   .empty-hint { color: var(--muted); font-size: 13px; text-align: center; padding: 18px 8px; }
@@ -274,6 +311,7 @@
     textarea.md { font-size: 14px; }
     .md-preview { font-size: 15px; }
     .batch-bar { left: 8px; right: 8px; }
+    .batch-actions { flex-direction: column; }
     .md-viewer-body { padding: 12px; }
     .seg-btn { min-height: 44px; font-size: 14px; }
   }
@@ -304,8 +342,35 @@
       <p class="sect-empty" id="lastEmpty">还没有转换记录 —— 转换完成后会显示在这里。</p>
     </section>
 
-    <div id="results"></div>
+    <section class="results-panel" id="resultsPanel" hidden aria-labelledby="resultsTitle">
+      <div class="results-head">
+        <h2 id="resultsTitle">转换结果</h2>
+        <span class="results-count" id="resultsCount">已完成 0 个文件</span>
+      </div>
+      <div class="results-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+        <input id="resultsSearch" type="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
+      </div>
+      <div class="results-selectbar">
+        <label class="results-selectall"><input type="checkbox" id="selectAll"><span>已选择 <b id="selectedCount">0</b> 个</span></label>
+        <button type="button" class="linkbtn" id="selectAllBtn">全选</button>
+      </div>
+      <div id="results" class="results-list"></div>
+      <div class="batch-spacer" id="batchSpacer"></div>
+    </section>
     <div class="empty-hint" id="hint">把文件拖进上方的区域，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
+
+    <div class="batch-bar" id="batchBar" role="region" aria-label="批量操作" hidden>
+      <div class="batch-info">
+        <span>已选择 <b id="batchCount">0</b> 个文件</span>
+        <span class="batch-sub">批量操作</span>
+        <button type="button" class="batch-close" id="batchClose" aria-label="取消选择">×</button>
+      </div>
+      <div class="batch-actions">
+        <button type="button" class="btn" id="batchCopy">📋 复制内容</button>
+        <button type="button" class="btn primary" id="batchSave">💾 全部保存 .md</button>
+      </div>
+    </div>
   </section>
 
   <!-- ── 文件 ───────────────────────────────────────────────────────────── -->
