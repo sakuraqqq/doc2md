@@ -5,8 +5,11 @@
  *
  * 安全链（A3）：
  *   marked（GFM）→ 预清洗图片（DOM API，非正则）→ DOMPurify.sanitize（含 afterSanitizeAttributes 钩子）
+ *   → 资源属性总闸 enforceResourcePolicy（sanitize 后统一扫 src/srcset/poster/媒体容器/input）
  *   ⇒ 任何 <script>/<iframe>/<style>/on*=/javascript: 都不得进入最终 HTML；
- *   ⇒ 外链/相对/file 图片在进入 DOM 前就替换成占位（⛔ 不发请求，A4/A10）。
+ *   ⇒ 外链/相对/file 图片在进入 DOM 前就替换成占位（⛔ 不发请求，A4/A10）；
+ *   ⇒ 7 类媒体载体（img[srcset] / picture>source / video[poster] / audio[src] / input[type=image] /
+ *     video[src] / video>source[src]）一律不得把外域 URL 带进 DOM（R1 · A14）。
  *
  * 图片策略（A4/A5）：
  *   · data:image/{png,jpeg,gif,webp};base64 ≤ 2MB ⇒ 保留；
@@ -23,7 +26,25 @@ const MAX_RENDER_CHARS = 4 * 1024 * 1024;
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const CUT_HINT = '（渲染预览已截断，完整内容请复制/下载）';
 const EMPTY_HTML = '<p class="md-empty">（空内容）</p>';
-const FORBIDDEN_TAGS = ['script', 'style', 'iframe', 'object', 'embed', 'form', 'link', 'meta', 'svg', 'math'];
+const FORBIDDEN_TAGS = [
+  'script',
+  'style',
+  'iframe',
+  'object',
+  'embed',
+  'form',
+  'link',
+  'meta',
+  'svg',
+  'math',
+  // R1（2026-10-20 对抗测试 P0）：媒体容器一律禁 —— video/audio/source/track/picture
+  // 会把 src/srcset/poster 带进 DOM，浏览器在解析后立刻发外域 GET（7 类泄漏面里的 6 类）。
+  'video',
+  'audio',
+  'source',
+  'track',
+  'picture',
+];
 const PURIFY_CONFIG = {
   FORBID_TAGS: FORBIDDEN_TAGS,
   FORBID_ATTR: ['style'],
@@ -102,13 +123,68 @@ function sanitizeAnchor(anchor) {
   }
 }
 
-/** 兜底：若仍有 <img> 逃过预清洗（例如 marked 扩展注入），在此剥掉不可显示的 src */
+/** 兜底：若仍有 <img> 逃过预清洗（例如 marked 扩展注入），在此剥掉不可显示的 src；
+ *  srcset/sizes 一律剥（R1：srcset 可绕过 src 白名单直接发外域 GET）。 */
 function sanitizeImage(img) {
+  img.removeAttribute('srcset');
+  img.removeAttribute('sizes');
   const src = String(img.getAttribute('src') || '').trim();
   if (imageAllowed(src)) return;
   img.removeAttribute('src');
   img.setAttribute('alt', img.getAttribute('alt') || '图片未加载');
   img.classList.add('md-img-blocked');
+}
+
+function isCheckbox(input) {
+  return String(input.getAttribute('type') || '').trim().toLowerCase() === 'checkbox';
+}
+
+function dropMediaContainers(root) {
+  for (const el of Array.from(root.querySelectorAll('video, audio, source, track'))) el.remove();
+  for (const pic of Array.from(root.querySelectorAll('picture'))) {
+    const img = pic.querySelector('img');
+    if (img) pic.replaceWith(img);
+    else pic.remove();
+  }
+}
+
+function stripResourceAttrs(root) {
+  for (const el of Array.from(root.querySelectorAll('*'))) {
+    el.removeAttribute('poster');
+    el.removeAttribute('srcset');
+    el.removeAttribute('sizes');
+    if (el.tagName !== 'IMG') el.removeAttribute('src');
+  }
+}
+
+function blockUnsafeImages(root) {
+  for (const img of Array.from(root.querySelectorAll('img'))) {
+    const src = String(img.getAttribute('src') || '').trim();
+    if (imageAllowed(src)) continue;
+    img.removeAttribute('src');
+    img.setAttribute('alt', img.getAttribute('alt') || '图片未加载');
+    img.classList.add('md-img-blocked');
+  }
+}
+
+function keepCheckboxInputsOnly(root) {
+  for (const input of Array.from(root.querySelectorAll('input'))) {
+    if (!isCheckbox(input)) input.remove();
+  }
+}
+
+/** 资源属性总闸（R1 · 2026-10-20）：sanitize 之后统一扫一遍 DOM，不依赖「已知标签清单」。
+ *  规则：① 媒体容器（video/audio/source/track）整棵移除，picture 解包只留 img；
+ *        ② 所有元素剥 poster/srcset/sizes，非 img 元素一律剥 src；
+ *        ③ img 的 src 只允许 data:image/{png,jpeg,gif,webp};base64 ≤2MB；
+ *        ④ input 只保留 type=checkbox（任务列表），其余移除。
+ *  为什么放在 sanitize 之后：DOMPurify 的 FORBID_TAGS 是显式清单，新标签/新属性会漏；
+ *  这一层按「属性语义」收口，7 类载体之外再出现同类属性也逃不掉。 */
+function enforceResourcePolicy(root) {
+  dropMediaContainers(root);
+  stripResourceAttrs(root);
+  blockUnsafeImages(root);
+  keepCheckboxInputsOnly(root);
 }
 
 function installSanitizeHook(purifier) {
@@ -147,7 +223,12 @@ export function renderMarkdown(text, opts) {
   const template = document.createElement('template');
   template.innerHTML = String(marked.parse(cut.text, { gfm: true, breaks: false, async: false }));
   replaceImages(template.content);
-  const html = purifier.sanitize(template.innerHTML, PURIFY_CONFIG);
+  const sanitized = purifier.sanitize(template.innerHTML, PURIFY_CONFIG);
+  // R1 总闸：sanitize 之后再按「资源属性语义」统一收口（src/srcset/poster/媒体容器/input）。
+  const out = document.createElement('template');
+  out.innerHTML = sanitized;
+  enforceResourcePolicy(out.content);
+  const html = out.innerHTML;
   return cut.cut ? html + '<p class="md-cut">' + CUT_HINT + '</p>' : html;
 }
 

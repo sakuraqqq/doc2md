@@ -6398,6 +6398,40 @@ function stripJsComments(s) {
   return s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
+/** A14 统一取证（卡 058 R1）：拦截非本服务请求 → 返回 { html, external[] }。
+ *  等待 waitMs 让浏览器有机会发起子资源请求（video/audio/input[type=image] 等可能异步取资源）。 */
+async function collectExternalOnMount(page, ctx, server, md, waitMs) {
+  const external = [];
+  const handler = (route) => {
+    const u = route.request().url();
+    if (!u.startsWith(server.base)) {
+      external.push(u);
+      return route.abort();
+    }
+    return route.continue();
+  };
+  await ctx.route('**/*', handler);
+  try {
+    const html = await page.evaluate(
+      ({ text, wait }) =>
+        new Promise((resolve) => {
+          const d = document.createElement('div');
+          document.body.append(d);
+          window.__doc2md.mountPreview(d, text);
+          const out = d.innerHTML;
+          setTimeout(() => {
+            d.remove();
+            resolve(out);
+          }, wait);
+        }),
+      { text: md, wait: waitMs }
+    );
+    return { html: html, external: external };
+  } finally {
+    await ctx.unroute('**/*', handler);
+  }
+}
+
 test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t) => {
   assert.ok(fs.existsSync(PAGE), 'index.html 不存在——先看契约组 A0');
   let chromium;
@@ -6524,6 +6558,77 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         } finally {
           await ctx.unroute('**/*');
         }
+      });
+
+      // ── A14（卡 058 R1 · 2026-10-20 对抗测试 P0）：7 类载体逐条 —— 渲染 + 插入 DOM 后外域请求 = 0。
+      //    断言口径：ctx.route 记录「非本服务 base」的 URL 并 abort；等 700ms 让浏览器有机会发起子资源请求。
+      //    每条同时给 console.log 现场输出（绿灯也留 external 数组），供回执 A14 取证。
+      await t.test('Z7-10 A14-1 img[srcset]：src 是合法 data URI，srcset 指向 https ⇒ 0 外发、srcset/sizes 被剥', async () => {
+        const md =
+          '<img alt="a" src="' +
+          PNG_1PX +
+          '" srcset="https://evil.example/p1.png 1x, https://evil.example/p1b.png 2x" sizes="100vw">';
+        const r = await collectExternalOnMount(page, ctx, server, md, 700);
+        console.log('[Z7-10] external=' + JSON.stringify(r.external));
+        assert.deepEqual(r.external, [], 'Z7-10 img[srcset] 仍发起外域请求：' + JSON.stringify(r.external));
+        assert.ok(!/srcset/i.test(r.html), '输出仍含 srcset：' + r.html.slice(0, 200));
+        assert.ok(!/\bsizes\s*=/i.test(r.html), '输出仍含 sizes：' + r.html.slice(0, 200));
+      });
+
+      await t.test('Z7-11 A14-2 picture>source[srcset]：source 的 srcset 指 https ⇒ 0 外发、picture/source 被禁', async () => {
+        const md =
+          '<picture><source srcset="https://evil.example/p2.png"><img alt="b" src="' + PNG_1PX + '"></picture>';
+        const r = await collectExternalOnMount(page, ctx, server, md, 700);
+        console.log('[Z7-11] external=' + JSON.stringify(r.external));
+        assert.deepEqual(r.external, [], 'Z7-11 picture>source 仍发起外域请求：' + JSON.stringify(r.external));
+        assert.ok(!/<picture\b/i.test(r.html), '输出仍含 <picture>：' + r.html.slice(0, 200));
+        assert.ok(!/<source\b/i.test(r.html), '输出仍含 <source>：' + r.html.slice(0, 200));
+      });
+
+      await t.test('Z7-12 A14-3 video[poster]：poster 指 https ⇒ 0 外发、video 被禁', async () => {
+        const md = '<video poster="https://evil.example/p3.png" preload="none"></video>';
+        const r = await collectExternalOnMount(page, ctx, server, md, 700);
+        console.log('[Z7-12] external=' + JSON.stringify(r.external));
+        assert.deepEqual(r.external, [], 'Z7-12 video[poster] 仍发起外域请求：' + JSON.stringify(r.external));
+        assert.ok(!/<video\b/i.test(r.html), '输出仍含 <video>：' + r.html.slice(0, 200));
+        assert.ok(!/\bposter\s*=/i.test(r.html), '输出仍含 poster 属性：' + r.html.slice(0, 200));
+      });
+
+      await t.test('Z7-13 A14-4 audio[src]：src 指 https ⇒ 0 外发、audio 被禁', async () => {
+        const md = '<audio src="https://evil.example/p4.mp3" preload="auto"></audio>';
+        const r = await collectExternalOnMount(page, ctx, server, md, 700);
+        console.log('[Z7-13] external=' + JSON.stringify(r.external));
+        assert.deepEqual(r.external, [], 'Z7-13 audio[src] 仍发起外域请求：' + JSON.stringify(r.external));
+        assert.ok(!/<audio\b/i.test(r.html), '输出仍含 <audio>：' + r.html.slice(0, 200));
+      });
+
+      await t.test('Z7-14 A14-5 input[type=image][src]：src 指 https ⇒ 0 外发；input 只留 checkbox', async () => {
+        const md =
+          '<input type="image" src="https://evil.example/p5.png" alt="c">\n\n<input type="text" value="t">\n\n<input type="checkbox" checked>';
+        const r = await collectExternalOnMount(page, ctx, server, md, 700);
+        console.log('[Z7-14] external=' + JSON.stringify(r.external));
+        assert.deepEqual(r.external, [], 'Z7-14 input[type=image] 仍发起外域请求：' + JSON.stringify(r.external));
+        assert.ok(!/<input[^>]*type=["']?image/i.test(r.html), '输出仍含 input[type=image]：' + r.html.slice(0, 240));
+        assert.ok(!/<input[^>]*type=["']?text/i.test(r.html), '输出仍含 input[type=text]（应只留 checkbox）：' + r.html.slice(0, 240));
+        assert.equal((r.html.match(/<input\b/g) || []).length, 1, 'input 数量应只剩 1 个 checkbox：' + r.html.slice(0, 240));
+        assert.ok(/type=["']?checkbox/i.test(r.html), '任务列表 checkbox 被误删：' + r.html.slice(0, 240));
+      });
+
+      await t.test('Z7-15 A14-6 video[src]：src 指 https ⇒ 0 外发、video 被禁', async () => {
+        const md = '<video src="https://evil.example/p6.mp4" preload="auto"></video>';
+        const r = await collectExternalOnMount(page, ctx, server, md, 700);
+        console.log('[Z7-15] external=' + JSON.stringify(r.external));
+        assert.deepEqual(r.external, [], 'Z7-15 video[src] 仍发起外域请求：' + JSON.stringify(r.external));
+        assert.ok(!/<video\b/i.test(r.html), '输出仍含 <video>：' + r.html.slice(0, 200));
+      });
+
+      await t.test('Z7-16 A14-7 video>source[src]：source src 指 https ⇒ 0 外发、video/source 被禁', async () => {
+        const md = '<video preload="auto"><source src="https://evil.example/p7.mp4" type="video/mp4"></video>';
+        const r = await collectExternalOnMount(page, ctx, server, md, 700);
+        console.log('[Z7-16] external=' + JSON.stringify(r.external));
+        assert.deepEqual(r.external, [], 'Z7-16 video>source 仍发起外域请求：' + JSON.stringify(r.external));
+        assert.ok(!/<video\b/i.test(r.html), '输出仍含 <video>：' + r.html.slice(0, 200));
+        assert.ok(!/<source\b/i.test(r.html), '输出仍含 <source>：' + r.html.slice(0, 200));
       });
 
       await t.test('Z7-4 A5 base64 图正常显示；>2 MB 拒绝并提示且页面不冻结', async () => {
