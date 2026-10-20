@@ -30,30 +30,30 @@
     }
   },
   "released": {
-    "version": "0.2.0",
-    "tag": "v0.2.0",
-    "tag_sha": "0631c9a50515a4973928ad3bf1c70e693b390dd1",
+    "version": "0.2.1",
+    "tag": "v0.2.1",
+    "tag_sha": "24be27f0c7336536741c4ab918a8ff000e879a70",
     "index_html": {
-      "bytes": 204598,
-      "sha256": "63C608B6FBEA9EDE961F92F1C8097C3AD3A40D2E783CA50CD86A210E4E2A9349"
+      "bytes": 207889,
+      "sha256": "1B5FE07CB91746D0040C05C1AB593EF00E89A1A08A0DFD17E099729452823EFB"
     },
     "measured": {
       "at": "2026-10-21",
-      "source": "发行记录（docs/RELEASE.md v0.2.0 节）：PR #72 squash 0631c9a50515a4973928ad3bf1c70e693b390dd1；tag v0.2.0 指向该提交；index.html 204,598 B / 63C608B6…（tag blob 现算与仓库产物一致）。"
+      "source": "发行记录（docs/RELEASE.md v0.2.1 节）：PR #75 squash 24be27f0c7336536741c4ab918a8ff000e879a70；tag v0.2.1 指向该提交；index.html 207,889 B / 1B5FE07C…（tag blob 现算与仓库产物一致）。"
     },
     "scope": "已发布产物 = tag 指向提交的 index.html blob；守卫现算比对 tag_sha / 字节 / SHA256 三者（页脚串等长 ⇒ 字节数不变而哈希必变，一律以 SHA256 为准）"
   },
   "online": {
     "url": "https://sakuraqqq.github.io/doc2md/",
     "index_html": {
-      "bytes": 204598,
-      "sha256": "63C608B6FBEA9EDE961F92F1C8097C3AD3A40D2E783CA50CD86A210E4E2A9349"
+      "bytes": 207889,
+      "sha256": "1B5FE07CB91746D0040C05C1AB593EF00E89A1A08A0DFD17E099729452823EFB"
     },
-    "source_commit": "0631c9a50515a4973928ad3bf1c70e693b390dd1",
-    "consistency_note": "线上 == 发布物：2026-10-20 17:25:06 GMT Pages 部署完成（deploy-pages run 39465844738 success），页脚 doc2md v0.2.0；verify-release-online 实测 204,598 B / 63C608B6… 逐字节一致。",
+    "source_commit": "24be27f0c7336536741c4ab918a8ff000e879a70",
+    "consistency_note": "线上 == 发布物：2026-10-20 18:09:26 GMT Pages 部署完成（deploy-pages run 39472237117 success），页脚 doc2md v0.2.1；verify-release-online 实测 207,889 B / 1B5FE07C… 逐字节一致。",
     "measured": {
       "at": "2026-10-21",
-      "source": "2026-10-21 实测 node tools/verify-release-online.mjs --expect 63C608B6FBEA9EDE961F92F1C8097C3AD3A40D2E783CA50CD86A210E4E2A9349 --expect-bytes 204598 ⇒ 绿；线上原始字节 204,598 B / 63C608B6…；页脚 doc2md v0.2.0；Last-Modified Tue, 20 Oct 2026 17:25:06 GMT；source_commit = PR #72 squash 0631c9a…（deploy-pages run 39465844738 success）。"
+      "source": "2026-10-21 实测 node tools/verify-release-online.mjs --expect 1B5FE07CB91746D0040C05C1AB593EF00E89A1A08A0DFD17E099729452823EFB --expect-bytes 207889 ⇒ 绿；线上原始字节 207,889 B / 1B5FE07C…；页脚 doc2md v0.2.1；Last-Modified Tue, 20 Oct 2026 18:09:26 GMT；source_commit = PR #75 squash 24be27f…（deploy-pages run 39472237117 success）。"
     },
     "scope": "线上现状（外部状态）：脚本不联网核对现状，只现算 source_commit 的 blob 以证明该数字来自真实提交；线上现状由 RELEASE-CHECKLIST §3/§4 人工核对。⚠️ 与 released 不一致时 divergence_reason 必填；本版两者一致 ⇒ 用 consistency_note 记录核对方式"
   },
