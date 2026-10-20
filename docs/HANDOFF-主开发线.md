@@ -6,8 +6,8 @@
 > **现值快照（生成块 · 请勿手改）**：以下数字由 `tools/gen-handoff-baseline.mjs` 从 `docs/BASELINE.json` 生成；
 > 手改本块（含提交后手改）会被 CI 的 `git diff --exit-code` 步抓住。
 >
-> - 已发布：**v0.2.0**（tag `v0.2.0` = `0631c9a50515a4973928ad3bf1c70e693b390dd1`）
-> - 发布物 `index.html`：**204,598 B** / `63C608B6FBEA9EDE961F92F1C8097C3AD3A40D2E783CA50CD86A210E4E2A9349`
+> - 已发布：**v0.2.1**（tag `v0.2.1` = `24be27f0c7336536741c4ab918a8ff000e879a70`）
+> - 发布物 `index.html`：**207,889 B** / `1B5FE07CB91746D0040C05C1AB593EF00E89A1A08A0DFD17E099729452823EFB`
 > - 契约（**CI 干净检出**口径）：**368 / 365 / 0 / 3**
 > - 交付面（磁盘现算）：
 >   - `vendor/`：**189 个文件** / **16,144,296 B**
