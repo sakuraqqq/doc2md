@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-20T14:30:32.740Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-20T16:53:26.198Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：33；函数总数：825；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：33；函数总数：828；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 825 个，超限 0 个。
+重构后当前：函数 828 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -33,10 +33,9 @@
 | tools/measure-xlsx-peak.mjs | main | 276 | 10 | 10 |
 | tools/verify-release-online.mjs | main | 67 | 10 | 10 |
 | tools/baseline-check.mjs | runFromTap | 464 | 10 | 9 |
-| src/markdown-preview.js | blankBoundaryOf | 233 | 9 | 13 |
 | src/ui.js | activateTab | 923 | 9 | 13 |
 | tools/measure-xlsx-peak.mjs | launchBrowser | 117 | 9 | 12 |
-| src/markdown-preview.js | lineBoundaryOf | 253 | 9 | 11 |
+| src/markdown-preview.js | lineBoundaryOf | 254 | 9 | 11 |
 | src/ocr.js | ocrAssetsWarm | 22 | 9 | 11 |
 | src/ui.js | renderViewerMode | 679 | 9 | 11 |
 | tools/baseline-check.mjs | checkProvenance | 173 | 9 | 11 |
@@ -47,6 +46,7 @@
 | src/xlsx.js | areaLossWarning | 876 | 9 | 8 |
 | src/xlsx.js | parseRowCells | 268 | 8 | 14 |
 | src/ui.js | buildEmbedMap | 619 | 8 | 13 |
+| src/markdown-preview.js | blankBoundaryOf | 234 | 8 | 12 |
 | tools/privacy-gate.mjs | loadAllowlist | 166 | 8 | 12 |
 | src/html2md.js | joinFrags | 25 | 8 | 10 |
 | tools/baseline-check.mjs | checkContract | 192 | 8 | 10 |
@@ -62,6 +62,7 @@
 | tools/audit-delivery.mjs | main | 237 | 8 | 8 |
 | src/convert.js | convert | 108 | 8 | 7 |
 | src/convert.js | runConverter | 234 | 8 | 7 |
+| src/markdown-preview.js | mountPreview | 404 | 8 | 7 |
 | src/sniff.js | sniff | 189 | 8 | 7 |
 | src/ui.js | diagBoot | 117 | 8 | 7 |
 | src/xlsx.js | takeT | 382 | 8 | 7 |
@@ -89,7 +90,7 @@
 | src/convert.js | ocrOnce | 44 | 7 | 6 |
 | src/convert.js | unsupportedError | 211 | 7 | 6 |
 | src/html2md.js | linkFrag | 95 | 7 | 6 |
-| src/markdown-preview.js | mountPreview | 376 | 7 | 6 |
+| src/markdown-preview.js | renderMarkdown | 320 | 7 | 6 |
 | src/sniff.js | charsetLabelOf | 77 | 7 | 6 |
 | src/sniff.js | isBmp | 234 | 7 | 6 |
 | src/sniff.js | isGif | 243 | 7 | 6 |
@@ -151,7 +152,6 @@
 | src/docx.js | docxConvert | 302 | 6 | 5 |
 | src/html2md.js | codeFrag | 77 | 6 | 5 |
 | src/html2md.js | liTailToLines | 273 | 6 | 5 |
-| src/markdown-preview.js | renderMarkdown | 310 | 6 | 5 |
 | src/pdf.js | countAsciiGlyph | 59 | 6 | 5 |
 | src/pdf.js | isCjkChar | 186 | 6 | 5 |
 | src/pdf.js | needsSpace | 203 | 6 | 5 |
@@ -188,8 +188,8 @@
 | tools/gen-handoff-baseline.mjs | reportSelftest | 360 | 5 | 7 |
 | src/docx.js | docxMathFragment | 170 | 5 | 6 |
 | src/docx.js | insideQuotes | 206 | 5 | 6 |
-| src/markdown-preview.js | replaceImages | 102 | 5 | 6 |
-| src/markdown-preview.js | blockUnsafeImages | 162 | 5 | 6 |
+| src/markdown-preview.js | replaceImages | 103 | 5 | 6 |
+| src/markdown-preview.js | blockUnsafeImages | 163 | 5 | 6 |
 | src/xlsx.js | findCentralEntry | 44 | 5 | 6 |
 | src/xlsx.js | readDeclaredArea | 837 | 5 | 6 |
 | src/xlsx.js | probeSheetArea | 857 | 5 | 6 |
@@ -201,7 +201,7 @@
 | src/app.js | safeHandleFiles | 72 | 5 | 5 |
 | src/docx.js | docxInjectLatex | 259 | 5 | 5 |
 | src/docx.js | (anonymous) | 261 | 5 | 5 |
-| src/markdown-preview.js | advanceSegment | 346 | 5 | 5 |
+| src/markdown-preview.js | advanceSegment | 373 | 5 | 5 |
 | src/ui.js | buildZipBytes | 544 | 5 | 5 |
 | src/ui.js | createResultRow | 862 | 5 | 5 |
 | src/xlsx.js | parseSheetTags | 137 | 5 | 5 |
@@ -212,10 +212,10 @@
 | src/docx.js | extForContentType | 21 | 5 | 4 |
 | src/html2md.js | liChildToLines | 284 | 5 | 4 |
 | src/html2md.js | cellToMd | 347 | 5 | 4 |
-| src/markdown-preview.js | sanitizeAnchor | 116 | 5 | 4 |
-| src/markdown-preview.js | installSanitizeHook | 192 | 5 | 4 |
-| src/markdown-preview.js | fenceStateOf | 217 | 5 | 4 |
-| src/markdown-preview.js | renderSegmentHtml | 287 | 5 | 4 |
+| src/markdown-preview.js | sanitizeAnchor | 117 | 5 | 4 |
+| src/markdown-preview.js | installSanitizeHook | 193 | 5 | 4 |
+| src/markdown-preview.js | fenceStateOf | 218 | 5 | 4 |
+| src/markdown-preview.js | renderSegmentHtml | 297 | 5 | 4 |
 | src/pdf.js | asciiWordEdge | 192 | 5 | 4 |
 | src/sniff.js | decodeBom | 44 | 5 | 4 |
 | src/sniff.js | trimMetaValue | 91 | 5 | 4 |
@@ -271,7 +271,7 @@
 | src/docx.js | ommlConcat | 119 | 4 | 4 |
 | src/html2md.js | collectFrags | 38 | 4 | 4 |
 | src/html2md.js | (anonymous) | 39 | 4 | 4 |
-| src/markdown-preview.js | dropMediaContainers | 144 | 4 | 4 |
+| src/markdown-preview.js | dropMediaContainers | 145 | 4 | 4 |
 | src/ocr.js | (anonymous) | 48 | 4 | 4 |
 | src/pdf.js | pdfPageRuns | 174 | 4 | 4 |
 | src/sniff.js | startsWith | 11 | 4 | 4 |
@@ -296,7 +296,8 @@
 | src/docx.js | (anonymous) | 295 | 4 | 3 |
 | src/html2md.js | pushMarkerLine | 241 | 4 | 3 |
 | src/html2md.js | spanOf | 341 | 4 | 3 |
-| src/markdown-preview.js | sanitizeImage | 130 | 4 | 3 |
+| src/markdown-preview.js | sanitizeImage | 131 | 4 | 3 |
+| src/markdown-preview.js | truncateSource | 288 | 4 | 3 |
 | src/ocr.js | rotateImage90 | 102 | 4 | 3 |
 | src/pdf.js | ocrPageToText | 21 | 4 | 3 |
 | src/sniff.js | zipKind | 265 | 4 | 3 |
@@ -348,8 +349,8 @@
 | tools/privacy-gate.mjs | selfCleanCheck | 395 | 3 | 4 |
 | src/docx.js | ommlChild | 57 | 3 | 3 |
 | src/html2md.js | fragFor | 138 | 3 | 3 |
-| src/markdown-preview.js | stripResourceAttrs | 153 | 3 | 3 |
-| src/markdown-preview.js | keepCheckboxInputsOnly | 172 | 3 | 3 |
+| src/markdown-preview.js | stripResourceAttrs | 154 | 3 | 3 |
+| src/markdown-preview.js | keepCheckboxInputsOnly | 173 | 3 | 3 |
 | src/pdf.js | isPdfGarbageCode | 358 | 3 | 3 |
 | src/pdf.js | documentMonospaceFonts | 406 | 3 | 3 |
 | src/sniff.js | countFffd | 131 | 3 | 3 |
@@ -377,11 +378,12 @@
 | src/html2md.js | quoteElToMd | 322 | 3 | 2 |
 | src/html2md.js | (anonymous) | 325 | 3 | 2 |
 | src/html2md.js | htmlToMarkdown | 395 | 3 | 2 |
-| src/markdown-preview.js | paddingOf | 75 | 3 | 2 |
-| src/markdown-preview.js | placeholderText | 96 | 3 | 2 |
-| src/markdown-preview.js | (anonymous) | 194 | 3 | 2 |
-| src/markdown-preview.js | nextLineIsTable | 225 | 3 | 2 |
-| src/markdown-preview.js | humanSize | 280 | 3 | 2 |
+| src/markdown-preview.js | paddingOf | 76 | 3 | 2 |
+| src/markdown-preview.js | placeholderText | 97 | 3 | 2 |
+| src/markdown-preview.js | (anonymous) | 195 | 3 | 2 |
+| src/markdown-preview.js | nextLineIsTable | 226 | 3 | 2 |
+| src/markdown-preview.js | humanSize | 281 | 3 | 2 |
+| src/markdown-preview.js | moreLabel | 352 | 3 | 2 |
 | src/pdf.js | showTextRun | 103 | 3 | 2 |
 | src/pdf.js | (anonymous) | 150 | 3 | 2 |
 | src/pdf.js | runsToPageText | 344 | 3 | 2 |
@@ -468,14 +470,14 @@
 | src/html2md.js | tableToMd | 374 | 2 | 1 |
 | src/html2md.js | isPreBlock | 384 | 2 | 1 |
 | src/html2md.js | (anonymous) | 401 | 2 | 1 |
-| src/markdown-preview.js | globalApi | 63 | 2 | 1 |
-| src/markdown-preview.js | dataUriBytes | 81 | 2 | 1 |
-| src/markdown-preview.js | imageAllowed | 88 | 2 | 1 |
-| src/markdown-preview.js | altSuffix | 92 | 2 | 1 |
-| src/markdown-preview.js | isCheckbox | 140 | 2 | 1 |
-| src/markdown-preview.js | textCost | 204 | 2 | 1 |
-| src/markdown-preview.js | fenceMark | 212 | 2 | 1 |
-| src/markdown-preview.js | findSegmentEnd | 275 | 2 | 1 |
+| src/markdown-preview.js | globalApi | 64 | 2 | 1 |
+| src/markdown-preview.js | dataUriBytes | 82 | 2 | 1 |
+| src/markdown-preview.js | imageAllowed | 89 | 2 | 1 |
+| src/markdown-preview.js | altSuffix | 93 | 2 | 1 |
+| src/markdown-preview.js | isCheckbox | 141 | 2 | 1 |
+| src/markdown-preview.js | textCost | 205 | 2 | 1 |
+| src/markdown-preview.js | fenceMark | 213 | 2 | 1 |
+| src/markdown-preview.js | findSegmentEnd | 276 | 2 | 1 |
 | src/pdf.js | screenY | 97 | 2 | 1 |
 | src/pdf.js | argAt | 116 | 2 | 1 |
 | src/pdf.js | (anonymous) | 149 | 2 | 1 |
@@ -619,13 +621,14 @@
 | src/html2md.js | (anonymous) | 378 | 1 | 0 |
 | src/html2md.js | (anonymous) | 378 | 1 | 0 |
 | src/html2md.js | (anonymous) | 397 | 1 | 0 |
-| src/markdown-preview.js | markedApi | 67 | 1 | 0 |
-| src/markdown-preview.js | purifyApi | 71 | 1 | 0 |
-| src/markdown-preview.js | enforceResourcePolicy | 185 | 1 | 0 |
-| src/markdown-preview.js | statusText | 335 | 1 | 0 |
-| src/markdown-preview.js | renderNextSegment | 339 | 1 | 0 |
-| src/markdown-preview.js | makeMoreControl | 362 | 1 | 0 |
-| src/markdown-preview.js | (anonymous) | 372 | 1 | 0 |
+| src/markdown-preview.js | markedApi | 68 | 1 | 0 |
+| src/markdown-preview.js | purifyApi | 72 | 1 | 0 |
+| src/markdown-preview.js | enforceResourcePolicy | 186 | 1 | 0 |
+| src/markdown-preview.js | statusText | 347 | 1 | 0 |
+| src/markdown-preview.js | renderNextSegment | 359 | 1 | 0 |
+| src/markdown-preview.js | markAllRendered | 366 | 1 | 0 |
+| src/markdown-preview.js | makeMoreControl | 390 | 1 | 0 |
+| src/markdown-preview.js | (anonymous) | 400 | 1 | 0 |
 | src/ocr.js | (anonymous) | 26 | 1 | 0 |
 | src/ocr.js | (anonymous) | 28 | 1 | 0 |
 | src/ocr.js | (anonymous) | 30 | 1 | 0 |

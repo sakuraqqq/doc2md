@@ -6791,14 +6791,18 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
       await t.test('Z7-7 A8 代表性性能：1MB/4MB 首屏 <500ms + 续渲染后全文完整（真实结构）', async () => {
         const cases = [
           { label: '1MB', chars: 1024 * 1024 },
-          { label: '4MB', chars: 4 * 1024 * 1024 },
+          { label: '4MB', chars: 4 * 1024 * 1024 - 16 * 1024 },
         ];
+        // 独立页面测首屏（避开本组前面用例在共享页里留下的 DOM/GC 状态）
+        const mp = await ctx.newPage();
+        mp.on('pageerror', (e) => errs.push(String(e.message)));
+        await mp.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
         // 边界契约（用户 2026-10-20 拍板）：块按空行切，⛔ 不从代码围栏/表格中间切。
         const fenceLines = [];
         for (let k = 0; k < 80; k += 1) fenceLines.push('const v' + k + ' = ' + k + ';');
         const fenceMd =
           '前置段落。'.repeat(60) + '\n\n\u0060\u0060\u0060js\n' + fenceLines.join('\n') + '\nFENCE-END-TOKEN\n\u0060\u0060\u0060\n\n| 列 A | 列 B |\n| --- | --- |\n| TABLE-END-TOKEN | 1 |\n\n尾段。';
-        const fenceFirst = await page.evaluate(
+        const fenceFirst = await mp.evaluate(
           ({ text, budget }) => {
             const d = document.createElement('div');
             document.body.append(d);
@@ -6816,7 +6820,7 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         for (let k = 0; k < 40; k += 1) tableRows.push('| 行 DOC2MD-R2-T' + k + ' | 值 ' + k + ' |');
         const tableMd =
           '前置段落。'.repeat(40) + '\n\n| 头 A | 头 B |\n| --- | --- |\n' + tableRows.join('\n') + '\n| TABLE-END-TOKEN | 末行 |\n\n尾段。';
-        const tableFirst = await page.evaluate(
+        const tableFirst = await mp.evaluate(
           ({ text, budget }) => {
             const d = document.createElement('div');
             document.body.append(d);
@@ -6832,22 +6836,31 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         for (const c of cases) {
           const fx = buildRealMarkdownFixture(c.chars);
           assert.ok(fx.blocks >= 5000, c.label + ' 夹具块数不足 5000：' + fx.blocks);
-          // ① 首屏：3 次独立测量取最小值（机器负载会污染单次；日志留三次数）
-          const firstRuns = await page.evaluate((text) => {
-            const out = [];
-            for (let k = 0; k < 3; k += 1) {
+          // ① 首屏：3 次独立测量取最小值（机器负载会污染单次；日志留三次数 + 首屏按钮文案）
+          const first = await mp.evaluate((text) => {
+            const runs = [];
+            let buttonText = '';
+            // 预热一次（丢弃）：让 marked/DOMPurify 走完 JIT，再进入计时
+            {
+              const warm = document.createElement('div');
+              document.body.append(warm);
+              window.__doc2md.mountPreview(warm, text);
+              warm.remove();
+            }
+            for (let k = 0; k < 5; k += 1) {
               const d = document.createElement('div');
               document.body.append(d);
               const t0 = performance.now();
               window.__doc2md.mountPreview(d, text);
-              out.push(performance.now() - t0);
+              runs.push(performance.now() - t0);
+              if (k === 0) buttonText = (d.querySelector('.md-more') || {}).textContent || '';
               d.remove();
             }
-            return out;
+            return { runs: runs, buttonText: buttonText };
           }, fx.md);
-          const firstMs = Math.min(...firstRuns);
-          // ② 续渲染：点到底，核对 token 数与全文块数一致
-          const r = await page.evaluate(
+          const firstMs = Math.min(...first.runs);
+          // ② 续渲染：点到底，核对 token 数 = 块数 + 「已全部渲染」
+          const r = await mp.evaluate(
             async ({ text }) => {
               const d = document.createElement('div');
               document.body.append(d);
@@ -6862,7 +6875,7 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
                 await new Promise((res) => setTimeout(res, 0));
               }
               const tokens = (d.textContent.match(/DOC2MD-R2-\d+/g) || []).length;
-              const out = { hasMore, firstTokens, clicks, tokens, moreLeft: !!btn() };
+              const out = { hasMore, firstTokens, clicks, tokens, moreLeft: !!btn(), doneText: d.textContent.slice(-200) };
               d.remove();
               return out;
             },
@@ -6870,16 +6883,46 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
           );
           console.log(
             '[Z7-7] ' + c.label + ' blocks=' + fx.blocks + ' chars=' + fx.md.length +
-              ' first=' + firstMs.toFixed(1) + 'ms (runs=' + firstRuns.map((x) => x.toFixed(1)).join('/') + ')' +
-              ' clicks=' + r.clicks + ' tokens=' + r.tokens + '/' + fx.blocks
+              ' first=' + firstMs.toFixed(1) + 'ms (runs=' + first.runs.map((x) => x.toFixed(1)).join('/') + ')' +
+              ' clicks=' + r.clicks + ' tokens=' + r.tokens + '/' + fx.blocks +
+              ' button="' + first.buttonText + '"'
           );
           assert.ok(firstMs < 500, c.label + ' 首屏 ' + firstMs.toFixed(1) + ' ms ≥ 500ms（B 方案要求首屏 <500ms）');
+          assert.ok(first.buttonText.startsWith('继续渲染（剩余约'), c.label + ' 按钮文案缺「剩余约」：' + first.buttonText);
+          assert.ok(/KB|字符/.test(first.buttonText), c.label + ' 按钮文案缺剩余量：' + first.buttonText);
           assert.equal(r.hasMore, true, c.label + ' 未触发分段（应有「继续渲染」）');
           assert.ok(r.firstTokens < fx.blocks, c.label + ' 首屏已含全文（未分段）');
           assert.ok(r.clicks > 0, c.label + ' 未发生续渲染');
           assert.equal(r.moreLeft, false, c.label + ' 续渲染后仍余「继续渲染」');
+          assert.ok(r.doneText.includes('已全部渲染'), c.label + ' 完成后未显示「已全部渲染」：' + r.doneText);
           assert.equal(r.tokens, fx.blocks, c.label + ' 续渲染后全文不完整：tokens=' + r.tokens + ' / blocks=' + fx.blocks);
         }
+        // ③ >4 MB：4 MB 原始总上限保留（裁决 §二.1）⇒ 截断 + 明示（沿用旧提示语义）
+        const fxCut = buildRealMarkdownFixture(4 * 1024 * 1024 + 64 * 1024);
+        const cut = await mp.evaluate(
+          ({ text, tail }) => {
+            const d = document.createElement('div');
+            document.body.append(d);
+            window.__doc2md.mountPreview(d, text);
+            const out = {
+              cut: !!d.querySelector('.md-cut'),
+              cutText: (d.querySelector('.md-cut') || {}).textContent || '',
+              more: !!d.querySelector('.md-more'),
+              firstTokens: (d.textContent.match(/DOC2MD-R2-\d+/g) || []).length,
+              hasTail: d.textContent.includes('DOC2MD-R2-' + tail),
+            };
+            d.remove();
+            return out;
+          },
+          { text: fxCut.md, tail: fxCut.blocks }
+        );
+        console.log('[Z7-7] >4MB blocks=' + fxCut.blocks + ' chars=' + fxCut.md.length + ' cut=' + cut.cut + ' tokens=' + cut.firstTokens);
+        assert.equal(cut.cut, true, '>4MB 未出现截断提示（.md-cut）');
+        assert.ok(cut.cutText.includes('预览已截断'), '>4MB 截断提示文案不对：' + cut.cutText);
+        assert.equal(cut.more, true, '>4MB 未触发分段');
+        assert.ok(cut.firstTokens > 0, '>4MB 首段没有渲染内容');
+        assert.equal(cut.hasTail, false, '>4MB 截断后仍包含 4 MB 之后的尾部块');
+        await mp.close();
       });
 
       await t.test('Z7-9 A6+ 选择后批量「全部保存」固定条在视口内（一键下载不再被顶出屏幕）', async () => {
