@@ -16,16 +16,17 @@
  *   · 其它（http(s)/file/相对/data: 超限）⇒ <span class="md-img-placeholder">，声明不显示原因；
  *   · ⛔ 不静默裂图。
  *
- * 分段渲染（R2 · 2026-10-20 · B 方案）：
- *   · 首段 = 256 KB「文本」（base64 负载不计）；点「继续渲染」按需追加下一段；
+ * 分段渲染（R2 · 2026-10-20 · B 方案；2026-10-21 对齐调度线裁决）：
+ *   · 首段 = 256 KB「文本」（base64 负载不计）；「继续渲染」按需追加下一段；
  *   · 块按空行切，不从代码围栏/表格中间切；极端无空行输入退回行边界；
  *   · 单图 ≤2 MB 规则不变（A5）；图片不占文本预算（卡面 §13.2.3）；
- *   · 4 MB 总上限取消：不再丢内容，改为「分段 + 每段原始 8 MB 硬顶」；
- *     理由与两档耗时见回执 §18 / `.私档/卡/c058/证据/A15-*.json`。
+ *   · **4 MB 原始总上限保留**（裁决 §二.1）：超过即明示截断，沿用旧提示语义；
+ *     4 MB 以内的文本按 256 KB/段分段，全文可通过续渲染查看。
  */
+const MAX_SOURCE_CHARS = 4 * 1024 * 1024;
 const SEGMENT_TEXT_CHARS = 256 * 1024;
-const SEGMENT_RAW_CHARS = 8 * 1024 * 1024;
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const CUT_HINT = '（渲染预览已截断，完整内容请复制/下载）';
 const EMPTY_HTML = '<p class="md-empty">（空内容）</p>';
 const FORBIDDEN_TAGS = [
   'script',
@@ -240,7 +241,7 @@ function blankBoundaryOf(source, start, budget) {
     const line = source.slice(i, lineEnd);
     fence = fenceStateOf(line, fence);
     if (!fence && line.trim() === '') {
-      if (cost >= budget || i - start >= SEGMENT_RAW_CHARS) return Math.min(lineEnd + 1, source.length);
+      if (cost >= budget) return Math.min(lineEnd + 1, source.length);
     }
     if (!fence && cost > budget * 2) return -1;
     cost += textCost(line) + 1;
@@ -283,6 +284,15 @@ function humanSize(chars) {
   return chars + ' 字符';
 }
 
+/** 4 MB 原始总上限（裁决 §二.1）：超限即截断并明示（沿用旧提示语义）。 */
+function truncateSource(source) {
+  if (source.length <= MAX_SOURCE_CHARS) return { text: source, cut: false };
+  let end = MAX_SOURCE_CHARS;
+  const code = source.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return { text: source.slice(0, end), cut: true };
+}
+
 /** 渲染单个片段：marked → 预清洗图片 → sanitize → R1 资源总闸。 */
 function renderSegmentHtml(segmentText) {
   const marked = markedApi();
@@ -308,20 +318,22 @@ function renderSegmentHtml(segmentText) {
  * @returns {string}
  */
 export function renderMarkdown(text, opts) {
-  const source = String(text == null ? '' : text);
-  if (!source.trim()) return EMPTY_HTML;
+  const raw = String(text == null ? '' : text);
+  if (!raw.trim()) return EMPTY_HTML;
+  const limited = truncateSource(raw);
   const budget = (opts && opts.segmentChars) || SEGMENT_TEXT_CHARS;
-  const end = findSegmentEnd(source, 0, budget);
-  const html = renderSegmentHtml(source.slice(0, end));
-  if (end >= source.length) return html;
-  return (
-    html +
-    '<p class="md-cut md-more-note">（预览已截断：已渲染前 ' +
-    humanSize(end) +
-    ' / 共 ' +
-    humanSize(source.length) +
-    '；点「继续渲染」查看余下内容，复制/下载仍为完整原文）</p>'
-  );
+  const end = findSegmentEnd(limited.text, 0, budget);
+  let html = renderSegmentHtml(limited.text.slice(0, end));
+  if (end < limited.text.length) {
+    html +=
+      '<p class="md-more-note">（已渲染前 ' +
+      humanSize(end) +
+      ' / 共 ' +
+      humanSize(limited.text.length) +
+      '；点「继续渲染」查看余下内容，复制/下载仍为完整原文）</p>';
+  }
+  if (limited.cut) html += '<p class="md-cut">' + CUT_HINT + '</p>';
+  return html;
 }
 
 /**
@@ -336,11 +348,26 @@ function statusText(pos, total) {
   return '已渲染前 ' + humanSize(pos) + ' / 共 ' + humanSize(total);
 }
 
+/** 按钮文案（裁决 §三.2）：显示剩余量；耗尽时返回「已全部渲染」。 */
+function moreLabel(state) {
+  const rest = state.source.length - state.pos;
+  if (rest <= 0) return '已全部渲染';
+  if (rest < 1024) return '继续渲染（剩余约 ' + rest + ' 字符）';
+  return '继续渲染（剩余约 ' + Math.ceil(rest / 1024) + ' KB）';
+}
+
 function renderNextSegment(state) {
   const end = findSegmentEnd(state.source, state.pos, state.budget);
   const html = renderSegmentHtml(state.source.slice(state.pos, end));
   state.pos = end;
   return html;
+}
+
+function markAllRendered(wrap) {
+  const done = document.createElement('p');
+  done.className = 'md-more-status';
+  done.textContent = '已全部渲染';
+  wrap.replaceWith(done);
 }
 
 function advanceSegment(state, wrap, status, button) {
@@ -349,9 +376,10 @@ function advanceSegment(state, wrap, status, button) {
     tpl.innerHTML = renderNextSegment(state);
     wrap.parentNode.insertBefore(tpl.content, wrap);
     if (state.pos >= state.source.length) {
-      wrap.remove();
+      markAllRendered(wrap);
     } else {
       status.textContent = statusText(state.pos, state.source.length);
+      button.textContent = moreLabel(state);
     }
   } catch (e) {
     status.textContent = '预览加载失败：' + (e && e.message ? e.message : '未知错误');
@@ -366,7 +394,7 @@ function makeMoreControl(state) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'md-more';
-  button.textContent = '继续渲染';
+  button.textContent = moreLabel(state);
   wrap.appendChild(button);
   const status = wrap.querySelector('.md-more-status');
   button.addEventListener('click', () => advanceSegment(state, wrap, status, button));
@@ -375,15 +403,22 @@ function makeMoreControl(state) {
 
 export function mountPreview(el, text, opts) {
   if (!el) throw new Error('mountPreview 需要容器元素');
-  const source = String(text == null ? '' : text);
+  const raw = String(text == null ? '' : text);
   el.innerHTML = '';
-  if (!source.trim()) {
+  if (!raw.trim()) {
     el.innerHTML = EMPTY_HTML;
     return el.innerHTML;
   }
+  const limited = truncateSource(raw);
   const budget = (opts && opts.segmentChars) || SEGMENT_TEXT_CHARS;
-  const state = { source: source, budget: budget, pos: 0 };
+  const state = { source: limited.text, budget: budget, pos: 0 };
   el.innerHTML = renderNextSegment(state);
-  if (state.pos < source.length) el.appendChild(makeMoreControl(state));
+  if (state.pos < state.source.length) el.appendChild(makeMoreControl(state));
+  if (limited.cut) {
+    const cut = document.createElement('p');
+    cut.className = 'md-cut';
+    cut.textContent = CUT_HINT;
+    el.appendChild(cut);
+  }
   return el.innerHTML;
 }

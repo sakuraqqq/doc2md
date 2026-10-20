@@ -2108,9 +2108,10 @@ ${xlsxRowsToMd(kept)}`);
   }
 
   // src/markdown-preview.js
+  var MAX_SOURCE_CHARS = 4 * 1024 * 1024;
   var SEGMENT_TEXT_CHARS = 256 * 1024;
-  var SEGMENT_RAW_CHARS = 8 * 1024 * 1024;
   var IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+  var CUT_HINT = "\uFF08\u6E32\u67D3\u9884\u89C8\u5DF2\u622A\u65AD\uFF0C\u5B8C\u6574\u5185\u5BB9\u8BF7\u590D\u5236/\u4E0B\u8F7D\uFF09";
   var EMPTY_HTML = '<p class="md-empty">\uFF08\u7A7A\u5185\u5BB9\uFF09</p>';
   var FORBIDDEN_TAGS = [
     "script",
@@ -2287,7 +2288,7 @@ ${xlsxRowsToMd(kept)}`);
       const line = source.slice(i, lineEnd);
       fence = fenceStateOf(line, fence);
       if (!fence && line.trim() === "") {
-        if (cost >= budget || i - start >= SEGMENT_RAW_CHARS) return Math.min(lineEnd + 1, source.length);
+        if (cost >= budget) return Math.min(lineEnd + 1, source.length);
       }
       if (!fence && cost > budget * 2) return -1;
       cost += textCost(line) + 1;
@@ -2321,6 +2322,13 @@ ${xlsxRowsToMd(kept)}`);
     if (chars >= 1024) return Math.round(chars / 1024) + " KB";
     return chars + " \u5B57\u7B26";
   }
+  function truncateSource(source) {
+    if (source.length <= MAX_SOURCE_CHARS) return { text: source, cut: false };
+    let end = MAX_SOURCE_CHARS;
+    const code = source.charCodeAt(end - 1);
+    if (code >= 55296 && code <= 56319) end -= 1;
+    return { text: source.slice(0, end), cut: true };
+  }
   function renderSegmentHtml(segmentText) {
     const marked = markedApi();
     const purifier = purifyApi();
@@ -2337,16 +2345,26 @@ ${xlsxRowsToMd(kept)}`);
     return holder.innerHTML;
   }
   function renderMarkdown(text, opts) {
-    const source = String(text == null ? "" : text);
-    if (!source.trim()) return EMPTY_HTML;
+    const raw = String(text == null ? "" : text);
+    if (!raw.trim()) return EMPTY_HTML;
+    const limited = truncateSource(raw);
     const budget = opts && opts.segmentChars || SEGMENT_TEXT_CHARS;
-    const end = findSegmentEnd(source, 0, budget);
-    const html = renderSegmentHtml(source.slice(0, end));
-    if (end >= source.length) return html;
-    return html + '<p class="md-cut md-more-note">\uFF08\u9884\u89C8\u5DF2\u622A\u65AD\uFF1A\u5DF2\u6E32\u67D3\u524D ' + humanSize(end) + " / \u5171 " + humanSize(source.length) + "\uFF1B\u70B9\u300C\u7EE7\u7EED\u6E32\u67D3\u300D\u67E5\u770B\u4F59\u4E0B\u5185\u5BB9\uFF0C\u590D\u5236/\u4E0B\u8F7D\u4ECD\u4E3A\u5B8C\u6574\u539F\u6587\uFF09</p>";
+    const end = findSegmentEnd(limited.text, 0, budget);
+    let html = renderSegmentHtml(limited.text.slice(0, end));
+    if (end < limited.text.length) {
+      html += '<p class="md-more-note">\uFF08\u5DF2\u6E32\u67D3\u524D ' + humanSize(end) + " / \u5171 " + humanSize(limited.text.length) + "\uFF1B\u70B9\u300C\u7EE7\u7EED\u6E32\u67D3\u300D\u67E5\u770B\u4F59\u4E0B\u5185\u5BB9\uFF0C\u590D\u5236/\u4E0B\u8F7D\u4ECD\u4E3A\u5B8C\u6574\u539F\u6587\uFF09</p>";
+    }
+    if (limited.cut) html += '<p class="md-cut">' + CUT_HINT + "</p>";
+    return html;
   }
   function statusText(pos, total) {
     return "\u5DF2\u6E32\u67D3\u524D " + humanSize(pos) + " / \u5171 " + humanSize(total);
+  }
+  function moreLabel(state) {
+    const rest = state.source.length - state.pos;
+    if (rest <= 0) return "\u5DF2\u5168\u90E8\u6E32\u67D3";
+    if (rest < 1024) return "\u7EE7\u7EED\u6E32\u67D3\uFF08\u5269\u4F59\u7EA6 " + rest + " \u5B57\u7B26\uFF09";
+    return "\u7EE7\u7EED\u6E32\u67D3\uFF08\u5269\u4F59\u7EA6 " + Math.ceil(rest / 1024) + " KB\uFF09";
   }
   function renderNextSegment(state) {
     const end = findSegmentEnd(state.source, state.pos, state.budget);
@@ -2354,15 +2372,22 @@ ${xlsxRowsToMd(kept)}`);
     state.pos = end;
     return html;
   }
+  function markAllRendered(wrap) {
+    const done = document.createElement("p");
+    done.className = "md-more-status";
+    done.textContent = "\u5DF2\u5168\u90E8\u6E32\u67D3";
+    wrap.replaceWith(done);
+  }
   function advanceSegment(state, wrap, status, button) {
     try {
       const tpl = document.createElement("template");
       tpl.innerHTML = renderNextSegment(state);
       wrap.parentNode.insertBefore(tpl.content, wrap);
       if (state.pos >= state.source.length) {
-        wrap.remove();
+        markAllRendered(wrap);
       } else {
         status.textContent = statusText(state.pos, state.source.length);
+        button.textContent = moreLabel(state);
       }
     } catch (e) {
       status.textContent = "\u9884\u89C8\u52A0\u8F7D\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF");
@@ -2376,7 +2401,7 @@ ${xlsxRowsToMd(kept)}`);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "md-more";
-    button.textContent = "\u7EE7\u7EED\u6E32\u67D3";
+    button.textContent = moreLabel(state);
     wrap.appendChild(button);
     const status = wrap.querySelector(".md-more-status");
     button.addEventListener("click", () => advanceSegment(state, wrap, status, button));
@@ -2384,16 +2409,23 @@ ${xlsxRowsToMd(kept)}`);
   }
   function mountPreview(el, text, opts) {
     if (!el) throw new Error("mountPreview \u9700\u8981\u5BB9\u5668\u5143\u7D20");
-    const source = String(text == null ? "" : text);
+    const raw = String(text == null ? "" : text);
     el.innerHTML = "";
-    if (!source.trim()) {
+    if (!raw.trim()) {
       el.innerHTML = EMPTY_HTML;
       return el.innerHTML;
     }
+    const limited = truncateSource(raw);
     const budget = opts && opts.segmentChars || SEGMENT_TEXT_CHARS;
-    const state = { source, budget, pos: 0 };
+    const state = { source: limited.text, budget, pos: 0 };
     el.innerHTML = renderNextSegment(state);
-    if (state.pos < source.length) el.appendChild(makeMoreControl(state));
+    if (state.pos < state.source.length) el.appendChild(makeMoreControl(state));
+    if (limited.cut) {
+      const cut = document.createElement("p");
+      cut.className = "md-cut";
+      cut.textContent = CUT_HINT;
+      el.appendChild(cut);
+    }
     return el.innerHTML;
   }
 
