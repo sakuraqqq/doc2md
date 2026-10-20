@@ -25,6 +25,11 @@
  */
 const MAX_SOURCE_CHARS = 4 * 1024 * 1024;
 const SEGMENT_TEXT_CHARS = 256 * 1024;
+/* 结构成本预算（v0.2.1 · F1）：字符预算之外再卡块/表格行/内联标记，
+ * 防止「小段落地狱」「表格地狱」「单行 + 大量加粗」把首屏拖到 >500ms。 */
+const SEGMENT_BLOCKS = 900;
+const SEGMENT_TABLE_ROWS = 240;
+const SEGMENT_INLINE_MARKS = 12000;
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const CUT_HINT = '（渲染预览已截断，完整内容请复制/下载）';
 const EMPTY_HTML = '<p class="md-empty">（空内容）</p>';
@@ -230,52 +235,139 @@ function nextLineIsTable(source, lineEnd) {
   return /^\s*\|/.test(next);
 }
 
-/** 首个「预算已满之后的空行边界」；围栏内空行不算。找不到 / 单块过大 ⇒ -1。 */
-function blankBoundaryOf(source, start, budget) {
-  let i = start;
-  let cost = 0;
-  let fence = null;
-  while (i < source.length) {
-    let lineEnd = source.indexOf('\n', i);
-    if (lineEnd < 0) lineEnd = source.length;
-    const line = source.slice(i, lineEnd);
-    fence = fenceStateOf(line, fence);
-    if (!fence && line.trim() === '') {
-      if (cost >= budget) return Math.min(lineEnd + 1, source.length);
+function lineIsTable(line) {
+  return /^\s*\|/.test(line);
+}
+
+function lineIsListItem(line) {
+  return /^\s*(?:[-*+]|\d+[.)])\s+/.test(line);
+}
+
+function inlineMarksOf(line) {
+  return line.split('**').length - 1 + (line.split('](').length - 1);
+}
+
+/** 单行文本的强制切点：按内联标记预算（单行没有空行可用）。⛔ 不切在 surrogate 中间。 */
+function forceInlineBoundary(source, start, budget) {
+  const target = Math.min(source.length, start + budget);
+  let marks = 0;
+  for (let i = start; i < target - 1; i += 1) {
+    if (source[i] === '*' && source[i + 1] === '*') {
+      marks += 1;
+      if (marks >= SEGMENT_INLINE_MARKS) return i + 2;
+      i += 1;
     }
-    if (!fence && cost > budget * 2) return -1;
-    cost += textCost(line) + 1;
-    i = lineEnd + 1;
+  }
+  let end = target;
+  const code = source.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return Math.max(start + 1, end);
+}
+
+function segmentBudgetReached(st) {
+  return (
+    st.cost >= st.limit ||
+    st.blocks >= SEGMENT_BLOCKS ||
+    st.tableRows >= SEGMENT_TABLE_ROWS ||
+    st.marks >= SEGMENT_INLINE_MARKS
+  );
+}
+
+function segmentOverLimit(st) {
+  return (
+    st.cost > st.limit * 2 ||
+    st.blocks > SEGMENT_BLOCKS * 1.5 ||
+    st.tableRows > SEGMENT_TABLE_ROWS * 1.5 ||
+    st.marks > SEGMENT_INLINE_MARKS * 1.5
+  );
+}
+
+function blankCut(st, line, lineEnd, sourceLength) {
+  if (st.fence || line.trim() !== '') return -1;
+  st.blocks += 1;
+  return segmentBudgetReached(st) ? Math.min(lineEnd + 1, sourceLength) : -1;
+}
+
+function trackLine(st, line, lineEnd, sourceLength, source) {
+  const inTable = !st.fence && lineIsTable(line);
+  if (inTable) st.tableRows += 1;
+  st.marks += inlineMarksOf(line);
+  st.cost += textCost(line) + 1;
+  if (!st.fence && lineEnd < sourceLength && !nextLineIsTable(source, lineEnd)) st.lastLineBreak = lineEnd + 1;
+  return inTable;
+}
+
+/** 消费一行并返回切点（-1 = 继续）。拆出以保持 findSegmentEnd 低复杂度。 */
+function consumeSegmentLine(st, line, lineEnd, sourceLength, source) {
+  st.fence = fenceStateOf(line, st.fence);
+  const blank = blankCut(st, line, lineEnd, sourceLength);
+  if (blank > 0) return blank;
+  const inTable = trackLine(st, line, lineEnd, sourceLength, source);
+  if (!st.fence && segmentOverLimit(st)) {
+    if (st.lastLineBreak > st.start) return st.lastLineBreak;
+    if (inTable && lineEnd < sourceLength) return lineEnd + 1;
   }
   return -1;
 }
 
-/** 无空行可切时的回退：预算 2 倍后的行边界；不切在围栏/表格行中间。 */
-function lineBoundaryOf(source, start, budget) {
-  let i = start;
-  let cost = 0;
-  let fence = null;
-  let lastLineBreak = -1;
-  while (i < source.length) {
-    let lineEnd = source.indexOf('\n', i);
+function scanSegment(source, start, limit) {
+  const st = { start: start, limit: limit, cost: 0, blocks: 0, tableRows: 0, marks: 0, fence: null, lastLineBreak: -1, sawNewline: false, i: start };
+  while (st.i < source.length) {
+    let lineEnd = source.indexOf('\n', st.i);
     if (lineEnd < 0) lineEnd = source.length;
-    const line = source.slice(i, lineEnd);
-    fence = fenceStateOf(line, fence);
-    if (!fence && lineEnd < source.length && !nextLineIsTable(source, lineEnd)) lastLineBreak = lineEnd + 1;
-    cost += textCost(line) + 1;
-    i = lineEnd + 1;
-    if (cost > budget * 2 && !fence && lastLineBreak > start) return lastLineBreak;
+    else st.sawNewline = true;
+    const cut = consumeSegmentLine(st, source.slice(st.i, lineEnd), lineEnd, source.length, source);
+    if (cut > start) return cut;
+    st.i = lineEnd + 1;
   }
-  return source.length;
+  return -1;
 }
 
 /**
- * 找一段的结束位置（R2 · B 方案）：优先空行边界；极端单块退回行边界。
- * 两条路都避开代码围栏（不会从围栏中间切）。
+ * 找一段的结束位置（R2 · B 方案；v0.2.1 结构预算）：
+ *   · 优先空行边界（围栏内不算）；
+ *   · 预算 = min(字符预算, 块/表格行/内联标记结构预算)；
+ *   · 无空行时退到行边界；整段无换行 ⇒ 按内联标记/字符强制切；
+ *   · 围栏内不切；单表过大时允许在行边界切开（UI 明示可能拆表）。
  */
 function findSegmentEnd(source, start, budget) {
-  const blank = blankBoundaryOf(source, start, budget);
-  return blank >= 0 ? blank : lineBoundaryOf(source, start, budget);
+  const limit = Math.max(1024, budget | 0);
+  const singleLine = source.indexOf('\n', start) < 0;
+  if (singleLine) {
+    const rest = source.slice(start).trim();
+    // 单张图片/链接是原子块（data URI 可能 >256KB）：切开只会把 URI 截断成裂图，不切。
+    if (/^!?\[[^\]]*\]\([^)\n]*\)$/.test(rest)) return source.length;
+  }
+  const cut = scanSegment(source, start, limit);
+  if (cut > start) return cut;
+  if (singleLine) return forceInlineBoundary(source, start, limit);
+  return source.length;
+}
+
+/** F2：全量预扫引用式链接定义（跳过围栏），供每段注入（定义本身不产生可见输出）。 */
+function collectRefDefinitions(source) {
+  const defs = [];
+  let fence = null;
+  let i = 0;
+  while (i < source.length) {
+    let end = source.indexOf('\n', i);
+    if (end < 0) end = source.length;
+    const line = source.slice(i, end);
+    const nextFence = fenceStateOf(line, fence);
+    if (!fence && /^ {0,3}\[[^\]]+\]:\s*\S+/.test(line)) defs.push(line);
+    fence = nextFence;
+    i = end + 1;
+  }
+  return defs.length ? defs.join('\n') + '\n' : '';
+}
+
+/** F2：分段处若落在列表/表格内，给 UI 一句限制说明（不是静默）。 */
+function splitNote(source, end) {
+  const before = source.slice(0, end).trimEnd().split('\n').pop() || '';
+  const after = source.slice(end).trimStart().split('\n')[0] || '';
+  if (lineIsTable(before) || lineIsTable(after)) return '（分段处表格可能拆成两段，后续行仍会完整显示）';
+  if (lineIsListItem(before) && lineIsListItem(after)) return '（分段处列表编号可能重新开始）';
+  return '';
 }
 
 function humanSize(chars) {
@@ -294,14 +386,15 @@ function truncateSource(source) {
 }
 
 /** 渲染单个片段：marked → 预清洗图片 → sanitize → R1 资源总闸。 */
-function renderSegmentHtml(segmentText) {
+function renderSegmentHtml(segmentText, defsText) {
   const marked = markedApi();
   const purifier = purifyApi();
   if (!marked || typeof marked.parse !== 'function') throw new Error('Markdown 渲染器未加载（vendor/marked.min.js）');
   if (!purifier || typeof purifier.sanitize !== 'function') throw new Error('消毒器未加载（vendor/dompurify.min.js）');
   installSanitizeHook(purifier);
+  const body = defsText ? defsText + '\n' + segmentText : segmentText;
   const template = document.createElement('template');
-  template.innerHTML = String(marked.parse(segmentText, { gfm: true, breaks: false, async: false }));
+  template.innerHTML = String(marked.parse(body, { gfm: true, breaks: false, async: false }));
   replaceImages(template.content);
   // 直接对 DOM 片段消毒（RETURN_DOM_FRAGMENT）+ 在片段上跑总闸 ⇒ 少两次 serialize/parse（首屏预算内）。
   const clean = purifier.sanitize(template.content, PURIFY_DOM_CONFIG);
@@ -322,15 +415,18 @@ export function renderMarkdown(text, opts) {
   if (!raw.trim()) return EMPTY_HTML;
   const limited = truncateSource(raw);
   const budget = (opts && opts.segmentChars) || SEGMENT_TEXT_CHARS;
+  const defs = collectRefDefinitions(limited.text);
   const end = findSegmentEnd(limited.text, 0, budget);
-  let html = renderSegmentHtml(limited.text.slice(0, end));
+  let html = renderSegmentHtml(limited.text.slice(0, end), defs);
   if (end < limited.text.length) {
     html +=
       '<p class="md-more-note">（已渲染前 ' +
       humanSize(end) +
       ' / 共 ' +
       humanSize(limited.text.length) +
-      '；点「继续渲染」查看余下内容，复制/下载仍为完整原文）</p>';
+      '；点「继续渲染」查看余下内容，复制/下载仍为完整原文）' +
+      splitNote(limited.text, end) +
+      '</p>';
   }
   if (limited.cut) html += '<p class="md-cut">' + CUT_HINT + '</p>';
   return html;
@@ -344,8 +440,8 @@ export function renderMarkdown(text, opts) {
  * @param {{segmentChars?: number}} [opts]
  * @returns {string} 写入后的 innerHTML
  */
-function statusText(pos, total) {
-  return '已渲染前 ' + humanSize(pos) + ' / 共 ' + humanSize(total);
+function statusText(pos, total, note) {
+  return '已渲染前 ' + humanSize(pos) + ' / 共 ' + humanSize(total) + (note || '');
 }
 
 /** 按钮文案（裁决 §三.2）：显示剩余量；耗尽时返回「已全部渲染」。 */
@@ -358,8 +454,9 @@ function moreLabel(state) {
 
 function renderNextSegment(state) {
   const end = findSegmentEnd(state.source, state.pos, state.budget);
-  const html = renderSegmentHtml(state.source.slice(state.pos, end));
+  const html = renderSegmentHtml(state.source.slice(state.pos, end), state.defs);
   state.pos = end;
+  state.note = splitNote(state.source, end);
   return html;
 }
 
@@ -378,7 +475,7 @@ function advanceSegment(state, wrap, status, button) {
     if (state.pos >= state.source.length) {
       markAllRendered(wrap);
     } else {
-      status.textContent = statusText(state.pos, state.source.length);
+      status.textContent = statusText(state.pos, state.source.length, state.note);
       button.textContent = moreLabel(state);
     }
   } catch (e) {
@@ -390,7 +487,7 @@ function advanceSegment(state, wrap, status, button) {
 function makeMoreControl(state) {
   const wrap = document.createElement('div');
   wrap.className = 'md-more-wrap';
-  wrap.innerHTML = '<p class="md-more-status">' + statusText(state.pos, state.source.length) + '</p>';
+  wrap.innerHTML = '<p class="md-more-status">' + statusText(state.pos, state.source.length, state.note) + '</p>';
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'md-more';
@@ -411,7 +508,7 @@ export function mountPreview(el, text, opts) {
   }
   const limited = truncateSource(raw);
   const budget = (opts && opts.segmentChars) || SEGMENT_TEXT_CHARS;
-  const state = { source: limited.text, budget: budget, pos: 0 };
+  const state = { source: limited.text, budget: budget, pos: 0, defs: collectRefDefinitions(limited.text), note: '' };
   el.innerHTML = renderNextSegment(state);
   if (state.pos < state.source.length) el.appendChild(makeMoreControl(state));
   if (limited.cut) {

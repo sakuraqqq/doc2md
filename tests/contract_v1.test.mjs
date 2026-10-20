@@ -6424,6 +6424,59 @@ function buildRealMarkdownFixture(targetChars) {
   return { md: blocks.join('\n\n'), blocks: blocks.length };
 }
 
+/** A17 夹具②：表格密集 1 MB（一整张表，行级结构成本）。 */
+function buildTableDenseFixture(targetChars) {
+  const rows = [];
+  let total = 0;
+  let i = 0;
+  const head = '| 列 A | 列 B |\n| --- | --- |\n';
+  while (total < targetChars) {
+    i += 1;
+    const row = '| T' + i + ' | 值 ' + i + ' |';
+    rows.push(row);
+    total += row.length + 1;
+  }
+  return { md: head + rows.join('\n'), rows: rows.length };
+}
+
+/** A17 夹具③：34 万小段落 1 MB（空行多、块多）。 */
+function buildTinyParagraphsFixture(targetChars) {
+  const n = Math.ceil(targetChars / 3);
+  return { md: 'x\n\n'.repeat(n), paragraphs: n };
+}
+
+/** A17/A19 夹具④：960 KB 单行 + 16 万 **b**（无换行、内联标记密集）。 */
+function buildSingleLineBoldFixture() {
+  const md = '**b**'.repeat(160000);
+  return { md: md, chars: md.length };
+}
+
+/** 冷启单次：新页面 + 首次 mount，不预热、不取最小（A17/A19 口径）。 */
+async function coldMountMeasure(ctx, server, md) {
+  const p = await ctx.newPage();
+  try {
+    await p.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    return await p.evaluate((text) => {
+      const d = document.createElement('div');
+      document.body.append(d);
+      const t0 = performance.now();
+      window.__doc2md.mountPreview(d, text);
+      const ms = performance.now() - t0;
+      const out = {
+        ms: ms,
+        html: d.innerHTML.slice(0, 20000),
+        textLen: d.textContent.length,
+        more: !!d.querySelector('.md-more'),
+        button: (d.querySelector('.md-more') || {}).textContent || '',
+      };
+      d.remove();
+      return out;
+    }, md);
+  } finally {
+    await p.close();
+  }
+}
+
 /** A14 统一取证（卡 058 R1）：拦截非本服务请求 → 返回 { html, external[] }。
  *  等待 waitMs 让浏览器有机会发起子资源请求（video/audio/input[type=image] 等可能异步取资源）。 */
 async function collectExternalOnMount(page, ctx, server, md, waitMs) {
@@ -6836,29 +6889,21 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         for (const c of cases) {
           const fx = buildRealMarkdownFixture(c.chars);
           assert.ok(fx.blocks >= 5000, c.label + ' 夹具块数不足 5000：' + fx.blocks);
-          // ① 首屏：3 次独立测量取最小值（机器负载会污染单次；日志留三次数 + 首屏按钮文案）
-          const first = await mp.evaluate((text) => {
-            const runs = [];
-            let buttonText = '';
-            // 预热一次（丢弃）：让 marked/DOMPurify 走完 JIT，再进入计时
-            {
-              const warm = document.createElement('div');
-              document.body.append(warm);
-              window.__doc2md.mountPreview(warm, text);
-              warm.remove();
-            }
-            for (let k = 0; k < 5; k += 1) {
-              const d = document.createElement('div');
-              document.body.append(d);
-              const t0 = performance.now();
-              window.__doc2md.mountPreview(d, text);
-              runs.push(performance.now() - t0);
-              if (k === 0) buttonText = (d.querySelector('.md-more') || {}).textContent || '';
-              d.remove();
-            }
-            return { runs: runs, buttonText: buttonText };
+          // ① 首屏：冷启单次（v0.2.1 · A17 口径，禁止预热+取最小当结论）
+          const coldPage = await ctx.newPage();
+          await coldPage.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+          const first = await coldPage.evaluate((text) => {
+            const d = document.createElement('div');
+            document.body.append(d);
+            const t0 = performance.now();
+            window.__doc2md.mountPreview(d, text);
+            const ms = performance.now() - t0;
+            const buttonText = (d.querySelector('.md-more') || {}).textContent || '';
+            d.remove();
+            return { ms: ms, buttonText: buttonText };
           }, fx.md);
-          const firstMs = Math.min(...first.runs);
+          await coldPage.close();
+          const firstMs = first.ms;
           // ② 续渲染：点到底，核对 token 数 = 块数 + 「已全部渲染」
           const r = await mp.evaluate(
             async ({ text }) => {
@@ -6883,7 +6928,7 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
           );
           console.log(
             '[Z7-7] ' + c.label + ' blocks=' + fx.blocks + ' chars=' + fx.md.length +
-              ' first=' + firstMs.toFixed(1) + 'ms (runs=' + first.runs.map((x) => x.toFixed(1)).join('/') + ')' +
+              ' first=' + firstMs.toFixed(1) + 'ms (cold single)' +
               ' clicks=' + r.clicks + ' tokens=' + r.tokens + '/' + fx.blocks +
               ' button="' + first.buttonText + '"'
           );
@@ -6923,6 +6968,46 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.ok(cut.firstTokens > 0, '>4MB 首段没有渲染内容');
         assert.equal(cut.hasTail, false, '>4MB 截断后仍包含 4 MB 之后的尾部块');
         await mp.close();
+      });
+
+      await t.test('Z7-17 A17 冷启单次：四类真实结构首屏均 <500ms（单次原始值，禁止预热取最小）', async () => {
+        const real = buildRealMarkdownFixture(1024 * 1024);
+        const table = buildTableDenseFixture(1024 * 1024);
+        const tiny = buildTinyParagraphsFixture(1024 * 1024);
+        const single = buildSingleLineBoldFixture();
+        const cases = [
+          { label: 'structured-1MB', md: real.md, meta: 'blocks=' + real.blocks },
+          { label: 'table-1MB', md: table.md, meta: 'rows=' + table.rows },
+          { label: 'tiny-1MB', md: tiny.md, meta: 'paragraphs=' + tiny.paragraphs },
+          { label: 'singleline-960KB', md: single.md, meta: 'chars=' + single.chars },
+        ];
+        for (const c of cases) {
+          const r = await coldMountMeasure(ctx, server, c.md);
+          console.log('[A17] ' + c.label + ' ' + c.meta + ' cold-single=' + r.ms.toFixed(1) + 'ms more=' + r.more + ' button="' + r.button + '"');
+          assert.ok(r.ms < 500, c.label + ' 冷启单次 ' + r.ms.toFixed(1) + 'ms ≥ 500ms');
+          assert.equal(r.more, true, c.label + ' 未出现续渲染');
+        }
+      });
+
+      await t.test('Z7-18 A18 引用式链接等价：定义在 256KB 之后，首段仍解析（href 一致）', async () => {
+        const blocks = [];
+        for (let i = 0; i < 1200; i += 1) blocks.push('段落 REF-' + i + '：' + '填充内容用于把引用定义推到分段线之后。'.repeat(12));
+        const md = '开头 [链接][a]\n\n' + blocks.join('\n\n') + '\n\n[a]: https://example.com/ref-target\n\n结尾';
+        const r = await coldMountMeasure(ctx, server, md);
+        const okHref = /href="https:\/\/example\.com\/ref-target"[^>]*>链接<\/a>/.test(r.html);
+        console.log('[A18] chars=' + md.length + ' first=' + r.ms.toFixed(1) + 'ms more=' + r.more + ' href=' + okHref);
+        assert.ok(r.more, 'A18 夹具未触发分段');
+        assert.ok(okHref, '首段引用链接未解析（定义在分段线之后）：' + r.html.slice(0, 500));
+      });
+
+      await t.test('Z7-19 A19 单行大文档：有续渲染且首屏 <500ms', async () => {
+        const fx = buildSingleLineBoldFixture();
+        const r = await coldMountMeasure(ctx, server, fx.md);
+        console.log('[A19] chars=' + fx.chars + ' cold-single=' + r.ms.toFixed(1) + 'ms more=' + r.more + ' textLen=' + r.textLen + ' button="' + r.button + '"');
+        assert.ok(r.ms < 500, 'A19 单行文档冷启单次 ' + r.ms.toFixed(1) + 'ms ≥ 500ms');
+        assert.equal(r.more, true, 'A19 单行大文档没有「继续渲染」');
+        assert.ok(r.textLen < fx.chars / 2, 'A19 首屏文本过长（未强制切段）：' + r.textLen + ' / ' + fx.chars);
+        assert.ok(r.button.startsWith('继续渲染（剩余约'), 'A19 按钮文案不对：' + r.button);
       });
 
       await t.test('Z7-9 A6+ 选择后批量「全部保存」固定条在视口内（一键下载不再被顶出屏幕）', async () => {
