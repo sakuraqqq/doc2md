@@ -6137,9 +6137,9 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
           const set = (document.getElementById('panel-settings') || {}).textContent || '';
           return {
             footers: document.querySelectorAll('footer').length,
-            convVersion: conv.includes('v0.2.0'),
+            convVersion: conv.includes('v0.2.1'),
             convLicense: /许可|MIT/.test(conv),
-            setVersion: set.includes('v0.2.0'),
+            setVersion: set.includes('v0.2.1'),
             setLicense: /MIT|许可/.test(set),
             setAbout: set.includes('关于'),
           };
