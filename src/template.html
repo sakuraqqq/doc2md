@@ -249,6 +249,15 @@
     border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); font-size: 13px;
   }
   .md-cut, .md-empty { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+  /* R2：大文本分段续渲染（首段 256 KB +「继续渲染」按需追加） */
+  .md-more-wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 0; }
+  .md-more-status { margin: 0; color: var(--muted); font-size: 13px; }
+  .md-more {
+    min-height: 40px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--panel2); color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer;
+  }
+  .md-more:hover { border-color: var(--accent-soft); }
+  .md-more:disabled { opacity: .6; cursor: default; }
   .md-preview-error { color: var(--err); }
 
   /* ── 全屏查看器 ── */

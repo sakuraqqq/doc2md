@@ -249,6 +249,15 @@
     border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); font-size: 13px;
   }
   .md-cut, .md-empty { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+  /* R2：大文本分段续渲染（首段 256 KB +「继续渲染」按需追加） */
+  .md-more-wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 0; }
+  .md-more-status { margin: 0; color: var(--muted); font-size: 13px; }
+  .md-more {
+    min-height: 40px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--panel2); color: var(--text); font: inherit; font-size: 13.5px; cursor: pointer;
+  }
+  .md-more:hover { border-color: var(--accent-soft); }
+  .md-more:disabled { opacity: .6; cursor: default; }
   .md-preview-error { color: var(--err); }
 
   /* ── 全屏查看器 ── */
@@ -2099,9 +2108,9 @@ ${xlsxRowsToMd(kept)}`);
   }
 
   // src/markdown-preview.js
-  var MAX_RENDER_CHARS = 4 * 1024 * 1024;
+  var SEGMENT_TEXT_CHARS = 256 * 1024;
+  var SEGMENT_RAW_CHARS = 8 * 1024 * 1024;
   var IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-  var CUT_HINT = "\uFF08\u6E32\u67D3\u9884\u89C8\u5DF2\u622A\u65AD\uFF0C\u5B8C\u6574\u5185\u5BB9\u8BF7\u590D\u5236/\u4E0B\u8F7D\uFF09";
   var EMPTY_HTML = '<p class="md-empty">\uFF08\u7A7A\u5185\u5BB9\uFF09</p>';
   var FORBIDDEN_TAGS = [
     "script",
@@ -2129,6 +2138,7 @@ ${xlsxRowsToMd(kept)}`);
     USE_PROFILES: { html: true },
     ADD_TAGS: ["input"]
   };
+  var PURIFY_DOM_CONFIG = { ...PURIFY_CONFIG, RETURN_DOM_FRAGMENT: true };
   var IMAGE_DATA_RE = /^data:image\/(?:png|jpe?g|gif|webp);base64,/i;
   var DANGEROUS_SCHEME_RE = /^(?:javascript|vbscript|data)\s*:/i;
   var EXTERNAL_LINK_RE = /^https?:/i;
@@ -2242,36 +2252,148 @@ ${xlsxRowsToMd(kept)}`);
     });
     hookInstalled = true;
   }
-  function cutSource(text, max) {
-    if (text.length <= max) return { text, cut: false };
-    let end = max;
-    const code = text.charCodeAt(end - 1);
-    if (code >= 55296 && code <= 56319) end -= 1;
-    return { text: text.slice(0, end), cut: true };
+  var DATA_URI_RE = /data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi;
+  function textCost(text) {
+    let cost = text.length;
+    DATA_URI_RE.lastIndex = 0;
+    let m;
+    while (m = DATA_URI_RE.exec(text)) cost -= m[0].length;
+    return cost;
   }
-  function renderMarkdown(text, opts) {
-    const source = String(text == null ? "" : text);
-    if (!source.trim()) return EMPTY_HTML;
+  function fenceMark(line) {
+    const m = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    return m ? { char: m[1][0], len: m[1].length } : null;
+  }
+  function fenceStateOf(line, fence) {
+    const fm = fenceMark(line);
+    if (!fm) return fence;
+    if (!fence) return { char: fm.char, len: fm.len };
+    if (fm.char === fence.char && fm.len >= fence.len) return null;
+    return fence;
+  }
+  function nextLineIsTable(source, lineEnd) {
+    if (lineEnd >= source.length) return false;
+    const nextEnd = source.indexOf("\n", lineEnd + 1);
+    const next = source.slice(lineEnd + 1, nextEnd < 0 ? source.length : nextEnd);
+    return /^\s*\|/.test(next);
+  }
+  function blankBoundaryOf(source, start, budget) {
+    let i = start;
+    let cost = 0;
+    let fence = null;
+    while (i < source.length) {
+      let lineEnd = source.indexOf("\n", i);
+      if (lineEnd < 0) lineEnd = source.length;
+      const line = source.slice(i, lineEnd);
+      fence = fenceStateOf(line, fence);
+      if (!fence && line.trim() === "") {
+        if (cost >= budget || i - start >= SEGMENT_RAW_CHARS) return Math.min(lineEnd + 1, source.length);
+      }
+      if (!fence && cost > budget * 2) return -1;
+      cost += textCost(line) + 1;
+      i = lineEnd + 1;
+    }
+    return -1;
+  }
+  function lineBoundaryOf(source, start, budget) {
+    let i = start;
+    let cost = 0;
+    let fence = null;
+    let lastLineBreak = -1;
+    while (i < source.length) {
+      let lineEnd = source.indexOf("\n", i);
+      if (lineEnd < 0) lineEnd = source.length;
+      const line = source.slice(i, lineEnd);
+      fence = fenceStateOf(line, fence);
+      if (!fence && lineEnd < source.length && !nextLineIsTable(source, lineEnd)) lastLineBreak = lineEnd + 1;
+      cost += textCost(line) + 1;
+      i = lineEnd + 1;
+      if (cost > budget * 2 && !fence && lastLineBreak > start) return lastLineBreak;
+    }
+    return source.length;
+  }
+  function findSegmentEnd(source, start, budget) {
+    const blank = blankBoundaryOf(source, start, budget);
+    return blank >= 0 ? blank : lineBoundaryOf(source, start, budget);
+  }
+  function humanSize(chars) {
+    if (chars >= 1024 * 1024) return (chars / (1024 * 1024)).toFixed(1) + " MB";
+    if (chars >= 1024) return Math.round(chars / 1024) + " KB";
+    return chars + " \u5B57\u7B26";
+  }
+  function renderSegmentHtml(segmentText) {
     const marked = markedApi();
     const purifier = purifyApi();
     if (!marked || typeof marked.parse !== "function") throw new Error("Markdown \u6E32\u67D3\u5668\u672A\u52A0\u8F7D\uFF08vendor/marked.min.js\uFF09");
     if (!purifier || typeof purifier.sanitize !== "function") throw new Error("\u6D88\u6BD2\u5668\u672A\u52A0\u8F7D\uFF08vendor/dompurify.min.js\uFF09");
-    const max = opts && opts.maxChars || MAX_RENDER_CHARS;
-    const cut = cutSource(source, max);
     installSanitizeHook(purifier);
     const template = document.createElement("template");
-    template.innerHTML = String(marked.parse(cut.text, { gfm: true, breaks: false, async: false }));
+    template.innerHTML = String(marked.parse(segmentText, { gfm: true, breaks: false, async: false }));
     replaceImages(template.content);
-    const sanitized = purifier.sanitize(template.innerHTML, PURIFY_CONFIG);
-    const out = document.createElement("template");
-    out.innerHTML = sanitized;
-    enforceResourcePolicy(out.content);
-    const html = out.innerHTML;
-    return cut.cut ? html + '<p class="md-cut">' + CUT_HINT + "</p>" : html;
+    const clean = purifier.sanitize(template.content, PURIFY_DOM_CONFIG);
+    enforceResourcePolicy(clean);
+    const holder = document.createElement("div");
+    holder.appendChild(clean);
+    return holder.innerHTML;
+  }
+  function renderMarkdown(text, opts) {
+    const source = String(text == null ? "" : text);
+    if (!source.trim()) return EMPTY_HTML;
+    const budget = opts && opts.segmentChars || SEGMENT_TEXT_CHARS;
+    const end = findSegmentEnd(source, 0, budget);
+    const html = renderSegmentHtml(source.slice(0, end));
+    if (end >= source.length) return html;
+    return html + '<p class="md-cut md-more-note">\uFF08\u9884\u89C8\u5DF2\u622A\u65AD\uFF1A\u5DF2\u6E32\u67D3\u524D ' + humanSize(end) + " / \u5171 " + humanSize(source.length) + "\uFF1B\u70B9\u300C\u7EE7\u7EED\u6E32\u67D3\u300D\u67E5\u770B\u4F59\u4E0B\u5185\u5BB9\uFF0C\u590D\u5236/\u4E0B\u8F7D\u4ECD\u4E3A\u5B8C\u6574\u539F\u6587\uFF09</p>";
+  }
+  function statusText(pos, total) {
+    return "\u5DF2\u6E32\u67D3\u524D " + humanSize(pos) + " / \u5171 " + humanSize(total);
+  }
+  function renderNextSegment(state) {
+    const end = findSegmentEnd(state.source, state.pos, state.budget);
+    const html = renderSegmentHtml(state.source.slice(state.pos, end));
+    state.pos = end;
+    return html;
+  }
+  function advanceSegment(state, wrap, status, button) {
+    try {
+      const tpl = document.createElement("template");
+      tpl.innerHTML = renderNextSegment(state);
+      wrap.parentNode.insertBefore(tpl.content, wrap);
+      if (state.pos >= state.source.length) {
+        wrap.remove();
+      } else {
+        status.textContent = statusText(state.pos, state.source.length);
+      }
+    } catch (e) {
+      status.textContent = "\u9884\u89C8\u52A0\u8F7D\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF");
+      button.disabled = true;
+    }
+  }
+  function makeMoreControl(state) {
+    const wrap = document.createElement("div");
+    wrap.className = "md-more-wrap";
+    wrap.innerHTML = '<p class="md-more-status">' + statusText(state.pos, state.source.length) + "</p>";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "md-more";
+    button.textContent = "\u7EE7\u7EED\u6E32\u67D3";
+    wrap.appendChild(button);
+    const status = wrap.querySelector(".md-more-status");
+    button.addEventListener("click", () => advanceSegment(state, wrap, status, button));
+    return wrap;
   }
   function mountPreview(el, text, opts) {
     if (!el) throw new Error("mountPreview \u9700\u8981\u5BB9\u5668\u5143\u7D20");
-    el.innerHTML = renderMarkdown(text, opts);
+    const source = String(text == null ? "" : text);
+    el.innerHTML = "";
+    if (!source.trim()) {
+      el.innerHTML = EMPTY_HTML;
+      return el.innerHTML;
+    }
+    const budget = opts && opts.segmentChars || SEGMENT_TEXT_CHARS;
+    const state = { source, budget, pos: 0 };
+    el.innerHTML = renderNextSegment(state);
+    if (state.pos < source.length) el.appendChild(makeMoreControl(state));
     return el.innerHTML;
   }
 
