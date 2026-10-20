@@ -16,15 +16,16 @@
  *   · 其它（http(s)/file/相对/data: 超限）⇒ <span class="md-img-placeholder">，声明不显示原因；
  *   · ⛔ 不静默裂图。
  *
- * 截断（A8）：默认上限 1MB（与 textarea.md 的 Q 组口径同源）；若实测渲染 > 500ms，
- *   由调用方/常量收紧到 256KB，并在 UI 明示「（渲染预览已截断…）」。
+ * 分段渲染（R2 · 2026-10-20 · B 方案）：
+ *   · 首段 = 256 KB「文本」（base64 负载不计）；点「继续渲染」按需追加下一段；
+ *   · 块按空行切，不从代码围栏/表格中间切；极端无空行输入退回行边界；
+ *   · 单图 ≤2 MB 规则不变（A5）；图片不占文本预算（卡面 §13.2.3）；
+ *   · 4 MB 总上限取消：不再丢内容，改为「分段 + 每段原始 8 MB 硬顶」；
+ *     理由与两档耗时见回执 §18 / `.私档/卡/c058/证据/A15-*.json`。
  */
-// 实测：1MB 渲染 34.5ms（headless，2026-10-18 卡 058）⇒ A8 的「>500ms 才截断」未触发。
-// 仍保留 4MB 安全上限：base64 图片可能让单篇 md 远超 1MB（A5 的 2MB 图 ≈2.9MB data URI），
-// 上限必须容得下图片策略先行处理；超过 4MB 才截断并明示（⛔ 不静默）。
-const MAX_RENDER_CHARS = 4 * 1024 * 1024;
+const SEGMENT_TEXT_CHARS = 256 * 1024;
+const SEGMENT_RAW_CHARS = 8 * 1024 * 1024;
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-const CUT_HINT = '（渲染预览已截断，完整内容请复制/下载）';
 const EMPTY_HTML = '<p class="md-empty">（空内容）</p>';
 const FORBIDDEN_TAGS = [
   'script',
@@ -52,6 +53,7 @@ const PURIFY_CONFIG = {
   USE_PROFILES: { html: true },
   ADD_TAGS: ['input'],
 };
+const PURIFY_DOM_CONFIG = { ...PURIFY_CONFIG, RETURN_DOM_FRAGMENT: true };
 const IMAGE_DATA_RE = /^data:image\/(?:png|jpe?g|gif|webp);base64,/i;
 const DANGEROUS_SCHEME_RE = /^(?:javascript|vbscript|data)\s*:/i;
 const EXTERNAL_LINK_RE = /^https?:/i;
@@ -196,51 +198,192 @@ function installSanitizeHook(purifier) {
   hookInstalled = true;
 }
 
-function cutSource(text, max) {
-  if (text.length <= max) return { text: text, cut: false };
-  let end = max;
-  const code = text.charCodeAt(end - 1);
-  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
-  return { text: text.slice(0, end), cut: true };
+const DATA_URI_RE = /data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+/gi;
+
+/** 文本成本：base64 图片负载不计（卡面 §13.2.3「文本与 base64 分开预算」）。 */
+function textCost(text) {
+  let cost = text.length;
+  DATA_URI_RE.lastIndex = 0;
+  let m;
+  while ((m = DATA_URI_RE.exec(text))) cost -= m[0].length;
+  return cost;
+}
+
+function fenceMark(line) {
+  const m = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+  return m ? { char: m[1][0], len: m[1].length } : null;
+}
+
+function fenceStateOf(line, fence) {
+  const fm = fenceMark(line);
+  if (!fm) return fence;
+  if (!fence) return { char: fm.char, len: fm.len };
+  if (fm.char === fence.char && fm.len >= fence.len) return null;
+  return fence;
+}
+
+function nextLineIsTable(source, lineEnd) {
+  if (lineEnd >= source.length) return false;
+  const nextEnd = source.indexOf('\n', lineEnd + 1);
+  const next = source.slice(lineEnd + 1, nextEnd < 0 ? source.length : nextEnd);
+  return /^\s*\|/.test(next);
+}
+
+/** 首个「预算已满之后的空行边界」；围栏内空行不算。找不到 / 单块过大 ⇒ -1。 */
+function blankBoundaryOf(source, start, budget) {
+  let i = start;
+  let cost = 0;
+  let fence = null;
+  while (i < source.length) {
+    let lineEnd = source.indexOf('\n', i);
+    if (lineEnd < 0) lineEnd = source.length;
+    const line = source.slice(i, lineEnd);
+    fence = fenceStateOf(line, fence);
+    if (!fence && line.trim() === '') {
+      if (cost >= budget || i - start >= SEGMENT_RAW_CHARS) return Math.min(lineEnd + 1, source.length);
+    }
+    if (!fence && cost > budget * 2) return -1;
+    cost += textCost(line) + 1;
+    i = lineEnd + 1;
+  }
+  return -1;
+}
+
+/** 无空行可切时的回退：预算 2 倍后的行边界；不切在围栏/表格行中间。 */
+function lineBoundaryOf(source, start, budget) {
+  let i = start;
+  let cost = 0;
+  let fence = null;
+  let lastLineBreak = -1;
+  while (i < source.length) {
+    let lineEnd = source.indexOf('\n', i);
+    if (lineEnd < 0) lineEnd = source.length;
+    const line = source.slice(i, lineEnd);
+    fence = fenceStateOf(line, fence);
+    if (!fence && lineEnd < source.length && !nextLineIsTable(source, lineEnd)) lastLineBreak = lineEnd + 1;
+    cost += textCost(line) + 1;
+    i = lineEnd + 1;
+    if (cost > budget * 2 && !fence && lastLineBreak > start) return lastLineBreak;
+  }
+  return source.length;
 }
 
 /**
- * 渲染 Markdown 为已消毒 HTML。
+ * 找一段的结束位置（R2 · B 方案）：优先空行边界；极端单块退回行边界。
+ * 两条路都避开代码围栏（不会从围栏中间切）。
+ */
+function findSegmentEnd(source, start, budget) {
+  const blank = blankBoundaryOf(source, start, budget);
+  return blank >= 0 ? blank : lineBoundaryOf(source, start, budget);
+}
+
+function humanSize(chars) {
+  if (chars >= 1024 * 1024) return (chars / (1024 * 1024)).toFixed(1) + ' MB';
+  if (chars >= 1024) return Math.round(chars / 1024) + ' KB';
+  return chars + ' 字符';
+}
+
+/** 渲染单个片段：marked → 预清洗图片 → sanitize → R1 资源总闸。 */
+function renderSegmentHtml(segmentText) {
+  const marked = markedApi();
+  const purifier = purifyApi();
+  if (!marked || typeof marked.parse !== 'function') throw new Error('Markdown 渲染器未加载（vendor/marked.min.js）');
+  if (!purifier || typeof purifier.sanitize !== 'function') throw new Error('消毒器未加载（vendor/dompurify.min.js）');
+  installSanitizeHook(purifier);
+  const template = document.createElement('template');
+  template.innerHTML = String(marked.parse(segmentText, { gfm: true, breaks: false, async: false }));
+  replaceImages(template.content);
+  // 直接对 DOM 片段消毒（RETURN_DOM_FRAGMENT）+ 在片段上跑总闸 ⇒ 少两次 serialize/parse（首屏预算内）。
+  const clean = purifier.sanitize(template.content, PURIFY_DOM_CONFIG);
+  enforceResourcePolicy(clean);
+  const holder = document.createElement('div');
+  holder.appendChild(clean);
+  return holder.innerHTML;
+}
+
+/**
+ * 渲染 Markdown 为已消毒 HTML（只渲染首段；余下内容由 mountPreview 的「继续渲染」追加）。
  * @param {string} text Markdown 原文
- * @param {{maxChars?: number}} [opts]
+ * @param {{segmentChars?: number}} [opts]
  * @returns {string}
  */
 export function renderMarkdown(text, opts) {
   const source = String(text == null ? '' : text);
   if (!source.trim()) return EMPTY_HTML;
-  const marked = markedApi();
-  const purifier = purifyApi();
-  if (!marked || typeof marked.parse !== 'function') throw new Error('Markdown 渲染器未加载（vendor/marked.min.js）');
-  if (!purifier || typeof purifier.sanitize !== 'function') throw new Error('消毒器未加载（vendor/dompurify.min.js）');
-  const max = (opts && opts.maxChars) || MAX_RENDER_CHARS;
-  const cut = cutSource(source, max);
-  installSanitizeHook(purifier);
-  const template = document.createElement('template');
-  template.innerHTML = String(marked.parse(cut.text, { gfm: true, breaks: false, async: false }));
-  replaceImages(template.content);
-  const sanitized = purifier.sanitize(template.innerHTML, PURIFY_CONFIG);
-  // R1 总闸：sanitize 之后再按「资源属性语义」统一收口（src/srcset/poster/媒体容器/input）。
-  const out = document.createElement('template');
-  out.innerHTML = sanitized;
-  enforceResourcePolicy(out.content);
-  const html = out.innerHTML;
-  return cut.cut ? html + '<p class="md-cut">' + CUT_HINT + '</p>' : html;
+  const budget = (opts && opts.segmentChars) || SEGMENT_TEXT_CHARS;
+  const end = findSegmentEnd(source, 0, budget);
+  const html = renderSegmentHtml(source.slice(0, end));
+  if (end >= source.length) return html;
+  return (
+    html +
+    '<p class="md-cut md-more-note">（预览已截断：已渲染前 ' +
+    humanSize(end) +
+    ' / 共 ' +
+    humanSize(source.length) +
+    '；点「继续渲染」查看余下内容，复制/下载仍为完整原文）</p>'
+  );
 }
 
 /**
  * 把渲染结果挂到容器（同一次输入 ⇒ 同一段 HTML；不含实例态，A7）。
+ * 大文本：首段 256 KB +「继续渲染」按需追加；⛔ 不静默丢内容。
  * @param {Element} el
  * @param {string} text
- * @param {{maxChars?: number}} [opts]
+ * @param {{segmentChars?: number}} [opts]
  * @returns {string} 写入后的 innerHTML
  */
+function statusText(pos, total) {
+  return '已渲染前 ' + humanSize(pos) + ' / 共 ' + humanSize(total);
+}
+
+function renderNextSegment(state) {
+  const end = findSegmentEnd(state.source, state.pos, state.budget);
+  const html = renderSegmentHtml(state.source.slice(state.pos, end));
+  state.pos = end;
+  return html;
+}
+
+function advanceSegment(state, wrap, status, button) {
+  try {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = renderNextSegment(state);
+    wrap.parentNode.insertBefore(tpl.content, wrap);
+    if (state.pos >= state.source.length) {
+      wrap.remove();
+    } else {
+      status.textContent = statusText(state.pos, state.source.length);
+    }
+  } catch (e) {
+    status.textContent = '预览加载失败：' + (e && e.message ? e.message : '未知错误');
+    button.disabled = true;
+  }
+}
+
+function makeMoreControl(state) {
+  const wrap = document.createElement('div');
+  wrap.className = 'md-more-wrap';
+  wrap.innerHTML = '<p class="md-more-status">' + statusText(state.pos, state.source.length) + '</p>';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'md-more';
+  button.textContent = '继续渲染';
+  wrap.appendChild(button);
+  const status = wrap.querySelector('.md-more-status');
+  button.addEventListener('click', () => advanceSegment(state, wrap, status, button));
+  return wrap;
+}
+
 export function mountPreview(el, text, opts) {
   if (!el) throw new Error('mountPreview 需要容器元素');
-  el.innerHTML = renderMarkdown(text, opts);
+  const source = String(text == null ? '' : text);
+  el.innerHTML = '';
+  if (!source.trim()) {
+    el.innerHTML = EMPTY_HTML;
+    return el.innerHTML;
+  }
+  const budget = (opts && opts.segmentChars) || SEGMENT_TEXT_CHARS;
+  const state = { source: source, budget: budget, pos: 0 };
+  el.innerHTML = renderNextSegment(state);
+  if (state.pos < source.length) el.appendChild(makeMoreControl(state));
   return el.innerHTML;
 }
