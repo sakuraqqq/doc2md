@@ -1,6 +1,7 @@
 package io.github.sakuraqqq.doc2md;
 
 import android.app.Activity;
+import android.content.pm.ApplicationInfo;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentResolver;
@@ -32,6 +33,7 @@ import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CoderResult;
+import java.security.MessageDigest;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -220,6 +222,7 @@ public class Doc2mdNativePlugin extends Plugin {
             seq = openSeq;
             pendingOpen = null;
             clearActionStateLocked();
+            raceLog("OPEN_REQUEST seq=" + seq + " name=" + shortUri(intent.getData()));
         }
         // 读取放到后台线程（冷启动不卡主线程）；只有最新 generation 能写结果（F19：后完成者不得覆盖新请求）。
         // JS 侧 consumePendingOpen 在 reading=true 时退避重试（≤10 s：40 × 250 ms）。
@@ -235,6 +238,8 @@ public class Doc2mdNativePlugin extends Plugin {
             synchronized (openLock) {
                 latest = seq == openSeq;
                 if (latest) {
+                    raceLog("OPEN_COMMIT seq=" + seq + " name=" + shortUri(intent.getData())
+                            + " ok=" + okPayload);
                     pendingOpen = data;
                     if (okPayload) {
                         // G8：动作状态与 pendingOpen 在同一把锁里、且仅最新 generation 提交（避免界面 B、下载 A）。
@@ -249,6 +254,8 @@ public class Doc2mdNativePlugin extends Plugin {
                         clearActionStateLocked();
                     }
                     openReading = false;
+                } else {
+                    raceLog("OPEN_DROP seq=" + seq + " reason=stale name=" + shortUri(intent.getData()));
                 }
             }
             if (latest && data != null) {
@@ -260,6 +267,44 @@ public class Doc2mdNativePlugin extends Plugin {
                 }
             }
         }, "doc2md-open").start();
+    }
+
+    private boolean isDebuggable() {
+        try {
+            return (getContext().getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 卡 059 / Z9-16：debug 变体把竞态证据写到外部 files/race/native.log（ROM 会丢 app 日志）。 */
+    private void raceLog(String line) {
+        if (!isDebuggable()) {
+            return;
+        }
+        try {
+            File dir = getContext().getExternalFilesDir("race");
+            if (dir == null) {
+                return;
+            }
+            if (!dir.exists() && !dir.mkdirs()) {
+                return;
+            }
+            File f = new File(dir, "native.log");
+            try (FileOutputStream os = new FileOutputStream(f, true)) {
+                os.write((System.currentTimeMillis() + " " + line + "\n").getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static String shortUri(Uri uri) {
+        if (uri == null) {
+            return "";
+        }
+        String last = uri.getLastPathSegment();
+        String q = uri.getQueryParameter("name");
+        return q != null ? q : (last == null ? "?" : last);
     }
 
     /** 动作状态只在 openLock 内改；错误/新请求都要清（G8）。 */
@@ -434,9 +479,12 @@ public class Doc2mdNativePlugin extends Plugin {
                 r.put("bytes", bytes);
                 r.put("expected", sizeKnown ? expected : -1);
                 r.put("filename", actual[0] != null ? actual[0] : name);
+                raceLog("SAVE_ORIGINAL name=" + shortUri(uri) + " filename=" + actual[0]
+                        + " bytes=" + bytes + " expected=" + (sizeKnown ? expected : -1) + " pendingCleared=1");
                 call.resolve(r);
             } catch (Exception e) {
                 Log.w(TAG, "SAVE_ORIGINAL_FAIL " + e);
+                raceLog("SAVE_ORIGINAL_FAIL name=" + shortUri(uri) + " reason=" + e.getMessage());
                 call.reject("save original failed: " + e);
             }
         }, "doc2md-save").start();
@@ -447,9 +495,11 @@ public class Doc2mdNativePlugin extends Plugin {
     public void copyPendingOriginal(PluginCall call) {
         String text;
         boolean truncated;
+        Uri actionUri;
         synchronized (openLock) {
             text = pendingPreviewText;
             truncated = pendingTruncated;
+            actionUri = pendingUri;
         }
         JSObject r = new JSObject();
         if (text == null) {
@@ -487,6 +537,8 @@ public class Doc2mdNativePlugin extends Plugin {
             r.put("copied", true);
             r.put("verified", verified);
             r.put("chars", text.length());
+            raceLog("COPY_ORIGINAL name=" + shortUri(actionUri) + " chars=" + text.length() + " verified=" + verified);
+            raceLog("CLIP_SHA=" + sha256Hex(text));
             call.resolve(r);
         } catch (Exception e) {
             r.put("copied", false);
@@ -611,6 +663,20 @@ public class Doc2mdNativePlugin extends Plugin {
             }
         }
         return fallback;
+    }
+
+    private static String sha256Hex(String text) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(text.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : d) {
+                sb.append(String.format("%02x", b & 0xff));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "ERR";
+        }
     }
 
     private byte[] readPrefix(ContentResolver cr, Uri uri, int limit) throws Exception {
