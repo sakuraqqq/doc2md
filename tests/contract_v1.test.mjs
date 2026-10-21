@@ -7338,9 +7338,12 @@ function validateOpenWithManifest(xml) {
   }
   const patterns = new Set();
   for (const f of filters) for (const m of f.body.matchAll(/android:pathPattern="([^"]+)"/g)) patterns.add(m[1]);
+  // F4（卡 059 退回）：aapt2 会把源 XML 的 `\.` 归一成 `.`（APK 内实测 `.*.md`）。
+  // Android SIMPLE_GLOB 里 `.` 是字面量 ⇒ 两种写法语义相同，断言按归一后比较（真机 URI 负例另测）。
+  const normalized = new Set([...patterns].map((s) => s.replace(/\\./g, '.')));
   for (const ext of ['md', 'markdown']) {
-    for (const p of ['.*\\.' + ext, '.*\\..*\\.' + ext]) {
-      if (!patterns.has(p)) issues.push('pathPattern 缺形态：' + p);
+    for (const p of ['.*.' + ext, '.*..*.' + ext]) {
+      if (!normalized.has(p)) issues.push('pathPattern 缺形态：' + p);
     }
   }
   if (!filters.some((f) => /android:scheme="content"/.test(f.body) && isView(f))) {
@@ -7450,7 +7453,7 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
         assert.equal(s2.preview, 'true', '.md 被 text/plain 抢成原文态（扩展名应优先）');
       });
 
-      await t.test('Z9-6 A8 两态逐字一致（CRLF 归一）；复制原文保留原始行尾', async () => {
+      await t.test('Z9-6 A8 三种行尾等价（CRLF/CR/LF）+ BOM 不改；复制原文保源', async () => {
         await closeViewer(page);
         await page.evaluate(() => {
           window.__copied = null;
@@ -7459,13 +7462,25 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
             value: { writeText: (t) => { window.__copied = t; return Promise.resolve(); } },
           });
         });
+        // ① CRLF
         await openExternalInPage(page, { name: 'crlf.txt', mime: 'text/plain', text: 'a\r\nb' });
-        const s = await readViewer(page);
-        assert.equal(s.value, 'a\nb', 'textarea 未做 CRLF → LF 归一');
+        assert.equal((await readViewer(page)).value, 'a\nb', 'CRLF 未归一');
         await page.locator('#mdViewerCopy').click();
-        await page.waitForTimeout(150);
-        const copied = await page.evaluate(() => window.__copied);
-        assert.equal(copied, 'a\r\nb', '复制原文被归一化（A7 要求 == 源）');
+        await page.waitForTimeout(120);
+        assert.equal(await page.evaluate(() => window.__copied), 'a\r\nb', '复制原文被归一化（A7 要求 == 源）');
+        // ② 单独 CR（拍板 P1：三者等价）
+        await closeViewer(page);
+        await openExternalInPage(page, { name: 'cr.txt', mime: 'text/plain', text: 'a\rb' });
+        assert.equal((await readViewer(page)).value, 'a\nb', '单独 CR 未归一（P1 要求三者等价）');
+        await page.locator('#mdViewerCopy').click();
+        await page.waitForTimeout(120);
+        assert.equal(await page.evaluate(() => window.__copied), 'a\rb', '单独 CR 的原文被改');
+        // ③ BOM 不改（只动行尾，其余字符不变）
+        await closeViewer(page);
+        await openExternalInPage(page, { name: 'bom.txt', mime: 'text/plain', text: '\uFEFF# 标题\r\n' });
+        const v = (await readViewer(page)).value;
+        assert.equal(v.charCodeAt(0), 0xFEFF, 'BOM 被删（拍板：其余字符不变）');
+        assert.equal(v.slice(1), '# 标题\n', 'BOM 后的行尾未归一');
       });
 
       await t.test('Z9-7 A6 失败语义四类：界面有该类文字 + 主区域非空白', async () => {
@@ -7474,6 +7489,7 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
           ['empty', /空/],
           ['binary', /文本|二进制/],
           ['too_large', /上限|过大/],
+          ['read_failed', /失败|重试/],
         ];
         for (const pair of cases) {
           await closeViewer(page);
@@ -7573,6 +7589,21 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
       await t.test('Z9-11 A9 负例：未消毒输出必须被检测器抓到（证明检测器敏感）', async () => {
         const raw = await page.evaluate(() => window.marked.parse('<img src="x" onerror="window.__xss=1">'));
         assert.throws(() => assertNoDangerous(raw), /输出含危险面/, '负例不成立：未消毒输出没有被检测器抓到');
+      });
+
+      await t.test('Z9-12 A7 单位 = UTF-16 字符（4.5 MB UTF-8 中文不触发截断）', async () => {
+        await closeViewer(page);
+        // 1.5M 个 '中'：UTF-16 length = 1.5M（< 4M），UTF-8 约 4.5 MB（> 4 MB）⇒ 若按字节判会误截。
+        const text = '中'.repeat(1500000);
+        await openExternalInPage(page, { name: 'cjk.md', mime: 'text/markdown', text: text });
+        await page.waitForTimeout(300);
+        const cut = await page.evaluate(() => document.getElementById('mdViewerBody').innerHTML.indexOf('渲染预览已截断') >= 0);
+        assert.equal(cut, false, '4.5 MB UTF-8 / 1.5M 字符被误判为超限（单位应为 UTF-16 字符）');
+      });
+
+      await t.test('Z9-13 A1 aapt 归一：APK 内 .*.*.md 形态仍判合法（SIMPLE_GLOB 里 . 是字面量）', async () => {
+        const xml = fs.readFileSync(MANIFEST_PATH, 'utf8').replace(/\\./g, '.');
+        assert.deepEqual(validateOpenWithManifest(xml), [], 'aapt 归一后的形态被误判');
       });
 
       await closeViewer(page);

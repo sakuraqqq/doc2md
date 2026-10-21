@@ -3123,7 +3123,7 @@ ${xlsxRowsToMd(kept)}`);
     read_failed: "\u8BFB\u53D6\u6587\u4EF6\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5"
   };
   function normalizeExternalText(text) {
-    return String(text == null ? "" : text).replace(/\r\n/g, "\n");
+    return String(text == null ? "" : text).replace(/\r\n?/g, "\n");
   }
   function looksLikeMarkdown(name) {
     return /\.(md|markdown)$/i.test(String(name || ""));
@@ -4179,12 +4179,20 @@ ${p.text}
     const plugin = plugins && plugins.Doc2mdNative;
     return plugin && typeof plugin.consumePendingOpen === "function" ? plugin : null;
   }
-  async function consumePendingOpen() {
+  async function consumePendingOpen(attempt) {
     const plugin = nativeOpenPlugin();
     if (!plugin) return;
     try {
       const res = await plugin.consumePendingOpen();
-      if (res && res.pending) openExternalDocument(res);
+      if (res && res.pending) {
+        openExternalDocument(res);
+        return;
+      }
+      if (res && res.reading && (attempt || 0) < 40) {
+        setTimeout(() => {
+          consumePendingOpen((attempt || 0) + 1);
+        }, 250);
+      }
     } catch {
     }
   }
@@ -4193,7 +4201,7 @@ ${p.text}
     consumePendingOpen();
     if (typeof openPlugin.addListener === "function") {
       openPlugin.addListener("doc2mdOpen", () => {
-        consumePendingOpen();
+        consumePendingOpen(0);
       });
     }
   }

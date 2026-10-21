@@ -754,8 +754,10 @@ const EXTERNAL_ERROR_TEXT = {
   too_large: '文件超过 50 MB 上限，暂不支持打开',
   read_failed: '读取文件失败，请重试',
 };
+// 卡 059 退回（拍板 P1，2026-10-22）：接受平台归一 —— `\r\n`、单独 `\r`、`\n` 三者等价；
+// 只动行尾，其余字符（含 BOM）一律不变。⛔ 不要在这里 trim / 去 BOM。
 function normalizeExternalText(text) {
-  return String(text == null ? '' : text).replace(/\r\n/g, '\n');
+  return String(text == null ? '' : text).replace(/\r\n?/g, '\n');
 }
 function looksLikeMarkdown(name) {
   return /\.(md|markdown)$/i.test(String(name || ''));
