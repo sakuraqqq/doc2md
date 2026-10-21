@@ -19,6 +19,9 @@ const mdViewerBody = $('#mdViewerBody');
 const mdViewerClose = $('#mdViewerClose');
 const mdViewerPreview = $('#mdViewerPreview');
 const mdViewerRaw = $('#mdViewerRaw');
+const mdViewerExt = $('#mdViewerExt');
+const mdViewerCopy = $('#mdViewerCopy');
+const mdViewerDownload = $('#mdViewerDownload');
 const pickerTitle = $('#pickerTitle');
 const resultsPanel = $('#resultsPanel');
 const resultsCount = $('#resultsCount');
@@ -676,29 +679,46 @@ export function truncatePreview(text, max = PREVIEW_MAX_CHARS) {
 let viewerState = null;
 let viewerTrigger = null;
 
+/** 卡 059 / A6：失败态也必须有可见内容（主区域非空白）——错误文案进查看器，不只留在状态栏。 */
+function renderViewerError(msg) {
+  mdViewerBody.innerHTML = '';
+  const box = document.createElement('div');
+  box.className = 'md-preview md-preview-error';
+  box.textContent = msg;
+  mdViewerBody.appendChild(box);
+  mdViewerBody.dataset.mode = 'error';
+}
+function renderViewerPreview() {
+  const box = document.createElement('div');
+  box.className = 'md-preview';
+  try {
+    mountPreview(box, viewerState.text);
+  } catch (e) {
+    box.className = 'md-preview md-preview-error';
+    box.textContent = '预览渲染失败：' + (e && e.message ? e.message : '未知错误');
+  }
+  mdViewerBody.appendChild(box);
+}
+function renderViewerRaw() {
+  const ta = document.createElement('textarea');
+  ta.className = 'md md-viewer-raw';
+  ta.readOnly = true;
+  // 卡 059 / A7：外部打开的原文必须可供「复制/下载」逐字取全 —— fullText 时不做 1 MB 预览截断。
+  ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
+  mdViewerBody.appendChild(ta);
+}
 function renderViewerMode(mode) {
   if (!viewerState || !mdViewerBody) return;
+  if (viewerState.error) {
+    renderViewerError(viewerState.error);
+    return;
+  }
   const isPreview = mode === 'preview';
   if (mdViewerPreview) mdViewerPreview.setAttribute('aria-pressed', String(isPreview));
   if (mdViewerRaw) mdViewerRaw.setAttribute('aria-pressed', String(!isPreview));
   mdViewerBody.innerHTML = '';
-  if (isPreview) {
-    const box = document.createElement('div');
-    box.className = 'md-preview';
-    try {
-      mountPreview(box, viewerState.text);
-    } catch (e) {
-      box.className = 'md-preview md-preview-error';
-      box.textContent = '预览渲染失败：' + (e && e.message ? e.message : '未知错误');
-    }
-    mdViewerBody.appendChild(box);
-  } else {
-    const ta = document.createElement('textarea');
-    ta.className = 'md md-viewer-raw';
-    ta.readOnly = true;
-    ta.value = truncatePreview(viewerState.text);
-    mdViewerBody.appendChild(ta);
-  }
+  if (isPreview) renderViewerPreview();
+  else renderViewerRaw();
   mdViewerBody.dataset.mode = mode;
 }
 
@@ -707,9 +727,10 @@ function openMarkdownViewer(state, trigger) {
   viewerState = state;
   viewerTrigger = trigger || document.activeElement;
   if (mdViewerName) mdViewerName.textContent = state.fileName;
+  if (mdViewerExt) mdViewerExt.hidden = !state.external;
   mdViewer.hidden = false;
   document.body.classList.add('md-viewer-open');
-  renderViewerMode('preview');
+  renderViewerMode(state.defaultMode || 'preview');
   if (mdViewerClose) mdViewerClose.focus();
 }
 
@@ -717,9 +738,58 @@ function closeMarkdownViewer() {
   if (!mdViewer) return;
   mdViewer.hidden = true;
   document.body.classList.remove('md-viewer-open');
+  if (mdViewerExt) mdViewerExt.hidden = true;
   viewerState = null;
   if (viewerTrigger && typeof viewerTrigger.focus === 'function') viewerTrigger.focus();
   viewerTrigger = null;
+}
+
+/* 卡 059（B018 / A7.6-A7）：系统「打开方式」把文件交给我们 → 直接进查看器。
+ * 口径：.md / .markdown 默认渲染态；text/plain（且扩展名不是 .md）默认原文态（A8）；
+ *       「复制/下载原文」用未归一化的 raw（A7 要求 sha256 == 源文件），textarea 用 CRLF 归一后的 text（A8）。 */
+const EXTERNAL_ERROR_TEXT = {
+  no_access: '无法读取该文件（文件管理器未授予读取权限）',
+  empty: '文件内容为空（0 字节）',
+  binary: '这不是文本文件，暂不支持打开',
+  too_large: '文件超过 50 MB 上限，暂不支持打开',
+  read_failed: '读取文件失败，请重试',
+};
+function normalizeExternalText(text) {
+  return String(text == null ? '' : text).replace(/\r\n/g, '\n');
+}
+function looksLikeMarkdown(name) {
+  return /\.(md|markdown)$/i.test(String(name || ''));
+}
+/** 复制/下载「原文」：浏览器走 <a download>，原生壳走 saveText（壳里 <a download> 静默无效，卡 008）。 */
+function saveExternalText(name, text) {
+  const plugin = nativeSavePlugin();
+  if (plugin) {
+    plugin
+      .saveText({ filename: name, text: text, mime: 'text/plain;charset=utf-8' })
+      .then((res) => nativeNotice(NATIVE_SAVED + ((res && res.filename) || name)))
+      .catch((e) => setStatus('保存失败：' + (e && e.message ? e.message : e), true));
+    return;
+  }
+  anchorDownload(new Blob([text], { type: 'text/plain;charset=utf-8' }), name);
+}
+/** 外部打开的入口（原生调用与 window.__doc2md.openExternal 测试缝共用）。 */
+export function openExternalDocument(payload) {
+  const p = payload || {};
+  const name = String(p.name || 'opened.md');
+  if (p.error) {
+    const msg = EXTERNAL_ERROR_TEXT[p.error] || '无法打开该文件';
+    setStatus(msg, true);
+    openMarkdownViewer({ fileName: name, text: '', external: true, error: msg }, null);
+    return { ok: false, error: String(p.error) };
+  }
+  const raw = String(p.text == null ? '' : p.text);
+  const text = normalizeExternalText(raw);
+  const mime = String(p.mime || '');
+  const plain = !looksLikeMarkdown(name) && (mime === 'text/plain' || mime === '');
+  const defaultMode = plain ? 'raw' : 'preview';
+  openMarkdownViewer({ fileName: name, text: text, raw: raw, external: true, fullText: true, defaultMode: defaultMode }, null);
+  setStatus('已打开：' + name);
+  return { ok: true, mode: defaultMode };
 }
 
 /** 三点菜单：查看 / 复制 / 下载（失败文件不生成菜单）。 */
@@ -1041,11 +1111,22 @@ export function switchTheme(choice, btn) {
 }
 /** 三 Tab + 外观 + 文件页空态的接线（模块顶层执行：bundle 注入 body 尾部，DOM 已就绪）
  * ⚠️ 拆成 initTabs / initTheme 三个小函数：合并写时 initShell 的圈复杂度 17（阈值 10）会被 metrics 判红。 */
+function copyViewerRaw() {
+  if (!viewerState) return;
+  const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
+  copyText(text, mdViewerCopy).catch(() => setStatus('复制失败：剪贴板不可用', true));
+}
+function downloadViewerRaw() {
+  if (!viewerState) return;
+  saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
+}
 function initMarkdownViewer() {
   if (!mdViewer) return;
   if (mdViewerClose) mdViewerClose.addEventListener('click', closeMarkdownViewer);
   if (mdViewerPreview) mdViewerPreview.addEventListener('click', () => renderViewerMode('preview'));
   if (mdViewerRaw) mdViewerRaw.addEventListener('click', () => renderViewerMode('raw'));
+  if (mdViewerCopy) mdViewerCopy.addEventListener('click', copyViewerRaw);
+  if (mdViewerDownload) mdViewerDownload.addEventListener('click', downloadViewerRaw);
   mdViewer.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeMarkdownViewer();
   });

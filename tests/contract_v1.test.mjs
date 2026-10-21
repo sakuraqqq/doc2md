@@ -7288,3 +7288,300 @@ test('契约组 Z8：转换结果列表（紧凑 / 多选 / 菜单 / 批量 / 10
     await server.close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// 契约组 Z9：用本 App 打开 .md（卡 059 · B018 / A7.6-A7）—— 先红
+//   口径（卡面 §4 A1/A5/A6/A8/A9/A11）：
+//   · manifest：VIEW + DEFAULT + exported，三档 MIME（text/markdown / text/x-markdown / text/plain），
+//     另有一条 */* 且带 pathPattern（覆盖 .md / .markdown 的两种形态）——纯函数校验，改坏字符串必报；
+//   · 负例必红：application/octet-stream 无 pathPattern / */* 无 pathPattern / READ_·WRITE_·MANAGE_ 权限 / FileProvider；
+//   · 测试缝 window.__doc2md.openExternal 驱动完整流程：两态（渲染/原文）、失败语义、零外发、>4 MB 截断提示；
+//   · 「复制原文」走未归一化的原始文本（A7 的 sha256 口径），textarea 走 CRLF 归一后的文本（A8）。
+//   ⚠️ 组号：卡面写「新增组 Z8」，但 Z8 已被卡 058 R2 占用（Z8-0…Z8-5）⇒ 按编号不重复改用 Z9（回执登记）。
+// ---------------------------------------------------------------------------
+const MANIFEST_PATH = nodePath.join(ROOT, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
+
+/** A1/A5：manifest 纯函数校验（输入 XML 文本 → 问题列表；空数组 = 通过）。 */
+function validateOpenWithManifest(xml) {
+  const issues = [];
+  const text = String(xml || '').replace(/<!--[\s\S]*?-->/g, '');
+  if (/<provider\b/i.test(text)) issues.push('出现 <provider>（FileProvider 不在本卡范围）');
+  for (const m of text.matchAll(/<uses-permission[^>]*android:name="([^"]+)"/g)) {
+    if (m[1] !== 'android.permission.INTERNET') issues.push('出现非 INTERNET 权限：' + m[1]);
+  }
+  if (/android:scheme="file"/.test(text)) issues.push('出现 file scheme（A10：本卡不读 file://）');
+  const filters = [];
+  const actRe = /<activity\b([\s\S]*?)>([\s\S]*?)<\/activity>/g;
+  let am;
+  while ((am = actRe.exec(text))) {
+    const exported = /android:exported="true"/.test(am[1]);
+    const body = am[2];
+    const fRe = /<intent-filter>([\s\S]*?)<\/intent-filter>/g;
+    let fm;
+    while ((fm = fRe.exec(body))) filters.push({ exported: exported, body: fm[1] });
+  }
+  if (!filters.some((f) => f.exported)) issues.push('没有 exported="true" 的 activity');
+  const isView = (f) => /android\.intent\.action\.VIEW/.test(f.body) && /android\.intent\.category\.DEFAULT/.test(f.body);
+  const view = filters.filter((f) => f.exported && isView(f));
+  if (view.length === 0) issues.push('没有 exported activity 声明 VIEW + DEFAULT');
+  const mimes = new Set();
+  for (const f of view) for (const m of f.body.matchAll(/android:mimeType="([^"]+)"/g)) mimes.add(m[1]);
+  for (const need of ['text/markdown', 'text/x-markdown', 'text/plain']) {
+    if (!mimes.has(need)) issues.push('VIEW filter 缺 MIME：' + need);
+  }
+  for (const f of filters) {
+    const star = /android:mimeType="\*\/\*"/.test(f.body);
+    const octet = /android:mimeType="application\/octet-stream"/.test(f.body);
+    if ((star || octet) && !/android:pathPattern=/.test(f.body)) {
+      issues.push((star ? '*/*' : 'application/octet-stream') + ' 所在 filter 无 pathPattern');
+    }
+  }
+  const patterns = new Set();
+  for (const f of filters) for (const m of f.body.matchAll(/android:pathPattern="([^"]+)"/g)) patterns.add(m[1]);
+  for (const ext of ['md', 'markdown']) {
+    for (const p of ['.*\\.' + ext, '.*\\..*\\.' + ext]) {
+      if (!patterns.has(p)) issues.push('pathPattern 缺形态：' + p);
+    }
+  }
+  if (!filters.some((f) => /android:scheme="content"/.test(f.body) && isView(f))) {
+    issues.push('VIEW filter 未声明 content scheme');
+  }
+  return issues;
+}
+
+const openExternalInPage = (page, payload) =>
+  page.evaluate((p) => window.__doc2md.openExternal(p), payload);
+
+async function readViewer(page) {
+  return page.evaluate(() => {
+    const v = document.getElementById('mdViewer');
+    const body = document.getElementById('mdViewerBody');
+    const ta = body ? body.querySelector('textarea.md-viewer-raw') : null;
+    return {
+      hidden: v ? v.hidden : true,
+      name: document.getElementById('mdViewerName').textContent,
+      preview: document.getElementById('mdViewerPreview').getAttribute('aria-pressed'),
+      raw: document.getElementById('mdViewerRaw').getAttribute('aria-pressed'),
+      bodyText: body ? body.textContent.slice(0, 400) : '',
+      value: ta ? ta.value : null,
+      cut: body ? body.innerHTML.indexOf('渲染预览已截断') >= 0 : false,
+    };
+  });
+}
+
+async function closeViewer(page) {
+  await page.evaluate(() => {
+    const v = document.getElementById('mdViewer');
+    if (v && !v.hidden) document.getElementById('mdViewerClose').click();
+  });
+}
+
+test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', async (t) => {
+  await t.test('Z9-0 A1 manifest 声明齐全（VIEW+DEFAULT+exported / 三档 MIME / */*+pathPattern）', async () => {
+    const xml = fs.readFileSync(MANIFEST_PATH, 'utf8');
+    assert.deepEqual(validateOpenWithManifest(xml), [], 'manifest 校验未通过');
+  });
+
+  await t.test('Z9-1 A1 负例：四类改坏必须被纯函数报出', async () => {
+    const good = fs.readFileSync(MANIFEST_PATH, 'utf8');
+    const noPattern = good.replace(/android:pathPattern="[^"]*"/g, '');
+    assert.ok(validateOpenWithManifest(noPattern).some((s) => s.indexOf('*/*') >= 0), '去掉 pathPattern 未报 */*');
+    const octet = good.replace(
+      '</activity>',
+      '<intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><data android:mimeType="application/octet-stream" /></intent-filter></activity>'
+    );
+    assert.ok(validateOpenWithManifest(octet).some((s) => s.indexOf('octet-stream') >= 0), 'octet-stream 无 pathPattern 未报');
+    const perm = good.replace(
+      '<uses-permission android:name="android.permission.INTERNET" />',
+      '<uses-permission android:name="android.permission.INTERNET" /><uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />'
+    );
+    assert.ok(validateOpenWithManifest(perm).some((s) => s.indexOf('READ_EXTERNAL_STORAGE') >= 0), '新增 READ_ 权限未报');
+    const provider = good.replace('</application>', '<provider android:name="x" android:authorities="y" /></application>');
+    assert.ok(validateOpenWithManifest(provider).some((s) => s.indexOf('provider') >= 0), '新增 FileProvider 未报');
+  });
+
+  await t.test('Z9-2 A5 权限面：仅 INTERNET，且无 <provider>', async () => {
+    const xml = fs.readFileSync(MANIFEST_PATH, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    const perms = [...xml.matchAll(/<uses-permission[^>]*android:name="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(perms, ['android.permission.INTERNET'], '权限集合不是只有 INTERNET：' + JSON.stringify(perms));
+    assert.equal(/<provider\b/i.test(xml), false, 'manifest 出现 <provider>');
+  });
+
+  let chromium;
+  try { chromium = await loadPlaywright(); } catch (e) { assert.fail(e.message); return; }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try { browser = await launchBrowser(chromium); } catch (e) { assert.fail(e.message); return; }
+    try {
+      const ctx = await browser.newContext({ viewport: { width: 412, height: 892 } });
+      const page = await ctx.newPage();
+      const errs = [];
+      page.on('pageerror', (e) => errs.push('pageerror: ' + String(e.message)));
+      page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      await t.test('Z9-3 A9 测试缝：window.__doc2md.openExternal 已暴露', async () => {
+        const kind = await page.evaluate(() => typeof (window.__doc2md || {}).openExternal);
+        assert.equal(kind, 'function', 'openExternal 不是函数：' + kind);
+      });
+
+      await t.test('Z9-4 A3/A8 .md 默认渲染态，标题 = 文件名，内容进预览', async () => {
+        await closeViewer(page);
+        await openExternalInPage(page, { name: 'hello.md', mime: 'text/markdown', text: '# 标题\n\n正文 **粗体**' });
+        const s = await readViewer(page);
+        assert.equal(s.hidden, false, '查看器未打开');
+        assert.equal(s.name, 'hello.md');
+        assert.equal(s.preview, 'true', 'md 未默认渲染态');
+        assert.ok(s.bodyText.indexOf('标题') >= 0, '渲染内容缺失：' + s.bodyText);
+        const h1 = await page.locator('#mdViewerBody h1').count();
+        assert.equal(h1, 1, '标题未渲染成 h1：' + h1);
+      });
+
+      await t.test('Z9-5 A8 text/plain 默认原文态；扩展名优先于 MIME', async () => {
+        await closeViewer(page);
+        await openExternalInPage(page, { name: 'plain.txt', mime: 'text/plain', text: '# 不是标题\n第二行' });
+        const s1 = await readViewer(page);
+        assert.equal(s1.preview, 'false', 'text/plain 未默认原文态');
+        assert.equal(s1.value, '# 不是标题\n第二行', 'textarea 与读入文本不一致');
+        await closeViewer(page);
+        await openExternalInPage(page, { name: 'as-plain.md', mime: 'text/plain', text: '# 标题' });
+        const s2 = await readViewer(page);
+        assert.equal(s2.preview, 'true', '.md 被 text/plain 抢成原文态（扩展名应优先）');
+      });
+
+      await t.test('Z9-6 A8 两态逐字一致（CRLF 归一）；复制原文保留原始行尾', async () => {
+        await closeViewer(page);
+        await page.evaluate(() => {
+          window.__copied = null;
+          Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText: (t) => { window.__copied = t; return Promise.resolve(); } },
+          });
+        });
+        await openExternalInPage(page, { name: 'crlf.txt', mime: 'text/plain', text: 'a\r\nb' });
+        const s = await readViewer(page);
+        assert.equal(s.value, 'a\nb', 'textarea 未做 CRLF → LF 归一');
+        await page.locator('#mdViewerCopy').click();
+        await page.waitForTimeout(150);
+        const copied = await page.evaluate(() => window.__copied);
+        assert.equal(copied, 'a\r\nb', '复制原文被归一化（A7 要求 == 源）');
+      });
+
+      await t.test('Z9-7 A6 失败语义四类：界面有该类文字 + 主区域非空白', async () => {
+        const cases = [
+          ['no_access', /权限|读取/],
+          ['empty', /空/],
+          ['binary', /文本|二进制/],
+          ['too_large', /上限|过大/],
+        ];
+        for (const pair of cases) {
+          await closeViewer(page);
+          await page.evaluate(() => { document.getElementById('status').textContent = ''; });
+          await openExternalInPage(page, { name: 'bad.md', mime: 'text/markdown', error: pair[0] });
+          const r = await page.evaluate(() => ({
+            status: document.getElementById('status').textContent,
+            body: document.getElementById('mdViewerBody').textContent.trim(),
+            hidden: document.getElementById('mdViewer').hidden,
+          }));
+          assert.equal(r.hidden, false, pair[0] + '：查看器未打开');
+          assert.ok(pair[1].test(r.status), pair[0] + '：状态栏缺该类文字 → ' + r.status);
+          assert.ok(r.body.length > 0, pair[0] + '：主区域空白');
+        }
+      });
+
+      await t.test('Z9-8 A9 外部 md 零外发 + DOMPurify 在链路上', async () => {
+        await closeViewer(page);
+        const external = [];
+        const handler = (route) => {
+          const u = route.request().url();
+          if (!u.startsWith(server.base)) { external.push(u); return route.abort(); }
+          return route.continue();
+        };
+        await ctx.route('**/*', handler);
+        try {
+          await page.evaluate(() => {
+            window.__xss = undefined;
+            window.__purifyCalls = 0;
+            const orig = window.DOMPurify.sanitize;
+            window.DOMPurify.sanitize = function () {
+              window.__purifyCalls += 1;
+              return orig.apply(this, arguments);
+            };
+          });
+          const md = XSS_CORPUS.map((p) => p[1]).join('\n\n') +
+            '\n\n<img src="https://evil.example/x.png" srcset="https://evil.example/x2.png 2x">' +
+            '\n\n<video poster="https://evil.example/p.jpg"><source src="https://evil.example/v.mp4"></video>' +
+            '\n\n<audio src="https://evil.example/a.mp3"></audio>';
+          await openExternalInPage(page, { name: 'xss.md', mime: 'text/markdown', text: md });
+          await page.waitForTimeout(400);
+          const r = await page.evaluate(() => ({
+            html: document.getElementById('mdViewerBody').innerHTML,
+            xss: window.__xss,
+            calls: window.__purifyCalls,
+          }));
+          assert.equal(r.xss, undefined, '外部 md 触发了 XSS');
+          assertNoDangerous(r.html);
+          assert.ok(r.calls > 0, 'DOMPurify.sanitize 未被调用（消毒不在链路上）');
+          assert.equal(hasRemoteImg(r.html), false, '输出含外域图片 src');
+          assert.deepEqual(external, [], '打开外部 md 触发了非本服务请求：' + JSON.stringify(external));
+        } finally {
+          await ctx.unroute('**/*', handler);
+        }
+      });
+
+      await t.test('Z9-9 A7 >4 MB：CUT_HINT 出现 + 复制原文逐字全量（sha256 一致）', async () => {
+        await closeViewer(page);
+        const big = 'a'.repeat(4 * 1024 * 1024 + 100);
+        await openExternalInPage(page, { name: 'big.md', mime: 'text/markdown', text: big });
+        await page.waitForTimeout(200);
+        const s = await readViewer(page);
+        assert.equal(s.cut, true, '>4 MB 未见 CUT_HINT');
+        await page.evaluate(() => { window.__copied = null; });
+        await page.locator('#mdViewerCopy').click();
+        await page.waitForTimeout(200);
+        const copied = await page.evaluate(() => window.__copied);
+        assert.equal(copied.length, big.length, '复制的原文长度不等于源：' + (copied ? copied.length : copied));
+        const h1 = crypto.createHash('sha256').update(copied).digest('hex');
+        const h2 = crypto.createHash('sha256').update(big).digest('hex');
+        assert.equal(h1, h2, '复制原文的 sha256 与源不一致');
+      });
+
+      await t.test('Z9-10 A7 ≤4 MB：全文可见（末尾 marker 出现），无 CUT_HINT', async () => {
+        await closeViewer(page);
+        const body = 'x'.repeat(1024 * 1024);
+        const text = '# big\n\n' + body + '\n\nDOC2MD-059-END';
+        await openExternalInPage(page, { name: 'mid.md', mime: 'text/markdown', text: text });
+        await page.waitForTimeout(300);
+        // ≤4 MB = 全文可看：分段渲染需要点「继续渲染」到底（A7 ① 的口径是「全文可看」，不是「首屏就全」）
+        for (let i = 0; i < 30; i++) {
+          const more = page.locator('#mdViewerBody .md-more');
+          if ((await more.count()) === 0) break;
+          await more.first().click();
+          await page.waitForTimeout(80);
+        }
+        const r = await page.evaluate(() => ({
+          text: document.getElementById('mdViewerBody').textContent,
+          cut: document.getElementById('mdViewerBody').innerHTML.indexOf('渲染预览已截断') >= 0,
+          more: document.querySelectorAll('#mdViewerBody .md-more').length,
+        }));
+        assert.equal(r.more, 0, '仍有未渲染段（继续渲染未走完）');
+        assert.equal(r.cut, false, '≤4 MB 不应出现 CUT_HINT');
+        assert.ok(r.text.indexOf('DOC2MD-059-END') >= 0, '末尾 marker 未出现在渲染结果');
+      });
+
+      await t.test('Z9-11 A9 负例：未消毒输出必须被检测器抓到（证明检测器敏感）', async () => {
+        const raw = await page.evaluate(() => window.marked.parse('<img src="x" onerror="window.__xss=1">'));
+        assert.throws(() => assertNoDangerous(raw), /输出含危险面/, '负例不成立：未消毒输出没有被检测器抓到');
+      });
+
+      await closeViewer(page);
+      assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
+      await ctx.close();
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});

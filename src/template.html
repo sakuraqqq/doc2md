@@ -275,6 +275,10 @@
   .md-viewer-raw { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0; resize: none; border: 0; border-radius: 0; background: var(--bg); }
   .md-viewer-foot { padding: 10px 16px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--panel); }
   .md-viewer-foot .seg-btn { min-height: 40px; }
+  /* 卡 059：外部打开时才有「复制/下载原文」（A7）——其余场景保持原查看器布局不变 */
+  .md-viewer-ext { display: flex; gap: 8px; margin-bottom: 10px; }
+  .md-viewer-ext[hidden] { display: none; }
+  .md-viewer-ext .btn { flex: 1 1 auto; }
   .batch-bar { position: fixed; left: 12px; right: 12px; z-index: 15; bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px); margin: 0 auto; max-width: 928px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
   .batch-spacer { flex: 0 0 auto; }
 
@@ -493,6 +497,10 @@
   </header>
   <div class="md-viewer-body" id="mdViewerBody"></div>
   <div class="md-viewer-foot">
+    <div class="md-viewer-ext" id="mdViewerExt" hidden>
+      <button class="btn" type="button" id="mdViewerCopy">复制原文</button>
+      <button class="btn" type="button" id="mdViewerDownload">下载原文</button>
+    </div>
     <div class="seg" role="group" aria-label="预览模式">
       <button class="seg-btn" type="button" id="mdViewerPreview" aria-pressed="true">预览</button>
       <button class="seg-btn" type="button" id="mdViewerRaw" aria-pressed="false">原文</button>

@@ -21,9 +21,15 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 
 // doc2md 原生插件骨架（卡 008 / A7）—— 目的是证明「逐环节替换原生」（Strangler Fig）这条路能走通一次，
@@ -74,6 +80,22 @@ public class Doc2mdNativePlugin extends Plugin {
     // 阶段 0 临时验证钩子（阶段 1 拆）：插件加载即自测一次"写 Downloads"，把结果打进 logcat。
     @Override
     public void load() {
+        runSelftestOnce();
+        // 卡 059：冷启动的 launch intent 先暂存（此时 WebView 里的 JS 可能还没订阅）——
+        // JS 启动后调 consumePendingOpen() 主动取一次（卡面 §0 已知坑：只靠一次性 notifyListeners 会丢冷启动）。
+        try {
+            Activity act = getActivity();
+            JSObject data = readOpenIntent(act == null ? null : act.getIntent());
+            if (data != null) {
+                pendingOpen = data;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "PENDING_LAUNCH_FAIL " + t);
+        }
+    }
+
+    // 阶段 0 的临时验证钩子（卡 008）：只跑一次，结果打进 logcat。
+    private void runSelftestOnce() {
         try {
             SharedPreferences sp = getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
             if (sp.getBoolean(PREF_SELFTEST_DONE, false)) {
@@ -146,6 +168,173 @@ public class Doc2mdNativePlugin extends Plugin {
         }
         ret.put("note", "SAF content:// URI (read grant is valid for this session)");
         call.resolve(ret);
+    }
+
+    // ── 卡 059（B018 / A7.6-A7）：用本 App 打开 .md ─────────────────────────────────
+    // 冷启动：BridgeActivity.load() 建完 bridge 立刻把 launch intent 交给 onNewIntent
+    //（@capacitor/android 8.5.2 BridgeActivity.java L51）⇒ 本插件在 load() 与 handleOnNewIntent 都**只暂存**，
+    // JS 启动后 consumePendingOpen() 取一次；热启动再发一条 notifyListeners 让已订阅的 JS 立刻来取。
+    // ⛔ 不引 @capacitor/app：现有插件就能收（Bridge.java L1314 → Plugin.handleOnNewIntent）。
+    // 上限 = 50 MB，与 AGENTS.md §2 的单文件护栏同口径（A7 的 4 MB 是**渲染**口径，不是读取口径）。
+    private static final long MAX_OPEN_BYTES = 50L * 1024 * 1024;
+    private JSObject pendingOpen;
+
+    private static final class TooLargeException extends Exception {}
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        super.handleOnNewIntent(intent);
+        try {
+            JSObject data = readOpenIntent(intent);
+            if (data == null) {
+                return;
+            }
+            pendingOpen = data;
+            JSObject ping = new JSObject();
+            ping.put("pending", true);
+            notifyListeners("doc2mdOpen", ping, false);
+        } catch (Throwable t) {
+            Log.w(TAG, "OPEN_INTENT_FAIL " + t);
+        }
+    }
+
+    // JS 启动/热启动后主动取一次；取走即清（避免下次启动重复打开旧文件）。
+    @PluginMethod
+    public void consumePendingOpen(PluginCall call) {
+        JSObject out = pendingOpen;
+        pendingOpen = null;
+        if (out == null) {
+            JSObject none = new JSObject();
+            none.put("pending", false);
+            call.resolve(none);
+            return;
+        }
+        call.resolve(out);
+    }
+
+    private JSObject readOpenIntent(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) {
+            return null;
+        }
+        Uri uri = intent.getData();
+        if (uri == null) {
+            return null;
+        }
+        JSObject ret = new JSObject();
+        ret.put("pending", true);
+        ret.put("uri", uri.toString());
+        ContentResolver cr = getContext().getContentResolver();
+        String name = null;
+        long size = -1;
+        Cursor cursor = null;
+        try {
+            cursor = cr.query(uri, null, null, null, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                int nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                int sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE);
+                if (nameIdx >= 0 && !cursor.isNull(nameIdx)) {
+                    name = cursor.getString(nameIdx);
+                }
+                if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) {
+                    size = cursor.getLong(sizeIdx);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "OPEN_QUERY_FAIL " + e);
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        if (name == null || name.isEmpty()) {
+            name = uri.getLastPathSegment();
+        }
+        if (name == null || name.isEmpty()) {
+            name = "opened.md";
+        }
+        ret.put("name", name);
+        String mime = null;
+        try {
+            mime = cr.getType(uri);
+        } catch (Exception e) {
+            Log.w(TAG, "OPEN_MIME_FAIL " + e);
+        }
+        ret.put("mime", mime == null ? "" : mime);
+        if (size > MAX_OPEN_BYTES) {
+            ret.put("size", size);
+            ret.put("error", "too_large");
+            return ret;
+        }
+        byte[] bytes;
+        try {
+            bytes = readAllBytes(cr, uri);
+        } catch (TooLargeException e) {
+            ret.put("error", "too_large");
+            return ret;
+        } catch (SecurityException e) {
+            ret.put("error", "no_access");
+            return ret;
+        } catch (Exception e) {
+            Log.w(TAG, "OPEN_READ_FAIL " + e);
+            ret.put("error", "read_failed");
+            return ret;
+        }
+        if (bytes == null) {
+            ret.put("error", "read_failed");
+            return ret;
+        }
+        if (bytes.length == 0) {
+            ret.put("size", 0);
+            ret.put("error", "empty");
+            return ret;
+        }
+        String text;
+        try {
+            text = decodeUtf8Strict(bytes);
+        } catch (CharacterCodingException e) {
+            ret.put("error", "binary");
+            return ret;
+        }
+        if (text.indexOf('\0') >= 0) {
+            ret.put("error", "binary");
+            return ret;
+        }
+        ret.put("size", bytes.length);
+        ret.put("text", text);
+        return ret;
+    }
+
+    private byte[] readAllBytes(ContentResolver cr, Uri uri) throws Exception {
+        InputStream in = cr.openInputStream(uri);
+        if (in == null) {
+            throw new Exception("openInputStream returned null");
+        }
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[16 * 1024];
+            long total = 0;
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                total += n;
+                if (total > MAX_OPEN_BYTES) {
+                    throw new TooLargeException();
+                }
+                out.write(buf, 0, n);
+            }
+            return out.toByteArray();
+        } finally {
+            try {
+                in.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private String decodeUtf8Strict(byte[] bytes) throws CharacterCodingException {
+        CharsetDecoder dec = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        return dec.decode(ByteBuffer.wrap(bytes)).toString();
     }
 
     // A4 环节：把文本写到**用户可见**的 Downloads。
