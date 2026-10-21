@@ -4,27 +4,27 @@
   "contract": {
     "local_with_fixtures": {
       "counts": {
-        "total": 386,
-        "pass": 384,
+        "total": 388,
+        "pass": 386,
         "fail": 0,
         "skip": 2
       },
       "measured": {
         "at": "2026-10-21",
-        "source": "2026-10-22 卡 059 退回重修实测（本机）：npm test → # tests 386 / # pass 384 / # fail 0 / # skipped 2。Z9 扩到 15 条（+Z9-12 UTF-16 单位 / +Z9-13 aapt 归一；Z9-6 改三种行尾等价、Z9-7 加 read_failed）；前值 384/382/0/2。TAP：.私档/卡/c059/证据/c059-local-ret.tap。"
+        "source": "2026-10-22 卡 059 第三轮（能力拆分 C1/C3/C4）实测（本机）：npm test → # tests 388 / # pass 386 / # fail 0 / # skipped 2。Z9 17 条（+Z9-14 边界 / +Z9-15 generation；Z9-6 改纯函数断言、Z9-9 改预览+raw 横幅）；前值 386/384/0/2。TAP：.私档/卡/c059/证据/c059-local-r3.tap。"
       },
       "scope": "本机口径：.私档/传输-手机-20260918 四档夹具在位 ⇒ 组 Y 真跑（组壳+Y1+Y2+Y3，全绿）；卡 002 前为 271/3（组 Y 预期先红：Y2 无 meta.scan · Y3 超 5s · 组壳）。与 CI 口径不可混用"
     },
     "ci_clean_checkout": {
       "counts": {
-        "total": 383,
-        "pass": 380,
+        "total": 385,
+        "pass": 382,
         "fail": 0,
         "skip": 3
       },
       "measured": {
         "at": "2026-10-21",
-        "source": "2026-10-22 卡 059 退回重修实测（CI 口径，DOC2MD_BIG_FIXTURES 指向不存在目录 ⇒ 组 Y 整组 skip）：# tests 383 / # pass 380 / # fail 0 / # skipped 3；相对本机 386/384/0/2 逐项 = total −3 / pass −4 / skip +1（口径未变）。前值 381/378/0/3。TAP：.私档/卡/c059/证据/c059-ci-ret.tap。"
+        "source": "2026-10-22 卡 059 第三轮实测（CI 口径，DOC2MD_BIG_FIXTURES 指向不存在目录 ⇒ 组 Y 整组 skip）：# tests 385 / # pass 382 / # fail 0 / # skipped 3；相对本机 388/386/0/2 逐项 = total −3 / pass −4 / skip +1（口径未变）。前值 383/380/0/3。TAP：.私档/卡/c059/证据/c059-ci-r3.tap。"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }
