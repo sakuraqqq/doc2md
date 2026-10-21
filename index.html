@@ -3055,38 +3055,44 @@ ${xlsxRowsToMd(kept)}`);
   }
   var viewerState = null;
   var viewerTrigger = null;
+  function renderViewerError(msg) {
+    mdViewerBody.innerHTML = "";
+    const box = document.createElement("div");
+    box.className = "md-preview md-preview-error";
+    box.textContent = msg;
+    mdViewerBody.appendChild(box);
+    mdViewerBody.dataset.mode = "error";
+  }
+  function renderViewerPreview() {
+    const box = document.createElement("div");
+    box.className = "md-preview";
+    try {
+      mountPreview(box, viewerState.text);
+    } catch (e) {
+      box.className = "md-preview md-preview-error";
+      box.textContent = "\u9884\u89C8\u6E32\u67D3\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF");
+    }
+    mdViewerBody.appendChild(box);
+  }
+  function renderViewerRaw() {
+    const ta = document.createElement("textarea");
+    ta.className = "md md-viewer-raw";
+    ta.readOnly = true;
+    ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
+    mdViewerBody.appendChild(ta);
+  }
   function renderViewerMode(mode) {
     if (!viewerState || !mdViewerBody) return;
     if (viewerState.error) {
-      mdViewerBody.innerHTML = "";
-      const box = document.createElement("div");
-      box.className = "md-preview md-preview-error";
-      box.textContent = viewerState.error;
-      mdViewerBody.appendChild(box);
-      mdViewerBody.dataset.mode = "error";
+      renderViewerError(viewerState.error);
       return;
     }
     const isPreview = mode === "preview";
     if (mdViewerPreview) mdViewerPreview.setAttribute("aria-pressed", String(isPreview));
     if (mdViewerRaw) mdViewerRaw.setAttribute("aria-pressed", String(!isPreview));
     mdViewerBody.innerHTML = "";
-    if (isPreview) {
-      const box = document.createElement("div");
-      box.className = "md-preview";
-      try {
-        mountPreview(box, viewerState.text);
-      } catch (e) {
-        box.className = "md-preview md-preview-error";
-        box.textContent = "\u9884\u89C8\u6E32\u67D3\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF");
-      }
-      mdViewerBody.appendChild(box);
-    } else {
-      const ta = document.createElement("textarea");
-      ta.className = "md md-viewer-raw";
-      ta.readOnly = true;
-      ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
-      mdViewerBody.appendChild(ta);
-    }
+    if (isPreview) renderViewerPreview();
+    else renderViewerRaw();
     mdViewerBody.dataset.mode = mode;
   }
   function openMarkdownViewer(state, trigger) {
@@ -3460,20 +3466,22 @@ ${xlsxRowsToMd(kept)}`);
     playReveal(vt, o);
     return vt;
   }
+  function copyViewerRaw() {
+    if (!viewerState) return;
+    const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
+    copyText(text, mdViewerCopy).catch(() => setStatus("\u590D\u5236\u5931\u8D25\uFF1A\u526A\u8D34\u677F\u4E0D\u53EF\u7528", true));
+  }
+  function downloadViewerRaw() {
+    if (!viewerState) return;
+    saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
+  }
   function initMarkdownViewer() {
     if (!mdViewer) return;
     if (mdViewerClose) mdViewerClose.addEventListener("click", closeMarkdownViewer);
     if (mdViewerPreview) mdViewerPreview.addEventListener("click", () => renderViewerMode("preview"));
     if (mdViewerRaw) mdViewerRaw.addEventListener("click", () => renderViewerMode("raw"));
-    if (mdViewerCopy) mdViewerCopy.addEventListener("click", () => {
-      if (!viewerState) return;
-      const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
-      copyText(text, mdViewerCopy).catch(() => setStatus("\u590D\u5236\u5931\u8D25\uFF1A\u526A\u8D34\u677F\u4E0D\u53EF\u7528", true));
-    });
-    if (mdViewerDownload) mdViewerDownload.addEventListener("click", () => {
-      if (!viewerState) return;
-      saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
-    });
+    if (mdViewerCopy) mdViewerCopy.addEventListener("click", copyViewerRaw);
+    if (mdViewerDownload) mdViewerDownload.addEventListener("click", downloadViewerRaw);
     mdViewer.addEventListener("keydown", (e) => {
       if (e.key === "Escape") closeMarkdownViewer();
     });

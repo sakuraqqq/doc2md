@@ -679,40 +679,46 @@ export function truncatePreview(text, max = PREVIEW_MAX_CHARS) {
 let viewerState = null;
 let viewerTrigger = null;
 
+/** 卡 059 / A6：失败态也必须有可见内容（主区域非空白）——错误文案进查看器，不只留在状态栏。 */
+function renderViewerError(msg) {
+  mdViewerBody.innerHTML = '';
+  const box = document.createElement('div');
+  box.className = 'md-preview md-preview-error';
+  box.textContent = msg;
+  mdViewerBody.appendChild(box);
+  mdViewerBody.dataset.mode = 'error';
+}
+function renderViewerPreview() {
+  const box = document.createElement('div');
+  box.className = 'md-preview';
+  try {
+    mountPreview(box, viewerState.text);
+  } catch (e) {
+    box.className = 'md-preview md-preview-error';
+    box.textContent = '预览渲染失败：' + (e && e.message ? e.message : '未知错误');
+  }
+  mdViewerBody.appendChild(box);
+}
+function renderViewerRaw() {
+  const ta = document.createElement('textarea');
+  ta.className = 'md md-viewer-raw';
+  ta.readOnly = true;
+  // 卡 059 / A7：外部打开的原文必须可供「复制/下载」逐字取全 —— fullText 时不做 1 MB 预览截断。
+  ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
+  mdViewerBody.appendChild(ta);
+}
 function renderViewerMode(mode) {
   if (!viewerState || !mdViewerBody) return;
   if (viewerState.error) {
-    // 卡 059 / A6：失败态也必须有可见内容（主区域非空白）——错误文案进查看器，不只留在状态栏。
-    mdViewerBody.innerHTML = '';
-    const box = document.createElement('div');
-    box.className = 'md-preview md-preview-error';
-    box.textContent = viewerState.error;
-    mdViewerBody.appendChild(box);
-    mdViewerBody.dataset.mode = 'error';
+    renderViewerError(viewerState.error);
     return;
   }
   const isPreview = mode === 'preview';
   if (mdViewerPreview) mdViewerPreview.setAttribute('aria-pressed', String(isPreview));
   if (mdViewerRaw) mdViewerRaw.setAttribute('aria-pressed', String(!isPreview));
   mdViewerBody.innerHTML = '';
-  if (isPreview) {
-    const box = document.createElement('div');
-    box.className = 'md-preview';
-    try {
-      mountPreview(box, viewerState.text);
-    } catch (e) {
-      box.className = 'md-preview md-preview-error';
-      box.textContent = '预览渲染失败：' + (e && e.message ? e.message : '未知错误');
-    }
-    mdViewerBody.appendChild(box);
-  } else {
-    const ta = document.createElement('textarea');
-    ta.className = 'md md-viewer-raw';
-    ta.readOnly = true;
-    // 卡 059 / A7：外部打开的原文必须可供「复制/下载」逐字取全 —— fullText 时不做 1 MB 预览截断。
-    ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
-    mdViewerBody.appendChild(ta);
-  }
+  if (isPreview) renderViewerPreview();
+  else renderViewerRaw();
   mdViewerBody.dataset.mode = mode;
 }
 
@@ -1105,20 +1111,22 @@ export function switchTheme(choice, btn) {
 }
 /** 三 Tab + 外观 + 文件页空态的接线（模块顶层执行：bundle 注入 body 尾部，DOM 已就绪）
  * ⚠️ 拆成 initTabs / initTheme 三个小函数：合并写时 initShell 的圈复杂度 17（阈值 10）会被 metrics 判红。 */
+function copyViewerRaw() {
+  if (!viewerState) return;
+  const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
+  copyText(text, mdViewerCopy).catch(() => setStatus('复制失败：剪贴板不可用', true));
+}
+function downloadViewerRaw() {
+  if (!viewerState) return;
+  saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
+}
 function initMarkdownViewer() {
   if (!mdViewer) return;
   if (mdViewerClose) mdViewerClose.addEventListener('click', closeMarkdownViewer);
   if (mdViewerPreview) mdViewerPreview.addEventListener('click', () => renderViewerMode('preview'));
   if (mdViewerRaw) mdViewerRaw.addEventListener('click', () => renderViewerMode('raw'));
-  if (mdViewerCopy) mdViewerCopy.addEventListener('click', () => {
-    if (!viewerState) return;
-    const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
-    copyText(text, mdViewerCopy).catch(() => setStatus('复制失败：剪贴板不可用', true));
-  });
-  if (mdViewerDownload) mdViewerDownload.addEventListener('click', () => {
-    if (!viewerState) return;
-    saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
-  });
+  if (mdViewerCopy) mdViewerCopy.addEventListener('click', copyViewerRaw);
+  if (mdViewerDownload) mdViewerDownload.addEventListener('click', downloadViewerRaw);
   mdViewer.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeMarkdownViewer();
   });
