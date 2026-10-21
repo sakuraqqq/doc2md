@@ -7,5 +7,12 @@
             android:authorities="${applicationId}.pipe"
             android:exported="true"
             android:grantUriPermissions="true" />
+        <provider
+            android:name="io.github.sakuraqqq.doc2md.RaceFixtureProvider"
+            android:authorities="io.github.sakuraqqq.doc2md.racefixture"
+            android:exported="false" />
+        <receiver
+            android:name="io.github.sakuraqqq.doc2md.RaceClipReceiver"
+            android:exported="true" />
     </application>
 </manifest>

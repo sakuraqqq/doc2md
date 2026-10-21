@@ -10,14 +10,15 @@
   },
   "scripts": {
     "build": "node tools/build.mjs",
-    "gen:samples": "node tests/gen-samples.mjs",
     "test": "node --test",
+    "test:race": "node tools/race-059.mjs",
+    "lint": "eslint \"src/**/*.js\" \"tools/**/*.mjs\"",
+    "metrics": "node tools/metrics.mjs",
+    "gen:samples": "node tests/gen-samples.mjs",
     "test:direct": "node tests/contract_v1.test.mjs",
     "test:contract": "node --test tests/contract_v1.test.mjs",
     "verify:ocr": "node tools/verify-ocr.mjs",
-    "lint": "eslint \"src/**/*.js\" \"tools/**/*.mjs\"",
-    "format": "prettier --write \"src/**/*.js\" \"tools/**/*.mjs\"",
-    "metrics": "node tools/metrics.mjs"
+    "format": "prettier --write \"src/**/*.js\" \"tools/**/*.mjs\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
