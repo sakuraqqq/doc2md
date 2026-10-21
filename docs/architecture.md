@@ -273,4 +273,5 @@ async function convert(file /* File */) -> Promise<{
 - **`pathPattern` 在 APK 内会被 aapt2 归一**（`.*\.md` → `.*.md`）：`SIMPLE_GLOB` 里 `.` 是字面量 ⇒ 语义不变；契约按归一后形态断言。
 - **pending 单槽**：连续两个 intent 只保留最后一个（最新请求赢；旧回包丢弃）。
 - **C2 未实现前**：49 MB 文件可**预览**（前 4 Mi 字符）+ 可**下载原文**（sha 一致），但 raw 全文不可见 —— 这是能力边界，不是失败。
+- **竞态守卫（Z9-16/Z9-17，真机）**：`tools/race-059.mjs` 用 debug-only `RaceFixtureProvider`（pipe，可 `delayMs`/`shortWrite`）+ `RaceClipReceiver` 驱动「A 慢 / B 快」，断言 UI / 下载 #2 / 复制三者 = B、`OPEN_COMMIT` 恰 1 条、A 必 `OPEN_DROP`；C3 四漏洞同脚本。证据写 `files/race/native.log`（ROM 丢 logcat 时仍可复核）。`--expect-red` 旧原生构建必须 exit 1。⚠️ 负例构建 = `25e392f` 原生 + 当前 web 资产：旧 JS 在小文件上不走原生动作，无法暴露该 P1。
 - **A15 非 seekable 已实测**：debug-only `PipeProvider`（`ParcelFileDescriptor.createPipe`，非 seekable）打开 5 MB ⇒ 预览 495 ms、下载 5,000,011 B **sha 一致**、复制回读通过；读取路径从不用 `AssetFileDescriptor`/`getStatSize`，恒走 `openInputStream`。
