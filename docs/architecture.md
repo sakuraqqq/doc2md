@@ -217,43 +217,56 @@ async function convert(file /* File */) -> Promise<{
 | MIME | `text/markdown` · `text/x-markdown` · `text/plain` | 文件管理器报的三种常见类型 |
 | 兜底 | `*/*` + `pathPattern`（`.*\.md` / `.*\..*\.md` / `.*\.markdown` / `.*\..*\.markdown`） | ⛔ 不声明裸 `*/*`、⛔ 不声明无 pathPattern 的 `application/octet-stream`（会接住所有未知二进制） |
 
-### 9.2 读取路径
+### 9.2 能力拆分（C1–C5，2026-10-22（三）拍板）
 
-- 一律走 `ContentResolver.openInputStream(content://)`（原生 `Doc2mdNativePlugin`）；⛔ 不建 `FileProvider`（卡 013 删掉的，本卡不恢复）。
-- 严格 UTF-8 解码（`CharsetDecoder` REPORT）；含 NUL 或解码失败 ⇒ 按「非文本」拒绝。
-- **两个口径别混**：**读取**上限 **50 MB**（与 `AGENTS.md` §2 单文件护栏同口径，超限拒绝 `too_large`）；**渲染**上限 **4 M 字符**（UTF-16 `String.length`，与 058 `MAX_SOURCE_CHARS` 同口径，超出显示 CUT_HINT）。
-- **原文不被截断**：复制/下载逐字等于源文件（A7 的 sha256 口径）。
+| 能力 | 实现 | 全文是否过 bridge |
+|---|---|---|
+| **C1 预览**（默认） | 原生只回 ≤ **4 Mi 字符**（UTF-16）预览 + `truncated` / `size` 元数据；JS 再兜一层硬限 | ❌ 不过 |
+| **C3 原文下载** | 原生按 URI **流式**写 Downloads（MediaStore Q+／legacy 回退），不经 bridge | ❌ 不过 |
+| **C4 原文复制** | 原生 `ClipboardManager`；**≤1 MiB（UTF-8 字节）**，超限/已截断 ⇒ 明确拒绝并提示下载 | ❌ 不过 |
+| **C2 全文查看**（候选） | `convertFileSrc` + `fetch`；**先 spike（A14）后实现**，未通过不写 | —（未实现） |
+| **C5 失败提示** | 预览/下载/复制/全文四条能力**各自**可见失败文案 | — |
 
-### 9.3 冷启动 / 热启动
+> ⛔ 「默认预览可用」≠「raw 全文已解决」（A8d）。>4 Mi 且 C2 未实现时，raw 态显示「全文未加载（文件过大）」（A8b），⛔ 不用截断文本冒充全文。
 
-- `BridgeActivity.load()` 在 bridge 建好后**立刻**把 launch intent 交给 `onNewIntent`（`@capacitor/android` 8.5.2 `BridgeActivity.java` L51）⇒ 此时 WebView 里的 JS 可能还没订阅。
-- **`load()` 不预读**（否则冷启动会把同一文件读两遍）；`handleOnNewIntent()` 在**后台线程**读一次并暂存（`doc2md-open` 线程，避免 50 MB 读阻塞主线程）。
-- JS 启动后调 `consumePendingOpen()` 取走即清；若原生仍在读（`reading=true`）则退避重试（≤2 s）。
-- 热启动：插件读完再发 `doc2mdOpen` 事件（UI 线程），JS 收到后同样 `consumePendingOpen()`。
-- **只保证最后一项**：快速连点多个文件时，pending 单槽只保留最后一个（F8 已登记）。
+### 9.3 读取、过桥与原生原文动作
+
+- 一律走 `ContentResolver.openInputStream(content://)`；⛔ 不建 `FileProvider`、⛔ 不假设 URI 可 seek（pipe/socket 类 provider 天然回退到 `InputStream`）。
+- **读取**：只读前缀 ≤ **16 MB 字节**（够解出 4 Mi 字符）；严格 UTF-8（前缀用 `endOfInput=false`，整读用 `true`）；含 NUL 或解码失败 ⇒ 非文本。
+- **两个口径别混**：**读取上限 50 MB**（超限 `too_large`），**预览上限 4 Mi 字符**（UTF-16 `String.length`，与 058 `MAX_SOURCE_CHARS` 同口径）。
+- **C3 SHA-256 口径**：对象 = 源文件完整字节流（`content://` 原始字节；不解码/不换行/不 trim/不补 BOM）；范围 = `[0, size)`；一致性 = 下载件 sha256 **必须等于**源件 sha256（测试独立计算，⛔ 不信 app 自报）。
+- **C4 复制**：≤1 MiB 时原生写剪贴板；>1 MiB 或预览已截断 ⇒ 返回 `copied:false, reason:too_large`，界面提示改用下载。
+- 原生日志：`OPEN_PREVIEW bytes_read=… chars=… chars_sent=… truncated=…`（证明 JS 收到的 ≤ 硬限）。
+
+### 9.4 冷启动 / 热启动
+
+- `BridgeActivity.load()` 在 bridge 建好后**立刻**把 launch intent 交给 `onNewIntent`（8.5.2 L51）⇒ 此时 JS 可能还没订阅：`load()` 与 `handleOnNewIntent()` **都只发起一次后台读**，按 **action+uri 去重**（同一 intent 只读一次）。
+- **generation**：每次请求自增 `openSeq`；只有最新请求能写 pending（慢的旧请求完成即丢弃）；JS 侧再按 `seq` 丢弃迟到回包（F19）。
+- JS 启动后 `consumePendingOpen()` 取走即清；原生仍在读（`reading=true`）⇒ 退避重试 **≤10 s（40 × 250 ms）**。
 - ⛔ 不引 `@capacitor/app`：现有插件 + `Plugin.handleOnNewIntent` 即可收（`Bridge.java` L1314）。
 
-### 9.4 失败语义（五类，界面可判）
+### 9.5 失败语义（五类 + C5）
 
 | 类别 | 触发 | 用户可见 |
 |---|---|---|
 | `no_access` | URI 无读权限 / SecurityException | 查看器内 + 状态栏：「无法读取该文件（文件管理器未授予读取权限）」 |
 | `empty` | 0 字节 | 「文件内容为空（0 字节）」 |
 | `binary` | 非 UTF-8 / 含 NUL | 「这不是文本文件，暂不支持打开」 |
-| `too_large` | > 50 MB（读取拒绝；≠ 4 M 字符的渲染截断） | 「文件超过 50 MB 上限，暂不支持打开」 |
+| `too_large` | > 50 MB（读取拒绝；≠ 4 Mi 字符的预览截断） | 「文件超过 50 MB 上限，暂不支持打开」 |
 | `read_failed` | 其它 IO 异常 | 「读取文件失败，请重试」 |
 
-失败时**主区域不空白**（错误文案进查看器），且不产生 console / page error。
+失败时**主区域不空白**，且不产生 console / page error。下载/复制失败同样走状态栏可见文案（⛔ 静默）。
 
-### 9.5 两态与安全
+### 9.6 两态与安全（A8a / A8b）
 
-- `.md` / `.markdown` 默认**渲染态**；`text/plain`（且扩展名不是 `.md`）默认**原文态**（⛔ 不把普通 `.txt` 当 markdown 渲染）。
-- 外部 md 与「粘贴/转换」走**同一条** `renderMarkdown` / `mountPreview` 链（marked + DOMPurify + 7 类载体剥离）；预览触发 **0** 个外域请求。
-- textarea 与读入文本逐字一致（口径：UTF-8 解码后 `\r\n` / 单独 `\r` / `\n` **三者等价** —— 2026-10-22 拍板 P1；其余字符含 BOM 一律不变）；「复制/下载原文」用**未归一化**的原始文本（A7 的 sha256 口径）。
+- ≤4 Mi 字符：`.md`/`.markdown` 默认**渲染态**；`text/plain`（扩展名不是 `.md`）默认**原文态**；textarea 与读入文本逐字一致 —— `\r\n` / 单独 `\r` / `\n` **三者等价**（平台归一，2026-10-22 拍板 P1），BOM 与其余字符不变；「复制原文」保留源文本。
+- >4 Mi 字符（C2 未实现）：raw 态**不得**展示截断文本，必须显示「全文未加载（文件过大）」+ 下载/复制入口；预览态照常（C1）。
+- 外部 md 与「粘贴/转换」走**同一条** `renderMarkdown`/`mountPreview` 链（marked + DOMPurify + 7 类载体剥离）；预览触发 **0** 个外域请求。
 
-### 9.6 已知边界（如实）
+### 9.7 已知边界（如实）
 
-- **第三方管理器可能不以 `VIEW + content://` 交付**：Material Files（`me.zhanghai.android.files`）点 `.md` 实测发的是 `ACTION_OPEN_DOCUMENT` + `file:///…`（MIME `NULL`），系统交给 OEM 办公套件 ⇒ 本 app 不参与。要支持 `file://` 需存储权限（卡外），故 `file://` 维持不声明。
-- **`pathPattern` 在 APK 内会被 aapt2 归一**（`.*\.md` → `.*.md`）：Android `SIMPLE_GLOB` 里 `.` 是字面量 ⇒ 语义不变；契约用归一后形态断言。
-- **pending 单槽**：连续两个 intent 只保留最后一个。
-- **bridge 单次载荷上限（2026-10-22 实测，新发现）**：读取虽已移出主线程，但 `consumePendingOpen` 把全文一次过桥 —— **10 MB 可打开**（冷启 205 ms）、**49 MB 打开失败**（查看器未出现；启动 198 ms、无 ANR）。A7 夹具（≤5 MB）不受影响；大文件需分块传输（另卡）。
+- **A2 机制（2026-10-22 实测更正）**：Material Files（`me.zhanghai.android.files`）点 `.md` 发的是 **`ACTION_VIEW` + `content://me.zhanghai.android.files.file_provider/…` + `typ=text/markdown`** —— 与本 app 过滤器完全匹配；未出选择器是因为**系统已有默认处理者**（OEM 办公套件）。清除该默认（`pm clear-package-preferred-activities com.vivo.smartoffice`）后选择器出现「文转MD助手」，点选即打开（`launchedFromPackage=me.zhanghai.android.files`）。
+- **系统「文件」的 `OPEN_DOCUMENT + file://` 链**不属于本 app（`file` scheme 需存储权限，卡外）；A10 维持已知限制。
+- **`pathPattern` 在 APK 内会被 aapt2 归一**（`.*\.md` → `.*.md`）：`SIMPLE_GLOB` 里 `.` 是字面量 ⇒ 语义不变；契约按归一后形态断言。
+- **pending 单槽**：连续两个 intent 只保留最后一个（最新请求赢；旧回包丢弃）。
+- **C2 未实现前**：49 MB 文件可**预览**（前 4 Mi 字符）+ 可**下载原文**（sha 一致），但 raw 全文不可见 —— 这是能力边界，不是失败。

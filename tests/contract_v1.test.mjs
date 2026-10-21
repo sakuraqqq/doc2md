@@ -7453,7 +7453,15 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
         assert.equal(s2.preview, 'true', '.md 被 text/plain 抢成原文态（扩展名应优先）');
       });
 
-      await t.test('Z9-6 A8 三种行尾等价（CRLF/CR/LF）+ BOM 不改；复制原文保源', async () => {
+      await t.test('Z9-6 A8 归一纯函数（CRLF/CR/LF 等价 + BOM 不动）+ textarea/复制一致', async () => {
+        // F17：直接断言纯函数输出 —— 旧实现 replace(/\r\n/g) 在单独 CR 下必红（textarea 自归一不再是借口）。
+        const norm = await page.evaluate((cases) => {
+          const f = (window.__doc2md || {}).normalizeExternalText;
+          if (typeof f !== 'function') return { missing: true };
+          return cases.map((c) => f(c));
+        }, ['a\r\nb', 'a\rb', 'a\nb', '\uFEFF# 标题\r\n']);
+        assert.equal(norm.missing, undefined, 'window.__doc2md.normalizeExternalText 未暴露');
+        assert.deepEqual(norm, ['a\nb', 'a\nb', 'a\nb', '\uFEFF# 标题\n'], '归一纯函数输出不对');
         await closeViewer(page);
         await page.evaluate(() => {
           window.__copied = null;
@@ -7462,25 +7470,11 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
             value: { writeText: (t) => { window.__copied = t; return Promise.resolve(); } },
           });
         });
-        // ① CRLF
-        await openExternalInPage(page, { name: 'crlf.txt', mime: 'text/plain', text: 'a\r\nb' });
-        assert.equal((await readViewer(page)).value, 'a\nb', 'CRLF 未归一');
-        await page.locator('#mdViewerCopy').click();
-        await page.waitForTimeout(120);
-        assert.equal(await page.evaluate(() => window.__copied), 'a\r\nb', '复制原文被归一化（A7 要求 == 源）');
-        // ② 单独 CR（拍板 P1：三者等价）
-        await closeViewer(page);
         await openExternalInPage(page, { name: 'cr.txt', mime: 'text/plain', text: 'a\rb' });
-        assert.equal((await readViewer(page)).value, 'a\nb', '单独 CR 未归一（P1 要求三者等价）');
+        assert.equal((await readViewer(page)).value, 'a\nb', 'textarea 与归一后文本不一致');
         await page.locator('#mdViewerCopy').click();
         await page.waitForTimeout(120);
-        assert.equal(await page.evaluate(() => window.__copied), 'a\rb', '单独 CR 的原文被改');
-        // ③ BOM 不改（只动行尾，其余字符不变）
-        await closeViewer(page);
-        await openExternalInPage(page, { name: 'bom.txt', mime: 'text/plain', text: '\uFEFF# 标题\r\n' });
-        const v = (await readViewer(page)).value;
-        assert.equal(v.charCodeAt(0), 0xFEFF, 'BOM 被删（拍板：其余字符不变）');
-        assert.equal(v.slice(1), '# 标题\n', 'BOM 后的行尾未归一');
+        assert.equal(await page.evaluate(() => window.__copied), 'a\rb', '复制原文被归一化（A8 要求 == 源）');
       });
 
       await t.test('Z9-7 A6 失败语义四类：界面有该类文字 + 主区域非空白', async () => {
@@ -7546,21 +7540,16 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
         }
       });
 
-      await t.test('Z9-9 A7 >4 MB：CUT_HINT 出现 + 复制原文逐字全量（sha256 一致）', async () => {
+      await t.test('Z9-9 A7 >4 Mi 字符：JS 只拿预览 + 显式「大文件」提示（不静默）', async () => {
         await closeViewer(page);
         const big = 'a'.repeat(4 * 1024 * 1024 + 100);
-        await openExternalInPage(page, { name: 'big.md', mime: 'text/markdown', text: big });
-        await page.waitForTimeout(200);
-        const s = await readViewer(page);
-        assert.equal(s.cut, true, '>4 MB 未见 CUT_HINT');
-        await page.evaluate(() => { window.__copied = null; });
-        await page.locator('#mdViewerCopy').click();
-        await page.waitForTimeout(200);
-        const copied = await page.evaluate(() => window.__copied);
-        assert.equal(copied.length, big.length, '复制的原文长度不等于源：' + (copied ? copied.length : copied));
-        const h1 = crypto.createHash('sha256').update(copied).digest('hex');
-        const h2 = crypto.createHash('sha256').update(big).digest('hex');
-        assert.equal(h1, h2, '复制原文的 sha256 与源不一致');
+        const res = await openExternalInPage(page, { name: 'big.md', mime: 'text/markdown', text: big });
+        assert.equal(res && res.truncated, true, '>4 Mi 未标记 truncated');
+        const status = await page.evaluate(() => document.getElementById('status').textContent);
+        assert.ok(/仅预览/.test(status), '状态栏无「仅预览」提示：' + status);
+        await page.locator('#mdViewerRaw').click();
+        const rawText = await page.evaluate(() => document.getElementById('mdViewerBody').textContent);
+        assert.ok(rawText.indexOf('全文未加载（文件过大）') >= 0, 'raw 态未显示「全文未加载」（A8b）');
       });
 
       await t.test('Z9-10 A7 ≤4 MB：全文可见（末尾 marker 出现），无 CUT_HINT', async () => {
@@ -7606,6 +7595,25 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
         assert.deepEqual(validateOpenWithManifest(xml), [], 'aapt 归一后的形态被误判');
       });
 
+      await t.test('Z9-14 A7 边界：恰好 4 Mi 字符不截、4 Mi+1 必截', async () => {
+        await closeViewer(page);
+        const exact = 'a'.repeat(4 * 1024 * 1024);
+        const r1 = await openExternalInPage(page, { name: 'exact.md', mime: 'text/markdown', text: exact });
+        assert.equal(r1 && r1.truncated, false, '恰好 4 Mi 被误判截断');
+        await closeViewer(page);
+        const over = 'a'.repeat(4 * 1024 * 1024 + 1);
+        const r2 = await openExternalInPage(page, { name: 'over.md', mime: 'text/markdown', text: over });
+        assert.equal(r2 && r2.truncated, true, '4 Mi+1 未截断');
+      });
+
+      await t.test('Z9-15 F19 generation：旧 seq 回包不得覆盖新请求', async () => {
+        await closeViewer(page);
+        await openExternalInPage(page, { name: 'new.md', mime: 'text/markdown', text: '# NEW', seq: 2 });
+        await openExternalInPage(page, { name: 'old.md', mime: 'text/markdown', text: '# OLD', seq: 1 });
+        const s = await readViewer(page);
+        assert.equal(s.name, 'new.md', '旧回包覆盖了新请求');
+        assert.ok(s.bodyText.indexOf('NEW') >= 0, '内容不是新请求的');
+      });
       await closeViewer(page);
       assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
       await ctx.close();

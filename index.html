@@ -267,6 +267,8 @@
   }
   body.md-viewer-open { overflow: hidden; }
   .md-viewer-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .md-viewer-status { padding: 4px 14px 6px; font-size: 13px; color: var(--muted); min-height: 18px; }
+  .md-viewer-status.error { color: var(--err); }
   .md-viewer-close { border: 0; background: transparent; color: var(--text); font-size: 18px; line-height: 1; padding: 10px; cursor: pointer; }
   .md-viewer-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .md-viewer-body { flex: 1; overflow: auto; padding: 14px 16px; }
@@ -495,6 +497,7 @@
     <button class="md-viewer-close" id="mdViewerClose" type="button" aria-label="关闭预览">✕</button>
     <span class="md-viewer-name" id="mdViewerName"></span>
   </header>
+  <div id="mdViewerStatus" class="md-viewer-status" role="status" aria-live="polite"></div>
   <div class="md-viewer-body" id="mdViewerBody"></div>
   <div class="md-viewer-foot">
     <div class="md-viewer-ext" id="mdViewerExt" hidden>
@@ -2536,6 +2539,11 @@ ${xlsxRowsToMd(kept)}`);
   function setStatus(msg, isError) {
     statusEl.textContent = msg || "";
     statusEl.className = isError ? "error" : "";
+    const viewerStatus = document.getElementById("mdViewerStatus");
+    if (viewerStatus) {
+      viewerStatus.textContent = msg || "";
+      viewerStatus.className = "md-viewer-status" + (isError ? " error" : "");
+    }
     if (msg) diag("status", String(msg).slice(0, 120));
   }
   var TOAST_MS = 3200;
@@ -3075,6 +3083,13 @@ ${xlsxRowsToMd(kept)}`);
     mdViewerBody.appendChild(box);
   }
   function renderViewerRaw() {
+    if (viewerState.truncated) {
+      const box = document.createElement("div");
+      box.className = "md-preview md-preview-error";
+      box.textContent = "\u5168\u6587\u672A\u52A0\u8F7D\uFF08\u6587\u4EF6\u8FC7\u5927\uFF09\u2014\u2014 \u8BF7\u7528\u300C\u4E0B\u8F7D\u539F\u6587\u300D\u5BFC\u51FA\u5B8C\u6574\u6587\u4EF6\uFF08\u590D\u5236\u4EC5\u652F\u6301 \u22641 MiB\uFF09\u3002";
+      mdViewerBody.appendChild(box);
+      return;
+    }
     const ta = document.createElement("textarea");
     ta.className = "md md-viewer-raw";
     ta.readOnly = true;
@@ -3136,23 +3151,58 @@ ${xlsxRowsToMd(kept)}`);
     }
     anchorDownload(new Blob([text], { type: "text/plain;charset=utf-8" }), name);
   }
+  var MAX_PREVIEW_CHARS = 4 * 1024 * 1024;
+  var lastExternalSeq = 0;
+  function acceptExternalSeq(p) {
+    if (typeof p.seq !== "number") return true;
+    if (p.seq < lastExternalSeq) return false;
+    lastExternalSeq = Math.max(lastExternalSeq, p.seq);
+    return true;
+  }
+  function capPreviewText(text) {
+    if (text.length <= MAX_PREVIEW_CHARS) return text;
+    const preview = text.slice(0, MAX_PREVIEW_CHARS);
+    const c = preview.charCodeAt(preview.length - 1);
+    if (c >= 55296 && c <= 56319) return preview.slice(0, -1);
+    return preview;
+  }
+  function showExternalError(name, code) {
+    const msg = EXTERNAL_ERROR_TEXT[code] || "\u65E0\u6CD5\u6253\u5F00\u8BE5\u6587\u4EF6";
+    setStatus(msg, true);
+    openMarkdownViewer({ fileName: name, text: "", external: true, error: msg }, null);
+    return { ok: false, error: String(code) };
+  }
+  function presentExternal(name, raw, preview, truncated, mime, size) {
+    const plain = !looksLikeMarkdown(name) && (mime === "text/plain" || mime === "");
+    const mode = plain ? "raw" : "preview";
+    openMarkdownViewer(
+      {
+        fileName: name,
+        text: preview,
+        raw: truncated ? null : raw,
+        truncated,
+        size: typeof size === "number" ? size : null,
+        external: true,
+        fullText: !truncated,
+        defaultMode: mode
+      },
+      null
+    );
+    return mode;
+  }
   function openExternalDocument(payload) {
     const p = payload || {};
+    if (!acceptExternalSeq(p)) return { ok: false, stale: true };
     const name = String(p.name || "opened.md");
-    if (p.error) {
-      const msg = EXTERNAL_ERROR_TEXT[p.error] || "\u65E0\u6CD5\u6253\u5F00\u8BE5\u6587\u4EF6";
-      setStatus(msg, true);
-      openMarkdownViewer({ fileName: name, text: "", external: true, error: msg }, null);
-      return { ok: false, error: String(p.error) };
-    }
+    if (p.error) return showExternalError(name, p.error);
     const raw = String(p.text == null ? "" : p.text);
     const text = normalizeExternalText(raw);
-    const mime = String(p.mime || "");
-    const plain = !looksLikeMarkdown(name) && (mime === "text/plain" || mime === "");
-    const defaultMode = plain ? "raw" : "preview";
-    openMarkdownViewer({ fileName: name, text, raw, external: true, fullText: true, defaultMode }, null);
-    setStatus("\u5DF2\u6253\u5F00\uFF1A" + name);
-    return { ok: true, mode: defaultMode };
+    const over = text.length > MAX_PREVIEW_CHARS;
+    const truncated = p.truncated === true || over;
+    const preview = over ? capPreviewText(text) : text;
+    const mode = presentExternal(name, raw, preview, truncated, String(p.mime || ""), p.size);
+    setStatus(truncated ? "\u5DF2\u6253\u5F00\uFF08\u5927\u6587\u4EF6\uFF1A\u4EC5\u9884\u89C8\u524D 4 Mi \u5B57\u7B26\uFF09\uFF1A" + name : "\u5DF2\u6253\u5F00\uFF1A" + name);
+    return { ok: true, mode, truncated };
   }
   function buildRowMenu(row) {
     const menu = document.createElement("div");
@@ -3468,11 +3518,37 @@ ${xlsxRowsToMd(kept)}`);
   }
   function copyViewerRaw() {
     if (!viewerState) return;
+    const plugin = nativePluginObject();
+    if (plugin && typeof plugin.copyPendingOriginal === "function") {
+      plugin.copyPendingOriginal().then((res) => {
+        if (res && res.copied) setStatus("\u2705 \u5DF2\u590D\u5236\u539F\u6587\uFF08" + res.chars + " \u5B57\u7B26\uFF09");
+        else setStatus("\u6587\u4EF6\u8FC7\u5927\uFF0C\u590D\u5236\u5DF2\u53D6\u6D88 \u2014\u2014 \u8BF7\u7528\u300C\u4E0B\u8F7D\u539F\u6587\u300D", true);
+      }).catch(() => setStatus("\u590D\u5236\u5931\u8D25 \u2014\u2014 \u8BF7\u7528\u300C\u4E0B\u8F7D\u539F\u6587\u300D", true));
+      return;
+    }
+    if (viewerState.truncated) {
+      setStatus("\u6587\u4EF6\u8FC7\u5927\uFF1A\u590D\u5236\u4EC5\u652F\u6301 \u22641 MiB\uFF0C\u8BF7\u7528\u300C\u4E0B\u8F7D\u539F\u6587\u300D\u5BFC\u51FA\u5B8C\u6574\u6587\u4EF6", true);
+      return;
+    }
     const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
     copyText(text, mdViewerCopy).catch(() => setStatus("\u590D\u5236\u5931\u8D25\uFF1A\u526A\u8D34\u677F\u4E0D\u53EF\u7528", true));
   }
+  function saveNativeOriginal() {
+    const plugin = nativePluginObject();
+    if (!plugin || typeof plugin.savePendingOriginal !== "function") {
+      setStatus("\u5927\u6587\u4EF6\u4EC5\u652F\u6301\u5728\u539F\u751F\u58F3\u4E2D\u300C\u4E0B\u8F7D\u539F\u6587\u300D", true);
+      return;
+    }
+    plugin.savePendingOriginal().then((res) => {
+      nativeNotice("\u5DF2\u4FDD\u5B58\u539F\u6587\uFF1A" + (res && res.filename || "") + "\uFF08" + fmtSize(res && res.bytes) + "\uFF09");
+    }).catch((e) => setStatus("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message ? e.message : e), true));
+  }
   function downloadViewerRaw() {
     if (!viewerState) return;
+    if (viewerState.truncated) {
+      saveNativeOriginal();
+      return;
+    }
     saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
   }
   function initMarkdownViewer() {
@@ -4171,7 +4247,8 @@ ${p.text}
     set embedMaxBytes(n) {
       setEmbedMaxBytes(n);
     },
-    openExternal: openExternalDocument
+    openExternal: openExternalDocument,
+    normalizeExternalText
   };
   function nativeOpenPlugin() {
     const cap = typeof window === "undefined" ? null : window.Capacitor;
