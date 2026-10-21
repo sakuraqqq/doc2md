@@ -490,6 +490,20 @@ public class Doc2mdNativePlugin extends Plugin {
         }, "doc2md-save").start();
     }
 
+    /** 卡 059 / Z9-16：debug-only —— JS 把查看器实际状态写进 race 日志（R1 的确定性 oracle）。 */
+    @PluginMethod
+    public void raceViewerState(PluginCall call) {
+        if (!isDebuggable()) {
+            call.resolve();
+            return;
+        }
+        String name = call.getString("name", "");
+        String mode = call.getString("mode", "");
+        boolean truncated = Boolean.TRUE.equals(call.getBoolean("truncated", false));
+        raceLog("VIEWER_STATE name=" + name + " mode=" + mode + " truncated=" + truncated);
+        call.resolve();
+    }
+
     /** A7c：原文复制 —— 原生剪贴板；>1 MiB 或已截断拒绝；写后 getPrimaryClip 回读自检（A7c 粘贴回读）。 */
     @PluginMethod
     public void copyPendingOriginal(PluginCall call) {

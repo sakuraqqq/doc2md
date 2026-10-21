@@ -102,14 +102,14 @@ function launch(name, extra = '', wait = false) {
     '-d "' + uriFor(name, extra) + '" -t text/markdown -n ' + PKG + '/io.github.sakuraqqq.doc2md.MainActivity';
   return sh(cmd, 30000);
 }
-function dumpUi() {
-  for (let i = 0; i < 6; i++) {
-    sh('uiautomator dump /sdcard/race-ui.xml');
-    const x = sh('cat /sdcard/race-ui.xml');
-    if (x.out && x.out.includes('race-')) return x.out;
-    sh('sleep 0.3');
+async function waitForLog(pattern, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const logs = logText();
+    if (pattern.test(logs)) return logs;
+    await sleep(200);
   }
-  return '';
+  return logText();
 }
 function downloads() {
   return sh('ls -1 /sdcard/Download/WenZhuanMD').out.split('\n')
@@ -145,11 +145,13 @@ function lastOf(logs, prefix) {
   return all.length ? all[all.length - 1] : '';
 }
 
-function assertUi(ui, bSha) {
-  if (EXPECT_RED) { note('UI contains race-b: ' + ui.includes('race-b.md')); return; }
-  (ui.includes('race-b.md') && !ui.includes('race-a.md'))
-    ? ok('R1', 'UI = race-b.md')
-    : fail('R1', 'UI 标题不是 race-b.md（dump 长度 ' + ui.length + '，b=' + bSha.slice(0, 8) + '）');
+function assertUi(logs, bSha) {
+  const states = (logs.match(/VIEWER_STATE[^\n]*/g) || []);
+  const last = states.length ? states[states.length - 1] : '';
+  if (EXPECT_RED) { note('VIEWER_STATE last=' + last); return; }
+  (last.includes('name=race-b.md') && !states.some((l) => l.includes('name=race-a.md')))
+    ? ok('R1', 'VIEWER_STATE = race-b.md（' + last.trim() + '）')
+    : fail('R1', 'VIEWER_STATE 不是 B（last=' + last + '，states=' + states.length + '，b=' + bSha.slice(0, 8) + '）');
 }
 function assertFirst(list, bSha) {
   if (EXPECT_RED) { note('下载 #1 = ' + JSON.stringify(list.map((f) => [f.n, f.sha.slice(0, 8)]))); return; }
@@ -210,8 +212,8 @@ async function raceSuite() {
   launch('race-a.md', '&delayMs=' + SLOW_MS, true);
   await sleep(300);
   launch('race-b.md', '&delayMs=0', true);
-  await sleep(700);
-  assertUi(dumpUi(), bSha);
+  const readyLogs = await waitForLog(/OPEN_COMMIT[^\n]*race-b\.md/, 5000);
+  assertUi(readyLogs, bSha);
   tapDownload();
   await sleep(1200);
   assertFirst(collect(), bSha);
@@ -232,7 +234,7 @@ async function raceSuite() {
     assertActions(logs);
     assertPipe(logs);
   } else {
-    note('native.log 缺失（旧构建）⇒ 跳过 R2/R6/R7 日志断言');
+    note('native.log 缺失（隔离装置缺日志）⇒ 跳过 R2/R6/R7 日志断言');
   }
   return 0;
 }
@@ -287,7 +289,7 @@ try {
   await ensureApp();
   if (EXPECT_RED) {
     const red = await raceSuite();
-    console.log(red === 1 ? 'not ok RED - 旧构建复现 A 覆盖（预期）' : 'ok RED - 旧构建未复现（脚本无效）');
+    console.log(red === 1 ? 'not ok RED - 隔离装置（25e392f 原生 + 当前 JS）复现 A 覆盖（预期）' : 'ok RED - 隔离装置未复现（脚本无效）');
     process.exit(red === 1 ? 1 : 0);
   }
   if (SUITE === 'race' || SUITE === 'all') await raceSuite();
