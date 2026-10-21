@@ -202,3 +202,47 @@ async function convert(file /* File */) -> Promise<{
 - 兼容性：Capacitor = 本地 WebView 容器，**零外发型单文件 App 完全兼容**（无服务端、无 CDN）；PWA 资源（manifest/SW）在容器内保留（SW 在 WebView 内通常生效或可绕过）。
 - 代价：需要原生工具链（Android Studio ≥1GB / macOS + Xcode）、签名与商店发布流程、版本维护成本；与 PWA（零打包成本）相比收益在「商店分发 + 原生能力（分享/文件系统）」。
 - v1 决策建议：**先 PWA 验证**（本阶段），Capacitor 视 PWA 上线后反馈再拍板。**本仓库未安装任何 Capacitor 依赖**（范围外变更需拍板）。
+
+## 9. 打开方式（系统 intent-filter · 卡 059 / B018）
+
+> 目标：文件管理器里点 `.md` / `.markdown` ⇒ 选择器出现「文转MD助手」⇒ 打开即渲染（可切原文）；冷启动与热启动都成立；**零新增权限、零外发**。
+
+### 9.1 声明面（`android/app/src/main/AndroidManifest.xml`）
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| action / category | `android.intent.action.VIEW` + `android.intent.category.DEFAULT` | 只接「打开」，不接 SEND |
+| activity | `.MainActivity`（`exported="true"` / `launchMode="singleTask"`） | 热启动复用同一 Activity；A4 的取证点 = logcat 里 onCreate 只出现一次 |
+| scheme | 仅 `content` | ⛔ 不声明 `file`：API<29 需存储权限、29+ 分区存储同样读不到 ⇒ 与零新增权限冲突（A10 登记为已知限制） |
+| MIME | `text/markdown` · `text/x-markdown` · `text/plain` | 文件管理器报的三种常见类型 |
+| 兜底 | `*/*` + `pathPattern`（`.*\.md` / `.*\..*\.md` / `.*\.markdown` / `.*\..*\.markdown`） | ⛔ 不声明裸 `*/*`、⛔ 不声明无 pathPattern 的 `application/octet-stream`（会接住所有未知二进制） |
+
+### 9.2 读取路径
+
+- 一律走 `ContentResolver.openInputStream(content://)`（原生 `Doc2mdNativePlugin`）；⛔ 不建 `FileProvider`（卡 013 删掉的，本卡不恢复）。
+- 严格 UTF-8 解码（`CharsetDecoder` REPORT）；含 NUL 或解码失败 ⇒ 按「非文本」拒绝。
+- 读取上限 **50 MB**（与 `AGENTS.md` §2 单文件护栏同口径）；**渲染**上限仍是 4 MB（`MAX_SOURCE_CHARS`，超出显示 CUT_HINT），**原文不被截断**（复制/下载逐字等于源文件）。
+
+### 9.3 冷启动 / 热启动
+
+- `BridgeActivity.load()` 在 bridge 建好后**立刻**把 launch intent 交给 `onNewIntent`（`@capacitor/android` 8.5.2 `BridgeActivity.java` L51）⇒ 此时 WebView 里的 JS 可能还没订阅。
+- 插件在 `load()` 与 `handleOnNewIntent()` **都只暂存**；JS 启动后调 `consumePendingOpen()` 主动取一次（取走即清，避免下次启动重复打开旧文件）。
+- 热启动：插件再发 `doc2mdOpen` 事件，JS 收到后同样 `consumePendingOpen()`。
+- ⛔ 不引 `@capacitor/app`：现有插件 + `Plugin.handleOnNewIntent` 即可收（`Bridge.java` L1314）。
+
+### 9.4 失败语义（四类，界面可判）
+
+| 类别 | 触发 | 用户可见 |
+|---|---|---|
+| `no_access` | URI 无读权限 / SecurityException | 查看器内 + 状态栏：「无法读取该文件（文件管理器未授予读取权限）」 |
+| `empty` | 0 字节 | 「文件内容为空（0 字节）」 |
+| `binary` | 非 UTF-8 / 含 NUL | 「这不是文本文件，暂不支持打开」 |
+| `too_large` | > 50 MB | 「文件超过 50 MB 上限，暂不支持打开」 |
+
+失败时**主区域不空白**（错误文案进查看器），且不产生 console / page error。
+
+### 9.5 两态与安全
+
+- `.md` / `.markdown` 默认**渲染态**；`text/plain`（且扩展名不是 `.md`）默认**原文态**（⛔ 不把普通 `.txt` 当 markdown 渲染）。
+- 外部 md 与「粘贴/转换」走**同一条** `renderMarkdown` / `mountPreview` 链（marked + DOMPurify + 7 类载体剥离）；预览触发 **0** 个外域请求。
+- textarea 与读入文本逐字一致（口径：UTF-8 解码后仅 `CRLF` → `LF`）；「复制/下载原文」用**未归一化**的原始文本（A7 的 sha256 口径）。
