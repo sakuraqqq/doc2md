@@ -22,6 +22,26 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- 卡 059 / B018：用本 App 打开 .md（系统「打开方式」）。
+                 只收 content://（ACTION_VIEW + DEFAULT）；⛔ 不收 file://（API<29 需存储权限、29+ 分区存储同样读不到 ⇒ 与零新增权限冲突）。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="text/markdown" />
+                <data android:scheme="content" android:mimeType="text/x-markdown" />
+                <data android:scheme="content" android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- 兜底：文件管理器常把 .md 报成 */* 或 octet-stream ⇒ 用 */* + pathPattern 接过，但 ⛔ 不声明裸 */*（无 pathPattern）。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\.md" />
+                <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\..*\.md" />
+                <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\.markdown" />
+                <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\..*\.markdown" />
+            </intent-filter>
+
         </activity>
 
         <!-- 卡 013 / A1：FileProvider 的 <provider> 已**删除**（连同 res/xml/file_paths.xml）。

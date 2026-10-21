@@ -10,7 +10,7 @@ import { convert, registry, MAX_BYTES } from './convert.js';
 import { collapseCjkSpaces } from './cjk.js';
 import { htmlToMarkdown } from './html2md.js';
 import { decodeText, sniff } from './sniff.js';
-import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes } from './ui.js';
+import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument } from './ui.js';
 import { mountPreview, renderMarkdown } from './markdown-preview.js';
 
 export async function handleFiles(files) {
@@ -104,7 +104,35 @@ window.__doc2md = {
   mountPreview,
   get embedMaxBytes() { return getEmbedMaxBytes(); },
   set embedMaxBytes(n) { setEmbedMaxBytes(n); },
+  openExternal: openExternalDocument,
 };
+
+/* 卡 059（B018 / A7.6-A7）：系统「打开方式」——原生壳把 content:// 里的文本交过来。
+ * 冷启动：原生侧先暂存（WebView 里的 JS 可能还没订阅，见卡面 §0 已知坑）⇒ 这里启动时主动取一次；
+ * 热启动：原生再发 doc2mdOpen 事件，收到后同样取一次（取走即清，避免下次启动重复打开旧文件）。 */
+function nativeOpenPlugin() {
+  const cap = typeof window === 'undefined' ? null : window.Capacitor;
+  const plugins = cap && cap.Plugins;
+  const plugin = plugins && plugins.Doc2mdNative;
+  return plugin && typeof plugin.consumePendingOpen === 'function' ? plugin : null;
+}
+async function consumePendingOpen() {
+  const plugin = nativeOpenPlugin();
+  if (!plugin) return;
+  try {
+    const res = await plugin.consumePendingOpen();
+    if (res && res.pending) openExternalDocument(res);
+  } catch {
+    // 取不到不是错误（冷启动顺序问题）；不往 console 抛，契约 C2 要求无 console error
+  }
+}
+const openPlugin = nativeOpenPlugin();
+if (openPlugin) {
+  consumePendingOpen();
+  if (typeof openPlugin.addListener === 'function') {
+    openPlugin.addListener('doc2mdOpen', () => { consumePendingOpen(); });
+  }
+}
 
 /* PWA：service worker 注册（离线缓存；仅 http(s)/localhost 生效，
  * file:// 双击打开时静默跳过——单文件本身离线可用，SW 是增强）。

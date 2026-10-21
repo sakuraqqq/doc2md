@@ -275,6 +275,10 @@
   .md-viewer-raw { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0; resize: none; border: 0; border-radius: 0; background: var(--bg); }
   .md-viewer-foot { padding: 10px 16px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--panel); }
   .md-viewer-foot .seg-btn { min-height: 40px; }
+  /* 卡 059：外部打开时才有「复制/下载原文」（A7）——其余场景保持原查看器布局不变 */
+  .md-viewer-ext { display: flex; gap: 8px; margin-bottom: 10px; }
+  .md-viewer-ext[hidden] { display: none; }
+  .md-viewer-ext .btn { flex: 1 1 auto; }
   .batch-bar { position: fixed; left: 12px; right: 12px; z-index: 15; bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px); margin: 0 auto; max-width: 928px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
   .batch-spacer { flex: 0 0 auto; }
 
@@ -493,6 +497,10 @@
   </header>
   <div class="md-viewer-body" id="mdViewerBody"></div>
   <div class="md-viewer-foot">
+    <div class="md-viewer-ext" id="mdViewerExt" hidden>
+      <button class="btn" type="button" id="mdViewerCopy">复制原文</button>
+      <button class="btn" type="button" id="mdViewerDownload">下载原文</button>
+    </div>
     <div class="seg" role="group" aria-label="预览模式">
       <button class="seg-btn" type="button" id="mdViewerPreview" aria-pressed="true">预览</button>
       <button class="seg-btn" type="button" id="mdViewerRaw" aria-pressed="false">原文</button>
@@ -2509,6 +2517,9 @@ ${xlsxRowsToMd(kept)}`);
   var mdViewerClose = $("#mdViewerClose");
   var mdViewerPreview = $("#mdViewerPreview");
   var mdViewerRaw = $("#mdViewerRaw");
+  var mdViewerExt = $("#mdViewerExt");
+  var mdViewerCopy = $("#mdViewerCopy");
+  var mdViewerDownload = $("#mdViewerDownload");
   var pickerTitle = $("#pickerTitle");
   var resultsPanel = $("#resultsPanel");
   var resultsCount = $("#resultsCount");
@@ -3046,6 +3057,15 @@ ${xlsxRowsToMd(kept)}`);
   var viewerTrigger = null;
   function renderViewerMode(mode) {
     if (!viewerState || !mdViewerBody) return;
+    if (viewerState.error) {
+      mdViewerBody.innerHTML = "";
+      const box = document.createElement("div");
+      box.className = "md-preview md-preview-error";
+      box.textContent = viewerState.error;
+      mdViewerBody.appendChild(box);
+      mdViewerBody.dataset.mode = "error";
+      return;
+    }
     const isPreview = mode === "preview";
     if (mdViewerPreview) mdViewerPreview.setAttribute("aria-pressed", String(isPreview));
     if (mdViewerRaw) mdViewerRaw.setAttribute("aria-pressed", String(!isPreview));
@@ -3064,7 +3084,7 @@ ${xlsxRowsToMd(kept)}`);
       const ta = document.createElement("textarea");
       ta.className = "md md-viewer-raw";
       ta.readOnly = true;
-      ta.value = truncatePreview(viewerState.text);
+      ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
       mdViewerBody.appendChild(ta);
     }
     mdViewerBody.dataset.mode = mode;
@@ -3074,18 +3094,59 @@ ${xlsxRowsToMd(kept)}`);
     viewerState = state;
     viewerTrigger = trigger || document.activeElement;
     if (mdViewerName) mdViewerName.textContent = state.fileName;
+    if (mdViewerExt) mdViewerExt.hidden = !state.external;
     mdViewer.hidden = false;
     document.body.classList.add("md-viewer-open");
-    renderViewerMode("preview");
+    renderViewerMode(state.defaultMode || "preview");
     if (mdViewerClose) mdViewerClose.focus();
   }
   function closeMarkdownViewer() {
     if (!mdViewer) return;
     mdViewer.hidden = true;
     document.body.classList.remove("md-viewer-open");
+    if (mdViewerExt) mdViewerExt.hidden = true;
     viewerState = null;
     if (viewerTrigger && typeof viewerTrigger.focus === "function") viewerTrigger.focus();
     viewerTrigger = null;
+  }
+  var EXTERNAL_ERROR_TEXT = {
+    no_access: "\u65E0\u6CD5\u8BFB\u53D6\u8BE5\u6587\u4EF6\uFF08\u6587\u4EF6\u7BA1\u7406\u5668\u672A\u6388\u4E88\u8BFB\u53D6\u6743\u9650\uFF09",
+    empty: "\u6587\u4EF6\u5185\u5BB9\u4E3A\u7A7A\uFF080 \u5B57\u8282\uFF09",
+    binary: "\u8FD9\u4E0D\u662F\u6587\u672C\u6587\u4EF6\uFF0C\u6682\u4E0D\u652F\u6301\u6253\u5F00",
+    too_large: "\u6587\u4EF6\u8D85\u8FC7 50 MB \u4E0A\u9650\uFF0C\u6682\u4E0D\u652F\u6301\u6253\u5F00",
+    read_failed: "\u8BFB\u53D6\u6587\u4EF6\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5"
+  };
+  function normalizeExternalText(text) {
+    return String(text == null ? "" : text).replace(/\r\n/g, "\n");
+  }
+  function looksLikeMarkdown(name) {
+    return /\.(md|markdown)$/i.test(String(name || ""));
+  }
+  function saveExternalText(name, text) {
+    const plugin = nativeSavePlugin();
+    if (plugin) {
+      plugin.saveText({ filename: name, text, mime: "text/plain;charset=utf-8" }).then((res) => nativeNotice(NATIVE_SAVED + (res && res.filename || name))).catch((e) => setStatus("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message ? e.message : e), true));
+      return;
+    }
+    anchorDownload(new Blob([text], { type: "text/plain;charset=utf-8" }), name);
+  }
+  function openExternalDocument(payload) {
+    const p = payload || {};
+    const name = String(p.name || "opened.md");
+    if (p.error) {
+      const msg = EXTERNAL_ERROR_TEXT[p.error] || "\u65E0\u6CD5\u6253\u5F00\u8BE5\u6587\u4EF6";
+      setStatus(msg, true);
+      openMarkdownViewer({ fileName: name, text: "", external: true, error: msg }, null);
+      return { ok: false, error: String(p.error) };
+    }
+    const raw = String(p.text == null ? "" : p.text);
+    const text = normalizeExternalText(raw);
+    const mime = String(p.mime || "");
+    const plain = !looksLikeMarkdown(name) && (mime === "text/plain" || mime === "");
+    const defaultMode = plain ? "raw" : "preview";
+    openMarkdownViewer({ fileName: name, text, raw, external: true, fullText: true, defaultMode }, null);
+    setStatus("\u5DF2\u6253\u5F00\uFF1A" + name);
+    return { ok: true, mode: defaultMode };
   }
   function buildRowMenu(row) {
     const menu = document.createElement("div");
@@ -3404,6 +3465,15 @@ ${xlsxRowsToMd(kept)}`);
     if (mdViewerClose) mdViewerClose.addEventListener("click", closeMarkdownViewer);
     if (mdViewerPreview) mdViewerPreview.addEventListener("click", () => renderViewerMode("preview"));
     if (mdViewerRaw) mdViewerRaw.addEventListener("click", () => renderViewerMode("raw"));
+    if (mdViewerCopy) mdViewerCopy.addEventListener("click", () => {
+      if (!viewerState) return;
+      const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
+      copyText(text, mdViewerCopy).catch(() => setStatus("\u590D\u5236\u5931\u8D25\uFF1A\u526A\u8D34\u677F\u4E0D\u53EF\u7528", true));
+    });
+    if (mdViewerDownload) mdViewerDownload.addEventListener("click", () => {
+      if (!viewerState) return;
+      saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
+    });
     mdViewer.addEventListener("keydown", (e) => {
       if (e.key === "Escape") closeMarkdownViewer();
     });
@@ -4092,8 +4162,33 @@ ${p.text}
     },
     set embedMaxBytes(n) {
       setEmbedMaxBytes(n);
-    }
+    },
+    openExternal: openExternalDocument
   };
+  function nativeOpenPlugin() {
+    const cap = typeof window === "undefined" ? null : window.Capacitor;
+    const plugins = cap && cap.Plugins;
+    const plugin = plugins && plugins.Doc2mdNative;
+    return plugin && typeof plugin.consumePendingOpen === "function" ? plugin : null;
+  }
+  async function consumePendingOpen() {
+    const plugin = nativeOpenPlugin();
+    if (!plugin) return;
+    try {
+      const res = await plugin.consumePendingOpen();
+      if (res && res.pending) openExternalDocument(res);
+    } catch {
+    }
+  }
+  var openPlugin = nativeOpenPlugin();
+  if (openPlugin) {
+    consumePendingOpen();
+    if (typeof openPlugin.addListener === "function") {
+      openPlugin.addListener("doc2mdOpen", () => {
+        consumePendingOpen();
+      });
+    }
+  }
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("./sw.js").catch(() => {
