@@ -219,6 +219,8 @@ async function convert(file /* File */) -> Promise<{
 
 ### 9.2 能力拆分（C1–C5，2026-10-22（三）拍板）
 
+> **清单面**：release 合并清单只有 `INTERNET`；无 FileProvider/自定义 provider（`androidx.startup.InitializationProvider` 是 AndroidX 库注入，非本 app 声明、无读写权限）。debug 变体额外声明一个 **debug-only `PipeProvider`**（A15 用，appId 后缀 `.debug`；release 不受影响）。
+
 | 能力 | 实现 | 全文是否过 bridge |
 |---|---|---|
 | **C1 预览**（默认） | 原生只回 ≤ **4 Mi 字符**（UTF-16）预览 + `truncated` / `size` 元数据；JS 再兜一层硬限 | ❌ 不过 |
@@ -235,8 +237,9 @@ async function convert(file /* File */) -> Promise<{
 - **读取**：只读前缀 ≤ **16 MB 字节**（够解出 4 Mi 字符）；严格 UTF-8（前缀用 `endOfInput=false`，整读用 `true`）；含 NUL 或解码失败 ⇒ 非文本。
 - **两个口径别混**：**读取上限 50 MB**（超限 `too_large`），**预览上限 4 Mi 字符**（UTF-16 `String.length`，与 058 `MAX_SOURCE_CHARS` 同口径）。
 - **C3 SHA-256 口径**：对象 = 源文件完整字节流（`content://` 原始字节；不解码/不换行/不 trim/不补 BOM）；范围 = `[0, size)`；一致性 = 下载件 sha256 **必须等于**源件 sha256（测试独立计算，⛔ 不信 app 自报）。
-- **C4 复制**：≤1 MiB 时原生写剪贴板；>1 MiB 或预览已截断 ⇒ 返回 `copied:false, reason:too_large`，界面提示改用下载。
-- 原生日志：`OPEN_PREVIEW bytes_read=… chars=… chars_sent=… truncated=…`（证明 JS 收到的 ≤ 硬限）。
+- **C3 完整性**：`written == expected`（size 已知时）才成功；`update IS_PENDING=0` 返回值必须 > 0；异常删除已插入的 pending 行；回包用实际 `DISPLAY_NAME`（重名不误导）。
+- **C4 复制**：≤1 MiB 时原生写剪贴板；>1 MiB 或预览已截断 ⇒ 返回 `copied:false, reason:too_large`，界面提示改用下载。写后 `getPrimaryClip()` **回读自检**，返回 `verified`（界面显示「回读校验通过」）。
+- 原生日志：`OPEN_PREVIEW bytes_read=… chars=… bytes_sent=… chars_sent=… truncated=…`（证明 JS 收到的 ≤ 硬限）。⚠️ 该 ROM 的 logd 默认丢弃第三方 app 日志（`logcat` 无条目），本机以截图 + 代码 + sha 取证。
 
 ### 9.4 冷启动 / 热启动
 
@@ -270,3 +273,4 @@ async function convert(file /* File */) -> Promise<{
 - **`pathPattern` 在 APK 内会被 aapt2 归一**（`.*\.md` → `.*.md`）：`SIMPLE_GLOB` 里 `.` 是字面量 ⇒ 语义不变；契约按归一后形态断言。
 - **pending 单槽**：连续两个 intent 只保留最后一个（最新请求赢；旧回包丢弃）。
 - **C2 未实现前**：49 MB 文件可**预览**（前 4 Mi 字符）+ 可**下载原文**（sha 一致），但 raw 全文不可见 —— 这是能力边界，不是失败。
+- **A15 非 seekable 已实测**：debug-only `PipeProvider`（`ParcelFileDescriptor.createPipe`，非 seekable）打开 5 MB ⇒ 预览 495 ms、下载 5,000,011 B **sha 一致**、复制回读通过；读取路径从不用 `AssetFileDescriptor`/`getStatSize`，恒走 `openInputStream`。
