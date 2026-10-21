@@ -822,6 +822,11 @@ function presentExternal(name, raw, preview, truncated, mime, size, sizeKnown) {
       external: true, fullText: !truncated, defaultMode: mode },
     null
   );
+  // Z9-16 / R1：debug 壳把「查看器实际状态」落到 race 日志（浏览器无此插件 ⇒ 跳过）。
+  const plugin = nativePluginObject();
+  if (plugin && typeof plugin.raceViewerState === 'function') {
+    plugin.raceViewerState({ name: name, mode: mode, truncated: truncated }).catch(() => {});
+  }
   return mode;
 }
 export function openExternalDocument(payload) {

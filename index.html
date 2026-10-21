@@ -3189,6 +3189,11 @@ ${xlsxRowsToMd(kept)}`);
       },
       null
     );
+    const plugin = nativePluginObject();
+    if (plugin && typeof plugin.raceViewerState === "function") {
+      plugin.raceViewerState({ name, mode, truncated }).catch(() => {
+      });
+    }
     return mode;
   }
   function openExternalDocument(payload) {
