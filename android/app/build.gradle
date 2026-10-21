@@ -91,6 +91,10 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // 卡 059 / A15：debug 包与 release 并存，用 debug-only pipe provider 验非 seekable URI。
+            applicationIdSuffix ".debug"
+        }
         release {
             minifyEnabled false
             if (doc2mdHasKeystore) {

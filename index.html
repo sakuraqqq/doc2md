@@ -3172,7 +3172,7 @@ ${xlsxRowsToMd(kept)}`);
     openMarkdownViewer({ fileName: name, text: "", external: true, error: msg }, null);
     return { ok: false, error: String(code) };
   }
-  function presentExternal(name, raw, preview, truncated, mime, size) {
+  function presentExternal(name, raw, preview, truncated, mime, size, sizeKnown) {
     const plain = !looksLikeMarkdown(name) && (mime === "text/plain" || mime === "");
     const mode = plain ? "raw" : "preview";
     openMarkdownViewer(
@@ -3182,6 +3182,7 @@ ${xlsxRowsToMd(kept)}`);
         raw: truncated ? null : raw,
         truncated,
         size: typeof size === "number" ? size : null,
+        sizeKnown: sizeKnown === true,
         external: true,
         fullText: !truncated,
         defaultMode: mode
@@ -3200,7 +3201,7 @@ ${xlsxRowsToMd(kept)}`);
     const over = text.length > MAX_PREVIEW_CHARS;
     const truncated = p.truncated === true || over;
     const preview = over ? capPreviewText(text) : text;
-    const mode = presentExternal(name, raw, preview, truncated, String(p.mime || ""), p.size);
+    const mode = presentExternal(name, raw, preview, truncated, String(p.mime || ""), p.size, p.sizeKnown);
     setStatus(truncated ? "\u5DF2\u6253\u5F00\uFF08\u5927\u6587\u4EF6\uFF1A\u4EC5\u9884\u89C8\u524D 4 Mi \u5B57\u7B26\uFF09\uFF1A" + name : "\u5DF2\u6253\u5F00\uFF1A" + name);
     return { ok: true, mode, truncated };
   }
@@ -3521,8 +3522,9 @@ ${xlsxRowsToMd(kept)}`);
     const plugin = nativePluginObject();
     if (plugin && typeof plugin.copyPendingOriginal === "function") {
       plugin.copyPendingOriginal().then((res) => {
-        if (res && res.copied) setStatus("\u2705 \u5DF2\u590D\u5236\u539F\u6587\uFF08" + res.chars + " \u5B57\u7B26\uFF09");
-        else setStatus("\u6587\u4EF6\u8FC7\u5927\uFF0C\u590D\u5236\u5DF2\u53D6\u6D88 \u2014\u2014 \u8BF7\u7528\u300C\u4E0B\u8F7D\u539F\u6587\u300D", true);
+        if (res && res.copied) {
+          setStatus(res.verified ? "\u2705 \u5DF2\u590D\u5236\u539F\u6587\uFF08" + res.chars + " \u5B57\u7B26\uFF0C\u56DE\u8BFB\u6821\u9A8C\u901A\u8FC7\uFF09" : "\u590D\u5236\u540E\u56DE\u8BFB\u4E0D\u4E00\u81F4 \u2014\u2014 \u8BF7\u7528\u300C\u4E0B\u8F7D\u539F\u6587\u300D\u590D\u6838", !res.verified);
+        } else setStatus("\u6587\u4EF6\u8FC7\u5927\uFF0C\u590D\u5236\u5DF2\u53D6\u6D88 \u2014\u2014 \u8BF7\u7528\u300C\u4E0B\u8F7D\u539F\u6587\u300D", true);
       }).catch(() => setStatus("\u590D\u5236\u5931\u8D25 \u2014\u2014 \u8BF7\u7528\u300C\u4E0B\u8F7D\u539F\u6587\u300D", true));
       return;
     }
@@ -3533,20 +3535,32 @@ ${xlsxRowsToMd(kept)}`);
     const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
     copyText(text, mdViewerCopy).catch(() => setStatus("\u590D\u5236\u5931\u8D25\uFF1A\u526A\u8D34\u677F\u4E0D\u53EF\u7528", true));
   }
+  function handleSavedOriginal(res) {
+    const bytes = res && res.bytes || 0;
+    const expected = viewerState && viewerState.sizeKnown ? viewerState.size : -1;
+    if (expected >= 0 && bytes !== expected) {
+      setStatus("\u4FDD\u5B58\u6821\u9A8C\u5931\u8D25\uFF1A\u5199\u5165 " + bytes + " B \u2260 \u6E90 " + expected + " B", true);
+      return;
+    }
+    nativeNotice("\u5DF2\u4FDD\u5B58\u539F\u6587\uFF1A" + (res && res.filename || "") + "\uFF08" + fmtSize(bytes) + "\uFF0C\u5B57\u8282\u6570\u6821\u9A8C\u901A\u8FC7\uFF09");
+  }
   function saveNativeOriginal() {
     const plugin = nativePluginObject();
     if (!plugin || typeof plugin.savePendingOriginal !== "function") {
       setStatus("\u5927\u6587\u4EF6\u4EC5\u652F\u6301\u5728\u539F\u751F\u58F3\u4E2D\u300C\u4E0B\u8F7D\u539F\u6587\u300D", true);
       return;
     }
-    plugin.savePendingOriginal().then((res) => {
-      nativeNotice("\u5DF2\u4FDD\u5B58\u539F\u6587\uFF1A" + (res && res.filename || "") + "\uFF08" + fmtSize(res && res.bytes) + "\uFF09");
-    }).catch((e) => setStatus("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message ? e.message : e), true));
+    plugin.savePendingOriginal().then(handleSavedOriginal).catch((e) => setStatus("\u4FDD\u5B58\u5931\u8D25\uFF1A" + (e && e.message ? e.message : e), true));
   }
   function downloadViewerRaw() {
     if (!viewerState) return;
-    if (viewerState.truncated) {
+    const plugin = nativePluginObject();
+    if (plugin && typeof plugin.savePendingOriginal === "function") {
       saveNativeOriginal();
+      return;
+    }
+    if (viewerState.truncated) {
+      setStatus("\u5927\u6587\u4EF6\u4EC5\u652F\u6301\u5728\u539F\u751F\u58F3\u4E2D\u300C\u4E0B\u8F7D\u539F\u6587\u300D", true);
       return;
     }
     saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);

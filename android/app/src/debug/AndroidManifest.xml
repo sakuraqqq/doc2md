@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 卡 059 / A15：仅 debug 包声明（release 清单仍只有 INTERNET、无 provider）。 -->
+    <application>
+        <provider
+            android:name="io.github.sakuraqqq.doc2md.PipeProvider"
+            android:authorities="${applicationId}.pipe"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>
