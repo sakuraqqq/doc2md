@@ -193,6 +193,7 @@ public class Doc2mdNativePlugin extends Plugin {
     private String pendingName;
     private String pendingMime;
     private long pendingSize;
+    private boolean pendingSizeKnown;
     private boolean pendingTruncated;
     private String pendingPreviewText;
 
@@ -218,6 +219,7 @@ public class Doc2mdNativePlugin extends Plugin {
             openSeq += 1;
             seq = openSeq;
             pendingOpen = null;
+            clearActionStateLocked();
         }
         // 读取放到后台线程（冷启动不卡主线程）；只有最新 generation 能写结果（F19：后完成者不得覆盖新请求）。
         // JS 侧 consumePendingOpen 在 reading=true 时退避重试（≤10 s：40 × 250 ms）。
@@ -229,10 +231,23 @@ public class Doc2mdNativePlugin extends Plugin {
                 Log.w(TAG, "OPEN_INTENT_FAIL " + t);
             }
             boolean latest;
+            boolean okPayload = data != null && data.has("text") && !data.has("error");
             synchronized (openLock) {
                 latest = seq == openSeq;
                 if (latest) {
                     pendingOpen = data;
+                    if (okPayload) {
+                        // G8：动作状态与 pendingOpen 在同一把锁里、且仅最新 generation 提交（避免界面 B、下载 A）。
+                        pendingUri = Uri.parse(data.optString("uri", ""));
+                        pendingName = data.optString("name", null);
+                        pendingMime = data.optString("mime", null);
+                        pendingSize = data.optLong("size", -1);
+                        pendingSizeKnown = data.optBoolean("sizeKnown", false);
+                        pendingTruncated = data.optBoolean("truncated", false);
+                        pendingPreviewText = data.optString("text", null);
+                    } else {
+                        clearActionStateLocked();
+                    }
                     openReading = false;
                 }
             }
@@ -245,6 +260,17 @@ public class Doc2mdNativePlugin extends Plugin {
                 }
             }
         }, "doc2md-open").start();
+    }
+
+    /** 动作状态只在 openLock 内改；错误/新请求都要清（G8）。 */
+    private void clearActionStateLocked() {
+        pendingUri = null;
+        pendingName = null;
+        pendingMime = null;
+        pendingSize = -1;
+        pendingSizeKnown = false;
+        pendingTruncated = false;
+        pendingPreviewText = null;
     }
 
     // JS 启动/热启动后主动取一次；取走即清（避免下次启动重复打开旧文件）。
@@ -366,35 +392,34 @@ public class Doc2mdNativePlugin extends Plugin {
             }
         }
         long sizeOut = size > 0 ? size : bytes.length;
-        synchronized (openLock) {
-            pendingUri = uri;
-            pendingName = name;
-            pendingMime = mime;
-            pendingSize = sizeOut;
-            pendingTruncated = truncated;
-            pendingPreviewText = preview;
-        }
         ret.put("size", sizeOut);
+        ret.put("sizeKnown", size > 0);
         ret.put("truncated", truncated);
         ret.put("chars", chars);
         ret.put("previewChars", preview.length());
         ret.put("text", preview);
+        int bytesSent = preview.getBytes(StandardCharsets.UTF_8).length;
         Log.i(TAG, "OPEN_PREVIEW thread=" + Thread.currentThread().getName()
                 + " bytes_read=" + bytes.length + " chars=" + chars
-                + " chars_sent=" + preview.length() + " truncated=" + truncated);
+                + " bytes_sent=" + bytesSent + " chars_sent=" + preview.length()
+                + " truncated=" + truncated);
         return ret;
     }
 
-    /** A7b：原文下载 —— 按 URI 流式写 Downloads，全文不过 bridge。 */
+    /** A7b：原文下载 —— 按 URI 流式写 Downloads，全文不过 bridge；成功态校验字节数（G9）。 */
     @PluginMethod
     public void savePendingOriginal(PluginCall call) {
         final Uri uri;
         final String name;
         final String mime;
+        final long expected;
+        final boolean sizeKnown;
         synchronized (openLock) {
             uri = pendingUri;
             name = pendingName;
             mime = pendingMime;
+            expected = pendingSize;
+            sizeKnown = pendingSizeKnown;
         }
         if (uri == null) {
             call.reject("no pending file");
@@ -402,10 +427,13 @@ public class Doc2mdNativePlugin extends Plugin {
         }
         new Thread(() -> {
             try {
-                long bytes = copyUriToDownloads(uri, name == null ? "opened.md" : name, mime);
+                String[] actual = new String[1];
+                long bytes = copyUriToDownloads(uri, name == null ? "opened.md" : name, mime,
+                        sizeKnown ? expected : -1, actual);
                 JSObject r = new JSObject();
                 r.put("bytes", bytes);
-                r.put("filename", name);
+                r.put("expected", sizeKnown ? expected : -1);
+                r.put("filename", actual[0] != null ? actual[0] : name);
                 call.resolve(r);
             } catch (Exception e) {
                 Log.w(TAG, "SAVE_ORIGINAL_FAIL " + e);
@@ -414,7 +442,7 @@ public class Doc2mdNativePlugin extends Plugin {
         }, "doc2md-save").start();
     }
 
-    /** A7c：原文复制 —— 原生剪贴板；>1 MiB 或预览已截断时明确拒绝（JS 提示改用下载）。 */
+    /** A7c：原文复制 —— 原生剪贴板；>1 MiB 或已截断拒绝；写后 getPrimaryClip 回读自检（A7c 粘贴回读）。 */
     @PluginMethod
     public void copyPendingOriginal(PluginCall call) {
         String text;
@@ -447,7 +475,17 @@ public class Doc2mdNativePlugin extends Plugin {
         try {
             ClipboardManager cm = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
             cm.setPrimaryClip(ClipData.newPlainText("doc2md", text));
+            boolean verified = false;
+            try {
+                ClipData clip = cm.getPrimaryClip();
+                if (clip != null && clip.getItemCount() > 0) {
+                    CharSequence pasted = clip.getItemAt(0).getText();
+                    verified = pasted != null && text.contentEquals(pasted);
+                }
+            } catch (Exception ignored) {
+            }
             r.put("copied", true);
+            r.put("verified", verified);
             r.put("chars", text.length());
             call.resolve(r);
         } catch (Exception e) {
@@ -457,7 +495,8 @@ public class Doc2mdNativePlugin extends Plugin {
         }
     }
 
-    private long copyUriToDownloads(Uri src, String name, String mime) throws Exception {
+    private long copyUriToDownloads(Uri src, String name, String mime, long expected, String[] actualName)
+            throws Exception {
         ContentResolver cr = getContext().getContentResolver();
         InputStream in = cr.openInputStream(src);
         if (in == null) {
@@ -475,12 +514,53 @@ public class Doc2mdNativePlugin extends Plugin {
                 if (target == null) {
                     throw new Exception("MediaStore insert returned null");
                 }
-                OutputStream out = cr.openOutputStream(target);
-                if (out == null) {
-                    cr.delete(target, null, null);
-                    throw new Exception("openOutputStream returned null");
+                try {
+                    OutputStream out = cr.openOutputStream(target);
+                    if (out == null) {
+                        throw new Exception("openOutputStream returned null");
+                    }
+                    long bytes = 0;
+                    try {
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = in.read(buf)) != -1) {
+                            out.write(buf, 0, n);
+                            bytes += n;
+                        }
+                    } finally {
+                        try {
+                            out.close();
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    if (expected >= 0 && bytes != expected) {
+                        throw new Exception("size mismatch: written=" + bytes + " expected=" + expected);
+                    }
+                    ContentValues done = new ContentValues();
+                    done.put(MediaStore.Downloads.IS_PENDING, 0);
+                    if (cr.update(target, done, null, null) <= 0) {
+                        throw new Exception("update IS_PENDING failed");
+                    }
+                    actualName[0] = queryDisplayName(cr, target, name);
+                    return bytes;
+                } catch (Exception e) {
+                    // G9：失败必须回滚，不能留半截/待发布行。
+                    try {
+                        cr.delete(target, null, null);
+                    } catch (Exception ignored) {
+                    }
+                    throw e;
                 }
-                long bytes = 0;
+            }
+            File dir = new File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), DOWNLOAD_SUBDIR);
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new Exception("mkdirs failed");
+            }
+            File f = new File(dir, name);
+            long bytes = 0;
+            try {
+                OutputStream out = new FileOutputStream(f);
                 try {
                     byte[] buf = new byte[64 * 1024];
                     int n;
@@ -494,32 +574,17 @@ public class Doc2mdNativePlugin extends Plugin {
                     } catch (Exception ignored) {
                     }
                 }
-                ContentValues done = new ContentValues();
-                done.put(MediaStore.Downloads.IS_PENDING, 0);
-                cr.update(target, done, null, null);
-                return bytes;
-            }
-            File dir = new File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), DOWNLOAD_SUBDIR);
-            if (!dir.exists() && !dir.mkdirs()) {
-                throw new Exception("mkdirs failed");
-            }
-            File f = new File(dir, name);
-            OutputStream out = new FileOutputStream(f);
-            long bytes = 0;
-            try {
-                byte[] buf = new byte[64 * 1024];
-                int n;
-                while ((n = in.read(buf)) != -1) {
-                    out.write(buf, 0, n);
-                    bytes += n;
+                if (expected >= 0 && bytes != expected) {
+                    throw new Exception("size mismatch: written=" + bytes + " expected=" + expected);
                 }
-            } finally {
-                try {
-                    out.close();
-                } catch (Exception ignored) {
+            } catch (Exception e) {
+                if (f.exists()) {
+                    //noinspection ResultOfMethodCallIgnored
+                    f.delete();
                 }
+                throw e;
             }
+            actualName[0] = name;
             return bytes;
         } finally {
             try {
@@ -527,6 +592,25 @@ public class Doc2mdNativePlugin extends Plugin {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    private String queryDisplayName(ContentResolver cr, Uri uri, String fallback) {
+        Cursor c = null;
+        try {
+            c = cr.query(uri, new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null);
+            if (c != null && c.moveToFirst()) {
+                String n = c.getString(0);
+                if (n != null && !n.isEmpty()) {
+                    return n;
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (c != null) {
+                c.close();
+            }
+        }
+        return fallback;
     }
 
     private byte[] readPrefix(ContentResolver cr, Uri uri, int limit) throws Exception {

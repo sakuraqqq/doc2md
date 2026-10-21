@@ -813,12 +813,12 @@ function showExternalError(name, code) {
   openMarkdownViewer({ fileName: name, text: '', external: true, error: msg }, null);
   return { ok: false, error: String(code) };
 }
-function presentExternal(name, raw, preview, truncated, mime, size) {
+function presentExternal(name, raw, preview, truncated, mime, size, sizeKnown) {
   const plain = !looksLikeMarkdown(name) && (mime === 'text/plain' || mime === '');
   const mode = plain ? 'raw' : 'preview';
   openMarkdownViewer(
     { fileName: name, text: preview, raw: truncated ? null : raw, truncated: truncated,
-      size: typeof size === 'number' ? size : null,
+      size: typeof size === 'number' ? size : null, sizeKnown: sizeKnown === true,
       external: true, fullText: !truncated, defaultMode: mode },
     null
   );
@@ -834,7 +834,7 @@ export function openExternalDocument(payload) {
   const over = text.length > MAX_PREVIEW_CHARS;
   const truncated = p.truncated === true || over;
   const preview = over ? capPreviewText(text) : text;
-  const mode = presentExternal(name, raw, preview, truncated, String(p.mime || ''), p.size);
+  const mode = presentExternal(name, raw, preview, truncated, String(p.mime || ''), p.size, p.sizeKnown);
   setStatus(truncated ? '已打开（大文件：仅预览前 4 Mi 字符）：' + name : '已打开：' + name);
   return { ok: true, mode: mode, truncated: truncated };
 }
@@ -1166,8 +1166,11 @@ function copyViewerRaw() {
     plugin
       .copyPendingOriginal()
       .then((res) => {
-        if (res && res.copied) setStatus('✅ 已复制原文（' + res.chars + ' 字符）');
-        else setStatus('文件过大，复制已取消 —— 请用「下载原文」', true);
+        if (res && res.copied) {
+          setStatus(res.verified
+            ? '✅ 已复制原文（' + res.chars + ' 字符，回读校验通过）'
+            : '复制后回读不一致 —— 请用「下载原文」复核', !res.verified);
+        } else setStatus('文件过大，复制已取消 —— 请用「下载原文」', true);
       })
       .catch(() => setStatus('复制失败 —— 请用「下载原文」', true));
     return;
@@ -1179,6 +1182,15 @@ function copyViewerRaw() {
   const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
   copyText(text, mdViewerCopy).catch(() => setStatus('复制失败：剪贴板不可用', true));
 }
+function handleSavedOriginal(res) {
+  const bytes = (res && res.bytes) || 0;
+  const expected = viewerState && viewerState.sizeKnown ? viewerState.size : -1;
+  if (expected >= 0 && bytes !== expected) {
+    setStatus('保存校验失败：写入 ' + bytes + ' B ≠ 源 ' + expected + ' B', true);
+    return;
+  }
+  nativeNotice('已保存原文：' + ((res && res.filename) || '') + '（' + fmtSize(bytes) + '，字节数校验通过）');
+}
 function saveNativeOriginal() {
   const plugin = nativePluginObject();
   if (!plugin || typeof plugin.savePendingOriginal !== 'function') {
@@ -1187,16 +1199,19 @@ function saveNativeOriginal() {
   }
   plugin
     .savePendingOriginal()
-    .then((res) => {
-      nativeNotice('已保存原文：' + ((res && res.filename) || '') + '（' + fmtSize(res && res.bytes) + '）');
-    })
+    .then(handleSavedOriginal)
     .catch((e) => setStatus('保存失败：' + (e && e.message ? e.message : e), true));
 }
 function downloadViewerRaw() {
   if (!viewerState) return;
-  if (viewerState.truncated) {
-    // A7b：原文下载走原生流式（按 URI 复制到 Downloads），全文不过 bridge。
+  // A7b/G3：外部原文一律优先走原生 URI 流式（不经 bridge）；仅浏览器回退 saveText。
+  const plugin = nativePluginObject();
+  if (plugin && typeof plugin.savePendingOriginal === 'function') {
     saveNativeOriginal();
+    return;
+  }
+  if (viewerState.truncated) {
+    setStatus('大文件仅支持在原生壳中「下载原文」', true);
     return;
   }
   saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
