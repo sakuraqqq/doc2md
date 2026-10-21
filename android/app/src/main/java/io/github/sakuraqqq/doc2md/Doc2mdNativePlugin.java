@@ -81,14 +81,11 @@ public class Doc2mdNativePlugin extends Plugin {
     @Override
     public void load() {
         runSelftestOnce();
-        // 卡 059：冷启动的 launch intent 先暂存（此时 WebView 里的 JS 可能还没订阅）——
-        // JS 启动后调 consumePendingOpen() 主动取一次（卡面 §0 已知坑：只靠一次性 notifyListeners 会丢冷启动）。
+        // 卡 059 退回（F6）：冷启动的 launch intent 在这里**只发起一次后台读取**；紧接着 BridgeActivity.load()
+        // 会把它再交给 handleOnNewIntent（8.5.2 L51）—— startOpenRead 按「action+uri」去重，保证只读一次。
         try {
             Activity act = getActivity();
-            JSObject data = readOpenIntent(act == null ? null : act.getIntent());
-            if (data != null) {
-                pendingOpen = data;
-            }
+            startOpenRead(act == null ? null : act.getIntent());
         } catch (Throwable t) {
             Log.w(TAG, "PENDING_LAUNCH_FAIL " + t);
         }
@@ -177,35 +174,71 @@ public class Doc2mdNativePlugin extends Plugin {
     // ⛔ 不引 @capacitor/app：现有插件就能收（Bridge.java L1314 → Plugin.handleOnNewIntent）。
     // 上限 = 50 MB，与 AGENTS.md §2 的单文件护栏同口径（A7 的 4 MB 是**渲染**口径，不是读取口径）。
     private static final long MAX_OPEN_BYTES = 50L * 1024 * 1024;
+    // 卡 059 退回（F6）：读取移到后台线程 ⇒ pending 与 reading 用同一把锁；只保证「最后一项」（F8 已登记）。
+    private final Object openLock = new Object();
     private JSObject pendingOpen;
+    private boolean openReading;
+    private String openRequestKey;
 
     private static final class TooLargeException extends Exception {}
 
     @Override
     protected void handleOnNewIntent(Intent intent) {
         super.handleOnNewIntent(intent);
-        try {
-            JSObject data = readOpenIntent(intent);
-            if (data == null) {
+        startOpenRead(intent);
+    }
+
+    /** F6：同一个 intent 可能被 load() 与 onNewIntent 各交付一次 ⇒ 按「action+uri」去重，只读一次。 */
+    private void startOpenRead(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) {
+            return;
+        }
+        final String key = intent.getData().toString();
+        synchronized (openLock) {
+            if (key.equals(openRequestKey) && (openReading || pendingOpen != null)) {
                 return;
             }
-            pendingOpen = data;
-            JSObject ping = new JSObject();
-            ping.put("pending", true);
-            notifyListeners("doc2mdOpen", ping, false);
-        } catch (Throwable t) {
-            Log.w(TAG, "OPEN_INTENT_FAIL " + t);
+            openRequestKey = key;
+            openReading = true;
         }
+        // 读取（可达 50 MB）放到后台线程，避免冷启动主线程卡顿/ANR；读完回 UI 线程通知 JS。
+        // JS 侧 consumePendingOpen 在 reading=true 时退避重试（≤2 s）。
+        new Thread(() -> {
+            JSObject data = null;
+            try {
+                data = readOpenIntent(intent);
+            } catch (Throwable t) {
+                Log.w(TAG, "OPEN_INTENT_FAIL " + t);
+            }
+            synchronized (openLock) {
+                pendingOpen = data;
+                openReading = false;
+            }
+            if (data != null) {
+                final JSObject ping = new JSObject();
+                ping.put("pending", true);
+                try {
+                    getActivity().runOnUiThread(() -> notifyListeners("doc2mdOpen", ping, false));
+                } catch (Throwable ignored) {
+                }
+            }
+        }, "doc2md-open").start();
     }
 
     // JS 启动/热启动后主动取一次；取走即清（避免下次启动重复打开旧文件）。
     @PluginMethod
     public void consumePendingOpen(PluginCall call) {
-        JSObject out = pendingOpen;
-        pendingOpen = null;
+        JSObject out;
+        boolean reading;
+        synchronized (openLock) {
+            out = pendingOpen;
+            pendingOpen = null;
+            reading = openReading;
+        }
         if (out == null) {
             JSObject none = new JSObject();
             none.put("pending", false);
+            none.put("reading", reading);
             call.resolve(none);
             return;
         }
@@ -301,6 +334,8 @@ public class Doc2mdNativePlugin extends Plugin {
         }
         ret.put("size", bytes.length);
         ret.put("text", text);
+        // 卡 059 退回（F6）取证：线程名 + 字节数（不含文件名），用于证明「只读一次 + 不在主线程」。
+        Log.i(TAG, "OPEN_READ thread=" + Thread.currentThread().getName() + " bytes=" + bytes.length);
         return ret;
     }
 

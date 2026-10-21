@@ -116,12 +116,20 @@ function nativeOpenPlugin() {
   const plugin = plugins && plugins.Doc2mdNative;
   return plugin && typeof plugin.consumePendingOpen === 'function' ? plugin : null;
 }
-async function consumePendingOpen() {
+async function consumePendingOpen(attempt) {
   const plugin = nativeOpenPlugin();
   if (!plugin) return;
   try {
     const res = await plugin.consumePendingOpen();
-    if (res && res.pending) openExternalDocument(res);
+    if (res && res.pending) {
+      openExternalDocument(res);
+      return;
+    }
+    // 卡 059 退回（F6）：原生已把读取移到后台线程 ⇒ 冷启动可能短暂拿到「还在读」。
+    // 大文件（10–49 MB）经 bridge 传输更慢，重试窗口放到 ~10 s（40 × 250 ms）。
+    if (res && res.reading && (attempt || 0) < 40) {
+      setTimeout(() => { consumePendingOpen((attempt || 0) + 1); }, 250);
+    }
   } catch {
     // 取不到不是错误（冷启动顺序问题）；不往 console 抛，契约 C2 要求无 console error
   }
@@ -130,7 +138,7 @@ const openPlugin = nativeOpenPlugin();
 if (openPlugin) {
   consumePendingOpen();
   if (typeof openPlugin.addListener === 'function') {
-    openPlugin.addListener('doc2mdOpen', () => { consumePendingOpen(); });
+    openPlugin.addListener('doc2mdOpen', () => { consumePendingOpen(0); });
   }
 }
 
