@@ -7547,6 +7547,34 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
         assert.equal(h1, h2, '复制原文的 sha256 与源不一致');
       });
 
+      await t.test('Z9-10 A7 ≤4 MB：全文可见（末尾 marker 出现），无 CUT_HINT', async () => {
+        await closeViewer(page);
+        const body = 'x'.repeat(1024 * 1024);
+        const text = '# big\n\n' + body + '\n\nDOC2MD-059-END';
+        await openExternalInPage(page, { name: 'mid.md', mime: 'text/markdown', text: text });
+        await page.waitForTimeout(300);
+        // ≤4 MB = 全文可看：分段渲染需要点「继续渲染」到底（A7 ① 的口径是「全文可看」，不是「首屏就全」）
+        for (let i = 0; i < 30; i++) {
+          const more = page.locator('#mdViewerBody .md-more');
+          if ((await more.count()) === 0) break;
+          await more.first().click();
+          await page.waitForTimeout(80);
+        }
+        const r = await page.evaluate(() => ({
+          text: document.getElementById('mdViewerBody').textContent,
+          cut: document.getElementById('mdViewerBody').innerHTML.indexOf('渲染预览已截断') >= 0,
+          more: document.querySelectorAll('#mdViewerBody .md-more').length,
+        }));
+        assert.equal(r.more, 0, '仍有未渲染段（继续渲染未走完）');
+        assert.equal(r.cut, false, '≤4 MB 不应出现 CUT_HINT');
+        assert.ok(r.text.indexOf('DOC2MD-059-END') >= 0, '末尾 marker 未出现在渲染结果');
+      });
+
+      await t.test('Z9-11 A9 负例：未消毒输出必须被检测器抓到（证明检测器敏感）', async () => {
+        const raw = await page.evaluate(() => window.marked.parse('<img src="x" onerror="window.__xss=1">'));
+        assert.throws(() => assertNoDangerous(raw), /输出含危险面/, '负例不成立：未消毒输出没有被检测器抓到');
+      });
+
       await closeViewer(page);
       assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
       await ctx.close();
