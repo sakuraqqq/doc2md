@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-21T20:00:03.430Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-21T20:07:37.050Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：34；函数总数：925；超限函数数：0（圈 >10 或认知 >15）
+- 度量文件数：34；函数总数：928；超限函数数：0（圈 >10 或认知 >15）
 - 圈复杂度最高：10；认知复杂度最高：14
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 925 个，超限 0 个。
+重构后当前：函数 928 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -41,6 +41,7 @@
 | src/ui.js | copyViewerRaw | 1166 | 9 | 11 |
 | tools/baseline-check.mjs | checkProvenance | 173 | 9 | 11 |
 | tools/measure-xlsx-peak.mjs | startPssSampler | 175 | 9 | 11 |
+| tools/race-059.mjs | c3FirstDownload | 250 | 9 | 10 |
 | src/docx.js | ommlParts | 110 | 9 | 9 |
 | src/sniff.js | imageKind | 212 | 9 | 9 |
 | src/ui.js | showToast | 71 | 9 | 8 |
@@ -190,7 +191,8 @@
 | tools/gen-icons.mjs | sample | 28 | 6 | 5 |
 | tools/gen-icons.mjs | maskablePoint | 39 | 6 | 5 |
 | tools/metrics.mjs | fnName | 98 | 6 | 5 |
-| tools/race-059.mjs | assertUi | 148 | 6 | 5 |
+| tools/race-059.mjs | assertUi | 156 | 6 | 5 |
+| tools/race-059.mjs | c3ShortWrite | 272 | 6 | 5 |
 | src/xlsx.js | parseSharedStringsStream | 448 | 5 | 11 |
 | src/xlsx.js | collectTTexts | 399 | 5 | 10 |
 | tools/ci-step-guard-check.mjs | collectSteps | 73 | 5 | 9 |
@@ -224,7 +226,7 @@
 | src/xlsx.js | parseSheetTags | 137 | 5 | 5 |
 | tools/baseline-check.mjs | checkBaseline | 303 | 5 | 5 |
 | tools/deploy-smoke.mjs | collectSrcset | 54 | 5 | 5 |
-| tools/race-059.mjs | raceSuite | 207 | 5 | 5 |
+| tools/race-059.mjs | raceSuite | 215 | 5 | 5 |
 | src/convert.js | textConvert | 84 | 5 | 4 |
 | src/convert.js | xlsxPreflight | 153 | 5 | 4 |
 | src/docx.js | extForContentType | 21 | 5 | 4 |
@@ -274,9 +276,8 @@
 | tools/measure-xlsx-peak.mjs | (anonymous) | 203 | 5 | 4 |
 | tools/metrics.mjs | nodeCogPoints | 154 | 5 | 4 |
 | tools/race-059.mjs | adb | 57 | 5 | 4 |
-| tools/race-059.mjs | assertSecond | 162 | 5 | 4 |
-| tools/race-059.mjs | assertCommit | 175 | 5 | 4 |
-| tools/race-059.mjs | c3FirstDownload | 242 | 5 | 4 |
+| tools/race-059.mjs | assertSecond | 170 | 5 | 4 |
+| tools/race-059.mjs | assertCommit | 183 | 5 | 4 |
 | src/xlsx.js | stripBracketed | 508 | 4 | 7 |
 | src/pdf.js | isCodeLine | 305 | 4 | 6 |
 | src/xlsx.js | parseSheetTagsLoose | 767 | 4 | 6 |
@@ -310,8 +311,8 @@
 | tools/build.mjs | syncEntry | 66 | 4 | 4 |
 | tools/gen-handoff-baseline.mjs | thousands | 54 | 4 | 4 |
 | tools/gen-handoff-baseline.mjs | scanBlockForExcludedFields | 176 | 4 | 4 |
-| tools/race-059.mjs | assertClip | 170 | 4 | 4 |
-| tools/race-059.mjs | tapTAP | 279 | 4 | 4 |
+| tools/race-059.mjs | assertClip | 178 | 4 | 4 |
+| tools/race-059.mjs | tapTAP | 303 | 4 | 4 |
 | src/app.js | (anonymous) | 78 | 4 | 3 |
 | src/bline.js | (anonymous) | 6 | 4 | 3 |
 | src/convert.js | done | 114 | 4 | 3 |
@@ -376,9 +377,8 @@
 | tools/race-059.mjs | arg | 19 | 4 | 3 |
 | tools/race-059.mjs | resolveAdb | 48 | 4 | 3 |
 | tools/race-059.mjs | parseSize | 88 | 4 | 3 |
-| tools/race-059.mjs | assertFirst | 156 | 4 | 3 |
-| tools/race-059.mjs | ensureApp | 200 | 4 | 3 |
-| tools/race-059.mjs | c3ShortWrite | 258 | 4 | 3 |
+| tools/race-059.mjs | assertFirst | 164 | 4 | 3 |
+| tools/race-059.mjs | ensureApp | 208 | 4 | 3 |
 | src/pdf.js | glyphRun | 84 | 3 | 4 |
 | tools/gen-handoff-baseline.mjs | countOccurrences | 139 | 3 | 4 |
 | tools/privacy-gate.mjs | selfCleanCheck | 395 | 3 | 4 |
@@ -398,6 +398,7 @@
 | tools/gen-handoff-baseline.mjs | scanBlockForForbidden | 152 | 3 | 3 |
 | tools/gen-icons.mjs | pngRGBA | 77 | 3 | 3 |
 | tools/race-059.mjs | waitForLog | 105 | 3 | 3 |
+| tools/race-059.mjs | clearRaceVerified | 142 | 3 | 3 |
 | src/app.js | (anonymous) | 75 | 3 | 2 |
 | src/convert.js | cjkLatin | 52 | 3 | 2 |
 | src/convert.js | guardError | 195 | 3 | 2 |
@@ -482,9 +483,9 @@
 | tools/privacy-gate.mjs | maskValue | 150 | 3 | 2 |
 | tools/privacy-gate.mjs | gitToFile | 227 | 3 | 2 |
 | tools/privacy-gate.mjs | reportSelfHits | 380 | 3 | 2 |
-| tools/race-059.mjs | lastOf | 143 | 3 | 2 |
-| tools/race-059.mjs | assertActions | 182 | 3 | 2 |
-| tools/race-059.mjs | nativeClipSha | 192 | 3 | 2 |
+| tools/race-059.mjs | lastOf | 151 | 3 | 2 |
+| tools/race-059.mjs | assertActions | 190 | 3 | 2 |
+| tools/race-059.mjs | nativeClipSha | 200 | 3 | 2 |
 | tools/verify-release-online.mjs | fetchRaw | 55 | 3 | 2 |
 | src/app.js | (anonymous) | 65 | 2 | 1 |
 | src/app.js | (anonymous) | 132 | 2 | 1 |
@@ -617,8 +618,8 @@
 | tools/race-059.mjs | (anonymous) | 117 | 2 | 1 |
 | tools/race-059.mjs | pullSha | 119 | 2 | 1 |
 | tools/race-059.mjs | readRemote | 126 | 2 | 1 |
-| tools/race-059.mjs | assertPipe | 189 | 2 | 1 |
-| tools/race-059.mjs | c3Suite | 271 | 2 | 1 |
+| tools/race-059.mjs | assertPipe | 197 | 2 | 1 |
+| tools/race-059.mjs | c3Suite | 295 | 2 | 1 |
 | tools/verify-release-online.mjs | readExpectFromReleaseMd | 46 | 2 | 1 |
 | src/app.js | (anonymous) | 62 | 1 | 0 |
 | src/app.js | (anonymous) | 69 | 1 | 0 |
@@ -931,23 +932,25 @@
 | tools/race-059.mjs | logText | 130 | 1 | 0 |
 | tools/race-059.mjs | clipRead | 131 | 1 | 0 |
 | tools/race-059.mjs | clearRace | 136 | 1 | 0 |
-| tools/race-059.mjs | collect | 142 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 142 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 152 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 157 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 158 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 159 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 163 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 164 | 1 | 0 |
+| tools/race-059.mjs | collect | 150 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 150 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 160 | 1 | 0 |
 | tools/race-059.mjs | (anonymous) | 165 | 1 | 0 |
 | tools/race-059.mjs | (anonymous) | 166 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 177 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 180 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 194 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 251 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 252 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 253 | 1 | 0 |
-| tools/race-059.mjs | (anonymous) | 281 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 167 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 171 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 172 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 173 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 174 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 185 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 188 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 202 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 265 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 266 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 267 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 284 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 285 | 1 | 0 |
+| tools/race-059.mjs | (anonymous) | 305 | 1 | 0 |
 | tools/verify-ocr.mjs | (anonymous) | 36 | 1 | 0 |
 | tools/verify-ocr.mjs | (anonymous) | 38 | 1 | 0 |
 
