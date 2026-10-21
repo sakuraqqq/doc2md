@@ -39,6 +39,12 @@ const batchSpacer = $('#batchSpacer');
 export function setStatus(msg, isError) {
   statusEl.textContent = msg || '';
   statusEl.className = isError ? 'error' : '';
+  // 查看器是 fixed 覆盖层：状态栏在主页面里会被挡住 ⇒ 同步一份到查看器内（A7e：失败必须可见）。
+  const viewerStatus = document.getElementById('mdViewerStatus');
+  if (viewerStatus) {
+    viewerStatus.textContent = msg || '';
+    viewerStatus.className = 'md-viewer-status' + (isError ? ' error' : '');
+  }
   if (msg) diag('status', String(msg).slice(0, 120));
 }
 
@@ -700,6 +706,14 @@ function renderViewerPreview() {
   mdViewerBody.appendChild(box);
 }
 function renderViewerRaw() {
+  if (viewerState.truncated) {
+    // A8b（卡 059 第三轮）：>4 Mi 字符时 raw 态不得拿截断文本冒充全文 —— 显式说明 + 指向下载。
+    const box = document.createElement('div');
+    box.className = 'md-preview md-preview-error';
+    box.textContent = '全文未加载（文件过大）—— 请用「下载原文」导出完整文件（复制仅支持 ≤1 MiB）。';
+    mdViewerBody.appendChild(box);
+    return;
+  }
   const ta = document.createElement('textarea');
   ta.className = 'md md-viewer-raw';
   ta.readOnly = true;
@@ -756,7 +770,7 @@ const EXTERNAL_ERROR_TEXT = {
 };
 // 卡 059 退回（拍板 P1，2026-10-22）：接受平台归一 —— `\r\n`、单独 `\r`、`\n` 三者等价；
 // 只动行尾，其余字符（含 BOM）一律不变。⛔ 不要在这里 trim / 去 BOM。
-function normalizeExternalText(text) {
+export function normalizeExternalText(text) {
   return String(text == null ? '' : text).replace(/\r\n?/g, '\n');
 }
 function looksLikeMarkdown(name) {
@@ -775,23 +789,54 @@ function saveExternalText(name, text) {
   anchorDownload(new Blob([text], { type: 'text/plain;charset=utf-8' }), name);
 }
 /** 外部打开的入口（原生调用与 window.__doc2md.openExternal 测试缝共用）。 */
+const MAX_PREVIEW_CHARS = 4 * 1024 * 1024;
+let lastExternalSeq = 0;
+
+/** F19：generation —— 旧请求的迟到回包不得覆盖新请求（原生侧也有 generation，JS 侧再兜一层）。 */
+function acceptExternalSeq(p) {
+  if (typeof p.seq !== 'number') return true;
+  if (p.seq < lastExternalSeq) return false;
+  lastExternalSeq = Math.max(lastExternalSeq, p.seq);
+  return true;
+}
+/** A7a：预览硬限 4 Mi 字符（原生已裁；这里再兜一层，防测试缝/旧壳传全长）。 */
+function capPreviewText(text) {
+  if (text.length <= MAX_PREVIEW_CHARS) return text;
+  const preview = text.slice(0, MAX_PREVIEW_CHARS);
+  const c = preview.charCodeAt(preview.length - 1);
+  if (c >= 0xd800 && c <= 0xdbff) return preview.slice(0, -1);
+  return preview;
+}
+function showExternalError(name, code) {
+  const msg = EXTERNAL_ERROR_TEXT[code] || '无法打开该文件';
+  setStatus(msg, true);
+  openMarkdownViewer({ fileName: name, text: '', external: true, error: msg }, null);
+  return { ok: false, error: String(code) };
+}
+function presentExternal(name, raw, preview, truncated, mime, size) {
+  const plain = !looksLikeMarkdown(name) && (mime === 'text/plain' || mime === '');
+  const mode = plain ? 'raw' : 'preview';
+  openMarkdownViewer(
+    { fileName: name, text: preview, raw: truncated ? null : raw, truncated: truncated,
+      size: typeof size === 'number' ? size : null,
+      external: true, fullText: !truncated, defaultMode: mode },
+    null
+  );
+  return mode;
+}
 export function openExternalDocument(payload) {
   const p = payload || {};
+  if (!acceptExternalSeq(p)) return { ok: false, stale: true };
   const name = String(p.name || 'opened.md');
-  if (p.error) {
-    const msg = EXTERNAL_ERROR_TEXT[p.error] || '无法打开该文件';
-    setStatus(msg, true);
-    openMarkdownViewer({ fileName: name, text: '', external: true, error: msg }, null);
-    return { ok: false, error: String(p.error) };
-  }
+  if (p.error) return showExternalError(name, p.error);
   const raw = String(p.text == null ? '' : p.text);
   const text = normalizeExternalText(raw);
-  const mime = String(p.mime || '');
-  const plain = !looksLikeMarkdown(name) && (mime === 'text/plain' || mime === '');
-  const defaultMode = plain ? 'raw' : 'preview';
-  openMarkdownViewer({ fileName: name, text: text, raw: raw, external: true, fullText: true, defaultMode: defaultMode }, null);
-  setStatus('已打开：' + name);
-  return { ok: true, mode: defaultMode };
+  const over = text.length > MAX_PREVIEW_CHARS;
+  const truncated = p.truncated === true || over;
+  const preview = over ? capPreviewText(text) : text;
+  const mode = presentExternal(name, raw, preview, truncated, String(p.mime || ''), p.size);
+  setStatus(truncated ? '已打开（大文件：仅预览前 4 Mi 字符）：' + name : '已打开：' + name);
+  return { ok: true, mode: mode, truncated: truncated };
 }
 
 /** 三点菜单：查看 / 复制 / 下载（失败文件不生成菜单）。 */
@@ -1115,11 +1160,45 @@ export function switchTheme(choice, btn) {
  * ⚠️ 拆成 initTabs / initTheme 三个小函数：合并写时 initShell 的圈复杂度 17（阈值 10）会被 metrics 判红。 */
 function copyViewerRaw() {
   if (!viewerState) return;
+  // C4：原生壳优先走原生剪贴板（≤1 MiB；超限/已截断可见拒绝）。浏览器里退回 JS 剪贴板。
+  const plugin = nativePluginObject();
+  if (plugin && typeof plugin.copyPendingOriginal === 'function') {
+    plugin
+      .copyPendingOriginal()
+      .then((res) => {
+        if (res && res.copied) setStatus('✅ 已复制原文（' + res.chars + ' 字符）');
+        else setStatus('文件过大，复制已取消 —— 请用「下载原文」', true);
+      })
+      .catch(() => setStatus('复制失败 —— 请用「下载原文」', true));
+    return;
+  }
+  if (viewerState.truncated) {
+    setStatus('文件过大：复制仅支持 ≤1 MiB，请用「下载原文」导出完整文件', true);
+    return;
+  }
   const text = viewerState.raw != null ? viewerState.raw : viewerState.text;
   copyText(text, mdViewerCopy).catch(() => setStatus('复制失败：剪贴板不可用', true));
 }
+function saveNativeOriginal() {
+  const plugin = nativePluginObject();
+  if (!plugin || typeof plugin.savePendingOriginal !== 'function') {
+    setStatus('大文件仅支持在原生壳中「下载原文」', true);
+    return;
+  }
+  plugin
+    .savePendingOriginal()
+    .then((res) => {
+      nativeNotice('已保存原文：' + ((res && res.filename) || '') + '（' + fmtSize(res && res.bytes) + '）');
+    })
+    .catch((e) => setStatus('保存失败：' + (e && e.message ? e.message : e), true));
+}
 function downloadViewerRaw() {
   if (!viewerState) return;
+  if (viewerState.truncated) {
+    // A7b：原文下载走原生流式（按 URI 复制到 Downloads），全文不过 bridge。
+    saveNativeOriginal();
+    return;
+  }
   saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
 }
 function initMarkdownViewer() {

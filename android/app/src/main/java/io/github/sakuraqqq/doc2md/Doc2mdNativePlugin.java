@@ -1,6 +1,8 @@
 package io.github.sakuraqqq.doc2md;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
@@ -27,7 +29,9 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CoderResult;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -174,13 +178,23 @@ public class Doc2mdNativePlugin extends Plugin {
     // ⛔ 不引 @capacitor/app：现有插件就能收（Bridge.java L1314 → Plugin.handleOnNewIntent）。
     // 上限 = 50 MB，与 AGENTS.md §2 的单文件护栏同口径（A7 的 4 MB 是**渲染**口径，不是读取口径）。
     private static final long MAX_OPEN_BYTES = 50L * 1024 * 1024;
-    // 卡 059 退回（F6）：读取移到后台线程 ⇒ pending 与 reading 用同一把锁；只保证「最后一项」（F8 已登记）。
+    // 卡 059 第三轮（C1）：bridge 只送预览 —— 裁到 JS 的 4 Mi 字符硬限；只读 16 MB 字节即可解出足够字符。
+    private static final int MAX_PREVIEW_CHARS = 4 * 1024 * 1024;
+    private static final int PREVIEW_READ_BYTES = 16 * 1024 * 1024;
+    // A7c：暂定 1 MiB（UTF-8 字节），超限提示改用「下载原文」。
+    private static final int COPY_MAX_BYTES = 1024 * 1024;
+    // F6/F19：pending 与 reading 共用锁；openSeq = 单调 generation，只有最新请求能写结果。
     private final Object openLock = new Object();
     private JSObject pendingOpen;
     private boolean openReading;
     private String openRequestKey;
-
-    private static final class TooLargeException extends Exception {}
+    private int openSeq;
+    private Uri pendingUri;
+    private String pendingName;
+    private String pendingMime;
+    private long pendingSize;
+    private boolean pendingTruncated;
+    private String pendingPreviewText;
 
     @Override
     protected void handleOnNewIntent(Intent intent) {
@@ -194,27 +208,35 @@ public class Doc2mdNativePlugin extends Plugin {
             return;
         }
         final String key = intent.getData().toString();
+        final int seq;
         synchronized (openLock) {
             if (key.equals(openRequestKey) && (openReading || pendingOpen != null)) {
                 return;
             }
             openRequestKey = key;
             openReading = true;
+            openSeq += 1;
+            seq = openSeq;
+            pendingOpen = null;
         }
-        // 读取（可达 50 MB）放到后台线程，避免冷启动主线程卡顿/ANR；读完回 UI 线程通知 JS。
-        // JS 侧 consumePendingOpen 在 reading=true 时退避重试（≤2 s）。
+        // 读取放到后台线程（冷启动不卡主线程）；只有最新 generation 能写结果（F19：后完成者不得覆盖新请求）。
+        // JS 侧 consumePendingOpen 在 reading=true 时退避重试（≤10 s：40 × 250 ms）。
         new Thread(() -> {
             JSObject data = null;
             try {
-                data = readOpenIntent(intent);
+                data = readOpenIntent(intent, seq);
             } catch (Throwable t) {
                 Log.w(TAG, "OPEN_INTENT_FAIL " + t);
             }
+            boolean latest;
             synchronized (openLock) {
-                pendingOpen = data;
-                openReading = false;
+                latest = seq == openSeq;
+                if (latest) {
+                    pendingOpen = data;
+                    openReading = false;
+                }
             }
-            if (data != null) {
+            if (latest && data != null) {
                 final JSObject ping = new JSObject();
                 ping.put("pending", true);
                 try {
@@ -245,7 +267,7 @@ public class Doc2mdNativePlugin extends Plugin {
         call.resolve(out);
     }
 
-    private JSObject readOpenIntent(Intent intent) {
+    private JSObject readOpenIntent(Intent intent, int seq) {
         if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) {
             return null;
         }
@@ -255,6 +277,7 @@ public class Doc2mdNativePlugin extends Plugin {
         }
         JSObject ret = new JSObject();
         ret.put("pending", true);
+        ret.put("seq", seq);
         ret.put("uri", uri.toString());
         ContentResolver cr = getContext().getContentResolver();
         String name = null;
@@ -300,10 +323,7 @@ public class Doc2mdNativePlugin extends Plugin {
         }
         byte[] bytes;
         try {
-            bytes = readAllBytes(cr, uri);
-        } catch (TooLargeException e) {
-            ret.put("error", "too_large");
-            return ret;
+            bytes = readPrefix(cr, uri, PREVIEW_READ_BYTES);
         } catch (SecurityException e) {
             ret.put("error", "no_access");
             return ret;
@@ -321,25 +341,195 @@ public class Doc2mdNativePlugin extends Plugin {
             ret.put("error", "empty");
             return ret;
         }
+        boolean moreBytes = size < 0 ? bytes.length >= PREVIEW_READ_BYTES : size > bytes.length;
         String text;
         try {
-            text = decodeUtf8Strict(bytes);
+            text = decodeUtf8(bytes, !moreBytes);
         } catch (CharacterCodingException e) {
             ret.put("error", "binary");
             return ret;
         }
-        if (text.indexOf('\0') >= 0) {
+        if (text.indexOf((char) 0) >= 0) {
             ret.put("error", "binary");
             return ret;
         }
-        ret.put("size", bytes.length);
-        ret.put("text", text);
-        // 卡 059 退回（F6）取证：线程名 + 字节数（不含文件名），用于证明「只读一次 + 不在主线程」。
-        Log.i(TAG, "OPEN_READ thread=" + Thread.currentThread().getName() + " bytes=" + bytes.length);
+        int chars = text.length();
+        boolean truncated = moreBytes || chars > MAX_PREVIEW_CHARS;
+        String preview = text;
+        if (chars > MAX_PREVIEW_CHARS) {
+            preview = text.substring(0, MAX_PREVIEW_CHARS);
+            if (preview.length() > 0) {
+                char last = preview.charAt(preview.length() - 1);
+                if (last >= 0xD800 && last <= 0xDBFF) {
+                    preview = preview.substring(0, preview.length() - 1);
+                }
+            }
+        }
+        long sizeOut = size > 0 ? size : bytes.length;
+        synchronized (openLock) {
+            pendingUri = uri;
+            pendingName = name;
+            pendingMime = mime;
+            pendingSize = sizeOut;
+            pendingTruncated = truncated;
+            pendingPreviewText = preview;
+        }
+        ret.put("size", sizeOut);
+        ret.put("truncated", truncated);
+        ret.put("chars", chars);
+        ret.put("previewChars", preview.length());
+        ret.put("text", preview);
+        Log.i(TAG, "OPEN_PREVIEW thread=" + Thread.currentThread().getName()
+                + " bytes_read=" + bytes.length + " chars=" + chars
+                + " chars_sent=" + preview.length() + " truncated=" + truncated);
         return ret;
     }
 
-    private byte[] readAllBytes(ContentResolver cr, Uri uri) throws Exception {
+    /** A7b：原文下载 —— 按 URI 流式写 Downloads，全文不过 bridge。 */
+    @PluginMethod
+    public void savePendingOriginal(PluginCall call) {
+        final Uri uri;
+        final String name;
+        final String mime;
+        synchronized (openLock) {
+            uri = pendingUri;
+            name = pendingName;
+            mime = pendingMime;
+        }
+        if (uri == null) {
+            call.reject("no pending file");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                long bytes = copyUriToDownloads(uri, name == null ? "opened.md" : name, mime);
+                JSObject r = new JSObject();
+                r.put("bytes", bytes);
+                r.put("filename", name);
+                call.resolve(r);
+            } catch (Exception e) {
+                Log.w(TAG, "SAVE_ORIGINAL_FAIL " + e);
+                call.reject("save original failed: " + e);
+            }
+        }, "doc2md-save").start();
+    }
+
+    /** A7c：原文复制 —— 原生剪贴板；>1 MiB 或预览已截断时明确拒绝（JS 提示改用下载）。 */
+    @PluginMethod
+    public void copyPendingOriginal(PluginCall call) {
+        String text;
+        boolean truncated;
+        synchronized (openLock) {
+            text = pendingPreviewText;
+            truncated = pendingTruncated;
+        }
+        JSObject r = new JSObject();
+        if (text == null) {
+            r.put("copied", false);
+            r.put("reason", "no_pending");
+            call.resolve(r);
+            return;
+        }
+        if (truncated) {
+            r.put("copied", false);
+            r.put("reason", "too_large");
+            call.resolve(r);
+            return;
+        }
+        int bytes = text.getBytes(StandardCharsets.UTF_8).length;
+        if (bytes > COPY_MAX_BYTES) {
+            r.put("copied", false);
+            r.put("reason", "too_large");
+            r.put("bytes", bytes);
+            call.resolve(r);
+            return;
+        }
+        try {
+            ClipboardManager cm = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(ClipData.newPlainText("doc2md", text));
+            r.put("copied", true);
+            r.put("chars", text.length());
+            call.resolve(r);
+        } catch (Exception e) {
+            r.put("copied", false);
+            r.put("reason", "failed");
+            call.resolve(r);
+        }
+    }
+
+    private long copyUriToDownloads(Uri src, String name, String mime) throws Exception {
+        ContentResolver cr = getContext().getContentResolver();
+        InputStream in = cr.openInputStream(src);
+        if (in == null) {
+            throw new Exception("openInputStream returned null");
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Downloads.DISPLAY_NAME, name);
+                values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + DOWNLOAD_SUBDIR);
+                values.put(MediaStore.Downloads.MIME_TYPE,
+                        mime == null || mime.isEmpty() ? "application/octet-stream" : mime);
+                values.put(MediaStore.Downloads.IS_PENDING, 1);
+                Uri target = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                if (target == null) {
+                    throw new Exception("MediaStore insert returned null");
+                }
+                OutputStream out = cr.openOutputStream(target);
+                if (out == null) {
+                    cr.delete(target, null, null);
+                    throw new Exception("openOutputStream returned null");
+                }
+                long bytes = 0;
+                try {
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        out.write(buf, 0, n);
+                        bytes += n;
+                    }
+                } finally {
+                    try {
+                        out.close();
+                    } catch (Exception ignored) {
+                    }
+                }
+                ContentValues done = new ContentValues();
+                done.put(MediaStore.Downloads.IS_PENDING, 0);
+                cr.update(target, done, null, null);
+                return bytes;
+            }
+            File dir = new File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), DOWNLOAD_SUBDIR);
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new Exception("mkdirs failed");
+            }
+            File f = new File(dir, name);
+            OutputStream out = new FileOutputStream(f);
+            long bytes = 0;
+            try {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) != -1) {
+                    out.write(buf, 0, n);
+                    bytes += n;
+                }
+            } finally {
+                try {
+                    out.close();
+                } catch (Exception ignored) {
+                }
+            }
+            return bytes;
+        } finally {
+            try {
+                in.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private byte[] readPrefix(ContentResolver cr, Uri uri, int limit) throws Exception {
         InputStream in = cr.openInputStream(uri);
         if (in == null) {
             throw new Exception("openInputStream returned null");
@@ -347,12 +537,12 @@ public class Doc2mdNativePlugin extends Plugin {
         try {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[16 * 1024];
-            long total = 0;
             int n;
-            while ((n = in.read(buf)) != -1) {
-                total += n;
-                if (total > MAX_OPEN_BYTES) {
-                    throw new TooLargeException();
+            while (out.size() < limit) {
+                int want = Math.min(buf.length, limit - out.size());
+                n = in.read(buf, 0, want);
+                if (n == -1) {
+                    break;
                 }
                 out.write(buf, 0, n);
             }
@@ -365,11 +555,34 @@ public class Doc2mdNativePlugin extends Plugin {
         }
     }
 
-    private String decodeUtf8Strict(byte[] bytes) throws CharacterCodingException {
+    private String decodeUtf8(byte[] bytes, boolean endOfInput) throws CharacterCodingException {
         CharsetDecoder dec = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT);
-        return dec.decode(ByteBuffer.wrap(bytes)).toString();
+        ByteBuffer in = ByteBuffer.wrap(bytes);
+        CharBuffer out = CharBuffer.allocate(Math.max(16, bytes.length + 16));
+        while (true) {
+            CoderResult r = dec.decode(in, out, endOfInput);
+            if (r.isOverflow()) {
+                CharBuffer bigger = CharBuffer.allocate(out.capacity() * 2);
+                out.flip();
+                bigger.put(out);
+                out = bigger;
+                continue;
+            }
+            if (r.isError()) {
+                r.throwException();
+            }
+            break;
+        }
+        if (endOfInput) {
+            CoderResult r = dec.flush(out);
+            if (r.isError()) {
+                r.throwException();
+            }
+        }
+        out.flip();
+        return out.toString();
     }
 
     // A4 环节：把文本写到**用户可见**的 Downloads。

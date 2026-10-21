@@ -267,6 +267,8 @@
   }
   body.md-viewer-open { overflow: hidden; }
   .md-viewer-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .md-viewer-status { padding: 4px 14px 6px; font-size: 13px; color: var(--muted); min-height: 18px; }
+  .md-viewer-status.error { color: var(--err); }
   .md-viewer-close { border: 0; background: transparent; color: var(--text); font-size: 18px; line-height: 1; padding: 10px; cursor: pointer; }
   .md-viewer-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .md-viewer-body { flex: 1; overflow: auto; padding: 14px 16px; }
@@ -495,6 +497,7 @@
     <button class="md-viewer-close" id="mdViewerClose" type="button" aria-label="关闭预览">✕</button>
     <span class="md-viewer-name" id="mdViewerName"></span>
   </header>
+  <div id="mdViewerStatus" class="md-viewer-status" role="status" aria-live="polite"></div>
   <div class="md-viewer-body" id="mdViewerBody"></div>
   <div class="md-viewer-foot">
     <div class="md-viewer-ext" id="mdViewerExt" hidden>

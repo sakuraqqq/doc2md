@@ -10,7 +10,7 @@ import { convert, registry, MAX_BYTES } from './convert.js';
 import { collapseCjkSpaces } from './cjk.js';
 import { htmlToMarkdown } from './html2md.js';
 import { decodeText, sniff } from './sniff.js';
-import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument } from './ui.js';
+import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument, normalizeExternalText } from './ui.js';
 import { mountPreview, renderMarkdown } from './markdown-preview.js';
 
 export async function handleFiles(files) {
@@ -105,6 +105,7 @@ window.__doc2md = {
   get embedMaxBytes() { return getEmbedMaxBytes(); },
   set embedMaxBytes(n) { setEmbedMaxBytes(n); },
   openExternal: openExternalDocument,
+  normalizeExternalText: normalizeExternalText,
 };
 
 /* 卡 059（B018 / A7.6-A7）：系统「打开方式」——原生壳把 content:// 里的文本交过来。
