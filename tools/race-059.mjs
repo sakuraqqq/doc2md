@@ -139,6 +139,14 @@ function clearRace() {
   sh('rm -f /sdcard/race-ui.xml');
   sh('am force-stop ' + PKG);
 }
+async function clearRaceVerified() {
+  for (let i = 0; i < 12; i++) {
+    clearRace();
+    if (downloads().length === 0) return true;
+    await sleep(250);
+  }
+  return false;
+}
 function collect() { return downloads().map((n) => ({ n, sha: pullSha(n) })); }
 function lastOf(logs, prefix) {
   const all = logs.match(new RegExp(prefix + '[^\\n]*', 'g')) || [];
@@ -242,11 +250,17 @@ async function raceSuite() {
 async function c3FirstDownload() {
   const bSha = hash(fixture('race-b.md'));
   launch('race-b.md', '&delayMs=0', true);
-  await sleep(700);
+  await waitForLog(/OPEN_COMMIT[^\n]*race-b\.md/, 5000);
   tapDownload();
   await sleep(900);
   tapDownload();
-  await sleep(900);
+  // 等两次 SAVE_ORIGINAL 都落盘（不是数「已过 900ms」）
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    const saves = (logText().match(/SAVE_ORIGINAL[^\n]*/g) || []).length;
+    if (saves >= 2 && downloads().length >= 2) break;
+    await sleep(200);
+  }
   const files = collect();
   const names = files.map((f) => f.n).sort();
   const dupOk = files.length === 2 && files.every((f) => f.sha === bSha);
@@ -256,12 +270,22 @@ async function c3FirstDownload() {
 }
 
 async function c3ShortWrite() {
-  clearRace();
+  const cleared = await clearRaceVerified();
+  if (!cleared) {
+    fail('C3-3', '清除上一用例下载件失败，拒绝在不干净环境上断言：' + JSON.stringify(downloads()));
+    return;
+  }
+  const before = downloads();
   launch('race-c.md', '&delayMs=0&shortWrite=1', true);
-  await sleep(700);
+  await waitForLog(/VIEWER_STATE[^\n]*race-c\.md/, 5000);
   tapDownload();
-  await sleep(900);
-  downloads().length === 0 ? ok('C3-3', 'shortWrite 失败后无残留文件') : fail('C3-3', 'shortWrite 残留：' + JSON.stringify(downloads()));
+  await sleep(1200);
+  const after = downloads();
+  const added = after.filter((n) => !before.includes(n));
+  const hasC = after.some((n) => /^race-c/i.test(n));
+  (added.length === 0 && !hasC)
+    ? ok('C3-3', 'shortWrite 失败后无新增文件（before=' + before.length + '，after=' + after.length + '）')
+    : fail('C3-3', 'shortWrite 出现新增：' + JSON.stringify(added) + '（含 race-c=' + hasC + '）');
   const logs = logText();
   /SAVE_ORIGINAL_FAIL[^\n]*size mismatch/.test(logs)
     ? ok('C3-2', '失败可见：SAVE_ORIGINAL_FAIL size mismatch')
