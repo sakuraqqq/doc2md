@@ -6172,6 +6172,17 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         }));
         assert.equal(back.sel, 'true', '「去转换」没有把 Tab 切回转换');
         assert.equal(back.shown, true, '「去转换」后转换面板仍不可见');
+        // 卡 060 / 2-5 口径更新：空态三分（改前只有一句「当前版本不保存历史」）。
+        const states = await page.evaluate(() => ({
+          cleared: document.getElementById('filesEmptyCleared').hidden,
+          search: document.getElementById('filesEmptySearch').hidden,
+          error: document.getElementById('filesError').hidden,
+          searchBarHidden: document.getElementById('filesSearchBar').hidden,
+        }));
+        assert.equal(states.cleared, true, '「已清除」空态不应在从未转换时出现');
+        assert.equal(states.search, true, '搜索空态不应在非搜索态出现');
+        assert.equal(states.error, true, '读取失败空态不应在正常读取时出现');
+        assert.equal(states.searchBarHidden, false, '搜索框应常显（与转换页结果搜索同一形态，2026-10-22 口径）');
       });
 
       await t.test('Z6-5 A6 设置四组齐 + 外观三档 + 「跟随系统」是真监听（emulateMedia 翻系统色必须生效）', async () => {
@@ -6200,6 +6211,17 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         await page.emulateMedia({ colorScheme: 'dark' });
         await page.waitForTimeout(120);
         assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'light', '选「浅色」后仍被系统色覆盖（选择未固定）');
+        // 卡 060 / 2-5：设置「历史」组必须有保留开关 + 清除入口（不再是禁用占位）。
+        const hist = await page.evaluate(() => ({
+          hasSwitch: Boolean(document.getElementById('keepHistorySwitch')),
+          hasClear: Boolean(document.getElementById('clearHistoryBtn')),
+          switchRole: document.getElementById('keepHistorySwitch')
+            ? document.getElementById('keepHistorySwitch').getAttribute('role')
+            : '',
+        }));
+        assert.equal(hist.hasSwitch, true, '设置「历史」组缺保留开关');
+        assert.equal(hist.hasClear, true, '设置「历史」组缺清除记录入口');
+        assert.equal(hist.switchRole, 'switch', '保留开关缺 role=switch（a11y）');
       });
 
       await t.test('Z6-6 A7 safe-area 基础（★先剥 HTML/CSS 注释再判 + 注释不能顶替真 CSS 的负例）', () => {
@@ -7615,6 +7637,304 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
         assert.ok(s.bodyText.indexOf('NEW') >= 0, '内容不是新请求的');
       });
       await closeViewer(page);
+      assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
+      await ctx.close();
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 契约组 Z10：App 转换历史库（卡 060 · 批次 2 · 2-5「文件」Tab）—— 先红
+//   口径（2026-10-22 拍板）：只列本 App 转过的文件（⛔ 读全局 Download）· 原生 JSON（⛔ SQLite/localStorage）
+//   · 上限 200 / FIFO 只删记录不删文件 · 稳定 UUID · 搜索只过滤 · 清除二次确认 · 打开/分享分工 · 零权限。
+//   先红：改前 index.html 无 filesList / clearDialog / __doc2md.history ⇒ Z10-0/1/7/8 必红。
+// ---------------------------------------------------------------------------
+test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 / 搜索 / 打开分享 / 零权限）—— 卡 060 先红', async (t) => {
+  const HIST_SRC = nodePath.join(ROOT, 'src', 'history-store.js');
+  const JAVA = nodePath.join(ROOT, 'android', 'app', 'src', 'main', 'java', 'io', 'github', 'sakuraqqq', 'doc2md', 'Doc2mdNativePlugin.java');
+  const RELEASE_MANIFEST = nodePath.join(ROOT, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
+
+  await t.test('Z10-0 A1 静态：数据层存在 / LIMIT=200 只有一处 / 无 localStorage·indexedDB·外发', () => {
+    assert.ok(fs.existsSync(HIST_SRC), 'src/history-store.js 不存在');
+    const src = fs.readFileSync(HIST_SRC, 'utf8');
+    assert.equal((src.match(/LIMIT = 200;/g) || []).length, 1, 'LIMIT=200 不是唯一一处（常量必须单一来源）');
+    // 先剥注释再扫：文件头注释里写着「⛔ localStorage」本身不算能力（与 Z6-6 同一手法）。
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    for (const bad of ['localStorage', 'sessionStorage', 'indexedDB', 'fetch(', 'XMLHttpRequest', 'WebSocket']) {
+      assert.equal(code.includes(bad), false, 'history-store.js 含禁用能力：' + bad);
+    }
+    assert.ok(src.includes('uuidV4'), '缺稳定 ID 生成');
+    assert.ok(src.includes('randomUUID'), '缺 randomUUID 回退判据（旧 WebView）');
+  });
+
+  await t.test('Z10-1 A1/A3/A6/A7 静态：原子写 / 真实名 / 打开与分享分工 / 零权限', () => {
+    const java = fs.readFileSync(JAVA, 'utf8');
+    assert.ok(java.includes('doc2md-history.json'), '原生历史文件名缺失');
+    assert.ok(java.includes('getFD().sync()'), '缺 fsync（原子写判据）');
+    assert.ok(java.includes('renameTo'), '缺 rename（原子写判据）');
+    assert.ok(java.indexOf('getFD().sync()') < java.indexOf('renameTo'), '顺序不对：必须先 fsync 再 rename');
+    const wt = java.slice(java.indexOf('private JSObject writeTextToDownloads'));
+    assert.ok(wt.includes('queryDisplayName(target'), 'saveText 未回查 MediaStore 真实 DISPLAY_NAME');
+    const openBlock = java.slice(java.indexOf('public void openContentUri'), java.indexOf('public void shareContentUri'));
+    assert.ok(openBlock.includes('ACTION_VIEW'), '打开不是 ACTION_VIEW（⛔ 用 ACTION_SEND 代替）');
+    assert.ok(openBlock.includes('FLAG_GRANT_READ_URI_PERMISSION'), '打开缺临时读授权');
+    assert.ok(openBlock.includes('setClipData'), '打开缺 ClipData');
+    const shareBlock = java.slice(java.indexOf('public void shareContentUri'), java.indexOf('private void startExternal'));
+    assert.ok(shareBlock.includes('ACTION_SEND'), '分享不是 ACTION_SEND');
+    assert.ok(shareBlock.includes('EXTRA_STREAM'), '分享缺 EXTRA_STREAM');
+    assert.ok(shareBlock.includes('createChooser'), '分享缺 createChooser');
+    const checkBlock = java.slice(java.indexOf('public void historyCheck'), java.indexOf('public void readContentUri'));
+    assert.ok(checkBlock.includes('FileNotFoundException'), '核验未区分「不存在」与「无法确认」');
+    const xml = fs.readFileSync(RELEASE_MANIFEST, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    const perms = [...xml.matchAll(/<uses-permission[^>]*android:name="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(perms, ['android.permission.INTERNET'], 'release 权限面被改动：' + JSON.stringify(perms));
+    assert.equal(xml.includes('<provider'), false, 'release manifest 出现 <provider>（⛔ 新增 FileProvider）');
+  });
+
+  let chromium;
+  try {
+    chromium = await loadPlaywright();
+  } catch (e) {
+    assert.fail(e.message);
+    return;
+  }
+  const server = await startServer(ROOT);
+  try {
+    let browser;
+    try {
+      browser = await launchBrowser(chromium);
+    } catch (e) {
+      assert.fail(e.message);
+      return;
+    }
+    try {
+      const ctx = await browser.newContext({ viewport: { width: 412, height: 892 } });
+      const page = await ctx.newPage();
+      const errs = [];
+      page.on('pageerror', (e) => errs.push(String(e.message)));
+      await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      await t.test('Z10-2 A2 200/201 FIFO：恰好 200 不淘汰；第 201 条恰好淘汰最旧一条', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          const base = Date.now();
+          for (let i = 0; i < 200; i += 1) {
+            await h.append({ name: 'f-' + i + '.md', uri: 'content://x/' + i, bytes: 100 + i, kind: 'md', createdAt: base + i });
+          }
+          const s200 = h.getState();
+          const res = await h.append({ name: 'f-200.md', uri: 'content://x/200', bytes: 300, kind: 'md', createdAt: base + 200 });
+          const s201 = h.getState();
+          return {
+            limit: h.LIMIT,
+            n200: s200.records.length,
+            n201: s201.records.length,
+            hasNew: s201.records.some((x) => x.name === 'f-200.md'),
+            oldGone: !s201.records.some((x) => x.name === 'f-0.md'),
+            evictedName: res.evicted ? res.evicted.name : null,
+          };
+        });
+        assert.equal(r.limit, 200, 'LIMIT 不是 200');
+        assert.equal(r.n200, 200, '恰好 200 条时发生了淘汰');
+        assert.equal(r.n201, 200, '第 201 条后不是 200 条');
+        assert.equal(r.hasNew, true, '新记录不在列');
+        assert.equal(r.oldGone, true, '最旧记录未被淘汰');
+        assert.equal(r.evictedName, 'f-0.md', '淘汰的不是最旧一条');
+      });
+
+      await t.test('Z10-3 A2/A8 顺序与搜索：createdAt 倒序、同毫秒按插入序、搜索不改数据', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'b.md', uri: 'content://x/b', bytes: 1, createdAt: 5000 });
+          await h.append({ name: 'a.md', uri: 'content://x/a', bytes: 1, createdAt: 5000 });
+          const before = h.getState().records.map((x) => x.id + ':' + x.createdAt);
+          const found = h.search('A.MD').map((x) => x.name);
+          const after = h.getState().records.map((x) => x.id + ':' + x.createdAt);
+          return { order: h.getState().records.map((x) => x.name), found, before, after };
+        });
+        assert.deepEqual(r.order, ['a.md', 'b.md'], '同毫秒未按插入序（后插入在前）');
+        assert.deepEqual(r.found, ['a.md'], '搜索不是大小写不敏感的子串过滤');
+        assert.deepEqual(r.after, r.before, '搜索改动了记录数组 / 顺序 / createdAt');
+      });
+
+      await t.test('Z10-4 A4 稳定 ID：同名两条 id 不同且为 UUID v4；按 id 只删一条', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          const a = await h.append({ name: 'same.md', uri: 'content://x/1', bytes: 5 });
+          const b = await h.append({ name: 'same.md', uri: 'content://x/2', bytes: 5 });
+          const re = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+          const ids = [a.record.id, b.record.id];
+          await h.remove(a.record.id);
+          return { ids, uuid: ids.every((id) => re.test(id)), left: h.getState().records.map((x) => x.id), bId: b.record.id };
+        });
+        assert.notEqual(r.ids[0], r.ids[1], '同名两条记录 id 相同（用文件名判身份）');
+        assert.equal(r.uuid, true, 'id 不是 UUID v4：' + JSON.stringify(r.ids));
+        assert.deepEqual(r.left, [r.bId], '按 id 移除波及了另一条');
+      });
+
+      await t.test('Z10-5 A9 保留开关：off 不写、旧记录保留、跨 load 持久', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'keep.md', uri: 'content://x/k', bytes: 9 });
+          await h.setKeep(false);
+          const skipped = await h.append({ name: 'off.md', uri: 'content://x/o', bytes: 9 });
+          const s = h.getState();
+          const reload = await h.load();
+          return { skipped, count: s.records.length, keep: s.keepHistory, reloadKeep: reload.state.keepHistory };
+        });
+        assert.equal(r.skipped.ok, false, 'keep off 仍写入');
+        assert.equal(r.skipped.skipped, 'keep-off', 'keep off 的返回不是 keep-off');
+        assert.equal(r.count, 1, 'keep off 改动了旧记录');
+        assert.equal(r.keep, false, '开关状态未持久化');
+        assert.equal(r.reloadKeep, false, '重读后开关状态丢失');
+      });
+
+      await t.test('Z10-6 A1 损坏可见：坏 JSON ⇒ corrupt + 文件页「历史记录读取失败」+ 重置入口', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '{"schemaVersion":1,"records":[{' });
+          const res = await h.load();
+          await h.refresh();
+          const box = document.getElementById('filesError');
+          const reset = document.getElementById('historyReset');
+          return { ok: res.ok, error: res.error, visible: box ? !box.hidden : false, text: box ? box.textContent : '', hasReset: Boolean(reset) };
+        });
+        assert.equal(r.ok, false, '坏 JSON 被当成正常历史');
+        assert.equal(r.error, 'corrupt', '错误码不是 corrupt：' + r.error);
+        assert.equal(r.visible, true, '文件页未显示「历史记录读取失败」');
+        assert.ok(r.text.includes('历史记录读取失败'), '失败文案缺失');
+        assert.equal(r.hasReset, true, '缺「重置记录」入口');
+      });
+
+      await t.test('Z10-7 A5/A8 列表与搜索：行 / 计数 / 实时过滤 / 无匹配空态 / 清除', async () => {
+        // A11：不支持历史的环境（浏览器 / API 24–28）必须在空态里明说，⛔ 静默。
+        const browserNote = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('web');
+          await h.load();
+          await h.refresh();
+          return document.getElementById('filesEmptySub').textContent;
+        });
+        assert.ok(browserNote.includes('浏览器版不保存历史'), '不支持历史时未显示「浏览器版不保存历史」，实测：' + browserNote);
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'alpha.md', uri: 'content://x/1', bytes: 2048, createdAt: Date.now() - 60000 });
+          await h.append({ name: 'beta.zip', uri: 'content://x/2', bytes: 4096, kind: 'zip', createdAt: Date.now() - 120000 });
+          await h.refresh();
+        });
+        await page.click('#tab-files');
+        await page.waitForTimeout(150);
+        assert.equal(await page.evaluate(() => document.getElementById('filesSearchBar').hidden), false, '文件页搜索框应常显');
+        const rows = await page.evaluate(() =>
+          [...document.querySelectorAll('#filesList .file-row')].map((row) => ({
+            name: row.querySelector('.file-name').textContent,
+            meta: row.querySelector('.file-meta').textContent,
+            share: row.querySelector('.file-share').getAttribute('aria-label'),
+          }))
+        );
+        assert.equal(rows.length, 2, '文件页行数不对（实测 ' + rows.length + '）');
+        assert.equal(rows[0].name, 'alpha.md', '列表不是 createdAt 倒序');
+        assert.ok(rows[0].meta.includes('2.0 KB'), '行缺大小：' + rows[0].meta);
+        assert.ok(rows[0].share.includes('alpha.md'), '分享按钮缺 aria-label');
+        await page.fill('#filesSearch', 'ALP');
+        await page.waitForTimeout(80);
+        const filtered = await page.evaluate(() => ({
+          n: document.querySelectorAll('#filesList .file-row').length,
+          meta: document.getElementById('filesMeta').textContent,
+        }));
+        assert.equal(filtered.n, 1, '搜索未实时过滤');
+        assert.ok(filtered.meta.includes('匹配 1 / 共 2'), '搜索计数不对：' + filtered.meta);
+        const inBar = await page.evaluate(() => {
+          const el = document.getElementById('filesSearchCount');
+          return { hidden: el.hidden, text: el.textContent };
+        });
+        assert.equal(inBar.hidden, false, '搜索时输入框旁未显示匹配数（敲字没有即时反馈）');
+        assert.ok(inBar.text.includes('匹配 1'), '输入框旁匹配数不对：' + inBar.text);
+        await page.press('#filesSearch', 'Enter');
+        await page.waitForTimeout(150);
+        const flashed = await page.evaluate(() => Boolean(document.querySelector('#filesList .file-row.highlight')));
+        assert.equal(flashed, true, '搜索回车后未跳转/高亮首条匹配');
+        await page.fill('#filesSearch', 'zzz');
+        await page.waitForTimeout(80);
+        const none = await page.evaluate(() => ({
+          n: document.querySelectorAll('#filesList .file-row').length,
+          box: !document.getElementById('filesEmptySearch').hidden,
+          title: document.getElementById('filesEmptySearchTitle').textContent,
+        }));
+        assert.equal(none.n, 0, '无匹配时仍有行');
+        assert.equal(none.box, true, '无匹配空态不可见');
+        assert.ok(none.title.includes('没有匹配「zzz」'), '无匹配空态文案不对：' + none.title);
+        await page.click('#filesSearchReset');
+        await page.waitForTimeout(80);
+        assert.equal(await page.locator('#filesList .file-row').count(), 2, '清除搜索未恢复全量');
+        await page.click('#tab-settings');
+        await page.waitForTimeout(80);
+        const queryCleared = await page.evaluate(() => document.getElementById('filesSearch').value);
+        assert.equal(queryCleared, '', '切走 Tab 未退出搜索（A8：关键词应被清空）');
+      });
+
+      await t.test('Z10-8 A9 清除：二次确认、取消不变、确认只清记录、keep 不变', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'x.md', uri: 'content://x/1', bytes: 10 });
+          await h.append({ name: 'y.md', uri: 'content://x/2', bytes: 20 });
+          await h.refresh();
+        });
+        // 清除入口在「设置 › 历史」组（A9），不在文件页。
+        await page.click('#tab-settings');
+        await page.waitForTimeout(120);
+        await page.click('#clearHistoryBtn');
+        assert.equal(await page.evaluate(() => !document.getElementById('clearDialog').hidden), true, '清除未弹确认框');
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(60);
+        assert.equal(await page.evaluate(() => document.getElementById('clearDialog').hidden), true, 'Esc 未取消');
+        assert.equal(await page.evaluate(() => window.__doc2md.history.getState().records.length), 2, '取消后记录被改动');
+        await page.click('#clearHistoryBtn');
+        await page.click('#clearConfirm');
+        await page.waitForTimeout(150);
+        const s = await page.evaluate(() => ({
+          count: window.__doc2md.history.getState().records.length,
+          keep: window.__doc2md.history.getState().keepHistory,
+          meta: document.getElementById('filesMeta').textContent,
+          clearedBox: !document.getElementById('filesEmptyCleared').hidden,
+        }));
+        assert.equal(s.count, 0, '确认清除后记录不为 0');
+        assert.equal(s.keep, true, '清除把保留开关也关掉了');
+        assert.ok(s.meta.includes('共 0 项'), '计数未归零：' + s.meta);
+        assert.equal(s.clearedBox, true, '清除后未显示「历史记录已清除」空态');
+      });
+
+      await t.test('Z10-9 A13 产物：index.html 含文件页结构 / 清除对话框 / 历史测试缝', () => {
+        const html = fs.readFileSync(PAGE, 'utf8');
+        for (const marker of ['id="filesList"', 'id="clearDialog"', 'id="keepHistorySwitch"', 'id="filesSearchBar"']) {
+          assert.ok(html.includes(marker), 'index.html 缺 ' + marker);
+        }
+        assert.ok(html.includes('__setBackend'), 'index.html 缺历史库测试缝（__setBackend）');
+      });
+
       assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
       await ctx.close();
     } finally {

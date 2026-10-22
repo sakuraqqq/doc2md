@@ -18,6 +18,7 @@ import android.provider.OpenableColumns;
 import android.util.Base64;
 import android.util.Log;
 import androidx.activity.result.ActivityResult;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -26,6 +27,7 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -888,6 +890,289 @@ public class Doc2mdNativePlugin extends Plugin {
         }
     }
 
+    // ===== 卡 060 / 2-5：转换历史库（app 私有 JSON · 原子写 · 逐条核验 · 打开/分享） =====
+    // 数据面口径（2026-10-22 拍板）：filesDir/doc2md-history.json；schema v1 由 Web 侧（src/history-store.js）
+    // 定义，原生只做四件事：读整份 JSON / 原子写整份 JSON / 逐条核验 uri / 报告 API 支持位。
+    // 原子写 = tmp + fsync + rename；rename 失败时【旧文件保持原样】并返回 ok=false（⛔ 先删旧文件）。
+    private boolean historyFailOnce = false;
+
+    private File historyFile() {
+        return new File(getContext().getFilesDir(), "doc2md-history.json");
+    }
+
+    private void writeHistoryAtomic(String json) throws Exception {
+        File target = historyFile();
+        File tmp = new File(target.getParentFile(), target.getName() + ".tmp");
+        FileOutputStream fos = new FileOutputStream(tmp);
+        try {
+            fos.write(json.getBytes(StandardCharsets.UTF_8));
+            fos.flush();
+            fos.getFD().sync();
+        } finally {
+            fos.close();
+        }
+        if (!tmp.renameTo(target)) {
+            throw new Exception("rename failed");
+        }
+    }
+
+    @PluginMethod
+    public void historySupport(PluginCall call) {
+        int sdk = Build.VERSION.SDK_INT;
+        JSObject ret = new JSObject();
+        ret.put("supported", sdk >= Build.VERSION_CODES.Q);
+        ret.put("sdkInt", sdk);
+        ret.put("reason", sdk >= Build.VERSION_CODES.Q ? "" : "sdk<29");
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void historyLoad(PluginCall call) {
+        File f = historyFile();
+        JSObject ret = new JSObject();
+        if (!f.exists()) {
+            ret.put("ok", true);
+            ret.put("json", "");
+            call.resolve(ret);
+            return;
+        }
+        try {
+            byte[] data = new byte[(int) f.length()];
+            FileInputStream in = new FileInputStream(f);
+            try {
+                int off = 0;
+                while (off < data.length) {
+                    int n = in.read(data, off, data.length - off);
+                    if (n < 0) {
+                        break;
+                    }
+                    off += n;
+                }
+            } finally {
+                in.close();
+            }
+            ret.put("ok", true);
+            ret.put("json", new String(data, StandardCharsets.UTF_8));
+            call.resolve(ret);
+        } catch (Exception e) {
+            ret.put("ok", false);
+            ret.put("error", String.valueOf(e.getMessage()));
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void historySave(PluginCall call) {
+        String json = call.getString("json", "");
+        JSObject ret = new JSObject();
+        if (historyFailOnce) {
+            historyFailOnce = false;
+            ret.put("ok", false);
+            ret.put("error", "injected-write-failure");
+            call.resolve(ret);
+            return;
+        }
+        try {
+            writeHistoryAtomic(json);
+            ret.put("ok", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            ret.put("ok", false);
+            ret.put("error", String.valueOf(e.getMessage()));
+            call.resolve(ret);
+        }
+    }
+
+    // debug-only：注入一次写失败（race-060 的 A1 负例）；release 为空操作。
+    @PluginMethod
+    public void historyFailNextWrite(PluginCall call) {
+        if (isDebuggable()) {
+            historyFailOnce = true;
+        }
+        JSObject ret = new JSObject();
+        ret.put("ok", true);
+        call.resolve(ret);
+    }
+
+    // debug-only：seed N 条记录（race-060 的 200/201 矩阵用；⛔ 不碰任何下载文件）。
+    @PluginMethod
+    public void historySeed(PluginCall call) {
+        JSObject ret = new JSObject();
+        if (!isDebuggable()) {
+            ret.put("ok", false);
+            ret.put("error", "release");
+            call.resolve(ret);
+            return;
+        }
+        int count = call.getInt("count", 0);
+        String uri = call.getString("uri", "");
+        String kind = "zip".equals(call.getString("kind", "md")) ? "zip" : "md";
+        long base = System.currentTimeMillis() - count * 1000L;
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"schemaVersion\":1,\"keepHistory\":true,\"records\":[");
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append("{\"id\":\"seed-").append(i).append("\",\"name\":\"seed-").append(i)
+                    .append(".md\",\"uri\":\"").append(uri).append("\",\"bytes\":").append(10 + i)
+                    .append(",\"mime\":\"text/markdown\",\"kind\":\"").append(kind)
+                    .append("\",\"createdAt\":").append(base + i).append('}');
+        }
+        sb.append("]}");
+        try {
+            writeHistoryAtomic(sb.toString());
+            ret.put("ok", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            ret.put("ok", false);
+            ret.put("error", String.valueOf(e.getMessage()));
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void historyCheck(PluginCall call) {
+        // 逐条核验 uri 是否仍可打开：能打开 = 存在；FileNotFound = 不存在；
+        // 其它异常（SecurityException / 超时类）≠ 不存在 ⇒ 返回 error 让 UI 显示「无法确认」。
+        JSArray uris = call.getArray("uris");
+        JSArray results = new JSArray();
+        if (uris != null) {
+            for (int i = 0; i < uris.length(); i++) {
+                String s = uris.optString(i, "");
+                JSObject item = new JSObject();
+                item.put("uri", s);
+                if (s.isEmpty()) {
+                    item.put("exists", false);
+                    results.put(item);
+                    continue;
+                }
+                try {
+                    android.content.res.AssetFileDescriptor afd =
+                            getContext().getContentResolver().openAssetFileDescriptor(Uri.parse(s), "r");
+                    if (afd != null) {
+                        afd.close();
+                    }
+                    item.put("exists", true);
+                } catch (java.io.FileNotFoundException e) {
+                    item.put("exists", false);
+                } catch (Exception e) {
+                    item.put("error", String.valueOf(e.getClass().getSimpleName()));
+                }
+                results.put(item);
+            }
+        }
+        JSObject ret = new JSObject();
+        ret.put("ok", true);
+        ret.put("results", results);
+        call.resolve(ret);
+    }
+
+    // 卡 060 / A6：历史行点开 = 内置查看器；内容经 ContentResolver 读（⛔ 走 <a download> / 外域）。
+    @PluginMethod
+    public void readContentUri(PluginCall call) {
+        String s = call.getString("uri", "");
+        int maxChars = call.getInt("maxChars", 4 * 1024 * 1024);
+        JSObject ret = new JSObject();
+        try {
+            Uri uri = Uri.parse(s);
+            ContentResolver cr = getContext().getContentResolver();
+            byte[] data = readPrefix(cr, uri, maxChars * 4 + 1);
+            boolean truncated = data.length > maxChars * 4;
+            byte[] use = truncated ? java.util.Arrays.copyOf(data, maxChars * 4) : data;
+            String text = decodeUtf8(use, !truncated);
+            if (text.length() > maxChars) {
+                text = text.substring(0, maxChars);
+                truncated = true;
+            }
+            ret.put("ok", true);
+            ret.put("text", text);
+            ret.put("bytes", use.length);
+            ret.put("truncated", truncated);
+            call.resolve(ret);
+        } catch (Exception e) {
+            ret.put("ok", false);
+            ret.put("error", String.valueOf(e.getMessage()));
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void openContentUri(PluginCall call) {
+        String s = call.getString("uri", "");
+        String mime = call.getString("mime", "*/*");
+        JSObject ret = new JSObject();
+        try {
+            Uri uri = Uri.parse(s);
+            Intent view = new Intent(Intent.ACTION_VIEW);
+            view.setDataAndType(uri, mime);
+            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            view.setClipData(ClipData.newRawUri("", uri));
+            if (view.resolveActivity(getContext().getPackageManager()) == null) {
+                ret.put("ok", false);
+                ret.put("error", "no_app");
+                call.resolve(ret);
+                return;
+            }
+            startExternal(view);
+            ret.put("ok", true);
+            call.resolve(ret);
+        } catch (android.content.ActivityNotFoundException e) {
+            ret.put("ok", false);
+            ret.put("error", "no_app");
+            call.resolve(ret);
+        } catch (Exception e) {
+            ret.put("ok", false);
+            ret.put("error", String.valueOf(e.getMessage()));
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void shareContentUri(PluginCall call) {
+        String s = call.getString("uri", "");
+        String mime = call.getString("mime", "*/*");
+        String name = call.getString("name", "");
+        JSObject ret = new JSObject();
+        try {
+            Uri uri = Uri.parse(s);
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType(mime);
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            send.setClipData(ClipData.newRawUri(name, uri));
+            Intent chooser = Intent.createChooser(send, name.isEmpty() ? "Share" : name);
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if (isDebuggable()) {
+                raceLog("SHARE uri=" + uri + " mime=" + mime
+                        + " sendFlags=0x" + Integer.toHexString(send.getFlags())
+                        + " chooserFlags=0x" + Integer.toHexString(chooser.getFlags())
+                        + " clip=" + (send.getClipData() != null));
+            }
+            startExternal(chooser);
+            ret.put("ok", true);
+            call.resolve(ret);
+        } catch (android.content.ActivityNotFoundException e) {
+            ret.put("ok", false);
+            ret.put("error", "no_app");
+            call.resolve(ret);
+        } catch (Exception e) {
+            ret.put("ok", false);
+            ret.put("error", String.valueOf(e.getMessage()));
+            call.resolve(ret);
+        }
+    }
+
+    private void startExternal(Intent intent) {
+        Activity act = getActivity();
+        if (act != null) {
+            act.startActivity(intent);
+        } else {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+        }
+    }
+
     // 丢弃未提交的二进制会话：关流 + 删行/删文件。
     // ⚠️ IS_PENDING=1 的行**不删会留在库里**（用户看不见，但占空间且永远 pending）⇒ 必须清。
     private void abortBinaryQuietly() {
@@ -989,6 +1274,9 @@ public class Doc2mdNativePlugin extends Plugin {
             done.put(MediaStore.Downloads.IS_PENDING, 0);
             cr.update(target, done, null, null);
             ret.put("uri", target.toString());
+            // 卡 060 / A3：回报 MediaStore **插入后的真实 DISPLAY_NAME**（重名 = "x (1).md"），
+            // ⛔ 不再用请求名冒充 —— 卡 011 登记的真机坑是「两次都显示 x.md，指向一个不存在的文件」。
+            ret.put("filename", queryDisplayName(target, filename));
             ret.put("location", "Downloads/" + DOWNLOAD_SUBDIR + " (MediaStore, user-visible)");
         } else {
             // 卡 044（A3）：API 24-28 走公开 Downloads 下的【子目录】—— 与 29+ 分支共用同一个常量。
@@ -1010,9 +1298,9 @@ public class Doc2mdNativePlugin extends Plugin {
                 }
             }
             ret.put("path", out.getAbsolutePath());
+            ret.put("filename", filename);
             ret.put("location", "Downloads/" + DOWNLOAD_SUBDIR + " (legacy public dir)");
         }
-        ret.put("filename", filename);
         return ret;
     }
 }

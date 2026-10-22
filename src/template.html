@@ -342,6 +342,46 @@
     .md-viewer-body { padding: 12px; }
     .seg-btn { min-height: 44px; font-size: 14px; }
   }
+
+  /* 卡 060 / 2-5：文件页（App 转换历史库） */
+  .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; background: transparent; color: var(--fg); border-radius: 10px; padding: 0; }
+  .iconbtn svg { width: 20px; height: 20px; }
+  .iconbtn[aria-expanded="true"] { background: var(--panel2); color: var(--accent-soft); }
+  .files-search { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; padding: 0 6px 0 12px; height: 44px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
+  .files-search svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; color: var(--muted); flex: 0 0 auto; }
+  .files-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; }
+  .files-search input:focus { outline: none; }
+  .files-search-clear { border: 0; background: var(--panel2); color: var(--muted); width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto; }
+  .files-search-count { flex: 0 0 auto; font-size: 12px; color: var(--muted); background: var(--panel2); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .files-list { display: flex; flex-direction: column; gap: 8px; }
+  .file-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); text-align: left; color: inherit; }
+  .file-row:active { background: var(--panel2); }
+  .file-row.invalid { opacity: .72; }
+  .file-row.highlight { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--panel2); transition: background .15s ease; }
+  .file-icon { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: var(--panel2); font-size: 16px; }
+  .file-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; background: transparent; border: 0; padding: 0; color: inherit; text-align: left; font: inherit; }
+  .file-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+  .file-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-meta { font-size: 12px; color: var(--muted); }
+  .file-invalid { color: var(--danger, #e55353); }
+  .file-share { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel2); color: var(--fg); font-size: 15px; }
+  .file-share[disabled] { opacity: .45; }
+  .file-share:active { background: var(--panel); }
+  .row-action { border: 1px solid var(--border); background: var(--panel2); color: var(--fg); border-radius: 9px; padding: 6px 10px; font-size: 13px; }
+  .row-action[aria-disabled="true"] { opacity: .45; }
+  .switch { padding: 0; }
+  .switch[aria-disabled="true"] { opacity: .45; }
+  .dialog { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .45); }
+  .dialog-box { width: min(360px, 100%); background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
+  .dialog-box h2 { margin: 0 0 8px; font-size: 16px; }
+  .dialog-box p { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .btn.danger { border-color: var(--danger, #e55353); color: var(--danger, #e55353); }
+  /* 卡 060 / A16：文件行线性图标（取 v8 原型：文档 / 压缩包 / 丢失 / 分享 / 删除） */
+  .file-icon svg, .file-share svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .file-icon.gone { color: var(--danger, #e55353); }
+  .row-action.icon-only { width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .row-action.icon-only svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 </head>
 
@@ -355,7 +395,7 @@
 <main class="content" id="content">
   <!-- ── 转换 ───────────────────────────────────────────────────────────── -->
   <section class="tabpanel active" id="panel-convert" role="tabpanel" aria-labelledby="tab-convert" tabindex="0">
-    <button id="dropzone" type="button" title="点击选择文件，或拖入文件">
+    <button id="dropzone" type="button" title="点击选择文件（桌面端也可拖入）">
       <span class="picker-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5h6l2 2h9v9.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 18z"/><path d="M3.5 9h17"/></svg>
       </span>
@@ -390,7 +430,7 @@
       <div id="results" class="results-list"></div>
       <div class="batch-spacer" id="batchSpacer"></div>
     </section>
-    <div class="empty-hint" id="hint">把文件拖进上方的区域，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
+    <div class="empty-hint" id="hint">选择上方的文档，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
 
     <div class="batch-bar" id="batchBar" role="region" aria-label="批量操作" hidden>
       <div class="batch-info">
@@ -405,14 +445,39 @@
     </div>
   </section>
 
-  <!-- ── 文件 ───────────────────────────────────────────────────────────── -->
+  <!-- ── 文件 ── 卡 060 / 2-5：App 转换历史库（只列本 App 转过的文件；⛔ 不读全局 Download） ───────── -->
   <section class="tabpanel" id="panel-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0">
     <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span></div>
+    <div class="files-search" id="filesSearchBar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      <input id="filesSearch" type="text" inputmode="search" enterkeyhint="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
+      <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
+      <button type="button" class="files-search-clear" id="filesSearchClear" aria-label="清除搜索" hidden>✕</button>
+    </div>
+    <div class="files-list" id="filesList" role="list"></div>
     <div class="empty-state" id="filesEmpty">
       <div class="empty-state-icon" aria-hidden="true">🗂️</div>
       <p class="empty-state-title">还没有转换记录</p>
-      <p class="empty-state-sub">当前版本不保存历史记录；转换结果保存到 <b>Download/WenZhuanMD</b>，可在文件管理器中查看。</p>
+      <p class="empty-state-sub" id="filesEmptySub">转换并保存后，记录会出现在这里（最多 200 条）；只存记录，不存文件，清除记录不会删除已下载的文件。</p>
       <button class="btn primary" type="button" id="goConvert">去转换</button>
+    </div>
+    <div class="empty-state" id="filesEmptyCleared" hidden>
+      <div class="empty-state-icon" aria-hidden="true">🧹</div>
+      <p class="empty-state-title">历史记录已清除</p>
+      <p class="empty-state-sub">已经下载的文件还在 <b>Download/WenZhuanMD</b>，可在文件管理器中查看。</p>
+      <button class="btn primary" type="button" id="goConvertCleared">去转换</button>
+    </div>
+    <div class="empty-state" id="filesEmptySearch" hidden>
+      <div class="empty-state-icon" aria-hidden="true">🔍</div>
+      <p class="empty-state-title" id="filesEmptySearchTitle">没有匹配的记录</p>
+      <p class="empty-state-sub">试试别的关键词，或清除搜索查看全部记录。</p>
+      <button class="btn" type="button" id="filesSearchReset">清除搜索</button>
+    </div>
+    <div class="empty-state" id="filesError" hidden>
+      <div class="empty-state-icon" aria-hidden="true">⚠️</div>
+      <p class="empty-state-title">历史记录读取失败</p>
+      <p class="empty-state-sub" id="filesErrorSub">历史文件可能已损坏；已下载的文件不受影响。</p>
+      <button class="btn primary" type="button" id="historyReset">重置记录</button>
     </div>
   </section>
 
@@ -431,12 +496,12 @@
       <h2 class="sect-title">历史</h2>
       <div class="list">
         <div class="row">
-          <span class="row-main"><span class="row-name">保留转换记录</span><span class="row-sub">当前版本不保存记录（历史库随后续版本提供）</span></span>
-          <span class="switch" role="switch" aria-checked="false" aria-disabled="true" aria-label="保留转换记录"></span>
+          <span class="row-main"><span class="row-name">保留转换记录</span><span class="row-sub" id="keepHistorySub">最多 200 条；只存记录，不存文件；超过上限自动淘汰最旧记录</span></span>
+          <button class="switch" id="keepHistorySwitch" type="button" role="switch" aria-checked="true" aria-label="保留转换记录"></button>
         </div>
         <div class="row">
-          <span class="row-main"><span class="row-name">清除记录</span><span class="row-sub">暂无记录可清除</span></span>
-          <span class="row-val">不可用</span>
+          <span class="row-main"><span class="row-name">清除记录</span><span class="row-sub" id="clearHistorySub">只删除 App 内的记录，不会删除已经下载的文件</span></span>
+          <button class="row-action" id="clearHistoryBtn" type="button" aria-disabled="true">清除</button>
         </div>
       </div>
     </div>
@@ -507,6 +572,18 @@
     <div class="seg" role="group" aria-label="预览模式">
       <button class="seg-btn" type="button" id="mdViewerPreview" aria-pressed="true">预览</button>
       <button class="seg-btn" type="button" id="mdViewerRaw" aria-pressed="false">原文</button>
+    </div>
+  </div>
+</div>
+
+<!-- 卡 060 / A9：清除记录确认框（focus trap + Esc 取消；⛔ 只删记录不删文件） -->
+<div class="dialog" id="clearDialog" role="alertdialog" aria-modal="true" aria-labelledby="clearTitle" aria-describedby="clearDesc" hidden>
+  <div class="dialog-box">
+    <h2 id="clearTitle">清除历史记录？</h2>
+    <p id="clearDesc">只删除 App 内的记录，不会删除已经下载的文件。清除后无法恢复。</p>
+    <div class="dialog-actions">
+      <button class="btn" type="button" id="clearCancel">取消</button>
+      <button class="btn danger" type="button" id="clearConfirm">清除</button>
     </div>
   </div>
 </div>

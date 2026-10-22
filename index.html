@@ -342,6 +342,46 @@
     .md-viewer-body { padding: 12px; }
     .seg-btn { min-height: 44px; font-size: 14px; }
   }
+
+  /* 卡 060 / 2-5：文件页（App 转换历史库） */
+  .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; background: transparent; color: var(--fg); border-radius: 10px; padding: 0; }
+  .iconbtn svg { width: 20px; height: 20px; }
+  .iconbtn[aria-expanded="true"] { background: var(--panel2); color: var(--accent-soft); }
+  .files-search { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; padding: 0 6px 0 12px; height: 44px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
+  .files-search svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; color: var(--muted); flex: 0 0 auto; }
+  .files-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; }
+  .files-search input:focus { outline: none; }
+  .files-search-clear { border: 0; background: var(--panel2); color: var(--muted); width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto; }
+  .files-search-count { flex: 0 0 auto; font-size: 12px; color: var(--muted); background: var(--panel2); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .files-list { display: flex; flex-direction: column; gap: 8px; }
+  .file-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); text-align: left; color: inherit; }
+  .file-row:active { background: var(--panel2); }
+  .file-row.invalid { opacity: .72; }
+  .file-row.highlight { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--panel2); transition: background .15s ease; }
+  .file-icon { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: var(--panel2); font-size: 16px; }
+  .file-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; background: transparent; border: 0; padding: 0; color: inherit; text-align: left; font: inherit; }
+  .file-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+  .file-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-meta { font-size: 12px; color: var(--muted); }
+  .file-invalid { color: var(--danger, #e55353); }
+  .file-share { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel2); color: var(--fg); font-size: 15px; }
+  .file-share[disabled] { opacity: .45; }
+  .file-share:active { background: var(--panel); }
+  .row-action { border: 1px solid var(--border); background: var(--panel2); color: var(--fg); border-radius: 9px; padding: 6px 10px; font-size: 13px; }
+  .row-action[aria-disabled="true"] { opacity: .45; }
+  .switch { padding: 0; }
+  .switch[aria-disabled="true"] { opacity: .45; }
+  .dialog { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0, 0, 0, .45); }
+  .dialog-box { width: min(360px, 100%); background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
+  .dialog-box h2 { margin: 0 0 8px; font-size: 16px; }
+  .dialog-box p { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .btn.danger { border-color: var(--danger, #e55353); color: var(--danger, #e55353); }
+  /* 卡 060 / A16：文件行线性图标（取 v8 原型：文档 / 压缩包 / 丢失 / 分享 / 删除） */
+  .file-icon svg, .file-share svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .file-icon.gone { color: var(--danger, #e55353); }
+  .row-action.icon-only { width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .row-action.icon-only svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 </head>
 
@@ -355,7 +395,7 @@
 <main class="content" id="content">
   <!-- ── 转换 ───────────────────────────────────────────────────────────── -->
   <section class="tabpanel active" id="panel-convert" role="tabpanel" aria-labelledby="tab-convert" tabindex="0">
-    <button id="dropzone" type="button" title="点击选择文件，或拖入文件">
+    <button id="dropzone" type="button" title="点击选择文件（桌面端也可拖入）">
       <span class="picker-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5h6l2 2h9v9.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 18z"/><path d="M3.5 9h17"/></svg>
       </span>
@@ -390,7 +430,7 @@
       <div id="results" class="results-list"></div>
       <div class="batch-spacer" id="batchSpacer"></div>
     </section>
-    <div class="empty-hint" id="hint">把文件拖进上方的区域，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
+    <div class="empty-hint" id="hint">选择上方的文档，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
 
     <div class="batch-bar" id="batchBar" role="region" aria-label="批量操作" hidden>
       <div class="batch-info">
@@ -405,14 +445,39 @@
     </div>
   </section>
 
-  <!-- ── 文件 ───────────────────────────────────────────────────────────── -->
+  <!-- ── 文件 ── 卡 060 / 2-5：App 转换历史库（只列本 App 转过的文件；⛔ 不读全局 Download） ───────── -->
   <section class="tabpanel" id="panel-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0">
     <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span></div>
+    <div class="files-search" id="filesSearchBar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      <input id="filesSearch" type="text" inputmode="search" enterkeyhint="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
+      <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
+      <button type="button" class="files-search-clear" id="filesSearchClear" aria-label="清除搜索" hidden>✕</button>
+    </div>
+    <div class="files-list" id="filesList" role="list"></div>
     <div class="empty-state" id="filesEmpty">
       <div class="empty-state-icon" aria-hidden="true">🗂️</div>
       <p class="empty-state-title">还没有转换记录</p>
-      <p class="empty-state-sub">当前版本不保存历史记录；转换结果保存到 <b>Download/WenZhuanMD</b>，可在文件管理器中查看。</p>
+      <p class="empty-state-sub" id="filesEmptySub">转换并保存后，记录会出现在这里（最多 200 条）；只存记录，不存文件，清除记录不会删除已下载的文件。</p>
       <button class="btn primary" type="button" id="goConvert">去转换</button>
+    </div>
+    <div class="empty-state" id="filesEmptyCleared" hidden>
+      <div class="empty-state-icon" aria-hidden="true">🧹</div>
+      <p class="empty-state-title">历史记录已清除</p>
+      <p class="empty-state-sub">已经下载的文件还在 <b>Download/WenZhuanMD</b>，可在文件管理器中查看。</p>
+      <button class="btn primary" type="button" id="goConvertCleared">去转换</button>
+    </div>
+    <div class="empty-state" id="filesEmptySearch" hidden>
+      <div class="empty-state-icon" aria-hidden="true">🔍</div>
+      <p class="empty-state-title" id="filesEmptySearchTitle">没有匹配的记录</p>
+      <p class="empty-state-sub">试试别的关键词，或清除搜索查看全部记录。</p>
+      <button class="btn" type="button" id="filesSearchReset">清除搜索</button>
+    </div>
+    <div class="empty-state" id="filesError" hidden>
+      <div class="empty-state-icon" aria-hidden="true">⚠️</div>
+      <p class="empty-state-title">历史记录读取失败</p>
+      <p class="empty-state-sub" id="filesErrorSub">历史文件可能已损坏；已下载的文件不受影响。</p>
+      <button class="btn primary" type="button" id="historyReset">重置记录</button>
     </div>
   </section>
 
@@ -431,12 +496,12 @@
       <h2 class="sect-title">历史</h2>
       <div class="list">
         <div class="row">
-          <span class="row-main"><span class="row-name">保留转换记录</span><span class="row-sub">当前版本不保存记录（历史库随后续版本提供）</span></span>
-          <span class="switch" role="switch" aria-checked="false" aria-disabled="true" aria-label="保留转换记录"></span>
+          <span class="row-main"><span class="row-name">保留转换记录</span><span class="row-sub" id="keepHistorySub">最多 200 条；只存记录，不存文件；超过上限自动淘汰最旧记录</span></span>
+          <button class="switch" id="keepHistorySwitch" type="button" role="switch" aria-checked="true" aria-label="保留转换记录"></button>
         </div>
         <div class="row">
-          <span class="row-main"><span class="row-name">清除记录</span><span class="row-sub">暂无记录可清除</span></span>
-          <span class="row-val">不可用</span>
+          <span class="row-main"><span class="row-name">清除记录</span><span class="row-sub" id="clearHistorySub">只删除 App 内的记录，不会删除已经下载的文件</span></span>
+          <button class="row-action" id="clearHistoryBtn" type="button" aria-disabled="true">清除</button>
         </div>
       </div>
     </div>
@@ -507,6 +572,18 @@
     <div class="seg" role="group" aria-label="预览模式">
       <button class="seg-btn" type="button" id="mdViewerPreview" aria-pressed="true">预览</button>
       <button class="seg-btn" type="button" id="mdViewerRaw" aria-pressed="false">原文</button>
+    </div>
+  </div>
+</div>
+
+<!-- 卡 060 / A9：清除记录确认框（focus trap + Esc 取消；⛔ 只删记录不删文件） -->
+<div class="dialog" id="clearDialog" role="alertdialog" aria-modal="true" aria-labelledby="clearTitle" aria-describedby="clearDesc" hidden>
+  <div class="dialog-box">
+    <h2 id="clearTitle">清除历史记录？</h2>
+    <p id="clearDesc">只删除 App 内的记录，不会删除已经下载的文件。清除后无法恢复。</p>
+    <div class="dialog-actions">
+      <button class="btn" type="button" id="clearCancel">取消</button>
+      <button class="btn danger" type="button" id="clearConfirm">清除</button>
     </div>
   </div>
 </div>
@@ -913,13 +990,13 @@
     }
     return lines.filter((l) => l !== null).join("\n");
   }
-  function pushMarkerLine(st, clear) {
+  function pushMarkerLine(st, clear2) {
     const head = joinFrags(st.frags).trim();
     if (head !== "") {
       st.lines.push(st.prefix + st.marker + head);
       st.usedMarker = true;
     }
-    if (clear || head !== "") st.frags.length = 0;
+    if (clear2 || head !== "") st.frags.length = 0;
   }
   function blockChildToLines(st, child, ctx) {
     pushMarkerLine(st, false);
@@ -1266,16 +1343,16 @@
     });
     return out;
   }
-  async function docxImageElement(image, state, docBase, imgNames, assets) {
+  async function docxImageElement(image, state2, docBase, imgNames, assets) {
     const ct = image.contentType || "image/png";
-    const metaEntry = imgNames[state.idx] || {};
-    state.idx++;
+    const metaEntry = imgNames[state2.idx] || {};
+    state2.idx++;
     const alt = docxAltFromName(metaEntry);
     const ab = await image.readAsArrayBuffer().catch(() => null);
     const bytes = ab ? new Uint8Array(ab) : null;
     if (!bytes || bytes.length === 0) return { src: "", alt: "" };
-    state.seq++;
-    const name = "assets/" + docBase + "-" + state.seq + "." + extForContentType(ct);
+    state2.seq++;
+    const name = "assets/" + docBase + "-" + state2.seq + "." + extForContentType(ct);
     assets.push({ name, blob: new Blob([bytes], { type: ct }), size: bytes.length, type: ct });
     return { src: name, alt };
   }
@@ -1305,9 +1382,9 @@
     entries["word/document.xml"] = new TextEncoder().encode(parsed.xml);
     const repacked = F.zipSync(entries);
     const arrayBuffer = repacked.buffer.slice(repacked.byteOffset, repacked.byteOffset + repacked.byteLength);
-    const state = { idx: 0, seq: 0 };
+    const state2 = { idx: 0, seq: 0 };
     const docBase = docxSafeBase(file.name);
-    const convertImage = (image) => docxImageElement(image, state, docBase, parsed.imgNames, assets);
+    const convertImage = (image) => docxImageElement(image, state2, docBase, parsed.imgNames, assets);
     const result = await window.mammoth.convertToHtml({ arrayBuffer }, { convertImage: window.mammoth.images.imgElement(convertImage) });
     docxCollectWarnings(result, assets, warnings);
     const md0 = htmlToMarkdown(result.value || "", { warnings });
@@ -2437,17 +2514,17 @@ ${xlsxRowsToMd(kept)}`);
   function statusText(pos, total, note) {
     return "\u5DF2\u6E32\u67D3\u524D " + humanSize(pos) + " / \u5171 " + humanSize(total) + (note || "");
   }
-  function moreLabel(state) {
-    const rest = state.source.length - state.pos;
+  function moreLabel(state2) {
+    const rest = state2.source.length - state2.pos;
     if (rest <= 0) return "\u5DF2\u5168\u90E8\u6E32\u67D3";
     if (rest < 1024) return "\u7EE7\u7EED\u6E32\u67D3\uFF08\u5269\u4F59\u7EA6 " + rest + " \u5B57\u7B26\uFF09";
     return "\u7EE7\u7EED\u6E32\u67D3\uFF08\u5269\u4F59\u7EA6 " + Math.ceil(rest / 1024) + " KB\uFF09";
   }
-  function renderNextSegment(state) {
-    const end = findSegmentEnd(state.source, state.pos, state.budget);
-    const html = renderSegmentHtml(state.source.slice(state.pos, end), state.defs);
-    state.pos = end;
-    state.note = splitNote(state.source, end);
+  function renderNextSegment(state2) {
+    const end = findSegmentEnd(state2.source, state2.pos, state2.budget);
+    const html = renderSegmentHtml(state2.source.slice(state2.pos, end), state2.defs);
+    state2.pos = end;
+    state2.note = splitNote(state2.source, end);
     return html;
   }
   function markAllRendered(wrap) {
@@ -2456,33 +2533,33 @@ ${xlsxRowsToMd(kept)}`);
     done.textContent = "\u5DF2\u5168\u90E8\u6E32\u67D3";
     wrap.replaceWith(done);
   }
-  function advanceSegment(state, wrap, status, button) {
+  function advanceSegment(state2, wrap, status, button) {
     try {
       const tpl = document.createElement("template");
-      tpl.innerHTML = renderNextSegment(state);
+      tpl.innerHTML = renderNextSegment(state2);
       wrap.parentNode.insertBefore(tpl.content, wrap);
-      if (state.pos >= state.source.length) {
+      if (state2.pos >= state2.source.length) {
         markAllRendered(wrap);
       } else {
-        status.textContent = statusText(state.pos, state.source.length, state.note);
-        button.textContent = moreLabel(state);
+        status.textContent = statusText(state2.pos, state2.source.length, state2.note);
+        button.textContent = moreLabel(state2);
       }
     } catch (e) {
       status.textContent = "\u9884\u89C8\u52A0\u8F7D\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF");
       button.disabled = true;
     }
   }
-  function makeMoreControl(state) {
+  function makeMoreControl(state2) {
     const wrap = document.createElement("div");
     wrap.className = "md-more-wrap";
-    wrap.innerHTML = '<p class="md-more-status">' + statusText(state.pos, state.source.length, state.note) + "</p>";
+    wrap.innerHTML = '<p class="md-more-status">' + statusText(state2.pos, state2.source.length, state2.note) + "</p>";
     const button = document.createElement("button");
     button.type = "button";
     button.className = "md-more";
-    button.textContent = moreLabel(state);
+    button.textContent = moreLabel(state2);
     wrap.appendChild(button);
     const status = wrap.querySelector(".md-more-status");
-    button.addEventListener("click", () => advanceSegment(state, wrap, status, button));
+    button.addEventListener("click", () => advanceSegment(state2, wrap, status, button));
     return wrap;
   }
   function mountPreview(el, text, opts) {
@@ -2495,9 +2572,9 @@ ${xlsxRowsToMd(kept)}`);
     }
     const limited = truncateSource(raw);
     const budget = opts && opts.segmentChars || SEGMENT_TEXT_CHARS;
-    const state = { source: limited.text, budget, pos: 0, defs: collectRefDefinitions(limited.text), note: "" };
-    el.innerHTML = renderNextSegment(state);
-    if (state.pos < state.source.length) el.appendChild(makeMoreControl(state));
+    const state2 = { source: limited.text, budget, pos: 0, defs: collectRefDefinitions(limited.text), note: "" };
+    el.innerHTML = renderNextSegment(state2);
+    if (state2.pos < state2.source.length) el.appendChild(makeMoreControl(state2));
     if (limited.cut) {
       const cut = document.createElement("p");
       cut.className = "md-cut";
@@ -2505,6 +2582,363 @@ ${xlsxRowsToMd(kept)}`);
       el.appendChild(cut);
     }
     return el.innerHTML;
+  }
+
+  // src/history-store.js
+  var LIMIT = 200;
+  var SCHEMA_VERSION = 1;
+  var KINDS = /* @__PURE__ */ new Set(["md", "zip"]);
+  var state = emptyState();
+  var backend = null;
+  var backendKind = "web";
+  var loadError = null;
+  var support = { supported: false, sdkInt: 0, reason: "web" };
+  function emptyState() {
+    return { schemaVersion: SCHEMA_VERSION, keepHistory: true, records: [] };
+  }
+  function asString(v) {
+    return typeof v === "string" ? v : "";
+  }
+  function asCount(v) {
+    return Number.isFinite(v) && v >= 0 ? Math.floor(v) : -1;
+  }
+  function defaultMime(kind) {
+    return kind === "zip" ? "application/zip" : "text/markdown";
+  }
+  function mimeOf(v, kind) {
+    const s = asString(v);
+    return s || defaultMime(kind);
+  }
+  function uuidV4() {
+    const c = typeof crypto === "undefined" ? null : crypto;
+    if (c && typeof c.randomUUID === "function") {
+      try {
+        return c.randomUUID();
+      } catch {
+      }
+    }
+    const b = new Uint8Array(16);
+    if (c && typeof c.getRandomValues === "function") {
+      c.getRandomValues(b);
+    } else {
+      let seed = Date.now();
+      for (let i = 0; i < 16; i += 1) {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        b[i] = seed & 255;
+      }
+    }
+    b[6] = b[6] & 15 | 64;
+    b[8] = b[8] & 63 | 128;
+    const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+  function normalizeRecord(r) {
+    if (!r || typeof r !== "object") return null;
+    const id = asString(r.id);
+    const name = asString(r.name);
+    const uri = asString(r.uri);
+    const kind = KINDS.has(r.kind) ? r.kind : "";
+    const bytes = asCount(r.bytes);
+    const createdAt = asCount(r.createdAt);
+    if (!id || !name || !uri || !kind || bytes < 0 || createdAt < 0) return null;
+    return { id, name, uri, bytes, mime: mimeOf(r.mime, kind), kind, createdAt };
+  }
+  function safeParse(text) {
+    try {
+      const obj = JSON.parse(String(text == null ? "" : text));
+      return obj && typeof obj === "object" && !Array.isArray(obj) ? obj : null;
+    } catch {
+      return null;
+    }
+  }
+  function collectRecords(list) {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const raw of list) {
+      const rec = normalizeRecord(raw);
+      if (!rec || seen.has(rec.id)) return null;
+      seen.add(rec.id);
+      out.push(rec);
+    }
+    return out;
+  }
+  function parseState(text) {
+    const obj = safeParse(text);
+    if (!obj) return { ok: false, error: "corrupt" };
+    if (obj.schemaVersion !== SCHEMA_VERSION) return { ok: false, error: "schema" };
+    if (!Array.isArray(obj.records)) return { ok: false, error: "corrupt" };
+    const records = collectRecords(obj.records);
+    if (!records) return { ok: false, error: "corrupt" };
+    return {
+      ok: true,
+      state: { schemaVersion: SCHEMA_VERSION, keepHistory: obj.keepHistory !== false, records }
+    };
+  }
+  function listOrder(records) {
+    return records.map((rec, index) => ({ rec, index })).sort((a, b) => b.rec.createdAt - a.rec.createdAt || b.index - a.index).map((x) => x.rec);
+  }
+  function evictIndex(records) {
+    let idx = 0;
+    for (let i = 1; i < records.length; i += 1) {
+      if (records[i].createdAt < records[idx].createdAt) idx = i;
+    }
+    return idx;
+  }
+  function filterRecords(records, query) {
+    const q = String(query == null ? "" : query).trim().toLowerCase();
+    if (!q) return records.slice();
+    return records.filter((r) => r.name.toLowerCase().includes(q));
+  }
+  function relTime(ms, now) {
+    const then = Number(ms);
+    const base = Number.isFinite(now) ? now : Date.now();
+    if (!Number.isFinite(then) || then <= 0) return "";
+    const diff = Math.max(0, base - then);
+    const min = Math.floor(diff / 6e4);
+    if (min < 1) return "\u521A\u521A";
+    if (min < 60) return `${min} \u5206\u949F\u524D`;
+    const hour = Math.floor(min / 60);
+    if (hour < 24) return `${hour} \u5C0F\u65F6\u524D`;
+    const day = Math.floor(hour / 24);
+    if (day < 7) return `${day} \u5929\u524D`;
+    const d = new Date(then);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  function fmtSize(bytes) {
+    const n = Number(bytes);
+    if (!Number.isFinite(n) || n < 0) return "";
+    if (n < 1024) return `${n} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let v = n / 1024;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i += 1;
+    }
+    return `${v >= 10 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+  }
+  function nativePlugin() {
+    const cap = typeof window === "undefined" ? null : window.Capacitor;
+    const plugins = cap && cap.Plugins;
+    return plugins && plugins.Doc2mdNative || null;
+  }
+  function errMessage(e) {
+    return e && e.message ? e.message : "unknown";
+  }
+  var memoryBackend = {
+    json: "",
+    failNextWrite: false,
+    support: async () => ({ supported: true, sdkInt: 30, reason: "memory" }),
+    load: async () => ({ ok: true, json: memoryBackend.json || "" }),
+    save: async (json) => {
+      if (memoryBackend.failNextWrite) {
+        memoryBackend.failNextWrite = false;
+        return { ok: false, error: "write-failed" };
+      }
+      memoryBackend.json = json;
+      return { ok: true };
+    }
+  };
+  var webBackend = {
+    support: async () => ({ supported: false, sdkInt: 0, reason: "web" }),
+    load: async () => ({ ok: true, json: "" }),
+    save: async () => ({ ok: false, error: "unsupported" })
+  };
+  async function nativeSupport(plugin) {
+    try {
+      const r = await plugin.historySupport();
+      return { supported: r && r.supported === true, sdkInt: r && r.sdkInt || 0, reason: r && r.reason || "" };
+    } catch {
+      return { supported: false, sdkInt: 0, reason: "error" };
+    }
+  }
+  async function nativeLoad(plugin) {
+    try {
+      const r = await plugin.historyLoad();
+      return { ok: r && r.ok === true, json: r && r.json || "", error: r && r.error || "" };
+    } catch (e) {
+      return { ok: false, error: errMessage(e) };
+    }
+  }
+  async function nativeSave(plugin, json) {
+    try {
+      const r = await plugin.historySave({ json });
+      return { ok: r && r.ok === true, error: r && r.error || "" };
+    } catch (e) {
+      return { ok: false, error: errMessage(e) };
+    }
+  }
+  function nativeBackendFor(plugin) {
+    return {
+      support: () => nativeSupport(plugin),
+      load: () => nativeLoad(plugin),
+      save: (json) => nativeSave(plugin, json)
+    };
+  }
+  function __setBackend(kind, opts) {
+    const o = opts || {};
+    if (kind === "memory") {
+      if (typeof o.json === "string") memoryBackend.json = o.json;
+      if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+      backend = memoryBackend;
+      backendKind = "memory";
+      return "memory";
+    }
+    if (kind === "native") {
+      const plugin = nativePlugin();
+      backend = plugin ? nativeBackendFor(plugin) : webBackend;
+      backendKind = plugin ? "native" : "web";
+      return backendKind;
+    }
+    backend = webBackend;
+    backendKind = "web";
+    return "web";
+  }
+  function pickBackend() {
+    if (backend) return backend;
+    const plugin = nativePlugin();
+    if (plugin && typeof plugin.historyLoad === "function") {
+      backend = nativeBackendFor(plugin);
+      backendKind = "native";
+    } else {
+      backend = webBackend;
+      backendKind = "web";
+    }
+    return backend;
+  }
+  function emptyLoadResult(error) {
+    loadError = error;
+    state = emptyState();
+    return { ok: false, error, state: snapshot() };
+  }
+  async function load() {
+    const b = pickBackend();
+    try {
+      support = await b.support();
+    } catch {
+      support = { supported: false, sdkInt: 0, reason: "error" };
+    }
+    const res = await b.load();
+    if (!res.ok) return emptyLoadResult(res.error || "read-failed");
+    if (!res.json) {
+      loadError = null;
+      state = emptyState();
+      return { ok: true, state: snapshot() };
+    }
+    const parsed = parseState(res.json);
+    if (!parsed.ok) return emptyLoadResult(parsed.error);
+    state = parsed.state;
+    loadError = null;
+    return { ok: true, state: snapshot() };
+  }
+  async function persist() {
+    const b = pickBackend();
+    if (backendKind === "web") return { ok: false, error: "unsupported" };
+    return b.save(JSON.stringify(state));
+  }
+  function buildRecord(input) {
+    if (!input || typeof input !== "object") return null;
+    const name = asString(input.name);
+    const uri = asString(input.uri);
+    const bytes = asCount(input.bytes);
+    if (!name || !uri || bytes <= 0) return null;
+    const kind = input.kind === "zip" ? "zip" : "md";
+    const createdAt = asCount(input.createdAt);
+    return {
+      id: uuidV4(),
+      name,
+      uri,
+      bytes,
+      mime: mimeOf(input.mime, kind),
+      kind,
+      createdAt: createdAt > 0 ? createdAt : Date.now()
+    };
+  }
+  function withEvictions(records, record) {
+    const next = records.concat([record]);
+    let evicted = null;
+    while (next.length > LIMIT) {
+      evicted = next.splice(evictIndex(next), 1)[0];
+    }
+    return { next, evicted };
+  }
+  async function commit(nextRecords) {
+    const prev = state.records.slice();
+    state = { schemaVersion: SCHEMA_VERSION, keepHistory: state.keepHistory, records: nextRecords };
+    const saved = await persist();
+    if (saved.ok) return { ok: true };
+    state = { schemaVersion: SCHEMA_VERSION, keepHistory: state.keepHistory, records: prev };
+    return { ok: false, error: saved.error || "write-failed" };
+  }
+  async function append(input) {
+    if (!state.keepHistory) return { ok: false, skipped: "keep-off" };
+    if (backendKind === "web") return { ok: false, skipped: "unsupported" };
+    const record = buildRecord(input);
+    if (!record) return { ok: false, error: "invalid-record" };
+    const { next, evicted } = withEvictions(state.records, record);
+    const saved = await commit(next);
+    if (!saved.ok) return { ok: false, error: saved.error, record };
+    return { ok: true, record, evicted };
+  }
+  async function remove(id) {
+    const target = String(id || "");
+    const next = state.records.filter((r) => r.id !== target);
+    if (next.length === state.records.length) return { ok: false, error: "not-found" };
+    return commit(next);
+  }
+  async function clear() {
+    const saved = await commit([]);
+    if (saved.ok) loadError = null;
+    return saved;
+  }
+  async function setKeep(on) {
+    const prev = state.keepHistory;
+    state = { schemaVersion: SCHEMA_VERSION, keepHistory: on === true, records: state.records.slice() };
+    const saved = await persist();
+    if (saved.ok) return { ok: true };
+    state = { schemaVersion: SCHEMA_VERSION, keepHistory: prev, records: state.records.slice() };
+    return { ok: false, error: saved.error || "write-failed" };
+  }
+  function search(query) {
+    return filterRecords(state.records, query);
+  }
+  function snapshot() {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      keepHistory: state.keepHistory,
+      records: listOrder(state.records),
+      support: { ...support },
+      error: loadError,
+      backend: backendKind
+    };
+  }
+  function getState() {
+    return snapshot();
+  }
+  async function checkNative(records) {
+    const plugin = nativePlugin();
+    if (backendKind !== "native" || !plugin || typeof plugin.historyCheck !== "function") {
+      return { ok: false, error: "unsupported", results: [] };
+    }
+    try {
+      const res = await plugin.historyCheck({ uris: records.map((r) => r.uri) });
+      return { ok: res && res.ok === true, results: res && res.results || [] };
+    } catch (e) {
+      return { ok: false, error: errMessage(e), results: [] };
+    }
+  }
+  async function check(records) {
+    const list = (records || []).filter((r) => r && r.uri);
+    if (!list.length) return { ok: true, results: [] };
+    return checkNative(list);
+  }
+  function __reset() {
+    state = emptyState();
+    loadError = null;
+    backend = null;
+    backendKind = "web";
+    support = { supported: false, sdkInt: 0, reason: "web" };
   }
 
   // src/ui.js
@@ -2544,7 +2978,7 @@ ${xlsxRowsToMd(kept)}`);
       viewerStatus.textContent = msg || "";
       viewerStatus.className = "md-viewer-status" + (isError ? " error" : "");
     }
-    if (msg) diag("status", String(msg).slice(0, 120));
+    if (msg) diag("status", (isError ? "error" : "ok") + " len=" + String(msg).length);
   }
   var TOAST_MS = 3200;
   var toastEl = null;
@@ -2633,7 +3067,7 @@ ${xlsxRowsToMd(kept)}`);
     preflightNotice(msg);
     await nextPaint();
   });
-  function fmtSize(n) {
+  function fmtSize2(n) {
     if (n < 1024) return n + " B";
     if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
     return (n / 1024 / 1024).toFixed(2) + " MB";
@@ -2710,6 +3144,7 @@ ${xlsxRowsToMd(kept)}`);
       const saved = NATIVE_SAVED + (res && res.filename || base + ".md");
       diag("save", "native");
       nativeNotice(saved);
+      recordHistory(res, "md");
       return "native";
     }
     if (isNativeRuntime()) {
@@ -2922,6 +3357,7 @@ ${xlsxRowsToMd(kept)}`);
       const res = await plugin.endBinary({ commit: true });
       started = false;
       nativeNotice(NATIVE_SAVED + (res && res.filename || filename));
+      recordHistory(res, "zip");
       return "native";
     } catch (e) {
       if (started) {
@@ -2949,8 +3385,8 @@ ${xlsxRowsToMd(kept)}`);
     return { z: F.zipSync(files), name: base + ".zip" };
   }
   async function downloadZip(text, fileName, assets, btn) {
-    const nativePlugin = isNativeRuntime() ? nativeBinaryPlugin() : null;
-    if (isNativeRuntime() && !nativePlugin) {
+    const nativePlugin2 = isNativeRuntime() ? nativeBinaryPlugin() : null;
+    if (isNativeRuntime() && !nativePlugin2) {
       nativeNotice(NATIVE_LIMIT.zip, true);
       return;
     }
@@ -2966,9 +3402,9 @@ ${xlsxRowsToMd(kept)}`);
       }, 1500);
       return;
     }
-    if (nativePlugin) {
+    if (nativePlugin2) {
       try {
-        await saveZipNative(nativePlugin, out.z, out.name);
+        await saveZipNative(nativePlugin2, out.z, out.name);
       } catch (e) {
         reportSaveError(e);
         return;
@@ -3032,7 +3468,7 @@ ${xlsxRowsToMd(kept)}`);
   async function downloadMdEmbedded(text, fileName, assets, btn) {
     const total = assetsTotalBytes(assets);
     if (total > embedMaxBytes) {
-      setStatus("\u56FE\u7247\u5171 " + fmtSize(total) + "\uFF0C\u8D85\u8FC7\u5185\u5D4C\u4E0A\u9650 " + fmtSize(embedMaxBytes) + "\uFF0C\u5DF2\u81EA\u52A8\u6539\u7528 zip \u4E0B\u8F7D\uFF08.md + \u56FE\u7247\uFF09");
+      setStatus("\u56FE\u7247\u5171 " + fmtSize2(total) + "\uFF0C\u8D85\u8FC7\u5185\u5D4C\u4E0A\u9650 " + fmtSize2(embedMaxBytes) + "\uFF0C\u5DF2\u81EA\u52A8\u6539\u7528 zip \u4E0B\u8F7D\uFF08.md + \u56FE\u7247\uFF09");
       await downloadZip(text, fileName, assets, btn);
       return;
     }
@@ -3110,15 +3546,15 @@ ${xlsxRowsToMd(kept)}`);
     else renderViewerRaw();
     mdViewerBody.dataset.mode = mode;
   }
-  function openMarkdownViewer(state, trigger) {
+  function openMarkdownViewer(state2, trigger) {
     if (!mdViewer) return;
-    viewerState = state;
+    viewerState = state2;
     viewerTrigger = trigger || document.activeElement;
-    if (mdViewerName) mdViewerName.textContent = state.fileName;
-    if (mdViewerExt) mdViewerExt.hidden = !state.external;
+    if (mdViewerName) mdViewerName.textContent = state2.fileName;
+    if (mdViewerExt) mdViewerExt.hidden = !state2.external;
     mdViewer.hidden = false;
     document.body.classList.add("md-viewer-open");
-    renderViewerMode(state.defaultMode || "preview");
+    renderViewerMode(state2.defaultMode || "preview");
     if (mdViewerClose) mdViewerClose.focus();
   }
   function closeMarkdownViewer() {
@@ -3260,7 +3696,7 @@ ${xlsxRowsToMd(kept)}`);
   }
   function metaText(file, result) {
     const ms = result.meta.elapsedMs ? " \xB7 " + result.meta.elapsedMs + " ms" : "";
-    return fmtSize(file.size) + ms;
+    return fmtSize2(file.size) + ms;
   }
   function makeRowHead(row) {
     const head = document.createElement("div");
@@ -3415,7 +3851,11 @@ ${xlsxRowsToMd(kept)}`);
         else panel.setAttribute("hidden", "");
       }
     }
-    return target.dataset.tab || null;
+    const active = target.dataset.tab || null;
+    if (active === "files") refreshFilesPanel().catch(() => {
+    });
+    else setFilesQuery("");
+    return active;
   }
   function focusTab(step) {
     const tabs = tabButtons();
@@ -3437,11 +3877,11 @@ ${xlsxRowsToMd(kept)}`);
       b.setAttribute("aria-pressed", b.dataset.themeSet === themeChoice ? "true" : "false");
     }
   }
-  function applyTheme(choice, persist) {
+  function applyTheme(choice, persist2) {
     themeChoice = THEME_CHOICES.includes(choice) ? choice : "system";
     document.documentElement.dataset.theme = resolveTheme(themeChoice);
     paintThemeButtons();
-    if (persist) {
+    if (persist2) {
       try {
         localStorage.setItem(THEME_KEY, themeChoice);
       } catch {
@@ -3547,7 +3987,7 @@ ${xlsxRowsToMd(kept)}`);
       setStatus("\u4FDD\u5B58\u6821\u9A8C\u5931\u8D25\uFF1A\u5199\u5165 " + bytes + " B \u2260 \u6E90 " + expected + " B", true);
       return;
     }
-    nativeNotice("\u5DF2\u4FDD\u5B58\u539F\u6587\uFF1A" + (res && res.filename || "") + "\uFF08" + fmtSize(bytes) + "\uFF0C\u5B57\u8282\u6570\u6821\u9A8C\u901A\u8FC7\uFF09");
+    nativeNotice("\u5DF2\u4FDD\u5B58\u539F\u6587\uFF1A" + (res && res.filename || "") + "\uFF08" + fmtSize2(bytes) + "\uFF0C\u5B57\u8282\u6570\u6821\u9A8C\u901A\u8FC7\uFF09");
   }
   function saveNativeOriginal() {
     const plugin = nativePluginObject();
@@ -3581,11 +4021,494 @@ ${xlsxRowsToMd(kept)}`);
       if (e.key === "Escape") closeMarkdownViewer();
     });
   }
+  var filesQuery = "";
+  var filesCleared = false;
+  var invalidByUri = /* @__PURE__ */ new Set();
+  var checkErrorByUri = /* @__PURE__ */ new Set();
+  function filesEls() {
+    const byId = (id) => document.getElementById(id);
+    return {
+      panel: byId("panel-files"),
+      list: byId("filesList"),
+      meta: byId("filesMeta"),
+      empty: byId("filesEmpty"),
+      emptySub: byId("filesEmptySub"),
+      cleared: byId("filesEmptyCleared"),
+      emptySearch: byId("filesEmptySearch"),
+      emptySearchTitle: byId("filesEmptySearchTitle"),
+      errorBox: byId("filesError"),
+      errorSub: byId("filesErrorSub"),
+      searchBar: byId("filesSearchBar"),
+      searchInput: byId("filesSearch"),
+      searchClear: byId("filesSearchClear"),
+      searchCount: byId("filesSearchCount"),
+      searchReset: byId("filesSearchReset"),
+      keepSwitch: byId("keepHistorySwitch"),
+      keepSub: byId("keepHistorySub"),
+      clearBtn: byId("clearHistoryBtn"),
+      clearSub: byId("clearHistorySub"),
+      dialog: byId("clearDialog"),
+      goConvertCleared: byId("goConvertCleared"),
+      reset: byId("historyReset")
+    };
+  }
+  function showOnly(el, show) {
+    if (el) el.hidden = !show;
+  }
+  function unsupportedNote(support2) {
+    if (!support2 || support2.supported) return "";
+    return support2.reason === "web" ? "\u6D4F\u89C8\u5668\u7248\u4E0D\u4FDD\u5B58\u5386\u53F2\uFF1BAPK \u53EF\u7528\u3002" : "\u5F53\u524D\u7CFB\u7EDF\u4E0D\u652F\u6301\u5386\u53F2\u8BB0\u5F55\uFF08\u9700 Android 10+\uFF09\u3002";
+  }
+  function paintEmptyStates(state2, shownCount, total) {
+    const el = filesEls();
+    const kind = emptyKind(state2, shownCount, total);
+    showOnly(el.list, kind === "list");
+    showOnly(el.errorBox, kind === "error");
+    showOnly(el.emptySearch, kind === "search");
+    showOnly(el.cleared, kind === "cleared");
+    showOnly(el.empty, kind === "never");
+    if (kind === "error" && el.errorSub) {
+      el.errorSub.textContent = "\u5386\u53F2\u6587\u4EF6\u53EF\u80FD\u5DF2\u635F\u574F\uFF08" + (state2.error || "unknown") + "\uFF09\uFF1B\u5DF2\u4E0B\u8F7D\u7684\u6587\u4EF6\u4E0D\u53D7\u5F71\u54CD\u3002";
+    }
+    if (kind === "search" && el.emptySearchTitle) {
+      el.emptySearchTitle.textContent = "\u6CA1\u6709\u5339\u914D\u300C" + filesQuery.trim() + "\u300D\u7684\u8BB0\u5F55";
+    }
+    if (kind === "never" && el.emptySub) {
+      el.emptySub.textContent = unsupportedNote(state2.support) || "\u8F6C\u6362\u5E76\u4FDD\u5B58\u540E\uFF0C\u8BB0\u5F55\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC\uFF08\u6700\u591A 200 \u6761\uFF09\uFF1B\u53EA\u5B58\u8BB0\u5F55\uFF0C\u4E0D\u5B58\u6587\u4EF6\uFF0C\u6E05\u9664\u8BB0\u5F55\u4E0D\u4F1A\u5220\u9664\u5DF2\u4E0B\u8F7D\u7684\u6587\u4EF6\u3002";
+    }
+  }
+  function emptyKind(state2, shownCount, total) {
+    if (state2.error) return "error";
+    if (shownCount > 0) return "list";
+    if (filesQuery.trim()) return "search";
+    if (total > 0) return "list";
+    if (filesCleared) return "cleared";
+    return "never";
+  }
+  function filesMetaText(shownCount, total) {
+    if (filesQuery.trim()) return "\u5339\u914D " + shownCount + " / \u5171 " + total + " \u9879";
+    if (total > 0) return "\u5171 " + total + " \u9879 \xB7 \u4FDD\u5B58\u5728 Download/WenZhuanMD";
+    return "\u5171 0 \u9879";
+  }
+  function paintMeta(el, shownCount, total) {
+    if (el.meta) el.meta.textContent = filesMetaText(shownCount, total);
+  }
+  function paintSearchCount(el, shownCount) {
+    if (!el.searchCount) return;
+    const on = filesQuery.trim() !== "";
+    el.searchCount.hidden = !on;
+    el.searchCount.textContent = on ? "\u5339\u914D " + shownCount : "";
+  }
+  function paintKeep(el, state2, supported) {
+    if (el.keepSwitch) {
+      el.keepSwitch.setAttribute("aria-checked", String(state2.keepHistory !== false));
+      el.keepSwitch.setAttribute("aria-disabled", String(!supported));
+      el.keepSwitch.disabled = !supported;
+    }
+    if (!el.keepSub) return;
+    el.keepSub.textContent = supported ? "\u6700\u591A " + LIMIT + " \u6761\uFF1B\u53EA\u5B58\u8BB0\u5F55\uFF0C\u4E0D\u5B58\u6587\u4EF6\uFF1B\u8D85\u8FC7\u4E0A\u9650\u81EA\u52A8\u6DD8\u6C70\u6700\u65E7\u8BB0\u5F55" : unsupportedNote(state2.support) || "\u5F53\u524D\u4E0D\u53EF\u7528";
+  }
+  function paintClear(el, state2, supported, total) {
+    if (el.clearBtn) {
+      const usable = supported && total > 0;
+      el.clearBtn.setAttribute("aria-disabled", String(!usable));
+      el.clearBtn.disabled = !usable;
+    }
+    if (!el.clearSub) return;
+    el.clearSub.textContent = supported ? "\u53EA\u5220\u9664 App \u5185\u7684\u8BB0\u5F55\uFF0C\u4E0D\u4F1A\u5220\u9664\u5DF2\u7ECF\u4E0B\u8F7D\u7684\u6587\u4EF6" : unsupportedNote(state2.support) || "\u5F53\u524D\u4E0D\u53EF\u7528";
+  }
+  function paintChrome(state2, shownCount, total) {
+    const el = filesEls();
+    const supported = Boolean(state2.support && state2.support.supported);
+    paintMeta(el, shownCount, total);
+    paintSearchCount(el, shownCount);
+    paintKeep(el, state2, supported);
+    paintClear(el, state2, supported, total);
+  }
+  var FILE_SVG = {
+    md: '<svg viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M19 8v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7z"/><path d="M9 13h6M9 16.5h4"/></svg>',
+    zip: '<svg viewBox="0 0 24 24"><path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"/><path d="M3 8l2-5h14l2 5z"/><path d="M12 11v6M9.5 14.5h5"/></svg>',
+    lost: '<svg viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M19 8v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7z"/><path d="M9.5 13.5l5 4M14.5 13.5l-5 4"/></svg>',
+    share: '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>',
+    trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>'
+  };
+  function typeSvg(rec, invalid) {
+    if (invalid) return FILE_SVG.lost;
+    return rec.kind === "zip" ? FILE_SVG.zip : FILE_SVG.md;
+  }
+  function makeTypeIcon(rec, invalid) {
+    const span = document.createElement("span");
+    span.className = "file-icon" + (invalid ? " gone" : "");
+    span.setAttribute("aria-hidden", "true");
+    span.innerHTML = typeSvg(rec, invalid);
+    return span;
+  }
+  function recordMetaText(rec) {
+    const parts = [relTime(rec.createdAt), fmtSize2(rec.bytes)];
+    if (invalidByUri.has(rec.uri)) parts.push("\u6587\u4EF6\u5DF2\u4E0D\u5B58\u5728");
+    else if (checkErrorByUri.has(rec.uri)) parts.push("\u65E0\u6CD5\u786E\u8BA4\u6587\u4EF6\u72B6\u6001");
+    return parts.filter(Boolean).join(" \xB7 ");
+  }
+  function removeRecord(rec) {
+    remove(rec.id).then((r) => {
+      if (!r || !r.ok) {
+        setStatus("\u79FB\u9664\u8BB0\u5F55\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"), true);
+        return;
+      }
+      setStatus("\u5DF2\u79FB\u9664\u8BB0\u5F55\uFF08\u6587\u4EF6\u672A\u5220\u9664\uFF09");
+      refreshFilesPanel().catch(() => {
+      });
+    }).catch(() => setStatus("\u79FB\u9664\u8BB0\u5F55\u5931\u8D25", true));
+  }
+  function makeShareButton(rec, invalid) {
+    const share = document.createElement("button");
+    share.type = "button";
+    share.className = "file-share";
+    share.innerHTML = FILE_SVG.share;
+    share.setAttribute("aria-label", "\u5206\u4EAB " + rec.name);
+    share.disabled = invalid;
+    share.addEventListener("click", (e) => {
+      e.stopPropagation();
+      shareHistoryRecord(rec);
+    });
+    return share;
+  }
+  function makeRemoveButton(rec) {
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "row-action icon-only";
+    rm.innerHTML = FILE_SVG.trash;
+    rm.setAttribute("aria-label", "\u79FB\u9664\u8BB0\u5F55 " + rec.name);
+    rm.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeRecord(rec);
+    });
+    return rm;
+  }
+  function makeMainButton(rec, invalid) {
+    const main = document.createElement("button");
+    main.type = "button";
+    main.className = "file-main";
+    main.setAttribute("aria-label", "\u6253\u5F00 " + rec.name);
+    const name = document.createElement("span");
+    name.className = "file-name";
+    name.textContent = rec.name;
+    const meta = document.createElement("span");
+    meta.className = "file-meta" + (invalid ? " file-invalid" : "");
+    meta.textContent = recordMetaText(rec);
+    main.append(name, meta);
+    main.addEventListener("click", () => openHistoryRecord(rec));
+    return main;
+  }
+  function renderRecordRow(rec) {
+    const invalid = invalidByUri.has(rec.uri);
+    const row = document.createElement("div");
+    row.className = "file-row" + (invalid ? " invalid" : "");
+    row.setAttribute("role", "listitem");
+    row.dataset.id = rec.id;
+    row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid));
+    if (invalid) row.append(makeRemoveButton(rec));
+    row.append(makeShareButton(rec, invalid));
+    return row;
+  }
+  function renderFilesPanel(state2) {
+    const el = filesEls();
+    if (!el.panel) return;
+    const all = state2.records || [];
+    const shown = filesQuery.trim() ? search(filesQuery) : all;
+    if (el.list) el.list.innerHTML = "";
+    if (el.list && shown.length) {
+      for (const rec of shown) el.list.append(renderRecordRow(rec));
+    }
+    paintChrome(state2, shown.length, all.length);
+    paintEmptyStates(state2, shown.length, all.length);
+  }
+  async function loadPanelState() {
+    const loaded = await load();
+    return loaded && loaded.state || getState();
+  }
+  function collectCheckResults(results) {
+    for (const item of results) {
+      if (!item || !item.uri) continue;
+      if (item.exists === false) invalidByUri.add(item.uri);
+      else if (item.error) checkErrorByUri.add(item.uri);
+    }
+  }
+  async function verifyRecords(state2) {
+    invalidByUri = /* @__PURE__ */ new Set();
+    checkErrorByUri = /* @__PURE__ */ new Set();
+    if (!(state2.support && state2.support.supported) || !state2.records.length) return;
+    const chk = await check(state2.records);
+    if (chk && chk.ok) collectCheckResults(chk.results);
+  }
+  async function refreshFilesPanel() {
+    const state2 = await loadPanelState();
+    await verifyRecords(state2);
+    renderFilesPanel(state2);
+    updateLastConversion(state2);
+    return state2;
+  }
+  function updateLastConversion(state2) {
+    const empty = document.getElementById("lastEmpty");
+    if (!empty) return;
+    const rec = state2.records[0];
+    if (!rec) {
+      empty.textContent = "\u8FD8\u6CA1\u6709\u8F6C\u6362\u8BB0\u5F55 \u2014\u2014 \u8F6C\u6362\u5B8C\u6210\u540E\u4F1A\u663E\u793A\u5728\u8FD9\u91CC\u3002";
+      empty.style.cursor = "";
+      empty.onclick = null;
+      return;
+    }
+    empty.textContent = "\u4E0A\u6B21\uFF1A" + rec.name + " \xB7 " + relTime(rec.createdAt) + " \xB7 \u70B9\u6B64\u5B9A\u4F4D\u5230\u300C\u6587\u4EF6\u300D";
+    empty.style.cursor = "pointer";
+    empty.onclick = () => {
+      activateTab("files");
+      highlightRecord(rec.id);
+    };
+  }
+  function flashRow(row) {
+    if (!row) return;
+    row.classList.add("highlight");
+    if (typeof row.scrollIntoView === "function") row.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => row.classList.remove("highlight"), 1600);
+  }
+  function highlightRecord(id) {
+    setTimeout(() => {
+      const row = document.querySelector('.file-row[data-id="' + id + '"]');
+      if (!row) {
+        setStatus("\u8FD9\u6761\u8BB0\u5F55\u4E0D\u5728\u5386\u53F2\u91CC\uFF08\u53EF\u80FD\u5DF2\u88AB\u6DD8\u6C70\uFF09", true);
+        return;
+      }
+      flashRow(row);
+    }, 80);
+  }
+  function flashFirstMatch() {
+    const row = document.querySelector("#filesList .file-row");
+    if (!row) {
+      if (filesQuery.trim()) setStatus("\u6CA1\u6709\u5339\u914D\u300C" + filesQuery.trim() + "\u300D\u7684\u8BB0\u5F55", true);
+      return;
+    }
+    flashRow(row);
+  }
+  function setFilesQuery(q) {
+    filesQuery = String(q == null ? "" : q);
+    const el = filesEls();
+    if (el.searchInput && el.searchInput.value !== filesQuery) el.searchInput.value = filesQuery;
+    if (el.searchClear) el.searchClear.hidden = !filesQuery;
+    renderFilesPanel(getState());
+  }
+  function shareFailMessage(res) {
+    if (!res) return "\u5206\u4EAB\u5931\u8D25\uFF1A\u672A\u77E5\u9519\u8BEF";
+    if (res.error === "no_app") return "\u6CA1\u6709\u53EF\u7528\u7684\u5206\u4EAB\u5E94\u7528";
+    return "\u5206\u4EAB\u5931\u8D25\uFF1A" + (res.error || "\u672A\u77E5\u9519\u8BEF");
+  }
+  function shareMimeOf(rec) {
+    if (rec.kind === "md") return "application/octet-stream";
+    return rec.mime || "application/octet-stream";
+  }
+  async function shareHistoryRecord(rec) {
+    if (invalidByUri.has(rec.uri)) {
+      setStatus("\u6587\u4EF6\u5DF2\u4E0D\u5B58\u5728\uFF0C\u65E0\u6CD5\u5206\u4EAB", true);
+      return;
+    }
+    const plugin = nativePluginObject();
+    if (!plugin || typeof plugin.shareContentUri !== "function") {
+      setStatus("\u5206\u4EAB\u5931\u8D25\uFF1A\u672C\u673A\u4E0D\u652F\u6301\u7CFB\u7EDF\u5206\u4EAB", true);
+      return;
+    }
+    setStatus("\u6B63\u5728\u6253\u5F00\u5206\u4EAB\u2026\u2026");
+    try {
+      const res = await plugin.shareContentUri({ uri: rec.uri, mime: shareMimeOf(rec), name: rec.name });
+      if (!res || res.ok !== true) setStatus(shareFailMessage(res), true);
+    } catch (e) {
+      setStatus("\u5206\u4EAB\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF"), true);
+    }
+  }
+  async function openZipRecord(plugin, rec) {
+    const res = await plugin.openContentUri({ uri: rec.uri, mime: rec.mime || "application/zip" });
+    if (res && res.ok === true) return;
+    const msg = res && res.error === "no_app" ? "\u6CA1\u6709\u53EF\u7528\u7684\u5E94\u7528\u6253\u5F00\u8BE5 zip \u6587\u4EF6" : "\u6253\u5F00\u5931\u8D25\uFF1A" + (res && res.error || "\u672A\u77E5\u9519\u8BEF");
+    setStatus(msg, true);
+  }
+  async function openMdRecord(plugin, rec) {
+    try {
+      const res = await plugin.readContentUri({ uri: rec.uri });
+      if (!res || res.ok !== true) {
+        setStatus("\u6253\u5F00\u5931\u8D25\uFF1A" + (res && res.error || "\u6587\u4EF6\u8BFB\u53D6\u5931\u8D25"), true);
+        return;
+      }
+      openMarkdownViewer(
+        {
+          fileName: rec.name,
+          text: res.text || "",
+          raw: res.text || "",
+          truncated: res.truncated === true,
+          external: true,
+          fullText: true,
+          defaultMode: "preview"
+        },
+        null
+      );
+    } catch (e) {
+      setStatus("\u6253\u5F00\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF"), true);
+    }
+  }
+  async function openHistoryRecord(rec) {
+    if (invalidByUri.has(rec.uri)) {
+      setStatus("\u6587\u4EF6\u5DF2\u4E0D\u5B58\u5728\uFF0C\u65E0\u6CD5\u6253\u5F00", true);
+      return;
+    }
+    const plugin = nativePluginObject();
+    if (!plugin || typeof plugin.readContentUri !== "function") {
+      setStatus("\u6253\u5F00\u5931\u8D25\uFF1A\u672C\u673A\u4E0D\u652F\u6301\u8BFB\u53D6\u5386\u53F2\u6587\u4EF6", true);
+      return;
+    }
+    if (rec.kind === "zip") {
+      await openZipRecord(plugin, rec);
+      return;
+    }
+    await openMdRecord(plugin, rec);
+  }
+  function closeClearDialog() {
+    const el = filesEls();
+    if (el.dialog) el.dialog.hidden = true;
+    const trigger = document.getElementById("clearHistoryBtn");
+    if (trigger && typeof trigger.focus === "function") trigger.focus();
+  }
+  function confirmClear() {
+    clear().then((r) => {
+      if (!r || !r.ok) {
+        setStatus("\u6E05\u9664\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"), true);
+        return;
+      }
+      filesCleared = true;
+      closeClearDialog();
+      setStatus("\u5386\u53F2\u8BB0\u5F55\u5DF2\u6E05\u9664\uFF08\u5DF2\u4E0B\u8F7D\u7684\u6587\u4EF6\u672A\u5220\u9664\uFF09");
+      refreshFilesPanel().catch(() => {
+      });
+    }).catch(() => setStatus("\u6E05\u9664\u5931\u8D25", true));
+  }
+  function openClearDialog() {
+    const state2 = getState();
+    if (!state2.support.supported || !state2.records.length) return;
+    const el = filesEls();
+    if (!el.dialog) return;
+    el.dialog.hidden = false;
+    const confirmBtn = document.getElementById("clearConfirm");
+    if (confirmBtn && typeof confirmBtn.focus === "function") confirmBtn.focus();
+  }
+  function keepDialogKey(e) {
+    const el = filesEls();
+    if (!el.dialog || el.dialog.hidden) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeClearDialog();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const focusables = el.dialog.querySelectorAll("button");
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+  function toggleKeep() {
+    const state2 = getState();
+    const next = state2.keepHistory === false;
+    setKeep(next).then((r) => {
+      if (!r || !r.ok) {
+        setStatus("\u4FDD\u7559\u5F00\u5173\u4FDD\u5B58\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"), true);
+        return;
+      }
+      setStatus(next ? "\u5DF2\u5F00\u542F\uFF1A\u65B0\u8F6C\u6362\u4F1A\u8BB0\u5165\u5386\u53F2" : "\u5DF2\u5173\u95ED\uFF1A\u65B0\u8F6C\u6362\u4E0D\u518D\u8BB0\u5165\u5386\u53F2\uFF08\u65E7\u8BB0\u5F55\u4FDD\u7559\uFF09");
+      renderFilesPanel(getState());
+    }).catch(() => setStatus("\u4FDD\u7559\u5F00\u5173\u4FDD\u5B58\u5931\u8D25", true));
+  }
+  async function resetHistory() {
+    const r = await clear();
+    if (!r || !r.ok) {
+      setStatus("\u91CD\u7F6E\u5931\u8D25\uFF1A" + (r && r.error || "\u672A\u77E5\u9519\u8BEF"), true);
+      return;
+    }
+    filesCleared = false;
+    setStatus("\u5386\u53F2\u8BB0\u5F55\u5DF2\u91CD\u7F6E");
+    refreshFilesPanel().catch(() => {
+    });
+  }
+  function recordAppendResult(r) {
+    if (r && r.ok) {
+      filesCleared = false;
+      refreshFilesPanel().catch(() => {
+      });
+      return;
+    }
+    if (r && r.skipped === "keep-off") return;
+    nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
+  }
+  function recordHistory(res, kind) {
+    if (!res || !res.uri || res.bytes <= 0 || !res.filename) return;
+    const isZip = kind === "zip";
+    append({
+      name: res.filename,
+      uri: res.uri,
+      bytes: res.bytes,
+      kind: isZip ? "zip" : "md",
+      mime: isZip ? "application/zip" : "text/markdown"
+    }).then(recordAppendResult).catch(() => nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true));
+  }
+  function wireFilesSearch(el) {
+    if (el.searchInput) {
+      el.searchInput.addEventListener("input", () => setFilesQuery(el.searchInput.value));
+      el.searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          flashFirstMatch();
+          return;
+        }
+        if (e.key === "Escape") setFilesQuery("");
+      });
+    }
+    if (el.searchClear) el.searchClear.addEventListener("click", () => setFilesQuery(""));
+    if (el.searchReset) el.searchReset.addEventListener("click", () => setFilesQuery(""));
+  }
+  function wireHistoryControls(el) {
+    if (el.goConvertCleared) el.goConvertCleared.addEventListener("click", () => activateTab("convert"));
+    if (el.reset) el.reset.addEventListener("click", () => resetHistory().catch(() => {
+    }));
+    if (el.keepSwitch) el.keepSwitch.addEventListener("click", () => toggleKeep());
+    if (el.clearBtn) el.clearBtn.addEventListener("click", () => openClearDialog());
+  }
+  function wireClearDialog(el) {
+    const cancel = document.getElementById("clearCancel");
+    if (cancel) cancel.addEventListener("click", () => closeClearDialog());
+    const confirm = document.getElementById("clearConfirm");
+    if (confirm) confirm.addEventListener("click", () => confirmClear());
+    if (!el.dialog) return;
+    el.dialog.addEventListener("keydown", keepDialogKey);
+    el.dialog.addEventListener("click", (e) => {
+      if (e.target === el.dialog) closeClearDialog();
+    });
+  }
+  function initHistoryUI() {
+    const el = filesEls();
+    if (!el.panel) return;
+    wireFilesSearch(el);
+    wireHistoryControls(el);
+    wireClearDialog(el);
+    refreshFilesPanel().catch(() => {
+    });
+  }
   function initShell() {
     initTabs();
     initTheme();
     initMarkdownViewer();
     initResultsControls();
+    initHistoryUI();
     diagBoot();
     const goConvert = document.getElementById("goConvert");
     if (goConvert) goConvert.addEventListener("click", () => activateTab("convert"));
@@ -4267,7 +5190,29 @@ ${p.text}
       setEmbedMaxBytes(n);
     },
     openExternal: openExternalDocument,
-    normalizeExternalText
+    normalizeExternalText,
+    /* 卡 060 / 2-5：转换历史库（数据层 + 刷新入口；测试缝与实现共用同一份函数） */
+    history: {
+      load,
+      append,
+      remove,
+      clear,
+      setKeep,
+      search,
+      getState,
+      check,
+      __setBackend,
+      __reset,
+      refresh: refreshFilesPanel,
+      LIMIT,
+      relTime,
+      fmtSize,
+      parseState,
+      listOrder,
+      evictIndex,
+      filterRecords,
+      normalizeRecord
+    }
   };
   function nativeOpenPlugin() {
     const cap = typeof window === "undefined" ? null : window.Capacitor;
