@@ -76,6 +76,10 @@ jobs:
       # ⚠️ 本步只报「类别 + 位置 + 命中数」，**绝不回显命中值**（引擎自身行为）。
       - name: "Privacy gate (新增行里的敏感内容 ⇒ 红；privacy-gate.mjs --range；2026-10-01 卡 024)"
         if: always()
+        # 私有 denylist（第三方姓名 / 论文标题等无法正则的内容）：值只存 repository secret，不进仓库。
+        # 未配置 secret 时为空 ⇒ 门禁退化为形状规则（仍是现有防线）。
+        env:
+          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
         run: |
           set -euo pipefail
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
