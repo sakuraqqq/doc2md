@@ -19,6 +19,7 @@
 | PWA 静态验收 | ✅ 48/48 | `node tests/pwa-audit.mjs`（manifest/SW/图标/触控/对比度 WCAG AA） |
 | 离线 OCR 实证 | ✅ PASS | `npm run verify:ocr`（置信度 93%，HELLO/DOC2MD/2026 全命中） |
 | OCR 语言包（T8′ 懒加载） | ✅ 就绪 | **`langs/` 目录必须随 index.html 发布**（eng/chi_sim.traineddata，同源懒加载，DD-14；**缺它则 OCR 功能失效**——上次 16.4MB 单文件已不含语言包） |
+| 隐私审查（人工项，2026-10-23 补） | ⬜ 每次发布 | ① `node tools/privacy-gate.mjs --all`（形状规则全量体检）；② 私有 denylist 命中 0（本地 `.私档/隐私-denylist.txt`；CI 用 repository secret `PRIVACY_DENYLIST`）；③ **人工**复核样例/来源描述：不得出现第三方论文题目、作者姓名、单位、联系方式，只写「第三方论文/数据（未授权，不入库）」；④ 注释 / 提交信息 / 文档脚注同样算公开面（全局 AGENTS 隐私 §2.0） |
 | SW 缓存版本（CACHE_NAME） | ✅ 硬检查 | **改了 `vendor/` 或 `langs/` 任何文件 → 必须 bump `sw.js` 的 `CACHE_NAME`**（资源走 cache-first，忘 bump = 老用户「新 index + 旧库」混搭；H3 断言锁版本号；2026-09-08 第六轮审查 §3.4 补入） |
 | 决策史 | ✅ 就绪 | `docs/design-decisions.md`（DD-4~12 真实案例：OCR blob 化/样例覆盖事故/单文件组装陷阱…） |
 | 许可表 | ✅ 就绪 | `docs/licenses.md`——8 库全部宽松（MIT/Apache-2.0/BSD-2），可商用；**Apache-2.0 义务：发布物附许可证文本副本 + 版权声明（licenses.md §2 执行清单，公开前逐条复核一遍）** |

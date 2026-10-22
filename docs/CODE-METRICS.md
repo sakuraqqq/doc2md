@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-22T16:25:21.192Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-10-22T17:50:19.287Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -11,11 +11,11 @@
 
 ## 2. 函数复杂度总览与技术债基线
 
-- 度量文件数：36；函数总数：1094；超限函数数：0（圈 >10 或认知 >15）
-- 圈复杂度最高：10；认知复杂度最高：14
+- 度量文件数：36；函数总数：1099；超限函数数：0（圈 >10 或认知 >15）
+- 圈复杂度最高：10；认知复杂度最高：15
 
 **重构前基线**（d3b58bc（重构前 index.html 内联版））：函数 96 个，超限 17 个。
-重构后当前：函数 1094 个，超限 0 个。
+重构后当前：函数 1099 个，超限 0 个。
 
 ## 3. ⚠️ 超限名单（重构/拆分优先级）
 
@@ -49,6 +49,7 @@
 | src/docx.js | ommlParts | 110 | 9 | 9 |
 | src/sniff.js | imageKind | 212 | 9 | 9 |
 | src/ui.js | shareHistoryRecord | 1597 | 9 | 9 |
+| tools/privacy-gate.mjs | loadDenylist | 193 | 9 | 9 |
 | src/ui.js | showToast | 85 | 9 | 8 |
 | src/ui.js | handleSavedOriginal | 1212 | 9 | 8 |
 | src/ui.js | paintEmptyStates | 1308 | 9 | 8 |
@@ -88,8 +89,9 @@
 | tools/android-permission-audit.mjs | checkAndroidPermissions | 66 | 8 | 7 |
 | tools/apk-artifact-check.mjs | checkApkArtifact | 63 | 8 | 7 |
 | tools/apk-version-check.mjs | checkApkVersion | 167 | 8 | 7 |
-| tools/privacy-gate.mjs | patchLineKind | 248 | 8 | 7 |
+| tools/privacy-gate.mjs | patchLineKind | 288 | 8 | 7 |
 | tools/race-060.mjs | checkStoreRecords | 131 | 8 | 7 |
+| tools/privacy-gate.mjs | scanText | 242 | 7 | 15 |
 | src/html2md.js | blockifyContainer | 151 | 7 | 13 |
 | src/xlsx.js | xlsxDegradeWarnings | 906 | 7 | 12 |
 | tools/check-pages-allowlist.mjs | parseArgs | 25 | 7 | 11 |
@@ -135,9 +137,9 @@
 | tools/ci-step-guard-check.mjs | runCli | 170 | 7 | 6 |
 | tools/gen-handoff-baseline.mjs | buildBlock | 74 | 7 | 6 |
 | tools/metrics.mjs | countCycPoints | 118 | 7 | 6 |
+| tools/privacy-gate.mjs | selftest | 446 | 7 | 6 |
 | tools/race-059.mjs | adbCandidates | 39 | 7 | 6 |
 | src/xlsx.js | scanSheetRowsStream | 330 | 6 | 13 |
-| tools/privacy-gate.mjs | scanText | 204 | 6 | 13 |
 | src/html2md.js | liToLines | 294 | 6 | 11 |
 | src/html2md.js | blockChildToLines | 251 | 6 | 10 |
 | src/pdf.js | linesToMarkdown | 323 | 6 | 10 |
@@ -150,8 +152,8 @@
 | tools/measure-xlsx-peak.mjs | parseArgs | 42 | 6 | 9 |
 | tools/measure-xlsx-peak.mjs | stageSite | 86 | 6 | 9 |
 | tools/measure-xlsx-peak.mjs | listRendererPids | 144 | 6 | 9 |
-| tools/privacy-gate.mjs | firstHitInLine | 190 | 6 | 9 |
-| tools/privacy-gate.mjs | runCases | 367 | 6 | 9 |
+| tools/privacy-gate.mjs | firstHitInLine | 214 | 6 | 9 |
+| tools/privacy-gate.mjs | runCases | 407 | 6 | 9 |
 | src/pdf.js | lineText | 240 | 6 | 8 |
 | src/pdf.js | textQualityRatio | 362 | 6 | 8 |
 | tools/audit-delivery.mjs | judged | 191 | 6 | 8 |
@@ -245,7 +247,7 @@
 | src/xlsx.js | xlsxConvert | 953 | 5 | 6 |
 | tools/audit-delivery.mjs | deliveryVersions | 70 | 5 | 6 |
 | tools/baseline-check.mjs | parseTapSummary | 328 | 5 | 6 |
-| tools/privacy-gate.mjs | scanPatch | 281 | 5 | 6 |
+| tools/privacy-gate.mjs | scanPatch | 321 | 5 | 6 |
 | src/app.js | processOne | 46 | 5 | 5 |
 | src/app.js | safeHandleFiles | 73 | 5 | 5 |
 | src/docx.js | docxInjectLatex | 259 | 5 | 5 |
@@ -426,7 +428,7 @@
 | tools/metrics.mjs | childNesting | 163 | 4 | 3 |
 | tools/metrics.mjs | collectFunctions | 182 | 4 | 3 |
 | tools/privacy-gate.mjs | isPrivateV4 | 50 | 4 | 3 |
-| tools/privacy-gate.mjs | selftest | 406 | 4 | 3 |
+| tools/privacy-gate.mjs | push | 195 | 4 | 3 |
 | tools/race-059.mjs | arg | 19 | 4 | 3 |
 | tools/race-059.mjs | resolveAdb | 48 | 4 | 3 |
 | tools/race-059.mjs | parseSize | 88 | 4 | 3 |
@@ -440,7 +442,7 @@
 | tools/race-060.mjs | installIfNeeded | 201 | 4 | 3 |
 | src/pdf.js | glyphRun | 84 | 3 | 4 |
 | tools/gen-handoff-baseline.mjs | countOccurrences | 139 | 3 | 4 |
-| tools/privacy-gate.mjs | selfCleanCheck | 395 | 3 | 4 |
+| tools/privacy-gate.mjs | selfCleanCheck | 435 | 3 | 4 |
 | src/docx.js | ommlChild | 57 | 3 | 3 |
 | src/history-store.js | evictIndex | 136 | 3 | 3 |
 | src/html2md.js | fragFor | 138 | 3 | 3 |
@@ -558,8 +560,9 @@
 | tools/metrics.mjs | namedKey | 95 | 3 | 2 |
 | tools/metrics.mjs | cogVisit | 144 | 3 | 2 |
 | tools/privacy-gate.mjs | maskValue | 150 | 3 | 2 |
-| tools/privacy-gate.mjs | gitToFile | 227 | 3 | 2 |
-| tools/privacy-gate.mjs | reportSelfHits | 380 | 3 | 2 |
+| tools/privacy-gate.mjs | denyHitInLine | 228 | 3 | 2 |
+| tools/privacy-gate.mjs | gitToFile | 267 | 3 | 2 |
+| tools/privacy-gate.mjs | reportSelfHits | 420 | 3 | 2 |
 | tools/race-059.mjs | lastOf | 151 | 3 | 2 |
 | tools/race-059.mjs | assertActions | 190 | 3 | 2 |
 | tools/race-059.mjs | nativeClipSha | 200 | 3 | 2 |
@@ -711,9 +714,9 @@
 | tools/metrics.mjs | (anonymous) | 270 | 2 | 1 |
 | tools/metrics.mjs | (anonymous) | 328 | 2 | 1 |
 | tools/privacy-gate.mjs | isPlaceholder | 42 | 2 | 1 |
-| tools/privacy-gate.mjs | addedFindings | 272 | 2 | 1 |
-| tools/privacy-gate.mjs | (anonymous) | 273 | 2 | 1 |
-| tools/privacy-gate.mjs | opt | 419 | 2 | 1 |
+| tools/privacy-gate.mjs | addedFindings | 312 | 2 | 1 |
+| tools/privacy-gate.mjs | (anonymous) | 313 | 2 | 1 |
+| tools/privacy-gate.mjs | opt | 466 | 2 | 1 |
 | tools/race-059.mjs | letterOf | 73 | 2 | 1 |
 | tools/race-059.mjs | launch | 100 | 2 | 1 |
 | tools/race-059.mjs | downloads | 114 | 2 | 1 |
@@ -1064,14 +1067,16 @@
 | tools/privacy-gate.mjs | ignore | 104 | 1 | 0 |
 | tools/privacy-gate.mjs | ignore | 133 | 1 | 0 |
 | tools/privacy-gate.mjs | hash16 | 156 | 1 | 0 |
-| tools/privacy-gate.mjs | commit | 260 | 1 | 0 |
-| tools/privacy-gate.mjs | file | 263 | 1 | 0 |
-| tools/privacy-gate.mjs | hunk | 266 | 1 | 0 |
-| tools/privacy-gate.mjs | J | 316 | 1 | 0 |
-| tools/privacy-gate.mjs | (anonymous) | 371 | 1 | 0 |
-| tools/privacy-gate.mjs | has | 418 | 1 | 0 |
-| tools/privacy-gate.mjs | revExists | 453 | 1 | 0 |
-| tools/privacy-gate.mjs | (anonymous) | 515 | 1 | 0 |
+| tools/privacy-gate.mjs | (anonymous) | 230 | 1 | 0 |
+| tools/privacy-gate.mjs | commit | 300 | 1 | 0 |
+| tools/privacy-gate.mjs | file | 303 | 1 | 0 |
+| tools/privacy-gate.mjs | hunk | 306 | 1 | 0 |
+| tools/privacy-gate.mjs | J | 356 | 1 | 0 |
+| tools/privacy-gate.mjs | (anonymous) | 411 | 1 | 0 |
+| tools/privacy-gate.mjs | (anonymous) | 452 | 1 | 0 |
+| tools/privacy-gate.mjs | has | 465 | 1 | 0 |
+| tools/privacy-gate.mjs | revExists | 501 | 1 | 0 |
+| tools/privacy-gate.mjs | (anonymous) | 563 | 1 | 0 |
 | tools/race-059.mjs | ok | 35 | 1 | 0 |
 | tools/race-059.mjs | fail | 36 | 1 | 0 |
 | tools/race-059.mjs | note | 37 | 1 | 0 |

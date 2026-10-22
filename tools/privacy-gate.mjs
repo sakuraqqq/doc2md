@@ -183,6 +183,30 @@ function loadAllowlist(repoRoot) {
 }
 
 /**
+ * 私有 denylist —— 补「正则抓不到」的那类内容（第三方姓名 / 论文标题 / 单位…）。
+ * 来源（值都不进公开仓）：
+ *   · 环境变量 `PRIVACY_DENYLIST`（CI 走 repository secret；本地也可 export）
+ *   · `<repo>/.私档/隐私-denylist.txt`（本地私有、gitignored；一行一条，`#` 开头为注释）
+ * ⭐ 命中只报**位置 + 条目序号**，绝不回显条目本身（回显 = 第二次泄漏）。
+ */
+let DENY = []
+function loadDenylist(repoRoot) {
+  const set = new Set()
+  const push = (raw) => {
+    const v = String(raw || '').trim()
+    if (v && !v.startsWith('#')) set.add(v)
+  }
+  for (const e of String(process.env.PRIVACY_DENYLIST || '').split(/\r?\n/)) push(e)
+  const p = join(repoRoot, '.私档', '隐私-denylist.txt')
+  try {
+    if (existsSync(p)) for (const e of readFileSync(p, 'utf8').split(/\r?\n/)) push(e)
+  } catch {
+    /* 读不到就当没有：denylist 是补强层，不替代形状规则 */
+  }
+  DENY = [...set]
+}
+
+/**
  * 在一行里找该规则的**第一个有效命中**（被 `ignore` 或允许清单放行的都跳过）⇒ 命中值 / `null`。
  * ⚠️ 抽出来是**纯结构重构**（卡 022）：原来这段 `while` 嵌在 `scanText` 的两层循环里，
  *    认知复杂度 26（阈值 15）。**语义逐条不变** —— 同一行同一规则仍只取**第一个**有效命中。
@@ -198,6 +222,20 @@ function firstHitInLine(r, line) {
     return literal
   }
   return null
+}
+
+/** denylist 的单行判定（抽出来降认知复杂度；命中只给序号，不回显值） */
+function denyHitInLine(line, fileLabel, lineNo) {
+  if (DENY.length === 0) return null
+  const idx = DENY.findIndex((d) => line.includes(d))
+  if (idx < 0) return null
+  return {
+    rule: 'private-denylist',
+    desc: `私有 denylist 命中（第 ${idx + 1} 条；值不回显）`,
+    fix: '删掉具体值，只写类别与处置状态（AGENTS 隐私 §2.0「不复述」）',
+    file: fileLabel,
+    line: lineNo,
+  }
 }
 
 /** 扫一段文本，返回 [{rule, line}]；**不返回命中值**（--explain 只给掩码形状 + 哈希）。 */
@@ -219,6 +257,8 @@ function scanText(text, fileLabel) {
         shape: EXPLAIN ? `${maskValue(literal)}  hash=${hash16(literal)}` : undefined,
       })
     }
+    const deny = denyHitInLine(line, fileLabel, i + 1)
+    if (deny) out.push(deny)
   }
   return out
 }
@@ -406,6 +446,13 @@ function selfCleanCheck() {
 function selftest() {
   let bad = runCases(POSITIVE, true, '— 正例（必须命中）—', '← 未命中！')
   bad += runCases(NEGATIVE, false, '— 白名单（必须不命中）—', '← 误伤！')
+  console.log('— 私有 denylist（合成样本，运行时拼接）—')
+  const fake = J('合成', '反面样例', 'X')
+  DENY = [fake]
+  const dlHit = scanText('正文里出现 ' + fake + ' 这几个字', '<selftest>').some((h) => h.rule === 'private-denylist')
+  DENY = []
+  console.log(`  ${dlHit ? '✓' : '✗'} private-denylist    ${dlHit ? '' : '← 未命中！'}`)
+  if (!dlHit) bad += 1
   console.log('— 已知抓不到的形状（这是边界，不是承诺）—')
   for (const [what, why] of KNOWN_GAPS) console.log(`  ⚠️  ${what} —— ${why}`)
   bad += selfCleanCheck()
@@ -425,6 +472,7 @@ if (has('--selftest')) selftest()
 
 const cwd = process.cwd()
 ALLOW = loadAllowlist(cwd) // 允许清单只在真跑时读；--selftest 不读
+loadDenylist(cwd) // 私有 denylist 同理：--selftest 用合成样本
 let findings = []
 let mode = ''
 const tmp = mkdtempSync(join(tmpdir(), 'privacy-gate-'))
