@@ -806,7 +806,7 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 | Z10-8 | A9 清除：二次确认；Esc 取消不改记录；确认后记录 0、keep 不变、计数归零、「历史记录已清除」空态 | 运行时 DOM | ✅ 绿 |
 | Z10-9 | A13 产物：`index.html` 含 `filesList` / `clearDialog` / `keepHistorySwitch` / `filesSearchBtn` / `__setBackend` 测试缝 | 静态产物 | ✅ 绿 |
 
-**两相实测（本机 · 卡 060）**：改前（HEAD `46414b5` 的 `index.html` 217,751 B / `5470A6D8…` + 无 `src/history-store.js`）⇒ Z10 **`# tests 11 / # pass 1 / # fail 10`**（红因：`window.__doc2md.history` 不存在；TAP `.私档/卡/c060/证据/z10-red.tap`）→ 实现后 **11 / 11**（`.私档/卡/c060/证据/z10-green.tap`）。全量 **399 / 397 / 0 / 2**（= 059 末值 388/386 **+** Z10 十一项；CI 口径按同一映射 **396 / 393 / 0 / 3**，待真 CI run 对账）。`index.html` **217,751 B / `5470A6D8…` → 255,946 B / `C3B228B8…`**（构建幂等；`www/` 同源）。
+**两相实测（本机 · 卡 060）**：改前（HEAD `46414b5` 的 `index.html` 217,751 B / `5470A6D8…` + 无 `src/history-store.js`）⇒ Z10 **`# tests 11 / # pass 1 / # fail 10`**（红因：`window.__doc2md.history` 不存在；TAP `.私档/卡/c060/证据/z10-red.tap`）→ 实现后 **11 / 11**（`.私档/卡/c060/证据/z10-green.tap`）。全量 **399 / 397 / 0 / 2**（= 059 末值 388/386 **+** Z10 十一项；CI 口径按同一映射 **396 / 393 / 0 / 3**，待真 CI run 对账）。`index.html` **217,751 B / `5470A6D8…` → 256,089 B / `D907EB27…`**（构建幂等；`www/` 同源）。真机验收后又补三处（同卡范围）：app bar 搜索图标**仅「文件」页显示**；补 `#filesEmptySub` 让「不支持历史」文案真的能落进空态；诊断日志 `status` 行**不再落文案**（原样落文案会把真实文件名写进 `.log`）。
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 

@@ -71,7 +71,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function readHistory() {
   const r = sh('run-as ' + PKG + ' cat ' + HISTORY_REL);
-  return (r.out || '').trim();
+  // 文件不存在时 sh 会把 "cat: ...: No such file or directory" 混进输出 ⇒ 逐行滤掉诊断行。
+  const lines = (r.out || '').split(/\r?\n/).filter((ln) => ln && !/^(cat|run-as|sh):/.test(ln) && !/No such file/i.test(ln));
+  return lines.join('\n').trim();
 }
 
 function writeHistory(json) {

@@ -7823,6 +7823,16 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
       });
 
       await t.test('Z10-7 A5/A8 列表与搜索：行 / 计数 / 实时过滤 / 无匹配空态 / 清除', async () => {
+        // A11：不支持历史的环境（浏览器 / API 24–28）必须在空态里明说，⛔ 静默。
+        const browserNote = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('web');
+          await h.load();
+          await h.refresh();
+          return document.getElementById('filesEmptySub').textContent;
+        });
+        assert.ok(browserNote.includes('浏览器版不保存历史'), '不支持历史时未显示「浏览器版不保存历史」，实测：' + browserNote);
         await page.evaluate(async () => {
           const h = window.__doc2md.history;
           h.__reset();
@@ -7832,8 +7842,10 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
           await h.append({ name: 'beta.zip', uri: 'content://x/2', bytes: 4096, kind: 'zip', createdAt: Date.now() - 120000 });
           await h.refresh();
         });
+        assert.equal(await page.evaluate(() => document.getElementById('filesSearchBtn').hidden), true, '非「文件」页不应显示 app bar 搜索图标');
         await page.click('#tab-files');
         await page.waitForTimeout(150);
+        assert.equal(await page.evaluate(() => document.getElementById('filesSearchBtn').hidden), false, '「文件」页应显示 app bar 搜索图标');
         const rows = await page.evaluate(() =>
           [...document.querySelectorAll('#filesList .file-row')].map((row) => ({
             name: row.querySelector('.file-name').textContent,

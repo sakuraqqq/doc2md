@@ -57,7 +57,9 @@ export function setStatus(msg, isError) {
     viewerStatus.textContent = msg || '';
     viewerStatus.className = 'md-viewer-status' + (isError ? ' error' : '');
   }
-  if (msg) diag('status', String(msg).slice(0, 120));
+  // A12（卡 060）：诊断日志不得含文件名 / 路径 / 内容 —— 状态文案本身带真实文件名（保存回话），
+  // 因此只记「类别 + 长度」，⛔ 不落 msg 文本。
+  if (msg) diag('status', (isError ? 'error' : 'ok') + ' len=' + String(msg).length);
 }
 
 /* ── 视口内提示浮层（A10 · 卡 011 第三轮，用户真机实测打回） ──────────────────────────
@@ -1074,6 +1076,7 @@ export function activateTab(name) {
     }
   }
   const active = target.dataset.tab || null;
+  activeTabName = active;
   // 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时收起搜索（A8：切走 Tab 自动退出）。
   if (active === 'files') refreshFilesPanel().catch(() => {});
   else toggleFilesSearch(false);
@@ -1262,6 +1265,7 @@ let filesQuery = '';
 let filesCleared = false;
 let invalidByUri = new Set();
 let checkErrorByUri = new Set();
+let activeTabName = 'convert';
 
 function filesEls() {
   const byId = (id) => document.getElementById(id);
@@ -1344,7 +1348,8 @@ function paintMeta(el, shownCount, total) {
 
 function paintSearchButton(el, supported) {
   if (!el.searchBtn) return;
-  el.searchBtn.hidden = !supported;
+  // 卡 060 / A16：搜索图标只在「文件」页出现（v8 原型口径）；其它 Tab 隐藏。
+  el.searchBtn.hidden = !(supported && activeTabName === 'files');
   el.searchBtn.setAttribute('aria-expanded', String(!el.searchBar.hidden));
 }
 
