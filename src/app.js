@@ -10,8 +10,9 @@ import { convert, registry, MAX_BYTES } from './convert.js';
 import { collapseCjkSpaces } from './cjk.js';
 import { htmlToMarkdown } from './html2md.js';
 import { decodeText, sniff } from './sniff.js';
-import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument, normalizeExternalText } from './ui.js';
+import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument, normalizeExternalText, refreshFilesPanel } from './ui.js';
 import { mountPreview, renderMarkdown } from './markdown-preview.js';
+import * as historyStore from './history-store.js';
 
 export async function handleFiles(files) {
   const list = Array.from(files || []);
@@ -106,6 +107,28 @@ window.__doc2md = {
   set embedMaxBytes(n) { setEmbedMaxBytes(n); },
   openExternal: openExternalDocument,
   normalizeExternalText: normalizeExternalText,
+  /* 卡 060 / 2-5：转换历史库（数据层 + 刷新入口；测试缝与实现共用同一份函数） */
+  history: {
+    load: historyStore.load,
+    append: historyStore.append,
+    remove: historyStore.remove,
+    clear: historyStore.clear,
+    setKeep: historyStore.setKeep,
+    search: historyStore.search,
+    getState: historyStore.getState,
+    check: historyStore.check,
+    __setBackend: historyStore.__setBackend,
+    __reset: historyStore.__reset,
+    refresh: refreshFilesPanel,
+    LIMIT: historyStore.LIMIT,
+    relTime: historyStore.relTime,
+    fmtSize: historyStore.fmtSize,
+    parseState: historyStore.parseState,
+    listOrder: historyStore.listOrder,
+    evictIndex: historyStore.evictIndex,
+    filterRecords: historyStore.filterRecords,
+    normalizeRecord: historyStore.normalizeRecord,
+  },
 };
 
 /* 卡 059（B018 / A7.6-A7）：系统「打开方式」——原生壳把 content:// 里的文本交过来。

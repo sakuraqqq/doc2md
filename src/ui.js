@@ -6,6 +6,18 @@
  */
 import { setPreflightHook } from './convert.js';
 import { mountPreview } from './markdown-preview.js';
+import {
+  LIMIT as HISTORY_LIMIT,
+  load as historyLoad,
+  append as historyAppend,
+  remove as historyRemove,
+  clear as historyClear,
+  setKeep as historySetKeep,
+  search as historySearch,
+  getState as historyGetState,
+  check as historyCheck,
+  relTime as historyRelTime,
+} from './history-store.js';
 
 export const $ = (sel) => document.querySelector(sel);
 const dropzone = $('#dropzone');
@@ -284,6 +296,8 @@ export async function saveTextArtifact(text, fileName, mime = 'text/markdown;cha
     const saved = NATIVE_SAVED + ((res && res.filename) || base + '.md');
     diag('save', 'native');
     nativeNotice(saved);
+    // 卡 060 / A3：只记**成功保存**（uri 非空 + bytes>0 + 真实名由 recordHistory 再判一次）。
+    recordHistory(res, 'md');
     return 'native';
   }
   if (isNativeRuntime()) {
@@ -535,6 +549,8 @@ async function saveZipNative(plugin, bytes, filename) {
     const res = await plugin.endBinary({ commit: true });
     started = false; // 已正常收尾 ⇒ 不再回滚
     nativeNotice(NATIVE_SAVED + ((res && res.filename) || filename));
+    // 卡 060 / A3：zip 记录在 endBinary commit 之后写（kind=zip；失败不影响文件已保存这一事实）。
+    recordHistory(res, 'zip');
     return 'native';
   } catch (e) {
     if (started) {
@@ -1057,7 +1073,11 @@ export function activateTab(name) {
       else panel.setAttribute('hidden', '');
     }
   }
-  return target.dataset.tab || null;
+  const active = target.dataset.tab || null;
+  // 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时收起搜索（A8：切走 Tab 自动退出）。
+  if (active === 'files') refreshFilesPanel().catch(() => {});
+  else toggleFilesSearch(false);
+  return active;
 }
 function focusTab(step) {
   const tabs = tabButtons();
@@ -1232,11 +1252,534 @@ function initMarkdownViewer() {
     if (e.key === 'Escape') closeMarkdownViewer();
   });
 }
+/* ── 卡 060 / 2-5：转换历史库（文件页 + 保留开关 + 清除 + 上次转换同源） ────────────────
+ * 数据面全部在 src/history-store.js（schema / 200 FIFO / 原子写 / 搜索 / keep）；本段只做 DOM 与原生动作。
+ * 口径（2026-10-22 拍板）：只列本 App 转过的文件（⛔ 读全局 Download）；⛔ 新增权限；
+ *   只删记录、⛔ 删已下载文件；失效行保留到用户「移除记录」。
+ */
+
+let filesQuery = '';
+let filesCleared = false;
+let invalidByUri = new Set();
+let checkErrorByUri = new Set();
+
+function filesEls() {
+  const byId = (id) => document.getElementById(id);
+  return {
+    panel: byId('panel-files'),
+    list: byId('filesList'),
+    meta: byId('filesMeta'),
+    empty: byId('filesEmpty'),
+    emptySub: byId('filesEmptySub'),
+    cleared: byId('filesEmptyCleared'),
+    emptySearch: byId('filesEmptySearch'),
+    emptySearchTitle: byId('filesEmptySearchTitle'),
+    errorBox: byId('filesError'),
+    errorSub: byId('filesErrorSub'),
+    searchBar: byId('filesSearchBar'),
+    searchInput: byId('filesSearch'),
+    searchClear: byId('filesSearchClear'),
+    searchBtn: byId('filesSearchBtn'),
+    searchReset: byId('filesSearchReset'),
+    keepSwitch: byId('keepHistorySwitch'),
+    keepSub: byId('keepHistorySub'),
+    clearBtn: byId('clearHistoryBtn'),
+    clearSub: byId('clearHistorySub'),
+    dialog: byId('clearDialog'),
+    goConvertCleared: byId('goConvertCleared'),
+    reset: byId('historyReset'),
+  };
+}
+
+function showOnly(el, show) {
+  if (el) el.hidden = !show;
+}
+
+function unsupportedNote(support) {
+  if (!support || support.supported) return '';
+  return support.reason === 'web'
+    ? '浏览器版不保存历史；APK 可用。'
+    : '当前系统不支持历史记录（需 Android 10+）。';
+}
+
+/** 只出空态：error > 搜索无匹配 > 已清除 > 从未转换（每块都单独可判）。 */
+function paintEmptyStates(state, shownCount, total) {
+  const el = filesEls();
+  const kind = emptyKind(state, shownCount, total);
+  showOnly(el.list, kind === 'list');
+  showOnly(el.errorBox, kind === 'error');
+  showOnly(el.emptySearch, kind === 'search');
+  showOnly(el.cleared, kind === 'cleared');
+  showOnly(el.empty, kind === 'never');
+  if (kind === 'error' && el.errorSub) {
+    el.errorSub.textContent = '历史文件可能已损坏（' + (state.error || 'unknown') + '）；已下载的文件不受影响。';
+  }
+  if (kind === 'search' && el.emptySearchTitle) {
+    el.emptySearchTitle.textContent = '没有匹配「' + filesQuery.trim() + '」的记录';
+  }
+  if (kind === 'never' && el.emptySub) {
+    el.emptySub.textContent = unsupportedNote(state.support)
+      || '转换并保存后，记录会出现在这里（最多 200 条）；只存记录，不存文件，清除记录不会删除已下载的文件。';
+  }
+}
+
+function emptyKind(state, shownCount, total) {
+  if (state.error) return 'error';
+  if (shownCount > 0) return 'list';
+  if (filesQuery.trim()) return 'search';
+  if (total > 0) return 'list';
+  if (filesCleared) return 'cleared';
+  return 'never';
+}
+
+function filesMetaText(shownCount, total) {
+  if (filesQuery.trim()) return '匹配 ' + shownCount + ' / 共 ' + total + ' 项';
+  if (total > 0) return '共 ' + total + ' 项 · 保存在 Download/WenZhuanMD';
+  return '共 0 项';
+}
+
+function paintMeta(el, shownCount, total) {
+  if (el.meta) el.meta.textContent = filesMetaText(shownCount, total);
+}
+
+function paintSearchButton(el, supported) {
+  if (!el.searchBtn) return;
+  el.searchBtn.hidden = !supported;
+  el.searchBtn.setAttribute('aria-expanded', String(!el.searchBar.hidden));
+}
+
+function paintKeep(el, state, supported) {
+  if (el.keepSwitch) {
+    el.keepSwitch.setAttribute('aria-checked', String(state.keepHistory !== false));
+    el.keepSwitch.setAttribute('aria-disabled', String(!supported));
+    el.keepSwitch.disabled = !supported;
+  }
+  if (!el.keepSub) return;
+  el.keepSub.textContent = supported
+    ? '最多 ' + HISTORY_LIMIT + ' 条；只存记录，不存文件；超过上限自动淘汰最旧记录'
+    : unsupportedNote(state.support) || '当前不可用';
+}
+
+function paintClear(el, state, supported, total) {
+  if (el.clearBtn) {
+    const usable = supported && total > 0;
+    el.clearBtn.setAttribute('aria-disabled', String(!usable));
+    el.clearBtn.disabled = !usable;
+  }
+  if (!el.clearSub) return;
+  el.clearSub.textContent = supported
+    ? '只删除 App 内的记录，不会删除已经下载的文件'
+    : unsupportedNote(state.support) || '当前不可用';
+}
+
+function paintChrome(state, shownCount, total) {
+  const el = filesEls();
+  const supported = Boolean(state.support && state.support.supported);
+  paintMeta(el, shownCount, total);
+  paintSearchButton(el, supported);
+  paintKeep(el, state, supported);
+  paintClear(el, state, supported, total);
+}
+
+function fileIcon(kind) {
+  return kind === 'zip' ? '🗜️' : '📄';
+}
+
+function recordMetaText(rec) {
+  const parts = [historyRelTime(rec.createdAt), fmtSize(rec.bytes)];
+  if (invalidByUri.has(rec.uri)) parts.push('文件已不存在');
+  else if (checkErrorByUri.has(rec.uri)) parts.push('无法确认文件状态');
+  return parts.filter(Boolean).join(' · ');
+}
+
+function removeRecord(rec) {
+  historyRemove(rec.id)
+    .then((r) => {
+      if (!r || !r.ok) {
+        setStatus('移除记录失败：' + ((r && r.error) || '未知错误'), true);
+        return;
+      }
+      setStatus('已移除记录（文件未删除）');
+      refreshFilesPanel().catch(() => {});
+    })
+    .catch(() => setStatus('移除记录失败', true));
+}
+
+function makeShareButton(rec, invalid) {
+  const share = document.createElement('button');
+  share.type = 'button';
+  share.className = 'file-share';
+  share.textContent = '↗';
+  share.setAttribute('aria-label', '分享 ' + rec.name);
+  share.disabled = invalid;
+  share.addEventListener('click', (e) => {
+    e.stopPropagation();
+    shareHistoryRecord(rec);
+  });
+  return share;
+}
+
+function makeRemoveButton(rec) {
+  const rm = document.createElement('button');
+  rm.type = 'button';
+  rm.className = 'row-action';
+  rm.textContent = '移除记录';
+  rm.setAttribute('aria-label', '移除记录 ' + rec.name);
+  rm.addEventListener('click', (e) => {
+    e.stopPropagation();
+    removeRecord(rec);
+  });
+  return rm;
+}
+
+function makeMainButton(rec, invalid) {
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'file-main';
+  main.setAttribute('aria-label', '打开 ' + rec.name);
+  const name = document.createElement('span');
+  name.className = 'file-name';
+  name.textContent = rec.name;
+  const meta = document.createElement('span');
+  meta.className = 'file-meta' + (invalid ? ' file-invalid' : '');
+  meta.textContent = recordMetaText(rec);
+  main.append(name, meta);
+  main.addEventListener('click', () => openHistoryRecord(rec));
+  return main;
+}
+
+function renderRecordRow(rec) {
+  const invalid = invalidByUri.has(rec.uri);
+  const row = document.createElement('div');
+  row.className = 'file-row' + (invalid ? ' invalid' : '');
+  row.setAttribute('role', 'listitem');
+  row.dataset.id = rec.id;
+  const icon = document.createElement('span');
+  icon.className = 'file-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = fileIcon(rec.kind);
+  row.append(icon, makeMainButton(rec, invalid));
+  if (invalid) row.append(makeRemoveButton(rec));
+  row.append(makeShareButton(rec, invalid));
+  return row;
+}
+
+function renderFilesPanel(state) {
+  const el = filesEls();
+  if (!el.panel) return;
+  const all = state.records || [];
+  const shown = filesQuery.trim() ? historySearch(filesQuery) : all;
+  if (el.list) el.list.innerHTML = '';
+  if (el.list && shown.length) {
+    for (const rec of shown) el.list.append(renderRecordRow(rec));
+  }
+  paintChrome(state, shown.length, all.length);
+  paintEmptyStates(state, shown.length, all.length);
+}
+
+async function loadPanelState() {
+  const loaded = await historyLoad();
+  return (loaded && loaded.state) || historyGetState();
+}
+
+function collectCheckResults(results) {
+  for (const item of results) {
+    if (!item || !item.uri) continue;
+    if (item.exists === false) invalidByUri.add(item.uri);
+    else if (item.error) checkErrorByUri.add(item.uri);
+  }
+}
+
+async function verifyRecords(state) {
+  invalidByUri = new Set();
+  checkErrorByUri = new Set();
+  if (!(state.support && state.support.supported) || !state.records.length) return;
+  const chk = await historyCheck(state.records);
+  if (chk && chk.ok) collectCheckResults(chk.results);
+}
+
+/** 进入 / 刷新文件页：重读数据 + 逐条核验 uri（异常 ≠ 不存在）。 */
+export async function refreshFilesPanel() {
+  const state = await loadPanelState();
+  await verifyRecords(state);
+  renderFilesPanel(state);
+  updateLastConversion(state);
+  return state;
+}
+
+function updateLastConversion(state) {
+  const empty = document.getElementById('lastEmpty');
+  if (!empty) return;
+  const rec = state.records[0];
+  if (!rec) {
+    empty.textContent = '还没有转换记录 —— 转换完成后会显示在这里。';
+    empty.style.cursor = '';
+    empty.onclick = null;
+    return;
+  }
+  empty.textContent = '上次：' + rec.name + ' · ' + historyRelTime(rec.createdAt) + ' · 点此定位到「文件」';
+  empty.style.cursor = 'pointer';
+  empty.onclick = () => {
+    activateTab('files');
+    highlightRecord(rec.id);
+  };
+}
+
+function highlightRecord(id) {
+  setTimeout(() => {
+    const row = document.querySelector('.file-row[data-id="' + id + '"]');
+    if (!row) {
+      setStatus('这条记录不在历史里（可能已被淘汰）', true);
+      return;
+    }
+    row.classList.add('highlight');
+    if (typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'center' });
+    setTimeout(() => row.classList.remove('highlight'), 1600);
+  }, 80);
+}
+
+function setFilesQuery(q) {
+  filesQuery = String(q == null ? '' : q);
+  const el = filesEls();
+  if (el.searchInput && el.searchInput.value !== filesQuery) el.searchInput.value = filesQuery;
+  if (el.searchClear) el.searchClear.hidden = !filesQuery;
+  renderFilesPanel(historyGetState());
+}
+
+function toggleFilesSearch(on) {
+  const el = filesEls();
+  if (!el.searchBar) return;
+  const open = on === undefined ? el.searchBar.hidden : on;
+  el.searchBar.hidden = !open;
+  if (el.searchBtn) el.searchBtn.setAttribute('aria-expanded', String(open));
+  if (!open) setFilesQuery('');
+  else if (el.searchInput) el.searchInput.focus();
+}
+
+function shareFailMessage(res) {
+  if (!res) return '分享失败：未知错误';
+  if (res.error === 'no_app') return '没有可用的分享应用';
+  return '分享失败：' + (res.error || '未知错误');
+}
+
+async function shareHistoryRecord(rec) {
+  if (invalidByUri.has(rec.uri)) {
+    setStatus('文件已不存在，无法分享', true);
+    return;
+  }
+  const plugin = nativePluginObject();
+  if (!plugin || typeof plugin.shareContentUri !== 'function') {
+    setStatus('分享失败：本机不支持系统分享', true);
+    return;
+  }
+  setStatus('正在打开分享……');
+  try {
+    const res = await plugin.shareContentUri({ uri: rec.uri, mime: rec.mime, name: rec.name });
+    if (!res || res.ok !== true) setStatus(shareFailMessage(res), true);
+  } catch (e) {
+    setStatus('分享失败：' + (e && e.message ? e.message : '未知错误'), true);
+  }
+}
+
+async function openZipRecord(plugin, rec) {
+  const res = await plugin.openContentUri({ uri: rec.uri, mime: rec.mime || 'application/zip' });
+  if (res && res.ok === true) return;
+  const msg = res && res.error === 'no_app' ? '没有可用的应用打开该 zip 文件' : '打开失败：' + ((res && res.error) || '未知错误');
+  setStatus(msg, true);
+}
+
+async function openMdRecord(plugin, rec) {
+  try {
+    const res = await plugin.readContentUri({ uri: rec.uri });
+    if (!res || res.ok !== true) {
+      setStatus('打开失败：' + ((res && res.error) || '文件读取失败'), true);
+      return;
+    }
+    openMarkdownViewer(
+      {
+        fileName: rec.name,
+        text: res.text || '',
+        raw: res.text || '',
+        truncated: res.truncated === true,
+        external: true,
+        fullText: true,
+        defaultMode: 'preview',
+      },
+      null
+    );
+  } catch (e) {
+    setStatus('打开失败：' + (e && e.message ? e.message : '未知错误'), true);
+  }
+}
+
+async function openHistoryRecord(rec) {
+  if (invalidByUri.has(rec.uri)) {
+    setStatus('文件已不存在，无法打开', true);
+    return;
+  }
+  const plugin = nativePluginObject();
+  if (!plugin || typeof plugin.readContentUri !== 'function') {
+    setStatus('打开失败：本机不支持读取历史文件', true);
+    return;
+  }
+  if (rec.kind === 'zip') {
+    await openZipRecord(plugin, rec);
+    return;
+  }
+  await openMdRecord(plugin, rec);
+}
+
+function closeClearDialog() {
+  const el = filesEls();
+  if (el.dialog) el.dialog.hidden = true;
+  const trigger = document.getElementById('clearHistoryBtn');
+  if (trigger && typeof trigger.focus === 'function') trigger.focus();
+}
+
+function confirmClear() {
+  historyClear()
+    .then((r) => {
+      if (!r || !r.ok) {
+        setStatus('清除失败：' + ((r && r.error) || '未知错误'), true);
+        return;
+      }
+      filesCleared = true;
+      closeClearDialog();
+      setStatus('历史记录已清除（已下载的文件未删除）');
+      refreshFilesPanel().catch(() => {});
+    })
+    .catch(() => setStatus('清除失败', true));
+}
+
+function openClearDialog() {
+  const state = historyGetState();
+  if (!state.support.supported || !state.records.length) return;
+  const el = filesEls();
+  if (!el.dialog) return;
+  el.dialog.hidden = false;
+  const confirmBtn = document.getElementById('clearConfirm');
+  if (confirmBtn && typeof confirmBtn.focus === 'function') confirmBtn.focus();
+}
+
+function keepDialogKey(e) {
+  const el = filesEls();
+  if (!el.dialog || el.dialog.hidden) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeClearDialog();
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const focusables = el.dialog.querySelectorAll('button');
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+function toggleKeep() {
+  const state = historyGetState();
+  const next = state.keepHistory === false;
+  historySetKeep(next)
+    .then((r) => {
+      if (!r || !r.ok) {
+        setStatus('保留开关保存失败：' + ((r && r.error) || '未知错误'), true);
+        return;
+      }
+      setStatus(next ? '已开启：新转换会记入历史' : '已关闭：新转换不再记入历史（旧记录保留）');
+      renderFilesPanel(historyGetState());
+    })
+    .catch(() => setStatus('保留开关保存失败', true));
+}
+
+async function resetHistory() {
+  const r = await historyClear();
+  if (!r || !r.ok) {
+    setStatus('重置失败：' + ((r && r.error) || '未知错误'), true);
+    return;
+  }
+  filesCleared = false;
+  setStatus('历史记录已重置');
+  refreshFilesPanel().catch(() => {});
+}
+
+function recordAppendResult(r) {
+  if (r && r.ok) {
+    filesCleared = false;
+    refreshFilesPanel().catch(() => {});
+    return;
+  }
+  if (r && r.skipped === 'keep-off') return;
+  nativeNotice('已保存，但历史记录未写入', true);
+}
+
+/** 保存成功后写历史（A3：uri 非空 + bytes>0 + 真实名；失败可见但不回滚文件）。 */
+export function recordHistory(res, kind) {
+  if (!res || !res.uri || res.bytes <= 0 || !res.filename) return;
+  const isZip = kind === 'zip';
+  historyAppend({
+    name: res.filename,
+    uri: res.uri,
+    bytes: res.bytes,
+    kind: isZip ? 'zip' : 'md',
+    mime: isZip ? 'application/zip' : 'text/markdown',
+  })
+    .then(recordAppendResult)
+    .catch(() => nativeNotice('已保存，但历史记录未写入', true));
+}
+
+function wireFilesSearch(el) {
+  if (el.searchBtn) el.searchBtn.addEventListener('click', () => toggleFilesSearch());
+  if (el.searchInput) {
+    el.searchInput.addEventListener('input', () => setFilesQuery(el.searchInput.value));
+    el.searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') toggleFilesSearch(false);
+    });
+  }
+  if (el.searchClear) el.searchClear.addEventListener('click', () => setFilesQuery(''));
+  if (el.searchReset) el.searchReset.addEventListener('click', () => setFilesQuery(''));
+}
+
+function wireHistoryControls(el) {
+  if (el.goConvertCleared) el.goConvertCleared.addEventListener('click', () => activateTab('convert'));
+  if (el.reset) el.reset.addEventListener('click', () => resetHistory().catch(() => {}));
+  if (el.keepSwitch) el.keepSwitch.addEventListener('click', () => toggleKeep());
+  if (el.clearBtn) el.clearBtn.addEventListener('click', () => openClearDialog());
+}
+
+function wireClearDialog(el) {
+  const cancel = document.getElementById('clearCancel');
+  if (cancel) cancel.addEventListener('click', () => closeClearDialog());
+  const confirm = document.getElementById('clearConfirm');
+  if (confirm) confirm.addEventListener('click', () => confirmClear());
+  if (!el.dialog) return;
+  el.dialog.addEventListener('keydown', keepDialogKey);
+  el.dialog.addEventListener('click', (e) => {
+    if (e.target === el.dialog) closeClearDialog();
+  });
+}
+
+function initHistoryUI() {
+  const el = filesEls();
+  if (!el.panel) return;
+  wireFilesSearch(el);
+  wireHistoryControls(el);
+  wireClearDialog(el);
+  refreshFilesPanel().catch(() => {});
+}
+
 function initShell() {
   initTabs();
   initTheme();
   initMarkdownViewer();
   initResultsControls();
+  initHistoryUI();
   diagBoot();
   const goConvert = document.getElementById('goConvert');
   if (goConvert) goConvert.addEventListener('click', () => activateTab('convert'));

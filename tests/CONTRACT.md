@@ -710,8 +710,8 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 | Z6-1 | 三 Tab 可切换：`aria-selected` 与面板 visible 同步；左右方向键可切；面板有 `role=tabpanel` + `aria-labelledby` | 运行时 DOM | ✅ 绿 |
 | Z6-2 | 首屏无 hero：无面板内 `header h1` / 无 `.badges`·`.badge` / `#dropzone` 非虚线；app bar 标题 = 「文转MD助手」；选择卡片含「选择文档」+ 格式 + 50 MB + 本地处理；高度 <200px（紧凑卡，不占首屏）；「上次转换」在其下 | 运行时 DOM | ✅ 绿（R3 紧凑卡） |
 | Z6-3 | 页脚信息只在「设置 › 关于」：全页无 `<footer>`；`#panel-convert` 不含版本/许可；`#panel-settings` 含版本与许可 | 运行时 DOM | ✅ 绿 |
-| Z6-4 | 文件页空态：`#filesEmpty` 可见 + 含「还没有转换记录」+ `#panel-files` **无** `.card`（⛔ 假数据）；`#goConvert` 跳回转换 Tab | 运行时 DOM | ✅ 绿 |
-| Z6-5 | 设置四组齐（外观/历史/反馈/关于）+ 外观三档；跟随系统时 `emulateMedia` 翻色 ⇒ `data-theme` 跟随；选浅色后不被系统覆盖 | 运行时 DOM | ✅ 绿 |
+| Z6-4 | 文件页空态：`#filesEmpty` 可见 + 含「还没有转换记录」+ `#panel-files` **无** `.card`（⛔ 假数据）；`#goConvert` 跳回转换 Tab（卡 060 更新：空态三分——`filesEmptyCleared` / `filesEmptySearch` / `filesError` 默认全隐藏；搜索框默认收起） | 运行时 DOM | ✅ 绿 |
+| Z6-5 | 设置四组齐（外观/历史/反馈/关于）+ 外观三档；跟随系统时 `emulateMedia` 翻色 ⇒ `data-theme` 跟随；选浅色后不被系统覆盖（卡 060 更新：历史组启用——`keepHistorySwitch`（role=switch）+ `clearHistoryBtn` 必须在位） | 运行时 DOM | ✅ 绿 |
 | Z6-6 | safe-area 基础：`viewport-fit=cover` + `env(safe-area-inset-top/bottom)` 出现 + 无硬编码 30px 状态栏高度。⭐ **返工 R2（2026-10-18 对抗测试 F4）**：**先剥 HTML/CSS 注释再判**，并带**两个负例**（删真声明 / 只留注释的样本）— 否则注释里的形态能顶替实现 | 源码静态（剥注释） | ✅ 绿 |
 | Z6-7 | 主题切换走 **View Transitions 圆形揭幕**（`startViewTransition` 被调用 + `::view-transition-new(root)` 动画在场；老内核降级但主题必须落定） | 运行时 DOM | ✅ 绿 |
 | Z6-8 | 反馈组「错误报告」= **导出诊断日志**（`doc2md-<yyyyMMdd>-<HHmmss>.log`）：含标题/版本/环境/事件；⛔ 不含文件名、路径、内容 | 下载事件 + 内容 | ✅ 绿 |
@@ -787,6 +787,26 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 | Z9-17 | **C3 四漏洞（真机）**：同名两次下载用实际 `DISPLAY_NAME`（`race-b (1).md`）/ `shortWrite` ⇒ 失败可见且无残留 / 回滚删除 pending 行 / `IS_PENDING` update 成功（`pendingCleared=1`）。驱动 `--suite c3` | 真机 adb + debug provider | ✅ 绿（4/4） |
 
 **两相实测（本机 · 卡 058 R1/R2 → 2026-10-20 退回重修）**：旧 R1 返工前（提交 `e876db8` 的 `index.html` = 177,817 B，内嵌小窗版）⇒ Z7 **`# tests 11 / # pass 8 / # fail 3`**（红在 **Z7-5** 文件卡/全屏、**Z7-9** 固定批量条；TAP 留档 `.私档/卡/c058/证据/Z7-返工-先红.tap`）→ 旧 R1 后 **11 / 11**。R2 列表化后 `index.html` = **196,090 B / `68B539A9…`**；Z8 **6 / 6**。**2026-10-20 退回重修（R1 零外发）**：发布物 `3c6e105` 的 `index.html`（196,090 B）上新增 Z7-10…Z7-16 ⇒ **先红 7/7**（每条带原始外域数组；TAP `.私档/卡/c058/证据/R1-先红-Z7-20261020.tap`）→ 修复后 Z7 **18 / 18**（逐条 `external=[]`）；**A16 回退必红**：`git stash` 收起修复、重建回 **196,090 B / `68B539A9…`** ⇒ **7 红**（`.私档/卡/c058/证据/A16-回退必红-20261020.log`）→ 恢复重建 **198,106 B / `B38F313F…`**。全量 **368 / 366 / 0 / 2**（CI 口径 **365 / 362 / 0 / 3**，两口径 `--from-tap` 对账 exit 0）。**R2（B 分段续渲染，2026-10-20 拍板）**：真实夹具（1MB = 12,504 块 / 4MB = 49,535 块）首屏 **desktop 1280×800：348ms / 420ms**、**移动 412×892：329ms / 418ms**，续渲染后 token 数 = 块数（全文完整）；边界断言覆盖代码围栏/表格不被切断。`index.html` **198,106 B / `B38F313F…` → 203,268 B / `75C03A9D…`**；全量仍 **368 / 366 / 0 / 2**（CI **365 / 362 / 0 / 3**）。**2026-10-21 对齐调度线裁决（R2.1）**：恢复 **4 MB 原始总上限**（超出明示截断，沿用旧提示）；段文本 256 KB 独立计（base64 不计）；按钮「继续渲染（剩余约 X KB）」+ 完成「已全部渲染」；Z7-7 补 **>4 MB 截断**与按钮/完成态断言；`index.html` **203,268 B → 204,599 B / `6652DF6D…`**；全量仍 **368 / 366 / 0 / 2**（CI **365 / 362 / 0 / 3**）。**2026-10-21 二轮复验退回重修（v0.2.1）**：F1 结构预算（块 900 / 表行 240 / 内联标记 12000，自定实测校准）+ 无换行强制切；F2 引用定义全量预扫注入各段，列表/表格切分给 UI 限制说明；Z7-7 改 **冷启单次**；新增 A17/A18/A19 ⇒ 全量 **371 / 369 / 0 / 2**（CI **368 / 365 / 0 / 3**）。冷启单次：结构化 1MB **~120–150ms**、表格密集 1MB **~30ms**、34 万小段落 1MB **~50ms**、960KB 单行 **~103ms**；`index.html` **204,599 B → 207,889 B / `1A1B9B4B…`**（先搜后做：CommonMark 引用定义规则 + Streamdown 流式分块思路，未引入依赖）。⚠️ **2026-10-21 审查更正（只更正、不抹掉）**：上述 `1A1B9B4B…` 是**发版前构建**（提交 `6a9d693`，页脚仍为 `v0.2.0`）的哈希；发版提交把页脚 `0.2.0 → 0.2.1`（**等长替换**）后重建 ⇒ 字节数同为 **207,889 B**、SHA256 变为 **`1B5FE07C…`**（= tag `v0.2.1` / HEAD 现值，与 `docs/BASELINE.json` 一致）。核对一律以 SHA256 为准，⛔ 不要只比字节数。
+
+### 组 Z10 · App 转换历史库（卡 060 · 批次 2 · 2-5「文件」Tab）
+
+> ⚠️ **真机组**：200/201 淘汰后文件仍可打开、分享接收方实读、重启一致性、API 28 模拟、诊断日志不含记录名 —— 由 `tools/race-060.mjs` 真机驱动，**不随 `npm test`**；TAP 进回执。
+> 口径（2026-10-22 拍板）：数据面 = app 私有 JSON（⛔ SQLite / localStorage）；上限 200 / FIFO 只删记录；只记成功保存（uri + bytes + 真实 `DISPLAY_NAME`）；打开 = `.md` 内置查看器 / `.zip` `ACTION_VIEW`；分享 = `ACTION_SEND` + 临时读授权；支持矩阵 29+ / 24–28 / 浏览器（Tab 不隐藏）。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| Z10-0 | A1 数据层：`src/history-store.js` 存在；`LIMIT = 200` **唯一一处**；无 localStorage / sessionStorage / indexedDB / fetch / XHR / WebSocket（先剥注释再扫） | 静态 | ✅ 绿（2026-10-22 卡 060） |
+| Z10-1 | A1/A3/A6/A7 原生：`doc2md-history.json` + `.tmp` + `getFD().sync()` **先于** `renameTo`；`writeTextToDownloads` 回查真实 `DISPLAY_NAME`；打开 = `ACTION_VIEW` + 读授权 + `ClipData`；分享 = `ACTION_SEND` + `EXTRA_STREAM` + `createChooser`；`historyCheck` 区分 `FileNotFoundException`；release manifest 仅 INTERNET 且无 `<provider>`（剥注释） | 静态 | ✅ 绿 |
+| Z10-2 | A2 200/201：恰好 200 不淘汰；第 201 条后仍 200、新记录在列、`createdAt` 最小者被淘汰、恰好 1 条 | 运行时（memory 后端） | ✅ 绿 |
+| Z10-3 | A2/A8 顺序与搜索：`createdAt` 倒序；同毫秒按插入序（后插入在前）；搜索大小写不敏感子串且**不改**数组 / 顺序 / `createdAt` | 运行时 | ✅ 绿 |
+| Z10-4 | A4 稳定 ID：同名两条 id 不同且为 UUID v4；按 id 只删一条 | 运行时 | ✅ 绿 |
+| Z10-5 | A9 保留开关：off 不写、旧记录保留、跨 `load` 持久 | 运行时 | ✅ 绿 |
+| Z10-6 | A1 损坏可见：坏 JSON ⇒ `corrupt` + 文件页「历史记录读取失败」+ 重置入口 | 运行时 DOM | ✅ 绿 |
+| Z10-7 | A5/A8 列表与搜索：行 / 计数 / 大小 / 分享 `aria-label`；实时过滤；`匹配 N / 共 M 项`；无匹配空态；清除搜索恢复全量；切走 Tab 自动退出搜索 | 运行时 DOM | ✅ 绿 |
+| Z10-8 | A9 清除：二次确认；Esc 取消不改记录；确认后记录 0、keep 不变、计数归零、「历史记录已清除」空态 | 运行时 DOM | ✅ 绿 |
+| Z10-9 | A13 产物：`index.html` 含 `filesList` / `clearDialog` / `keepHistorySwitch` / `filesSearchBtn` / `__setBackend` 测试缝 | 静态产物 | ✅ 绿 |
+
+**两相实测（本机 · 卡 060）**：改前（HEAD `46414b5` 的 `index.html` 217,751 B / `5470A6D8…` + 无 `src/history-store.js`）⇒ Z10 **`# tests 11 / # pass 1 / # fail 10`**（红因：`window.__doc2md.history` 不存在；TAP `.私档/卡/c060/证据/z10-red.tap`）→ 实现后 **11 / 11**（`.私档/卡/c060/证据/z10-green.tap`）。全量 **399 / 397 / 0 / 2**（= 059 末值 388/386 **+** Z10 十一项；CI 口径按同一映射 **396 / 393 / 0 / 3**，待真 CI run 对账）。`index.html` **217,751 B / `5470A6D8…` → 255,946 B / `C3B228B8…`**（构建幂等；`www/` 同源）。
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
