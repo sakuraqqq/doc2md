@@ -275,3 +275,51 @@ async function convert(file /* File */) -> Promise<{
 - **C2 未实现前**：49 MB 文件可**预览**（前 4 Mi 字符）+ 可**下载原文**（sha 一致），但 raw 全文不可见 —— 这是能力边界，不是失败。
 - **竞态守卫（Z9-16/Z9-17，真机）**：`tools/race-059.mjs` 用 debug-only `RaceFixtureProvider`（pipe，可 `delayMs`/`shortWrite`）+ `RaceClipReceiver` 驱动「A 慢 / B 快」，断言 UI / 下载 #2 / 复制三者 = B、`OPEN_COMMIT` 恰 1 条、A 必 `OPEN_DROP`；C3 四漏洞同脚本。证据写 `files/race/native.log`（ROM 丢 logcat 时仍可复核）。`--expect-red` 旧原生构建必须 exit 1。⚠️ 负例构建 = `25e392f` 原生 + 当前 web 资产：旧 JS 在小文件上不走原生动作，无法暴露该 P1。
 - **A15 非 seekable 已实测**：debug-only `PipeProvider`（`ParcelFileDescriptor.createPipe`，非 seekable）打开 5 MB ⇒ 预览 495 ms、下载 5,000,011 B **sha 一致**、复制回读通过；读取路径从不用 `AssetFileDescriptor`/`getStatSize`，恒走 `openInputStream`。
+
+## 10. 转换历史库（批次 2 · 2-5「文件」Tab · 卡 060）
+
+### 10.1 数据面（app 私有 JSON）
+
+- 位置：`filesDir/doc2md-history.json`（原生插件 `historyFile()`）；⛔ SQLite / Room；⛔ localStorage / sessionStorage / IndexedDB。
+- schema **v1**：`{ "schemaVersion": 1, "keepHistory": boolean, "records": [ { "id", "name", "uri", "bytes", "mime", "kind", "createdAt" } ] }`；`kind ∈ {md, zip}`；`createdAt` = epoch ms；列表按 `createdAt` 倒序（同值按插入序）。
+- **稳定 ID** = UUID v4（创建时一次并持久化）；⛔ 用文件名 / 索引 / 纯时间戳判身份。`crypto.randomUUID` 缺失时回退 `getRandomValues`（旧 WebView）。
+- 只记**成功保存**：`uri` 非空 + `bytes > 0` + 真实 MediaStore `DISPLAY_NAME`（`writeTextToDownloads` 插入后回查；重名 = `x (1).md`）。失败 / 取消 / keep off / 浏览器 `<a download>` 一律不记。
+
+### 10.2 上限 / 淘汰 / 删除语义
+
+- `LIMIT = 200` **只有一处**（`src/history-store.js`）；恰好 200 条不淘汰；第 201 条写入后仍 200 条，淘汰键 = `createdAt` 升序（同毫秒按插入序）**恰好 1 条**。
+- **只删记录、⛔ 删文件**：历史模块对已下载产物 **0** 个 `ContentResolver.delete` / `File.delete` / MediaStore delete（允许删自己的 `.tmp`）；「淘汰 / 清除 / 移除记录」都不碰文件。
+- 静默淘汰（不弹 toast），但契约必须证明「淘汰发生 + 文件仍在」（Z10-2 + 真机矩阵 #14）。
+
+### 10.3 原子写与损坏可见
+
+- 原生 `historySave`：写 `history.json.tmp` → `flush` → `getFD().sync()` → `renameTo(target)`；**rename 失败保留旧文件**并返回 `{ok:false}`（⛔ 先删旧文件）。JS 侧「写失败 ⇒ 状态回滚 + 可见提示」，⛔ 把保存失败算成历史失败。
+- `historyLoad` 读整份 JSON；`schemaVersion` 不符 / 非法 JSON / 重复 id ⇒ `corrupt`：App 正常启动、文件页显示「历史记录读取失败」+「重置记录」，原文件保留（⛔ 崩溃、⛔ 静默清空）。
+
+### 10.4 打开 / 分享（API 29+）
+
+- 行点击：`.md` → 内置查看器（`readContentUri` 经 `ContentResolver` 读，≤4 Mi 字符 + 截断标记；复用 058 `openMarkdownViewer`）；`.zip` → `ACTION_VIEW` + content URI + `FLAG_GRANT_READ_URI_PERMISSION` + `ClipData`；失败可见且分享仍可用。⛔ 用 `ACTION_SEND` 代替打开。
+- 右侧图标：`ACTION_SEND` + `EXTRA_STREAM` = content URI + 正确 MIME + 临时读授权 + `ClipData` + `createChooser`；真机验收要求**接收方实际打开 / 保存**（只看面板弹出不算过）。
+- ⛔ 不引入 FileProvider（卡 013 删掉的不是原样恢复）；分享 / 打开只用 MediaStore `content://` + 临时授权。⛔ 新增任何权限（release 仍只有 `INTERNET`）。
+
+### 10.5 支持矩阵（写死；Z10 与真机共用）
+
+| 能力 | API 29+ | API 24–28 | 浏览器（无原生） |
+|---|---|---|---|
+| 历史写入 | ✅ | ❌「当前系统不支持历史记录（需 Android 10+）」 | ❌「浏览器版不保存历史；APK 可用」 |
+| 列表 / 搜索 | ✅ | ✅ Tab **不隐藏**；空态说明 | ✅ Tab **不隐藏**；空态说明 |
+| 打开 / 分享 | ✅ | ❌ 明确提示、⛔ 误报成功 | ❌ 明确提示 |
+| 保留开关 / 清除 | ✅ | ❌ 置灰 + 说明 | ❌ 置灰 + 说明 |
+
+### 10.6 交互口径
+
+- 搜索只做**文件名实时过滤**（大小写不敏感、子串；`type="text"` + `inputmode="search"`，⛔ `type="search"` 双 X）；计数 `匹配 N / 共 M 项`；无匹配独立空态；切走 Tab 自动退出搜索；搜索不改数据。
+- 清除：设置「历史」组入口 → 二次确认（focus trap / Esc 取消）→ 只清记录、`keepHistory` 不变；空态「历史记录已清除」。
+- 保留开关默认开；关闭后新转换不写、旧记录保留、当前结果仍可查看 / 分享；状态跨重启持久。
+- 「上次转换」读**同一数据源**（本次会话结果优先，否则最近一条记录）；点击切「文件」Tab + 滚动定位 + 高亮；⛔ 另造第二份数据。
+
+### 10.7 测试缝与真机守卫
+
+- `window.__doc2md.history` = `load / append / remove / clear / setKeep / search / getState / check / __setBackend / __reset / refresh` + 纯函数（`relTime` / `fmtSize` / `parseState` / `listOrder` / `evictIndex` / `filterRecords`）；浏览器测试用 memory 后端。
+- debug-only 原生注入：`historyFailNextWrite`（写失败负例）、`historySeed`（199 + 1 条真实文件 ⇒ 200/201 矩阵）；release 为空操作。
+- 真机矩阵由 `tools/race-060.mjs` 驱动（不为 `npm test` 负担）：200/201 淘汰后文件仍可查 / 可打开、重启一致性、失效行、API 28 模拟、分享接收方实读、诊断日志不含记录名。
