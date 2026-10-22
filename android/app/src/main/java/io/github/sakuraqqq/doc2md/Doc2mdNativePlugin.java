@@ -1143,6 +1143,12 @@ public class Doc2mdNativePlugin extends Plugin {
             send.setClipData(ClipData.newRawUri(name, uri));
             Intent chooser = Intent.createChooser(send, name.isEmpty() ? "Share" : name);
             chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if (isDebuggable()) {
+                raceLog("SHARE uri=" + uri + " mime=" + mime
+                        + " sendFlags=0x" + Integer.toHexString(send.getFlags())
+                        + " chooserFlags=0x" + Integer.toHexString(chooser.getFlags())
+                        + " clip=" + (send.getClipData() != null));
+            }
             startExternal(chooser);
             ret.put("ok", true);
             call.resolve(ret);

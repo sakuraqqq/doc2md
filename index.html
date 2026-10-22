@@ -347,17 +347,20 @@
   .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; background: transparent; color: var(--fg); border-radius: 10px; padding: 0; }
   .iconbtn svg { width: 20px; height: 20px; }
   .iconbtn[aria-expanded="true"] { background: var(--panel2); color: var(--accent-soft); }
-  .files-search { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+  .files-search { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; padding: 0 6px 0 12px; height: 44px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
   .files-search svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; color: var(--muted); flex: 0 0 auto; }
   .files-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; }
   .files-search input:focus { outline: none; }
   .files-search-clear { border: 0; background: var(--panel2); color: var(--muted); width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto; }
+  .files-search-count { flex: 0 0 auto; font-size: 12px; color: var(--muted); background: var(--panel2); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
   .files-list { display: flex; flex-direction: column; gap: 8px; }
   .file-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); text-align: left; color: inherit; }
   .file-row:active { background: var(--panel2); }
   .file-row.invalid { opacity: .72; }
+  .file-row.highlight { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--panel2); transition: background .15s ease; }
   .file-icon { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; background: var(--panel2); font-size: 16px; }
-  .file-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .file-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; background: transparent; border: 0; padding: 0; color: inherit; text-align: left; font: inherit; }
+  .file-main:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
   .file-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .file-meta { font-size: 12px; color: var(--muted); }
   .file-invalid { color: var(--danger, #e55353); }
@@ -374,6 +377,11 @@
   .dialog-box p { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
   .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
   .btn.danger { border-color: var(--danger, #e55353); color: var(--danger, #e55353); }
+  /* 卡 060 / A16：文件行线性图标（取 v8 原型：文档 / 压缩包 / 丢失 / 分享 / 删除） */
+  .file-icon svg, .file-share svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .file-icon.gone { color: var(--danger, #e55353); }
+  .row-action.icon-only { width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .row-action.icon-only svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 </head>
 
@@ -381,16 +389,13 @@
 <header class="appbar">
   <h1>文转MD助手</h1>
   <span class="grow"></span>
-  <button class="iconbtn" type="button" id="filesSearchBtn" aria-label="搜索文件" aria-expanded="false" hidden>
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
-  </button>
   <span class="tag">本地 · 零外发</span>
 </header>
 
 <main class="content" id="content">
   <!-- ── 转换 ───────────────────────────────────────────────────────────── -->
   <section class="tabpanel active" id="panel-convert" role="tabpanel" aria-labelledby="tab-convert" tabindex="0">
-    <button id="dropzone" type="button" title="点击选择文件，或拖入文件">
+    <button id="dropzone" type="button" title="点击选择文件（桌面端也可拖入）">
       <span class="picker-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5h6l2 2h9v9.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 18z"/><path d="M3.5 9h17"/></svg>
       </span>
@@ -425,7 +430,7 @@
       <div id="results" class="results-list"></div>
       <div class="batch-spacer" id="batchSpacer"></div>
     </section>
-    <div class="empty-hint" id="hint">把文件拖进上方的区域，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
+    <div class="empty-hint" id="hint">选择上方的文档，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>
 
     <div class="batch-bar" id="batchBar" role="region" aria-label="批量操作" hidden>
       <div class="batch-info">
@@ -443,9 +448,10 @@
   <!-- ── 文件 ── 卡 060 / 2-5：App 转换历史库（只列本 App 转过的文件；⛔ 不读全局 Download） ───────── -->
   <section class="tabpanel" id="panel-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0">
     <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span></div>
-    <div class="files-search" id="filesSearchBar" hidden>
+    <div class="files-search" id="filesSearchBar">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
-      <input id="filesSearch" type="text" inputmode="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
+      <input id="filesSearch" type="text" inputmode="search" enterkeyhint="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
+      <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
       <button type="button" class="files-search-clear" id="filesSearchClear" aria-label="清除搜索" hidden>✕</button>
     </div>
     <div class="files-list" id="filesList" role="list"></div>
@@ -3846,10 +3852,9 @@ ${xlsxRowsToMd(kept)}`);
       }
     }
     const active = target.dataset.tab || null;
-    activeTabName = active;
     if (active === "files") refreshFilesPanel().catch(() => {
     });
-    else toggleFilesSearch(false);
+    else setFilesQuery("");
     return active;
   }
   function focusTab(step) {
@@ -4020,7 +4025,6 @@ ${xlsxRowsToMd(kept)}`);
   var filesCleared = false;
   var invalidByUri = /* @__PURE__ */ new Set();
   var checkErrorByUri = /* @__PURE__ */ new Set();
-  var activeTabName = "convert";
   function filesEls() {
     const byId = (id) => document.getElementById(id);
     return {
@@ -4037,7 +4041,7 @@ ${xlsxRowsToMd(kept)}`);
       searchBar: byId("filesSearchBar"),
       searchInput: byId("filesSearch"),
       searchClear: byId("filesSearchClear"),
-      searchBtn: byId("filesSearchBtn"),
+      searchCount: byId("filesSearchCount"),
       searchReset: byId("filesSearchReset"),
       keepSwitch: byId("keepHistorySwitch"),
       keepSub: byId("keepHistorySub"),
@@ -4089,10 +4093,11 @@ ${xlsxRowsToMd(kept)}`);
   function paintMeta(el, shownCount, total) {
     if (el.meta) el.meta.textContent = filesMetaText(shownCount, total);
   }
-  function paintSearchButton(el, supported) {
-    if (!el.searchBtn) return;
-    el.searchBtn.hidden = !(supported && activeTabName === "files");
-    el.searchBtn.setAttribute("aria-expanded", String(!el.searchBar.hidden));
+  function paintSearchCount(el, shownCount) {
+    if (!el.searchCount) return;
+    const on = filesQuery.trim() !== "";
+    el.searchCount.hidden = !on;
+    el.searchCount.textContent = on ? "\u5339\u914D " + shownCount : "";
   }
   function paintKeep(el, state2, supported) {
     if (el.keepSwitch) {
@@ -4116,12 +4121,27 @@ ${xlsxRowsToMd(kept)}`);
     const el = filesEls();
     const supported = Boolean(state2.support && state2.support.supported);
     paintMeta(el, shownCount, total);
-    paintSearchButton(el, supported);
+    paintSearchCount(el, shownCount);
     paintKeep(el, state2, supported);
     paintClear(el, state2, supported, total);
   }
-  function fileIcon(kind) {
-    return kind === "zip" ? "\u{1F5DC}\uFE0F" : "\u{1F4C4}";
+  var FILE_SVG = {
+    md: '<svg viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M19 8v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7z"/><path d="M9 13h6M9 16.5h4"/></svg>',
+    zip: '<svg viewBox="0 0 24 24"><path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"/><path d="M3 8l2-5h14l2 5z"/><path d="M12 11v6M9.5 14.5h5"/></svg>',
+    lost: '<svg viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M19 8v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7z"/><path d="M9.5 13.5l5 4M14.5 13.5l-5 4"/></svg>',
+    share: '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>',
+    trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>'
+  };
+  function typeSvg(rec, invalid) {
+    if (invalid) return FILE_SVG.lost;
+    return rec.kind === "zip" ? FILE_SVG.zip : FILE_SVG.md;
+  }
+  function makeTypeIcon(rec, invalid) {
+    const span = document.createElement("span");
+    span.className = "file-icon" + (invalid ? " gone" : "");
+    span.setAttribute("aria-hidden", "true");
+    span.innerHTML = typeSvg(rec, invalid);
+    return span;
   }
   function recordMetaText(rec) {
     const parts = [relTime(rec.createdAt), fmtSize2(rec.bytes)];
@@ -4144,7 +4164,7 @@ ${xlsxRowsToMd(kept)}`);
     const share = document.createElement("button");
     share.type = "button";
     share.className = "file-share";
-    share.textContent = "\u2197";
+    share.innerHTML = FILE_SVG.share;
     share.setAttribute("aria-label", "\u5206\u4EAB " + rec.name);
     share.disabled = invalid;
     share.addEventListener("click", (e) => {
@@ -4156,8 +4176,8 @@ ${xlsxRowsToMd(kept)}`);
   function makeRemoveButton(rec) {
     const rm = document.createElement("button");
     rm.type = "button";
-    rm.className = "row-action";
-    rm.textContent = "\u79FB\u9664\u8BB0\u5F55";
+    rm.className = "row-action icon-only";
+    rm.innerHTML = FILE_SVG.trash;
     rm.setAttribute("aria-label", "\u79FB\u9664\u8BB0\u5F55 " + rec.name);
     rm.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -4186,11 +4206,7 @@ ${xlsxRowsToMd(kept)}`);
     row.className = "file-row" + (invalid ? " invalid" : "");
     row.setAttribute("role", "listitem");
     row.dataset.id = rec.id;
-    const icon = document.createElement("span");
-    icon.className = "file-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = fileIcon(rec.kind);
-    row.append(icon, makeMainButton(rec, invalid));
+    row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid));
     if (invalid) row.append(makeRemoveButton(rec));
     row.append(makeShareButton(rec, invalid));
     return row;
@@ -4249,6 +4265,12 @@ ${xlsxRowsToMd(kept)}`);
       highlightRecord(rec.id);
     };
   }
+  function flashRow(row) {
+    if (!row) return;
+    row.classList.add("highlight");
+    if (typeof row.scrollIntoView === "function") row.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => row.classList.remove("highlight"), 1600);
+  }
   function highlightRecord(id) {
     setTimeout(() => {
       const row = document.querySelector('.file-row[data-id="' + id + '"]');
@@ -4256,10 +4278,16 @@ ${xlsxRowsToMd(kept)}`);
         setStatus("\u8FD9\u6761\u8BB0\u5F55\u4E0D\u5728\u5386\u53F2\u91CC\uFF08\u53EF\u80FD\u5DF2\u88AB\u6DD8\u6C70\uFF09", true);
         return;
       }
-      row.classList.add("highlight");
-      if (typeof row.scrollIntoView === "function") row.scrollIntoView({ block: "center" });
-      setTimeout(() => row.classList.remove("highlight"), 1600);
+      flashRow(row);
     }, 80);
+  }
+  function flashFirstMatch() {
+    const row = document.querySelector("#filesList .file-row");
+    if (!row) {
+      if (filesQuery.trim()) setStatus("\u6CA1\u6709\u5339\u914D\u300C" + filesQuery.trim() + "\u300D\u7684\u8BB0\u5F55", true);
+      return;
+    }
+    flashRow(row);
   }
   function setFilesQuery(q) {
     filesQuery = String(q == null ? "" : q);
@@ -4268,19 +4296,14 @@ ${xlsxRowsToMd(kept)}`);
     if (el.searchClear) el.searchClear.hidden = !filesQuery;
     renderFilesPanel(getState());
   }
-  function toggleFilesSearch(on) {
-    const el = filesEls();
-    if (!el.searchBar) return;
-    const open = on === void 0 ? el.searchBar.hidden : on;
-    el.searchBar.hidden = !open;
-    if (el.searchBtn) el.searchBtn.setAttribute("aria-expanded", String(open));
-    if (!open) setFilesQuery("");
-    else if (el.searchInput) el.searchInput.focus();
-  }
   function shareFailMessage(res) {
     if (!res) return "\u5206\u4EAB\u5931\u8D25\uFF1A\u672A\u77E5\u9519\u8BEF";
     if (res.error === "no_app") return "\u6CA1\u6709\u53EF\u7528\u7684\u5206\u4EAB\u5E94\u7528";
     return "\u5206\u4EAB\u5931\u8D25\uFF1A" + (res.error || "\u672A\u77E5\u9519\u8BEF");
+  }
+  function shareMimeOf(rec) {
+    if (rec.kind === "md") return "application/octet-stream";
+    return rec.mime || "application/octet-stream";
   }
   async function shareHistoryRecord(rec) {
     if (invalidByUri.has(rec.uri)) {
@@ -4294,7 +4317,7 @@ ${xlsxRowsToMd(kept)}`);
     }
     setStatus("\u6B63\u5728\u6253\u5F00\u5206\u4EAB\u2026\u2026");
     try {
-      const res = await plugin.shareContentUri({ uri: rec.uri, mime: rec.mime, name: rec.name });
+      const res = await plugin.shareContentUri({ uri: rec.uri, mime: shareMimeOf(rec), name: rec.name });
       if (!res || res.ok !== true) setStatus(shareFailMessage(res), true);
     } catch (e) {
       setStatus("\u5206\u4EAB\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF"), true);
@@ -4439,11 +4462,15 @@ ${xlsxRowsToMd(kept)}`);
     }).then(recordAppendResult).catch(() => nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true));
   }
   function wireFilesSearch(el) {
-    if (el.searchBtn) el.searchBtn.addEventListener("click", () => toggleFilesSearch());
     if (el.searchInput) {
       el.searchInput.addEventListener("input", () => setFilesQuery(el.searchInput.value));
       el.searchInput.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") toggleFilesSearch(false);
+        if (e.key === "Enter") {
+          e.preventDefault();
+          flashFirstMatch();
+          return;
+        }
+        if (e.key === "Escape") setFilesQuery("");
       });
     }
     if (el.searchClear) el.searchClear.addEventListener("click", () => setFilesQuery(""));

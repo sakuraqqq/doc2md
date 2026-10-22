@@ -1076,10 +1076,9 @@ export function activateTab(name) {
     }
   }
   const active = target.dataset.tab || null;
-  activeTabName = active;
-  // 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时收起搜索（A8：切走 Tab 自动退出）。
+  // 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时清空关键词（A8：切走 Tab 自动退出搜索）。
   if (active === 'files') refreshFilesPanel().catch(() => {});
-  else toggleFilesSearch(false);
+  else setFilesQuery('');
   return active;
 }
 function focusTab(step) {
@@ -1265,7 +1264,6 @@ let filesQuery = '';
 let filesCleared = false;
 let invalidByUri = new Set();
 let checkErrorByUri = new Set();
-let activeTabName = 'convert';
 
 function filesEls() {
   const byId = (id) => document.getElementById(id);
@@ -1283,7 +1281,7 @@ function filesEls() {
     searchBar: byId('filesSearchBar'),
     searchInput: byId('filesSearch'),
     searchClear: byId('filesSearchClear'),
-    searchBtn: byId('filesSearchBtn'),
+    searchCount: byId('filesSearchCount'),
     searchReset: byId('filesSearchReset'),
     keepSwitch: byId('keepHistorySwitch'),
     keepSub: byId('keepHistorySub'),
@@ -1346,11 +1344,12 @@ function paintMeta(el, shownCount, total) {
   if (el.meta) el.meta.textContent = filesMetaText(shownCount, total);
 }
 
-function paintSearchButton(el, supported) {
-  if (!el.searchBtn) return;
-  // 卡 060 / A16：搜索图标只在「文件」页出现（v8 原型口径）；其它 Tab 隐藏。
-  el.searchBtn.hidden = !(supported && activeTabName === 'files');
-  el.searchBtn.setAttribute('aria-expanded', String(!el.searchBar.hidden));
+// 搜索时把「匹配 N」放在输入框旁边（原先只在列表右上角小字，敲字感觉不到反馈）。
+function paintSearchCount(el, shownCount) {
+  if (!el.searchCount) return;
+  const on = filesQuery.trim() !== '';
+  el.searchCount.hidden = !on;
+  el.searchCount.textContent = on ? '匹配 ' + shownCount : '';
 }
 
 function paintKeep(el, state, supported) {
@@ -1381,13 +1380,31 @@ function paintChrome(state, shownCount, total) {
   const el = filesEls();
   const supported = Boolean(state.support && state.support.supported);
   paintMeta(el, shownCount, total);
-  paintSearchButton(el, supported);
+  paintSearchCount(el, shownCount);
   paintKeep(el, state, supported);
   paintClear(el, state, supported, total);
 }
 
-function fileIcon(kind) {
-  return kind === 'zip' ? '🗜️' : '📄';
+// 卡 060 / A16：图标取 v8 原型（线性 SVG），⛔ 不用 emoji / ↗ 之类会被误读的字形。
+const FILE_SVG = {
+  md: '<svg viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M19 8v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7z"/><path d="M9 13h6M9 16.5h4"/></svg>',
+  zip: '<svg viewBox="0 0 24 24"><path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8"/><path d="M3 8l2-5h14l2 5z"/><path d="M12 11v6M9.5 14.5h5"/></svg>',
+  lost: '<svg viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M19 8v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7z"/><path d="M9.5 13.5l5 4M14.5 13.5l-5 4"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>',
+};
+
+function typeSvg(rec, invalid) {
+  if (invalid) return FILE_SVG.lost;
+  return rec.kind === 'zip' ? FILE_SVG.zip : FILE_SVG.md;
+}
+
+function makeTypeIcon(rec, invalid) {
+  const span = document.createElement('span');
+  span.className = 'file-icon' + (invalid ? ' gone' : '');
+  span.setAttribute('aria-hidden', 'true');
+  span.innerHTML = typeSvg(rec, invalid);
+  return span;
 }
 
 function recordMetaText(rec) {
@@ -1414,7 +1431,8 @@ function makeShareButton(rec, invalid) {
   const share = document.createElement('button');
   share.type = 'button';
   share.className = 'file-share';
-  share.textContent = '↗';
+  // 分享语义 = 三点连线（Material share）；⛔ 用 ↗（会被读成「跳到外部/文件管理器」）。
+  share.innerHTML = FILE_SVG.share;
   share.setAttribute('aria-label', '分享 ' + rec.name);
   share.disabled = invalid;
   share.addEventListener('click', (e) => {
@@ -1427,8 +1445,8 @@ function makeShareButton(rec, invalid) {
 function makeRemoveButton(rec) {
   const rm = document.createElement('button');
   rm.type = 'button';
-  rm.className = 'row-action';
-  rm.textContent = '移除记录';
+  rm.className = 'row-action icon-only';
+  rm.innerHTML = FILE_SVG.trash;
   rm.setAttribute('aria-label', '移除记录 ' + rec.name);
   rm.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1459,11 +1477,7 @@ function renderRecordRow(rec) {
   row.className = 'file-row' + (invalid ? ' invalid' : '');
   row.setAttribute('role', 'listitem');
   row.dataset.id = rec.id;
-  const icon = document.createElement('span');
-  icon.className = 'file-icon';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = fileIcon(rec.kind);
-  row.append(icon, makeMainButton(rec, invalid));
+  row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid));
   if (invalid) row.append(makeRemoveButton(rec));
   row.append(makeShareButton(rec, invalid));
   return row;
@@ -1530,6 +1544,13 @@ function updateLastConversion(state) {
   };
 }
 
+function flashRow(row) {
+  if (!row) return;
+  row.classList.add('highlight');
+  if (typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  setTimeout(() => row.classList.remove('highlight'), 1600);
+}
+
 function highlightRecord(id) {
   setTimeout(() => {
     const row = document.querySelector('.file-row[data-id="' + id + '"]');
@@ -1537,10 +1558,18 @@ function highlightRecord(id) {
       setStatus('这条记录不在历史里（可能已被淘汰）', true);
       return;
     }
-    row.classList.add('highlight');
-    if (typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'center' });
-    setTimeout(() => row.classList.remove('highlight'), 1600);
+    flashRow(row);
   }, 80);
+}
+
+// 搜索回车（键盘「搜索」键）⇒ 跳到首条匹配并闪一下高亮（2026-10-22 用户口径）。
+function flashFirstMatch() {
+  const row = document.querySelector('#filesList .file-row');
+  if (!row) {
+    if (filesQuery.trim()) setStatus('没有匹配「' + filesQuery.trim() + '」的记录', true);
+    return;
+  }
+  flashRow(row);
 }
 
 function setFilesQuery(q) {
@@ -1551,20 +1580,18 @@ function setFilesQuery(q) {
   renderFilesPanel(historyGetState());
 }
 
-function toggleFilesSearch(on) {
-  const el = filesEls();
-  if (!el.searchBar) return;
-  const open = on === undefined ? el.searchBar.hidden : on;
-  el.searchBar.hidden = !open;
-  if (el.searchBtn) el.searchBtn.setAttribute('aria-expanded', String(open));
-  if (!open) setFilesQuery('');
-  else if (el.searchInput) el.searchInput.focus();
-}
-
 function shareFailMessage(res) {
   if (!res) return '分享失败：未知错误';
   if (res.error === 'no_app') return '没有可用的分享应用';
   return '分享失败：' + (res.error || '未知错误');
+}
+
+// 分享用的 MIME：QQ 把 `text/markdown` 当**文本预览**（只存进「QQ > 文件」，没有发送动作）
+// ⇒ `.md` 改用文件型 `application/octet-stream`，QQ 才会走「选择聊天 → 发送文件」流程。
+// （内容仍是同一条 content://，接收方读到的字节不变；2026-10-23 真机实测。）
+function shareMimeOf(rec) {
+  if (rec.kind === 'md') return 'application/octet-stream';
+  return rec.mime || 'application/octet-stream';
 }
 
 async function shareHistoryRecord(rec) {
@@ -1579,7 +1606,7 @@ async function shareHistoryRecord(rec) {
   }
   setStatus('正在打开分享……');
   try {
-    const res = await plugin.shareContentUri({ uri: rec.uri, mime: rec.mime, name: rec.name });
+    const res = await plugin.shareContentUri({ uri: rec.uri, mime: shareMimeOf(rec), name: rec.name });
     if (!res || res.ok !== true) setStatus(shareFailMessage(res), true);
   } catch (e) {
     setStatus('分享失败：' + (e && e.message ? e.message : '未知错误'), true);
@@ -1740,11 +1767,16 @@ export function recordHistory(res, kind) {
 }
 
 function wireFilesSearch(el) {
-  if (el.searchBtn) el.searchBtn.addEventListener('click', () => toggleFilesSearch());
   if (el.searchInput) {
     el.searchInput.addEventListener('input', () => setFilesQuery(el.searchInput.value));
     el.searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') toggleFilesSearch(false);
+      // 搜索框常显 ⇒ Esc 的语义 = 清空关键词；Enter（键盘「搜索」键）= 跳到首条匹配并闪高亮。
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        flashFirstMatch();
+        return;
+      }
+      if (e.key === 'Escape') setFilesQuery('');
     });
   }
   if (el.searchClear) el.searchClear.addEventListener('click', () => setFilesQuery(''));
