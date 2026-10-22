@@ -196,9 +196,16 @@ function errMessage(e) {
 const memoryBackend = {
   json: '',
   failNextWrite: false,
+  delayMs: 0,
   support: async () => ({ supported: true, sdkInt: 30, reason: 'memory' }),
   load: async () => ({ ok: true, json: memoryBackend.json || '' }),
   save: async (json) => {
+    // 测试用：模拟慢写（F1 并发回归用；真实后端走原生 IPC）
+    if (memoryBackend.delayMs > 0) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, memoryBackend.delayMs);
+      });
+    }
     if (memoryBackend.failNextWrite) {
       memoryBackend.failNextWrite = false;
       return { ok: false, error: 'write-failed' };
@@ -255,6 +262,7 @@ export function __setBackend(kind, opts) {
   if (kind === 'memory') {
     if (typeof o.json === 'string') memoryBackend.json = o.json;
     if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+    memoryBackend.delayMs = typeof o.delayMs === 'number' && o.delayMs > 0 ? o.delayMs : 0;
     backend = memoryBackend;
     backendKind = 'memory';
     return 'memory';
@@ -291,7 +299,25 @@ function emptyLoadResult(error) {
   return { ok: false, error, state: snapshot() };
 }
 
-export async function load() {
+/* 单写队列（F1）：所有「读-改-写」串行执行 —— 并发的 append 若各自基于旧 state 构造 next，
+ * 后到的旧 JSON 会覆盖先到的新 JSON（实测 3 件只剩 1 条）。队列保证同一时刻只有一个
+ * 「构造 next → persist → 提交/回滚」在跑，后来者读到的是前一个提交后的 state。 */
+let writeChain = Promise.resolve();
+
+function enqueueWrite(task) {
+  const run = writeChain.then(task, task);
+  writeChain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+}
+
+export function load() {
+  return enqueueWrite(loadNow);
+}
+
+async function loadNow() {
   const b = pickBackend();
   try {
     support = await b.support();
@@ -360,7 +386,11 @@ async function commit(nextRecords) {
  * 追加一条记录（只接受**成功保存**的入参；调用方负责 uri / bytes / 真实名）。
  * keepHistory=false ⇒ 不写；总量超 LIMIT ⇒ FIFO 淘汰最旧一条（只删记录）。
  */
-export async function append(input) {
+export function append(input) {
+  return enqueueWrite(() => appendNow(input));
+}
+
+async function appendNow(input) {
   if (!state.keepHistory) return { ok: false, skipped: 'keep-off' };
   if (backendKind === 'web') return { ok: false, skipped: 'unsupported' };
   const record = buildRecord(input);
@@ -372,7 +402,11 @@ export async function append(input) {
 }
 
 /** 移除一条记录（按 id；⛔ 不删文件）。 */
-export async function remove(id) {
+export function remove(id) {
+  return enqueueWrite(() => removeNow(id));
+}
+
+async function removeNow(id) {
   const target = String(id || '');
   const next = state.records.filter((r) => r.id !== target);
   if (next.length === state.records.length) return { ok: false, error: 'not-found' };
@@ -380,14 +414,22 @@ export async function remove(id) {
 }
 
 /** 清除全部记录（⛔ 不删文件、⛔ 不改 keepHistory）。 */
-export async function clear() {
+export function clear() {
+  return enqueueWrite(clearNow);
+}
+
+async function clearNow() {
   const saved = await commit([]);
   if (saved.ok) loadError = null;
   return saved;
 }
 
 /** 保留开关（跨重启持久；写失败返回 error，调用方回退 UI）。 */
-export async function setKeep(on) {
+export function setKeep(on) {
+  return enqueueWrite(() => setKeepNow(on));
+}
+
+async function setKeepNow(on) {
   const prev = state.keepHistory;
   state = { schemaVersion: SCHEMA_VERSION, keepHistory: on === true, records: state.records.slice() };
   const saved = await persist();
@@ -437,6 +479,11 @@ export async function check(records) {
   return checkNative(list);
 }
 
+/** 调试 / 测试用：当前后端里真正落盘的 JSON（内存后端 = 模拟磁盘；其它后端为空）。 */
+export function __diskJson() {
+  return backendKind === 'memory' ? memoryBackend.json : '';
+}
+
 /** 调试 / 测试用：重置内存状态（不写后端）。 */
 export function __reset() {
   state = emptyState();
@@ -444,4 +491,5 @@ export function __reset() {
   backend = null;
   backendKind = 'web';
   support = { supported: false, sdkInt: 0, reason: 'web' };
+  writeChain = Promise.resolve();
 }

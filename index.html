@@ -347,7 +347,9 @@
   .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; background: transparent; color: var(--fg); border-radius: 10px; padding: 0; }
   .iconbtn svg { width: 20px; height: 20px; }
   .iconbtn[aria-expanded="true"] { background: var(--panel2); color: var(--accent-soft); }
-  .files-search { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; padding: 0 6px 0 12px; height: 44px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
+  .files-search { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; margin: 0; padding: 0 4px 0 12px; height: 40px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel2); }
+/* 卡 060 / A8/A16：app bar 搜索态 —— 标题 / 间隔 / 标签 / 图标让位给输入框（v8 原型口径） */
+.appbar.searching h1, .appbar.searching .grow, .appbar.searching .tag, .appbar.searching #filesSearchBtn { display: none; }
   .files-search svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; color: var(--muted); flex: 0 0 auto; }
   .files-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; }
   .files-search input:focus { outline: none; }
@@ -389,6 +391,15 @@
 <header class="appbar">
   <h1>文转MD助手</h1>
   <span class="grow"></span>
+  <button class="iconbtn" type="button" id="filesSearchBtn" aria-label="搜索记录" aria-expanded="false" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+  </button>
+  <div class="files-search" id="filesSearchBar" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+    <input id="filesSearch" type="text" inputmode="search" enterkeyhint="search" placeholder="搜索文件名" aria-label="搜索文件名" autocomplete="off">
+    <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
+    <button type="button" class="files-search-clear" id="filesSearchClose" aria-label="关闭搜索">✕</button>
+  </div>
   <span class="tag">本地 · 零外发</span>
 </header>
 
@@ -448,12 +459,6 @@
   <!-- ── 文件 ── 卡 060 / 2-5：App 转换历史库（只列本 App 转过的文件；⛔ 不读全局 Download） ───────── -->
   <section class="tabpanel" id="panel-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0">
     <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span></div>
-    <div class="files-search" id="filesSearchBar">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
-      <input id="filesSearch" type="text" inputmode="search" enterkeyhint="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
-      <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
-      <button type="button" class="files-search-clear" id="filesSearchClear" aria-label="清除搜索" hidden>✕</button>
-    </div>
     <div class="files-list" id="filesList" role="list"></div>
     <div class="empty-state" id="filesEmpty">
       <div class="empty-state-icon" aria-hidden="true">🗂️</div>
@@ -2729,9 +2734,15 @@ ${xlsxRowsToMd(kept)}`);
   var memoryBackend = {
     json: "",
     failNextWrite: false,
+    delayMs: 0,
     support: async () => ({ supported: true, sdkInt: 30, reason: "memory" }),
     load: async () => ({ ok: true, json: memoryBackend.json || "" }),
     save: async (json) => {
+      if (memoryBackend.delayMs > 0) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, memoryBackend.delayMs);
+        });
+      }
       if (memoryBackend.failNextWrite) {
         memoryBackend.failNextWrite = false;
         return { ok: false, error: "write-failed" };
@@ -2781,6 +2792,7 @@ ${xlsxRowsToMd(kept)}`);
     if (kind === "memory") {
       if (typeof o.json === "string") memoryBackend.json = o.json;
       if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+      memoryBackend.delayMs = typeof o.delayMs === "number" && o.delayMs > 0 ? o.delayMs : 0;
       backend = memoryBackend;
       backendKind = "memory";
       return "memory";
@@ -2812,7 +2824,21 @@ ${xlsxRowsToMd(kept)}`);
     state = emptyState();
     return { ok: false, error, state: snapshot() };
   }
-  async function load() {
+  var writeChain = Promise.resolve();
+  function enqueueWrite(task) {
+    const run = writeChain.then(task, task);
+    writeChain = run.then(
+      () => {
+      },
+      () => {
+      }
+    );
+    return run;
+  }
+  function load() {
+    return enqueueWrite(loadNow);
+  }
+  async function loadNow() {
     const b = pickBackend();
     try {
       support = await b.support();
@@ -2871,7 +2897,10 @@ ${xlsxRowsToMd(kept)}`);
     state = { schemaVersion: SCHEMA_VERSION, keepHistory: state.keepHistory, records: prev };
     return { ok: false, error: saved.error || "write-failed" };
   }
-  async function append(input) {
+  function append(input) {
+    return enqueueWrite(() => appendNow(input));
+  }
+  async function appendNow(input) {
     if (!state.keepHistory) return { ok: false, skipped: "keep-off" };
     if (backendKind === "web") return { ok: false, skipped: "unsupported" };
     const record = buildRecord(input);
@@ -2881,18 +2910,27 @@ ${xlsxRowsToMd(kept)}`);
     if (!saved.ok) return { ok: false, error: saved.error, record };
     return { ok: true, record, evicted };
   }
-  async function remove(id) {
+  function remove(id) {
+    return enqueueWrite(() => removeNow(id));
+  }
+  async function removeNow(id) {
     const target = String(id || "");
     const next = state.records.filter((r) => r.id !== target);
     if (next.length === state.records.length) return { ok: false, error: "not-found" };
     return commit(next);
   }
-  async function clear() {
+  function clear() {
+    return enqueueWrite(clearNow);
+  }
+  async function clearNow() {
     const saved = await commit([]);
     if (saved.ok) loadError = null;
     return saved;
   }
-  async function setKeep(on) {
+  function setKeep(on) {
+    return enqueueWrite(() => setKeepNow(on));
+  }
+  async function setKeepNow(on) {
     const prev = state.keepHistory;
     state = { schemaVersion: SCHEMA_VERSION, keepHistory: on === true, records: state.records.slice() };
     const saved = await persist();
@@ -2933,12 +2971,16 @@ ${xlsxRowsToMd(kept)}`);
     if (!list.length) return { ok: true, results: [] };
     return checkNative(list);
   }
+  function __diskJson() {
+    return backendKind === "memory" ? memoryBackend.json : "";
+  }
   function __reset() {
     state = emptyState();
     loadError = null;
     backend = null;
     backendKind = "web";
     support = { supported: false, sdkInt: 0, reason: "web" };
+    writeChain = Promise.resolve();
   }
 
   // src/ui.js
@@ -3144,7 +3186,7 @@ ${xlsxRowsToMd(kept)}`);
       const saved = NATIVE_SAVED + (res && res.filename || base + ".md");
       diag("save", "native");
       nativeNotice(saved);
-      recordHistory(res, "md");
+      await recordHistory(res, "md");
       return "native";
     }
     if (isNativeRuntime()) {
@@ -3357,7 +3399,7 @@ ${xlsxRowsToMd(kept)}`);
       const res = await plugin.endBinary({ commit: true });
       started = false;
       nativeNotice(NATIVE_SAVED + (res && res.filename || filename));
-      recordHistory(res, "zip");
+      await recordHistory(res, "zip");
       return "native";
     } catch (e) {
       if (started) {
@@ -3852,9 +3894,10 @@ ${xlsxRowsToMd(kept)}`);
       }
     }
     const active = target.dataset.tab || null;
+    activeTabName = active;
     if (active === "files") refreshFilesPanel().catch(() => {
     });
-    else setFilesQuery("");
+    else toggleFilesSearch(false);
     return active;
   }
   function focusTab(step) {
@@ -4023,6 +4066,7 @@ ${xlsxRowsToMd(kept)}`);
   }
   var filesQuery = "";
   var filesCleared = false;
+  var activeTabName = "convert";
   var invalidByUri = /* @__PURE__ */ new Set();
   var checkErrorByUri = /* @__PURE__ */ new Set();
   function filesEls() {
@@ -4038,10 +4082,12 @@ ${xlsxRowsToMd(kept)}`);
       emptySearchTitle: byId("filesEmptySearchTitle"),
       errorBox: byId("filesError"),
       errorSub: byId("filesErrorSub"),
+      appbar: document.querySelector(".appbar"),
       searchBar: byId("filesSearchBar"),
       searchInput: byId("filesSearch"),
-      searchClear: byId("filesSearchClear"),
+      searchClose: byId("filesSearchClose"),
       searchCount: byId("filesSearchCount"),
+      searchBtn: byId("filesSearchBtn"),
       searchReset: byId("filesSearchReset"),
       keepSwitch: byId("keepHistorySwitch"),
       keepSub: byId("keepHistorySub"),
@@ -4099,6 +4145,11 @@ ${xlsxRowsToMd(kept)}`);
     el.searchCount.hidden = !on;
     el.searchCount.textContent = on ? "\u5339\u914D " + shownCount : "";
   }
+  function paintSearchButton(el, supported) {
+    if (!el.searchBtn) return;
+    el.searchBtn.hidden = !(supported && activeTabName === "files");
+    if (el.searchBar) el.searchBtn.setAttribute("aria-expanded", String(!el.searchBar.hidden));
+  }
   function paintKeep(el, state2, supported) {
     if (el.keepSwitch) {
       el.keepSwitch.setAttribute("aria-checked", String(state2.keepHistory !== false));
@@ -4122,6 +4173,7 @@ ${xlsxRowsToMd(kept)}`);
     const supported = Boolean(state2.support && state2.support.supported);
     paintMeta(el, shownCount, total);
     paintSearchCount(el, shownCount);
+    paintSearchButton(el, supported);
     paintKeep(el, state2, supported);
     paintClear(el, state2, supported, total);
   }
@@ -4296,6 +4348,16 @@ ${xlsxRowsToMd(kept)}`);
     if (el.searchClear) el.searchClear.hidden = !filesQuery;
     renderFilesPanel(getState());
   }
+  function toggleFilesSearch(on) {
+    const el = filesEls();
+    if (!el.searchBar) return;
+    const open = on === void 0 ? el.searchBar.hidden : on;
+    el.searchBar.hidden = !open;
+    if (el.appbar) el.appbar.classList.toggle("searching", open);
+    if (el.searchBtn) el.searchBtn.setAttribute("aria-expanded", String(open));
+    if (!open) setFilesQuery("");
+    else if (el.searchInput) el.searchInput.focus();
+  }
   function shareFailMessage(res) {
     if (!res) return "\u5206\u4EAB\u5931\u8D25\uFF1A\u672A\u77E5\u9519\u8BEF";
     if (res.error === "no_app") return "\u6CA1\u6709\u53EF\u7528\u7684\u5206\u4EAB\u5E94\u7528";
@@ -4451,17 +4513,24 @@ ${xlsxRowsToMd(kept)}`);
     nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
   }
   function recordHistory(res, kind) {
-    if (!res || !res.uri || res.bytes <= 0 || !res.filename) return;
+    if (!res || !res.uri || res.bytes <= 0 || !res.filename) return Promise.resolve({ ok: false, skipped: "invalid" });
     const isZip = kind === "zip";
-    append({
+    return append({
       name: res.filename,
       uri: res.uri,
       bytes: res.bytes,
       kind: isZip ? "zip" : "md",
       mime: isZip ? "application/zip" : "text/markdown"
-    }).then(recordAppendResult).catch(() => nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true));
+    }).then((r) => {
+      recordAppendResult(r);
+      return r;
+    }).catch(() => {
+      nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
+      return { ok: false, error: "append-failed" };
+    });
   }
   function wireFilesSearch(el) {
+    if (el.searchBtn) el.searchBtn.addEventListener("click", () => toggleFilesSearch());
     if (el.searchInput) {
       el.searchInput.addEventListener("input", () => setFilesQuery(el.searchInput.value));
       el.searchInput.addEventListener("keydown", (e) => {
@@ -4470,10 +4539,10 @@ ${xlsxRowsToMd(kept)}`);
           flashFirstMatch();
           return;
         }
-        if (e.key === "Escape") setFilesQuery("");
+        if (e.key === "Escape") toggleFilesSearch(false);
       });
     }
-    if (el.searchClear) el.searchClear.addEventListener("click", () => setFilesQuery(""));
+    if (el.searchClose) el.searchClose.addEventListener("click", () => toggleFilesSearch(false));
     if (el.searchReset) el.searchReset.addEventListener("click", () => setFilesQuery(""));
   }
   function wireHistoryControls(el) {
@@ -5203,6 +5272,7 @@ ${p.text}
       check,
       __setBackend,
       __reset,
+      __diskJson,
       refresh: refreshFilesPanel,
       LIMIT,
       relTime,

@@ -10,7 +10,7 @@ import { convert, registry, MAX_BYTES } from './convert.js';
 import { collapseCjkSpaces } from './cjk.js';
 import { htmlToMarkdown } from './html2md.js';
 import { decodeText, sniff } from './sniff.js';
-import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument, normalizeExternalText, refreshFilesPanel } from './ui.js';
+import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument, normalizeExternalText, refreshFilesPanel, shareMimeOf } from './ui.js';
 import { mountPreview, renderMarkdown } from './markdown-preview.js';
 import * as historyStore from './history-store.js';
 
@@ -119,6 +119,8 @@ window.__doc2md = {
     check: historyStore.check,
     __setBackend: historyStore.__setBackend,
     __reset: historyStore.__reset,
+    __diskJson: historyStore.__diskJson,
+    shareMimeOf,
     refresh: refreshFilesPanel,
     LIMIT: historyStore.LIMIT,
     relTime: historyStore.relTime,

@@ -6182,7 +6182,7 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.equal(states.cleared, true, '「已清除」空态不应在从未转换时出现');
         assert.equal(states.search, true, '搜索空态不应在非搜索态出现');
         assert.equal(states.error, true, '读取失败空态不应在正常读取时出现');
-        assert.equal(states.searchBarHidden, false, '搜索框应常显（与转换页结果搜索同一形态，2026-10-22 口径）');
+        assert.equal(states.searchBarHidden, true, '搜索框默认应收起（拍板一：app bar 图标展开，⛔ 常显）');
       });
 
       await t.test('Z6-5 A6 设置四组齐 + 外观三档 + 「跟随系统」是真监听（emulateMedia 翻系统色必须生效）', async () => {
@@ -7748,6 +7748,28 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(r.evictedName, 'f-0.md', '淘汰的不是最旧一条');
       });
 
+      await t.test('Z10-2b F1 批量并发：3 件同时 append + 慢写 ⇒ 内存与磁盘都 3 条', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '', delayMs: 20 });
+          await h.load();
+          const mk = (n) => ({ name: n, uri: 'content://x/' + n, bytes: 10, kind: 'md', createdAt: Date.now() });
+          const results = await Promise.all([h.append(mk('one.md')), h.append(mk('two.md')), h.append(mk('three.md'))]);
+          const stateNames = h.getState().records.map((x) => x.name).sort();
+          let diskNames = [];
+          try {
+            diskNames = JSON.parse(h.__diskJson()).records.map((x) => x.name).sort();
+          } catch {
+            diskNames = ['<bad-json>'];
+          }
+          return { allOk: results.every((x) => x && x.ok === true), stateNames, diskNames };
+        });
+        assert.equal(r.allOk, true, '并发 append 有失败');
+        assert.deepEqual(r.stateNames, ['one.md', 'three.md', 'two.md'], '并发 append 丢记录（内存）');
+        assert.deepEqual(r.diskNames, ['one.md', 'three.md', 'two.md'], '并发 append 丢记录（磁盘 JSON）');
+      });
+
       await t.test('Z10-3 A2/A8 顺序与搜索：createdAt 倒序、同毫秒按插入序、搜索不改数据', async () => {
         const r = await page.evaluate(async () => {
           const h = window.__doc2md.history;
@@ -7844,7 +7866,22 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         });
         await page.click('#tab-files');
         await page.waitForTimeout(150);
-        assert.equal(await page.evaluate(() => document.getElementById('filesSearchBar').hidden), false, '文件页搜索框应常显');
+        const closed = await page.evaluate(() => ({
+          bar: document.getElementById('filesSearchBar').hidden,
+          btn: document.getElementById('filesSearchBtn').hidden,
+        }));
+        assert.equal(closed.btn, false, '文件页应显示 app bar 搜索图标（拍板一：恢复 v8 交互）');
+        assert.equal(closed.bar, true, '搜索框默认应收起（⛔ 列表上方常显框）');
+        await page.click('#filesSearchBtn');
+        await page.waitForTimeout(80);
+        const opened = await page.evaluate(() => ({
+          bar: document.getElementById('filesSearchBar').hidden,
+          focused: document.activeElement === document.getElementById('filesSearch'),
+          searching: document.querySelector('.appbar').classList.contains('searching'),
+        }));
+        assert.equal(opened.bar, false, '点搜索图标未展开输入框');
+        assert.equal(opened.focused, true, '展开后输入框未聚焦');
+        assert.equal(opened.searching, true, 'app bar 未进入搜索态（标题/图标应让位）');
         const rows = await page.evaluate(() =>
           [...document.querySelectorAll('#filesList .file-row')].map((row) => ({
             name: row.querySelector('.file-name').textContent,
@@ -7887,10 +7924,40 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         await page.click('#filesSearchReset');
         await page.waitForTimeout(80);
         assert.equal(await page.locator('#filesList .file-row').count(), 2, '清除搜索未恢复全量');
+        await page.click('#filesSearchClose');
+        await page.waitForTimeout(80);
+        const closedByX = await page.evaluate(() => ({
+          bar: document.getElementById('filesSearchBar').hidden,
+          q: document.getElementById('filesSearch').value,
+          searching: document.querySelector('.appbar').classList.contains('searching'),
+        }));
+        assert.equal(closedByX.bar, true, '点 X 未收起搜索框');
+        assert.equal(closedByX.q, '', '收起搜索未清空关键词');
+        assert.equal(closedByX.searching, false, '收起后 app bar 未恢复标题/图标');
         await page.click('#tab-settings');
         await page.waitForTimeout(80);
-        const queryCleared = await page.evaluate(() => document.getElementById('filesSearch').value);
-        assert.equal(queryCleared, '', '切走 Tab 未退出搜索（A8：关键词应被清空）');
+        const gone = await page.evaluate(() => ({
+          btn: document.getElementById('filesSearchBtn').hidden,
+          q: document.getElementById('filesSearch').value,
+          bar: document.getElementById('filesSearchBar').hidden,
+        }));
+        assert.equal(gone.btn, true, '离开「文件」页后搜索图标应隐藏');
+        assert.equal(gone.bar, true, '离开「文件」页后搜索框应收起（A8：切走 Tab 退出搜索）');
+        assert.equal(gone.q, '', '切走 Tab 后关键词应清空');
+      });
+
+      await t.test('Z10-7b A7 分享 MIME（拍板 A 兼容例外）：md ⇒ octet-stream；zip ⇒ application/zip', async () => {
+        const r = await page.evaluate(() => {
+          const h = window.__doc2md.history;
+          return {
+            md: h.shareMimeOf({ kind: 'md', mime: 'text/markdown' }),
+            zip: h.shareMimeOf({ kind: 'zip', mime: 'application/zip' }),
+            missing: h.shareMimeOf({ kind: 'zip', mime: '' }),
+          };
+        });
+        assert.equal(r.md, 'application/octet-stream', 'md 分享 Intent MIME 不是兼容例外 octet-stream');
+        assert.equal(r.zip, 'application/zip', 'zip 分享 MIME 被改动');
+        assert.equal(r.missing, 'application/octet-stream', '缺 mime 时未回落文件型 MIME');
       });
 
       await t.test('Z10-8 A9 清除：二次确认、取消不变、确认只清记录、keep 不变', async () => {
@@ -7929,7 +7996,7 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
 
       await t.test('Z10-9 A13 产物：index.html 含文件页结构 / 清除对话框 / 历史测试缝', () => {
         const html = fs.readFileSync(PAGE, 'utf8');
-        for (const marker of ['id="filesList"', 'id="clearDialog"', 'id="keepHistorySwitch"', 'id="filesSearchBar"']) {
+        for (const marker of ['id="filesList"', 'id="clearDialog"', 'id="keepHistorySwitch"', 'id="filesSearchBar"', 'id="filesSearchBtn"', 'id="filesSearchClose"']) {
           assert.ok(html.includes(marker), 'index.html 缺 ' + marker);
         }
         assert.ok(html.includes('__setBackend'), 'index.html 缺历史库测试缝（__setBackend）');

@@ -2,6 +2,8 @@ package io.github.sakuraqqq.doc2md;
 
 import android.app.Activity;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentResolver;
