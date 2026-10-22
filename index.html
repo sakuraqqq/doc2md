@@ -458,7 +458,7 @@
 
   <!-- ── 文件 ── 卡 060 / 2-5：App 转换历史库（只列本 App 转过的文件；⛔ 不读全局 Download） ───────── -->
   <section class="tabpanel" id="panel-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0">
-    <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span></div>
+    <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span><button type="button" class="row-action" id="filesRetry" hidden>重试核验</button></div>
     <div class="files-list" id="filesList" role="list"></div>
     <div class="empty-state" id="filesEmpty">
       <div class="empty-state-icon" aria-hidden="true">🗂️</div>
@@ -2598,6 +2598,7 @@ ${xlsxRowsToMd(kept)}`);
   var backendKind = "web";
   var loadError = null;
   var support = { supported: false, sdkInt: 0, reason: "web" };
+  var supportOverride = null;
   function emptyState() {
     return { schemaVersion: SCHEMA_VERSION, keepHistory: true, records: [] };
   }
@@ -2671,12 +2672,13 @@ ${xlsxRowsToMd(kept)}`);
     const obj = safeParse(text);
     if (!obj) return { ok: false, error: "corrupt" };
     if (obj.schemaVersion !== SCHEMA_VERSION) return { ok: false, error: "schema" };
+    if (typeof obj.keepHistory !== "boolean") return { ok: false, error: "corrupt" };
     if (!Array.isArray(obj.records)) return { ok: false, error: "corrupt" };
     const records = collectRecords(obj.records);
     if (!records) return { ok: false, error: "corrupt" };
     return {
       ok: true,
-      state: { schemaVersion: SCHEMA_VERSION, keepHistory: obj.keepHistory !== false, records }
+      state: { schemaVersion: SCHEMA_VERSION, keepHistory: obj.keepHistory, records }
     };
   }
   function listOrder(records) {
@@ -2787,16 +2789,29 @@ ${xlsxRowsToMd(kept)}`);
       save: (json) => nativeSave(plugin, json)
     };
   }
+  function applyMemoryOptions(o) {
+    if (typeof o.json === "string") memoryBackend.json = o.json;
+    if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+    memoryBackend.delayMs = typeof o.delayMs === "number" && o.delayMs > 0 ? o.delayMs : 0;
+  }
+  function supportOverrideOf(o) {
+    if (o.support !== false) return null;
+    return {
+      supported: false,
+      sdkInt: typeof o.sdkInt === "number" ? o.sdkInt : 28,
+      reason: o.reason || "forced-unsupported"
+    };
+  }
   function __setBackend(kind, opts) {
     const o = opts || {};
     if (kind === "memory") {
-      if (typeof o.json === "string") memoryBackend.json = o.json;
-      if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
-      memoryBackend.delayMs = typeof o.delayMs === "number" && o.delayMs > 0 ? o.delayMs : 0;
+      applyMemoryOptions(o);
+      supportOverride = supportOverrideOf(o);
       backend = memoryBackend;
       backendKind = "memory";
       return "memory";
     }
+    supportOverride = null;
     if (kind === "native") {
       const plugin = nativePlugin();
       backend = plugin ? nativeBackendFor(plugin) : webBackend;
@@ -2845,6 +2860,7 @@ ${xlsxRowsToMd(kept)}`);
     } catch {
       support = { supported: false, sdkInt: 0, reason: "error" };
     }
+    if (supportOverride) support = { ...supportOverride };
     const res = await b.load();
     if (!res.ok) return emptyLoadResult(res.error || "read-failed");
     if (!res.json) {
@@ -2902,7 +2918,7 @@ ${xlsxRowsToMd(kept)}`);
   }
   async function appendNow(input) {
     if (!state.keepHistory) return { ok: false, skipped: "keep-off" };
-    if (backendKind === "web") return { ok: false, skipped: "unsupported" };
+    if (backendKind === "web" || !support.supported) return { ok: false, skipped: "unsupported" };
     const record = buildRecord(input);
     if (!record) return { ok: false, error: "invalid-record" };
     const { next, evicted } = withEvictions(state.records, record);
@@ -2914,6 +2930,7 @@ ${xlsxRowsToMd(kept)}`);
     return enqueueWrite(() => removeNow(id));
   }
   async function removeNow(id) {
+    if (!support.supported) return { ok: false, error: "unsupported" };
     const target = String(id || "");
     const next = state.records.filter((r) => r.id !== target);
     if (next.length === state.records.length) return { ok: false, error: "not-found" };
@@ -2923,6 +2940,7 @@ ${xlsxRowsToMd(kept)}`);
     return enqueueWrite(clearNow);
   }
   async function clearNow() {
+    if (!support.supported) return { ok: false, error: "unsupported" };
     const saved = await commit([]);
     if (saved.ok) loadError = null;
     return saved;
@@ -2931,6 +2949,7 @@ ${xlsxRowsToMd(kept)}`);
     return enqueueWrite(() => setKeepNow(on));
   }
   async function setKeepNow(on) {
+    if (!support.supported) return { ok: false, error: "unsupported" };
     const prev = state.keepHistory;
     state = { schemaVersion: SCHEMA_VERSION, keepHistory: on === true, records: state.records.slice() };
     const saved = await persist();
@@ -2980,6 +2999,7 @@ ${xlsxRowsToMd(kept)}`);
     backend = null;
     backendKind = "web";
     support = { supported: false, sdkInt: 0, reason: "web" };
+    supportOverride = null;
     writeChain = Promise.resolve();
   }
 
@@ -4066,6 +4086,8 @@ ${xlsxRowsToMd(kept)}`);
   }
   var filesQuery = "";
   var filesCleared = false;
+  var checkFailed = false;
+  var sessionLast = null;
   var activeTabName = "convert";
   var invalidByUri = /* @__PURE__ */ new Set();
   var checkErrorByUri = /* @__PURE__ */ new Set();
@@ -4088,6 +4110,7 @@ ${xlsxRowsToMd(kept)}`);
       searchClose: byId("filesSearchClose"),
       searchCount: byId("filesSearchCount"),
       searchBtn: byId("filesSearchBtn"),
+      retry: byId("filesRetry"),
       searchReset: byId("filesSearchReset"),
       keepSwitch: byId("keepHistorySwitch"),
       keepSub: byId("keepHistorySub"),
@@ -4150,6 +4173,10 @@ ${xlsxRowsToMd(kept)}`);
     el.searchBtn.hidden = !(supported && activeTabName === "files");
     if (el.searchBar) el.searchBtn.setAttribute("aria-expanded", String(!el.searchBar.hidden));
   }
+  function paintRetry(el, supported) {
+    if (!el.retry) return;
+    el.retry.hidden = !(supported && checkFailed);
+  }
   function paintKeep(el, state2, supported) {
     if (el.keepSwitch) {
       el.keepSwitch.setAttribute("aria-checked", String(state2.keepHistory !== false));
@@ -4174,6 +4201,7 @@ ${xlsxRowsToMd(kept)}`);
     paintMeta(el, shownCount, total);
     paintSearchCount(el, shownCount);
     paintSearchButton(el, supported);
+    paintRetry(el, supported);
     paintKeep(el, state2, supported);
     paintClear(el, state2, supported, total);
   }
@@ -4212,13 +4240,13 @@ ${xlsxRowsToMd(kept)}`);
       });
     }).catch(() => setStatus("\u79FB\u9664\u8BB0\u5F55\u5931\u8D25", true));
   }
-  function makeShareButton(rec, invalid) {
+  function makeShareButton(rec, invalid, supported) {
     const share = document.createElement("button");
     share.type = "button";
     share.className = "file-share";
     share.innerHTML = FILE_SVG.share;
     share.setAttribute("aria-label", "\u5206\u4EAB " + rec.name);
-    share.disabled = invalid;
+    share.disabled = invalid || !supported;
     share.addEventListener("click", (e) => {
       e.stopPropagation();
       shareHistoryRecord(rec);
@@ -4237,11 +4265,12 @@ ${xlsxRowsToMd(kept)}`);
     });
     return rm;
   }
-  function makeMainButton(rec, invalid) {
+  function makeMainButton(rec, invalid, supported) {
     const main = document.createElement("button");
     main.type = "button";
     main.className = "file-main";
     main.setAttribute("aria-label", "\u6253\u5F00 " + rec.name);
+    main.disabled = !supported;
     const name = document.createElement("span");
     name.className = "file-name";
     name.textContent = rec.name;
@@ -4252,15 +4281,15 @@ ${xlsxRowsToMd(kept)}`);
     main.addEventListener("click", () => openHistoryRecord(rec));
     return main;
   }
-  function renderRecordRow(rec) {
+  function renderRecordRow(rec, supported) {
     const invalid = invalidByUri.has(rec.uri);
     const row = document.createElement("div");
     row.className = "file-row" + (invalid ? " invalid" : "");
     row.setAttribute("role", "listitem");
     row.dataset.id = rec.id;
-    row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid));
-    if (invalid) row.append(makeRemoveButton(rec));
-    row.append(makeShareButton(rec, invalid));
+    row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid, supported));
+    if (invalid && supported) row.append(makeRemoveButton(rec));
+    row.append(makeShareButton(rec, invalid, supported));
     return row;
   }
   function renderFilesPanel(state2) {
@@ -4268,9 +4297,10 @@ ${xlsxRowsToMd(kept)}`);
     if (!el.panel) return;
     const all = state2.records || [];
     const shown = filesQuery.trim() ? search(filesQuery) : all;
+    const supported = Boolean(state2.support && state2.support.supported);
     if (el.list) el.list.innerHTML = "";
     if (el.list && shown.length) {
-      for (const rec of shown) el.list.append(renderRecordRow(rec));
+      for (const rec of shown) el.list.append(renderRecordRow(rec, supported));
     }
     paintChrome(state2, shown.length, all.length);
     paintEmptyStates(state2, shown.length, all.length);
@@ -4289,9 +4319,11 @@ ${xlsxRowsToMd(kept)}`);
   async function verifyRecords(state2) {
     invalidByUri = /* @__PURE__ */ new Set();
     checkErrorByUri = /* @__PURE__ */ new Set();
+    checkFailed = false;
     if (!(state2.support && state2.support.supported) || !state2.records.length) return;
     const chk = await check(state2.records);
     if (chk && chk.ok) collectCheckResults(chk.results);
+    else checkFailed = true;
   }
   async function refreshFilesPanel() {
     const state2 = await loadPanelState();
@@ -4303,6 +4335,21 @@ ${xlsxRowsToMd(kept)}`);
   function updateLastConversion(state2) {
     const empty = document.getElementById("lastEmpty");
     if (!empty) return;
+    if (sessionLast) {
+      empty.textContent = "\u672C\u6B21\uFF1A" + (sessionLast.name || "\uFF08\u672A\u547D\u540D\uFF09") + (sessionLast.recorded ? " \xB7 \u5DF2\u8BB0\u5165\u5386\u53F2" : " \xB7 \u672A\u8BB0\u5165\u5386\u53F2\uFF08\u4FDD\u7559\u5F00\u5173\u5DF2\u5173\u6216\u672A\u62FF\u5230\u771F\u5B9E\u540D\uFF09") + " \xB7 \u70B9\u6B64\u5B9A\u4F4D\u5230\u300C\u6587\u4EF6\u300D";
+      empty.style.cursor = "pointer";
+      empty.onclick = () => {
+        if (!sessionLast.recorded) {
+          setStatus("\u672C\u6B21\u8F6C\u6362\u672A\u8BB0\u5165\u5386\u53F2\uFF08\u4FDD\u7559\u5F00\u5173\u5DF2\u5173 / \u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D\uFF09\uFF1B\u6587\u4EF6\u5DF2\u4FDD\u5B58\uFF0C\u53EF\u5728\u6587\u4EF6\u7BA1\u7406\u5668\u4E2D\u627E\u5230", true);
+          return;
+        }
+        activateTab("files");
+        const rec2 = state2.records.find((r) => r.uri === sessionLast.uri);
+        if (rec2) highlightRecord(rec2.id);
+        else setStatus("\u672C\u6B21\u8BB0\u5F55\u4E0D\u5728\u5386\u53F2\u91CC\uFF08\u53EF\u80FD\u5DF2\u88AB\u6E05\u9664\u6216\u6DD8\u6C70\uFF09", true);
+      };
+      return;
+    }
     const rec = state2.records[0];
     if (!rec) {
       empty.textContent = "\u8FD8\u6CA1\u6709\u8F6C\u6362\u8BB0\u5F55 \u2014\u2014 \u8F6C\u6362\u5B8C\u6210\u540E\u4F1A\u663E\u793A\u5728\u8FD9\u91CC\u3002";
@@ -4513,8 +4560,14 @@ ${xlsxRowsToMd(kept)}`);
     nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
   }
   function recordHistory(res, kind) {
-    if (!res || !res.uri || res.bytes <= 0 || !res.filename) return Promise.resolve({ ok: false, skipped: "invalid" });
+    if (!res || !res.uri || res.bytes <= 0) return Promise.resolve({ ok: false, skipped: "invalid" });
     const isZip = kind === "zip";
+    if (!res.filename) {
+      sessionLast = { name: "", uri: res.uri, recorded: false };
+      nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165\uFF08\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D\uFF09", true);
+      return Promise.resolve({ ok: false, skipped: "no-name" });
+    }
+    sessionLast = { name: res.filename, uri: res.uri, recorded: false };
     return append({
       name: res.filename,
       uri: res.uri,
@@ -4523,6 +4576,8 @@ ${xlsxRowsToMd(kept)}`);
       mime: isZip ? "application/zip" : "text/markdown"
     }).then((r) => {
       recordAppendResult(r);
+      if (r && r.ok) sessionLast = { name: res.filename, uri: res.uri, recorded: true };
+      updateLastConversion(getState());
       return r;
     }).catch(() => {
       nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
@@ -4551,6 +4606,8 @@ ${xlsxRowsToMd(kept)}`);
     }));
     if (el.keepSwitch) el.keepSwitch.addEventListener("click", () => toggleKeep());
     if (el.clearBtn) el.clearBtn.addEventListener("click", () => openClearDialog());
+    if (el.retry) el.retry.addEventListener("click", () => refreshFilesPanel().catch(() => {
+    }));
   }
   function wireClearDialog(el) {
     const cancel = document.getElementById("clearCancel");
@@ -5273,6 +5330,7 @@ ${p.text}
       __setBackend,
       __reset,
       __diskJson,
+      shareMimeOf,
       refresh: refreshFilesPanel,
       LIMIT,
       relTime,

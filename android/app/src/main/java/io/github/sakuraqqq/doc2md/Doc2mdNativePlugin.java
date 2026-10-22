@@ -41,6 +41,7 @@ import java.security.MessageDigest;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 // doc2md 原生插件骨架（卡 008 / A7）—— 目的是证明「逐环节替换原生」（Strangler Fig）这条路能走通一次，
 // 而不是"跑通了一次"。它是**直接写进原生工程**的插件：Capacitor 的 native runtime 会把已加载插件导出到
@@ -611,7 +612,8 @@ public class Doc2mdNativePlugin extends Plugin {
                     if (cr.update(target, done, null, null) <= 0) {
                         throw new Exception("update IS_PENDING failed");
                     }
-                    actualName[0] = queryDisplayName(cr, target, name);
+                    String real = queryDisplayName(cr, target);
+                    actualName[0] = real == null ? "" : real;
                     return bytes;
                 } catch (Exception e) {
                     // G9：失败必须回滚，不能留半截/待发布行。
@@ -664,7 +666,9 @@ public class Doc2mdNativePlugin extends Plugin {
         }
     }
 
-    private String queryDisplayName(ContentResolver cr, Uri uri, String fallback) {
+    // MediaStore 插入后的**真实**显示名（重名会被改成 "x.zip (1)"）；
+    // F7：查不到返回 null（⛔ 退回请求名冒充真实名）—— 调用方据此**不写历史记录**。
+    private String queryDisplayName(ContentResolver cr, Uri uri) {
         Cursor c = null;
         try {
             c = cr.query(uri, new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null);
@@ -680,7 +684,7 @@ public class Doc2mdNativePlugin extends Plugin {
                 c.close();
             }
         }
-        return fallback;
+        return null;
     }
 
     private static String sha256Hex(String text) {
@@ -868,9 +872,19 @@ public class Doc2mdNativePlugin extends Plugin {
             if (binUri != null) {
                 ContentValues done = new ContentValues();
                 done.put(MediaStore.Downloads.IS_PENDING, 0);
-                getContext().getContentResolver().update(binUri, done, null, null);
+                if (getContext().getContentResolver().update(binUri, done, null, null) <= 0) {
+                    // F7：提交失败不能留下「待发布」行 ⇒ 清理并抛错。
+                    try {
+                        getContext().getContentResolver().delete(binUri, null, null);
+                    } catch (Exception ignored) {
+                    }
+                    binUri = null;
+                    binBytes = 0;
+                    throw new Exception("update IS_PENDING failed");
+                }
             }
-            String real = (binUri != null) ? queryDisplayName(binUri, binName) : binName;
+            String real = (binUri != null) ? queryDisplayName(binUri) : null;
+            if (real == null) real = "";
             JSObject ret = new JSObject();
             ret.put("filename", real);
             ret.put("bytes", binBytes);
@@ -1130,6 +1144,8 @@ public class Doc2mdNativePlugin extends Plugin {
         }
     }
 
+    private boolean forceShareNoApp = false;
+
     @PluginMethod
     public void shareContentUri(PluginCall call) {
         String s = call.getString("uri", "");
@@ -1143,6 +1159,15 @@ public class Doc2mdNativePlugin extends Plugin {
             send.putExtra(Intent.EXTRA_STREAM, uri);
             send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             send.setClipData(ClipData.newRawUri(name, uri));
+            // F4：先查有没有 SEND handler —— 没有就明说 no_app（⛔ 让 chooser 闪一下、异常分支不可达）。
+            List<ResolveInfo> handlers = getContext().getPackageManager()
+                    .queryIntentActivities(send, PackageManager.MATCH_DEFAULT_ONLY);
+            if (forceShareNoApp || handlers == null || handlers.isEmpty()) {
+                ret.put("ok", false);
+                ret.put("error", "no_app");
+                call.resolve(ret);
+                return;
+            }
             Intent chooser = Intent.createChooser(send, name.isEmpty() ? "Share" : name);
             chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             if (isDebuggable()) {
@@ -1163,6 +1188,19 @@ public class Doc2mdNativePlugin extends Plugin {
             ret.put("error", String.valueOf(e.getMessage()));
             call.resolve(ret);
         }
+    }
+
+    // F4 测试缝（仅 debug 包）：强制「没有分享应用」分支 —— 用于真机验证 no_app 的可见错误。
+    @PluginMethod
+    public void shareForceNoApp(PluginCall call) {
+        if (!isDebuggable()) {
+            call.reject("debug-only");
+            return;
+        }
+        forceShareNoApp = call.getBoolean("on", false) == Boolean.TRUE;
+        JSObject ret = new JSObject();
+        ret.put("ok", true);
+        call.resolve(ret);
     }
 
     private void startExternal(Intent intent) {
@@ -1207,8 +1245,8 @@ public class Doc2mdNativePlugin extends Plugin {
         binBytes = 0;
     }
 
-    // MediaStore 插入后的**真实**显示名（重名会被改成 "x.zip (1)"）—— 查不到就退回请求名。
-    private String queryDisplayName(Uri uri, String fallback) {
+    // MediaStore 插入后的**真实**显示名；F7：查不到返回 null（⛔ 退回请求名）。
+    private String queryDisplayName(Uri uri) {
         Cursor cursor = null;
         try {
             cursor = getContext().getContentResolver().query(
@@ -1226,7 +1264,7 @@ public class Doc2mdNativePlugin extends Plugin {
                 cursor.close();
             }
         }
-        return fallback;
+        return null;
     }
 
     // 页面被销毁时别把半截行留在库里（挂起行用户看不见，会一直 pending）。
@@ -1274,11 +1312,20 @@ public class Doc2mdNativePlugin extends Plugin {
             }
             ContentValues done = new ContentValues();
             done.put(MediaStore.Downloads.IS_PENDING, 0);
-            cr.update(target, done, null, null);
+            if (cr.update(target, done, null, null) <= 0) {
+                // F7：提交失败 ⇒ 删掉待发布行并报错（⛔ 留半截行 + 假装成功）。
+                try {
+                    cr.delete(target, null, null);
+                } catch (Exception ignored) {
+                }
+                throw new Exception("update IS_PENDING failed");
+            }
             ret.put("uri", target.toString());
             // 卡 060 / A3：回报 MediaStore **插入后的真实 DISPLAY_NAME**（重名 = "x (1).md"），
             // ⛔ 不再用请求名冒充 —— 卡 011 登记的真机坑是「两次都显示 x.md，指向一个不存在的文件」。
-            ret.put("filename", queryDisplayName(target, filename));
+            // F7：查不到 ⇒ 空名（调用方不写历史），⛔ 回退请求名。
+            String realName = queryDisplayName(target);
+            ret.put("filename", realName == null ? "" : realName);
             ret.put("location", "Downloads/" + DOWNLOAD_SUBDIR + " (MediaStore, user-visible)");
         } else {
             // 卡 044（A3）：API 24-28 走公开 Downloads 下的【子目录】—— 与 29+ 分支共用同一个常量。

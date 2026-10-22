@@ -7844,6 +7844,75 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(r.hasReset, true, '缺「重置记录」入口');
       });
 
+      await t.test('Z10-6b A1 keepHistory 严格布尔：缺省 / 字符串 / 数字 ⇒ corrupt', async () => {
+        const r = await page.evaluate(() => {
+          const h = window.__doc2md.history;
+          const mk = (keep) => JSON.stringify({ schemaVersion: 1, keepHistory: keep, records: [] });
+          return {
+            missing: h.parseState(JSON.stringify({ schemaVersion: 1, records: [] })).ok,
+            str: h.parseState(mk('false')).ok,
+            num: h.parseState(mk(0)).ok,
+            good: h.parseState(mk(false)).ok,
+          };
+        });
+        assert.equal(r.missing, false, '缺省 keepHistory 未判 corrupt');
+        assert.equal(r.str, false, '字符串 keepHistory 未判 corrupt');
+        assert.equal(r.num, false, '数字 keepHistory 未判 corrupt');
+        assert.equal(r.good, true, '合法布尔 keepHistory 被判 corrupt');
+      });
+
+      await t.test('Z10-6c A1/A9 写失败回滚：append 失败后内存与磁盘均不变', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'keep.md', uri: 'content://x/keep', bytes: 10 });
+          const before = JSON.stringify(h.getState().records);
+          const diskBefore = h.__diskJson();
+          h.__setBackend('memory', { failNextWrite: true });
+          const res = await h.append({ name: 'lost.md', uri: 'content://x/lost', bytes: 10 });
+          return {
+            ok: res && res.ok,
+            sameMem: JSON.stringify(h.getState().records) === before,
+            sameDisk: h.__diskJson() === diskBefore,
+          };
+        });
+        assert.equal(r.ok, false, '写失败仍报成功');
+        assert.equal(r.sameMem, true, '写失败后内存被污染');
+        assert.equal(r.sameDisk, true, '写失败后磁盘被污染');
+      });
+
+      await t.test('Z10-6d A11 不支持历史：数据层拒绝写入 / 行操作禁用', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'x.md', uri: 'content://x/1', bytes: 10 });
+          h.__setBackend('memory', { support: false, sdkInt: 28 });
+          await h.load();
+          await h.refresh();
+          const row = document.querySelector('#filesList .file-row');
+          const res = await h.append({ name: 'y.md', uri: 'content://x/2', bytes: 10 });
+          const removed = await h.remove('x');
+          return {
+            appendOk: res && res.ok,
+            removedOk: removed && removed.ok,
+            rows: document.querySelectorAll('#filesList .file-row').length,
+            shareDisabled: row ? row.querySelector('.file-share').disabled : null,
+            mainDisabled: row ? row.querySelector('.file-main').disabled : null,
+            supported: h.getState().support.supported,
+          };
+        });
+        assert.equal(r.supported, false, 'support 覆盖未生效');
+        assert.equal(r.appendOk, false, '不支持历史时 append 仍成功');
+        assert.equal(r.removedOk, false, '不支持历史时 remove 仍成功');
+        assert.equal(r.rows, 1, '不支持历史时行未渲染（A11 要求明说 + 可读）');
+        assert.equal(r.shareDisabled, true, '不支持历史时分享按钮未禁用');
+        assert.equal(r.mainDisabled, true, '不支持历史时行点击未禁用');
+      });
+
       await t.test('Z10-7 A5/A8 列表与搜索：行 / 计数 / 实时过滤 / 无匹配空态 / 清除', async () => {
         // A11：不支持历史的环境（浏览器 / API 24–28）必须在空态里明说，⛔ 静默。
         const browserNote = await page.evaluate(async () => {

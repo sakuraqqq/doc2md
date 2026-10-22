@@ -26,6 +26,7 @@ let backend = null;
 let backendKind = 'web';
 let loadError = null;
 let support = { supported: false, sdkInt: 0, reason: 'web' };
+let supportOverride = null;
 
 /** 空历史（schema v1）。keepHistory 默认开（拍板 A9：默认开）。 */
 export function emptyState() {
@@ -115,12 +116,14 @@ export function parseState(text) {
   const obj = safeParse(text);
   if (!obj) return { ok: false, error: 'corrupt' };
   if (obj.schemaVersion !== SCHEMA_VERSION) return { ok: false, error: 'schema' };
+  // F8：keepHistory 必须是**严格布尔** —— 缺省 / "false" / 0 一律判 corrupt（⛔ 静默改 true）。
+  if (typeof obj.keepHistory !== 'boolean') return { ok: false, error: 'corrupt' };
   if (!Array.isArray(obj.records)) return { ok: false, error: 'corrupt' };
   const records = collectRecords(obj.records);
   if (!records) return { ok: false, error: 'corrupt' };
   return {
     ok: true,
-    state: { schemaVersion: SCHEMA_VERSION, keepHistory: obj.keepHistory !== false, records },
+    state: { schemaVersion: SCHEMA_VERSION, keepHistory: obj.keepHistory, records },
   };
 }
 
@@ -256,17 +259,33 @@ function nativeBackendFor(plugin) {
   };
 }
 
+function applyMemoryOptions(o) {
+  if (typeof o.json === 'string') memoryBackend.json = o.json;
+  if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+  memoryBackend.delayMs = typeof o.delayMs === 'number' && o.delayMs > 0 ? o.delayMs : 0;
+}
+
+function supportOverrideOf(o) {
+  if (o.support !== false) return null;
+  return {
+    supported: false,
+    sdkInt: typeof o.sdkInt === 'number' ? o.sdkInt : 28,
+    reason: o.reason || 'forced-unsupported',
+  };
+}
+
 /** 选后端：测试可强制 memory；原生壳有插件走 native；否则 web（不保存历史）。 */
 export function __setBackend(kind, opts) {
   const o = opts || {};
   if (kind === 'memory') {
-    if (typeof o.json === 'string') memoryBackend.json = o.json;
-    if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
-    memoryBackend.delayMs = typeof o.delayMs === 'number' && o.delayMs > 0 ? o.delayMs : 0;
+    applyMemoryOptions(o);
+    // A11 测试缝：强制 simulate API 24–28 / 浏览器这类「不支持」的系统。
+    supportOverride = supportOverrideOf(o);
     backend = memoryBackend;
     backendKind = 'memory';
     return 'memory';
   }
+  supportOverride = null;
   if (kind === 'native') {
     const plugin = nativePlugin();
     backend = plugin ? nativeBackendFor(plugin) : webBackend;
@@ -324,6 +343,7 @@ async function loadNow() {
   } catch {
     support = { supported: false, sdkInt: 0, reason: 'error' };
   }
+  if (supportOverride) support = { ...supportOverride };
   const res = await b.load();
   if (!res.ok) return emptyLoadResult(res.error || 'read-failed');
   if (!res.json) {
@@ -392,7 +412,7 @@ export function append(input) {
 
 async function appendNow(input) {
   if (!state.keepHistory) return { ok: false, skipped: 'keep-off' };
-  if (backendKind === 'web') return { ok: false, skipped: 'unsupported' };
+  if (backendKind === 'web' || !support.supported) return { ok: false, skipped: 'unsupported' };
   const record = buildRecord(input);
   if (!record) return { ok: false, error: 'invalid-record' };
   const { next, evicted } = withEvictions(state.records, record);
@@ -407,6 +427,7 @@ export function remove(id) {
 }
 
 async function removeNow(id) {
+  if (!support.supported) return { ok: false, error: 'unsupported' };
   const target = String(id || '');
   const next = state.records.filter((r) => r.id !== target);
   if (next.length === state.records.length) return { ok: false, error: 'not-found' };
@@ -419,6 +440,7 @@ export function clear() {
 }
 
 async function clearNow() {
+  if (!support.supported) return { ok: false, error: 'unsupported' };
   const saved = await commit([]);
   if (saved.ok) loadError = null;
   return saved;
@@ -430,6 +452,7 @@ export function setKeep(on) {
 }
 
 async function setKeepNow(on) {
+  if (!support.supported) return { ok: false, error: 'unsupported' };
   const prev = state.keepHistory;
   state = { schemaVersion: SCHEMA_VERSION, keepHistory: on === true, records: state.records.slice() };
   const saved = await persist();
@@ -491,5 +514,6 @@ export function __reset() {
   backend = null;
   backendKind = 'web';
   support = { supported: false, sdkInt: 0, reason: 'web' };
+  supportOverride = null;
   writeChain = Promise.resolve();
 }

@@ -1265,6 +1265,8 @@ function initMarkdownViewer() {
 
 let filesQuery = '';
 let filesCleared = false;
+let checkFailed = false;
+let sessionLast = null;
 let activeTabName = 'convert';
 let invalidByUri = new Set();
 let checkErrorByUri = new Set();
@@ -1288,6 +1290,7 @@ function filesEls() {
     searchClose: byId('filesSearchClose'),
     searchCount: byId('filesSearchCount'),
     searchBtn: byId('filesSearchBtn'),
+    retry: byId('filesRetry'),
     searchReset: byId('filesSearchReset'),
     keepSwitch: byId('keepHistorySwitch'),
     keepSub: byId('keepHistorySub'),
@@ -1366,6 +1369,12 @@ function paintSearchButton(el, supported) {
   if (el.searchBar) el.searchBtn.setAttribute('aria-expanded', String(!el.searchBar.hidden));
 }
 
+// F9：整次核验失败 ≠ 文件不存在 —— 明示「状态未知」并给重试入口（⛔ 静默忽略）。
+function paintRetry(el, supported) {
+  if (!el.retry) return;
+  el.retry.hidden = !(supported && checkFailed);
+}
+
 function paintKeep(el, state, supported) {  if (el.keepSwitch) {
     el.keepSwitch.setAttribute('aria-checked', String(state.keepHistory !== false));
     el.keepSwitch.setAttribute('aria-disabled', String(!supported));
@@ -1395,6 +1404,7 @@ function paintChrome(state, shownCount, total) {
   paintMeta(el, shownCount, total);
   paintSearchCount(el, shownCount);
   paintSearchButton(el, supported);
+  paintRetry(el, supported);
   paintKeep(el, state, supported);
   paintClear(el, state, supported, total);
 }
@@ -1441,14 +1451,15 @@ function removeRecord(rec) {
     .catch(() => setStatus('移除记录失败', true));
 }
 
-function makeShareButton(rec, invalid) {
+function makeShareButton(rec, invalid, supported) {
   const share = document.createElement('button');
   share.type = 'button';
   share.className = 'file-share';
   // 分享语义 = 三点连线（Material share）；⛔ 用 ↗（会被读成「跳到外部/文件管理器」）。
   share.innerHTML = FILE_SVG.share;
   share.setAttribute('aria-label', '分享 ' + rec.name);
-  share.disabled = invalid;
+  // A11：不支持历史的系统上，行操作一并禁用（⛔ 只锁文案不锁操作）。
+  share.disabled = invalid || !supported;
   share.addEventListener('click', (e) => {
     e.stopPropagation();
     shareHistoryRecord(rec);
@@ -1469,11 +1480,12 @@ function makeRemoveButton(rec) {
   return rm;
 }
 
-function makeMainButton(rec, invalid) {
+function makeMainButton(rec, invalid, supported) {
   const main = document.createElement('button');
   main.type = 'button';
   main.className = 'file-main';
   main.setAttribute('aria-label', '打开 ' + rec.name);
+  main.disabled = !supported;
   const name = document.createElement('span');
   name.className = 'file-name';
   name.textContent = rec.name;
@@ -1485,15 +1497,15 @@ function makeMainButton(rec, invalid) {
   return main;
 }
 
-function renderRecordRow(rec) {
+function renderRecordRow(rec, supported) {
   const invalid = invalidByUri.has(rec.uri);
   const row = document.createElement('div');
   row.className = 'file-row' + (invalid ? ' invalid' : '');
   row.setAttribute('role', 'listitem');
   row.dataset.id = rec.id;
-  row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid));
-  if (invalid) row.append(makeRemoveButton(rec));
-  row.append(makeShareButton(rec, invalid));
+  row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid, supported));
+  if (invalid && supported) row.append(makeRemoveButton(rec));
+  row.append(makeShareButton(rec, invalid, supported));
   return row;
 }
 
@@ -1502,9 +1514,10 @@ function renderFilesPanel(state) {
   if (!el.panel) return;
   const all = state.records || [];
   const shown = filesQuery.trim() ? historySearch(filesQuery) : all;
+  const supported = Boolean(state.support && state.support.supported);
   if (el.list) el.list.innerHTML = '';
   if (el.list && shown.length) {
-    for (const rec of shown) el.list.append(renderRecordRow(rec));
+    for (const rec of shown) el.list.append(renderRecordRow(rec, supported));
   }
   paintChrome(state, shown.length, all.length);
   paintEmptyStates(state, shown.length, all.length);
@@ -1526,9 +1539,11 @@ function collectCheckResults(results) {
 async function verifyRecords(state) {
   invalidByUri = new Set();
   checkErrorByUri = new Set();
+  checkFailed = false;
   if (!(state.support && state.support.supported) || !state.records.length) return;
   const chk = await historyCheck(state.records);
   if (chk && chk.ok) collectCheckResults(chk.results);
+  else checkFailed = true; // F9：整次核验失败 ⇒ 「状态未知」，不冒充「文件都在」
 }
 
 /** 进入 / 刷新文件页：重读数据 + 逐条核验 uri（异常 ≠ 不存在）。 */
@@ -1543,6 +1558,25 @@ export async function refreshFilesPanel() {
 function updateLastConversion(state) {
   const empty = document.getElementById('lastEmpty');
   if (!empty) return;
+  // F5：本次会话的结果优先（keep-off 时它不在历史里，但用户刚转完，首页要能看到）。
+  if (sessionLast) {
+    empty.textContent =
+      '本次：' + (sessionLast.name || '（未命名）') +
+      (sessionLast.recorded ? ' · 已记入历史' : ' · 未记入历史（保留开关已关或未拿到真实名）') +
+      ' · 点此定位到「文件」';
+    empty.style.cursor = 'pointer';
+    empty.onclick = () => {
+      if (!sessionLast.recorded) {
+        setStatus('本次转换未记入历史（保留开关已关 / 未拿到真实文件名）；文件已保存，可在文件管理器中找到', true);
+        return;
+      }
+      activateTab('files');
+      const rec = state.records.find((r) => r.uri === sessionLast.uri);
+      if (rec) highlightRecord(rec.id);
+      else setStatus('本次记录不在历史里（可能已被清除或淘汰）', true);
+    };
+    return;
+  }
   const rec = state.records[0];
   if (!rec) {
     empty.textContent = '还没有转换记录 —— 转换完成后会显示在这里。';
@@ -1781,8 +1815,15 @@ function recordAppendResult(r) {
 /** 保存成功后写历史（A3：uri 非空 + bytes>0 + 真实名；失败可见但不回滚文件）。
  *  F1：返回 Promise —— 批量保存要**等每件历史提交完**，否则并发 append 会互相覆盖（实测 3 件只剩 1 条）。 */
 export function recordHistory(res, kind) {
-  if (!res || !res.uri || res.bytes <= 0 || !res.filename) return Promise.resolve({ ok: false, skipped: 'invalid' });
+  if (!res || !res.uri || res.bytes <= 0) return Promise.resolve({ ok: false, skipped: 'invalid' });
   const isZip = kind === 'zip';
+  if (!res.filename) {
+    // F7：拿不到真实文件名 ⇒ 不记录（避免把请求名当真实名写进历史），但文件已保存 ⇒ 明示。
+    sessionLast = { name: '', uri: res.uri, recorded: false };
+    nativeNotice('已保存，但历史记录未写入（未拿到真实文件名）', true);
+    return Promise.resolve({ ok: false, skipped: 'no-name' });
+  }
+  sessionLast = { name: res.filename, uri: res.uri, recorded: false };
   return historyAppend({
     name: res.filename,
     uri: res.uri,
@@ -1792,6 +1833,8 @@ export function recordHistory(res, kind) {
   })
     .then((r) => {
       recordAppendResult(r);
+      if (r && r.ok) sessionLast = { name: res.filename, uri: res.uri, recorded: true };
+      updateLastConversion(historyGetState());
       return r;
     })
     .catch(() => {
@@ -1823,6 +1866,7 @@ function wireHistoryControls(el) {
   if (el.reset) el.reset.addEventListener('click', () => resetHistory().catch(() => {}));
   if (el.keepSwitch) el.keepSwitch.addEventListener('click', () => toggleKeep());
   if (el.clearBtn) el.clearBtn.addEventListener('click', () => openClearDialog());
+  if (el.retry) el.retry.addEventListener('click', () => refreshFilesPanel().catch(() => {}));
 }
 
 function wireClearDialog(el) {
