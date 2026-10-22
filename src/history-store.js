@@ -199,8 +199,16 @@ function errMessage(e) {
 const memoryBackend = {
   json: '',
   failNextWrite: false,
+  checkFails: false,
   delayMs: 0,
   support: async () => ({ supported: true, sdkInt: 30, reason: 'memory' }),
+  // 测试用：整次核验（F9）故障注入；默认「都在」，不影响既有用例
+  check: async (uris) => {
+    if (memoryBackend.checkFails) {
+      return { ok: false, error: 'check-failed', results: [] };
+    }
+    return { ok: true, results: uris.map((uri) => ({ uri, exists: true })) };
+  },
   load: async () => ({ ok: true, json: memoryBackend.json || '' }),
   save: async (json) => {
     // 测试用：模拟慢写（F1 并发回归用；真实后端走原生 IPC）
@@ -262,6 +270,7 @@ function nativeBackendFor(plugin) {
 function applyMemoryOptions(o) {
   if (typeof o.json === 'string') memoryBackend.json = o.json;
   if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+  if (typeof o.checkFails === 'boolean') memoryBackend.checkFails = o.checkFails;
   memoryBackend.delayMs = typeof o.delayMs === 'number' && o.delayMs > 0 ? o.delayMs : 0;
 }
 
@@ -499,6 +508,10 @@ async function checkNative(records) {
 export async function check(records) {
   const list = (records || []).filter((r) => r && r.uri);
   if (!list.length) return { ok: true, results: [] };
+  // 测试后端走内存实现（可注入整次失败）；原生壳仍走 historyCheck
+  if (backendKind === 'memory' && typeof memoryBackend.check === 'function') {
+    return memoryBackend.check(list.map((r) => r.uri));
+  }
   return checkNative(list);
 }
 

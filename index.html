@@ -2736,8 +2736,16 @@ ${xlsxRowsToMd(kept)}`);
   var memoryBackend = {
     json: "",
     failNextWrite: false,
+    checkFails: false,
     delayMs: 0,
     support: async () => ({ supported: true, sdkInt: 30, reason: "memory" }),
+    // 测试用：整次核验（F9）故障注入；默认「都在」，不影响既有用例
+    check: async (uris) => {
+      if (memoryBackend.checkFails) {
+        return { ok: false, error: "check-failed", results: [] };
+      }
+      return { ok: true, results: uris.map((uri) => ({ uri, exists: true })) };
+    },
     load: async () => ({ ok: true, json: memoryBackend.json || "" }),
     save: async (json) => {
       if (memoryBackend.delayMs > 0) {
@@ -2792,6 +2800,7 @@ ${xlsxRowsToMd(kept)}`);
   function applyMemoryOptions(o) {
     if (typeof o.json === "string") memoryBackend.json = o.json;
     if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+    if (typeof o.checkFails === "boolean") memoryBackend.checkFails = o.checkFails;
     memoryBackend.delayMs = typeof o.delayMs === "number" && o.delayMs > 0 ? o.delayMs : 0;
   }
   function supportOverrideOf(o) {
@@ -2988,6 +2997,9 @@ ${xlsxRowsToMd(kept)}`);
   async function check(records) {
     const list = (records || []).filter((r) => r && r.uri);
     if (!list.length) return { ok: true, results: [] };
+    if (backendKind === "memory" && typeof memoryBackend.check === "function") {
+      return memoryBackend.check(list.map((r) => r.uri));
+    }
     return checkNative(list);
   }
   function __diskJson() {
@@ -4155,8 +4167,9 @@ ${xlsxRowsToMd(kept)}`);
     return "never";
   }
   function filesMetaText(shownCount, total) {
-    if (filesQuery.trim()) return "\u5339\u914D " + shownCount + " / \u5171 " + total + " \u9879";
-    if (total > 0) return "\u5171 " + total + " \u9879 \xB7 \u4FDD\u5B58\u5728 Download/WenZhuanMD";
+    const unknown = checkFailed ? " \xB7 \u6838\u9A8C\u5931\u8D25\uFF0C\u6587\u4EF6\u72B6\u6001\u672A\u77E5" : "";
+    if (filesQuery.trim()) return "\u5339\u914D " + shownCount + " / \u5171 " + total + " \u9879" + unknown;
+    if (total > 0) return "\u5171 " + total + " \u9879 \xB7 \u4FDD\u5B58\u5728 Download/WenZhuanMD" + unknown;
     return "\u5171 0 \u9879";
   }
   function paintMeta(el, shownCount, total) {

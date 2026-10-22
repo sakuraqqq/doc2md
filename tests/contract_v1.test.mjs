@@ -7913,6 +7913,42 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(r.mainDisabled, true, '不支持历史时行点击未禁用');
       });
 
+      await t.test('Z10-6e A5 整次核验失败 ⇒ 状态未知 + 重试入口（⛔ 静默当作都在）', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '', checkFails: true });
+          await h.load();
+          await h.append({ name: 'unknown.md', uri: 'content://x/u1', bytes: 10 });
+          await h.refresh();
+        });
+        // 真机路径下用户在「文件」页：先切 Tab，否则按钮虽未 hidden 但整页不可见
+        await page.click('#tab-files');
+        await page.waitForTimeout(150);
+        const failed = await page.evaluate(() => ({
+          retryHidden: document.getElementById('filesRetry').hidden,
+          meta: document.getElementById('filesMeta').textContent,
+          rows: document.querySelectorAll('#filesList .file-row').length,
+          invalid: document.querySelectorAll('#filesList .file-row.invalid').length,
+          shareDisabled: document.querySelector('#filesList .file-share').disabled,
+        }));
+        assert.equal(failed.retryHidden, false, '核验失败未显示重试入口');
+        assert.ok(failed.meta.includes('状态未知'), '核验失败未明示「状态未知」：' + failed.meta);
+        assert.equal(failed.rows, 1, '核验失败把行弄没了');
+        assert.equal(failed.invalid, 0, '核验失败被当成「文件不存在」');
+        assert.equal(failed.shareDisabled, false, '核验失败时分享被误禁用');
+        // 排除故障后走真实用户路径：点「重试核验」⇒ 本次成功、入口消失
+        await page.evaluate(() => window.__doc2md.history.__setBackend('memory', { checkFails: false }));
+        await page.click('#filesRetry');
+        await page.waitForTimeout(200);
+        const retried = await page.evaluate(() => ({
+          retryHidden: document.getElementById('filesRetry').hidden,
+          meta: document.getElementById('filesMeta').textContent,
+        }));
+        assert.equal(retried.retryHidden, true, '重试成功后入口未消失');
+        assert.ok(!retried.meta.includes('状态未知'), '重试成功后仍标状态未知：' + retried.meta);
+      });
+
       await t.test('Z10-7 A5/A8 列表与搜索：行 / 计数 / 实时过滤 / 无匹配空态 / 清除', async () => {
         // A11：不支持历史的环境（浏览器 / API 24–28）必须在空态里明说，⛔ 静默。
         const browserNote = await page.evaluate(async () => {

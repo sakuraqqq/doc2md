@@ -1344,8 +1344,10 @@ function emptyKind(state, shownCount, total) {
 }
 
 function filesMetaText(shownCount, total) {
-  if (filesQuery.trim()) return '匹配 ' + shownCount + ' / 共 ' + total + ' 项';
-  if (total > 0) return '共 ' + total + ' 项 · 保存在 Download/WenZhuanMD';
+  // F9：整次核验失败 ⇒ 页头明示「状态未知」，⛔ 把「没核验」冒充「文件都在」
+  const unknown = checkFailed ? ' · 核验失败，文件状态未知' : '';
+  if (filesQuery.trim()) return '匹配 ' + shownCount + ' / 共 ' + total + ' 项' + unknown;
+  if (total > 0) return '共 ' + total + ' 项 · 保存在 Download/WenZhuanMD' + unknown;
   return '共 0 项';
 }
 
