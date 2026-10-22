@@ -300,7 +300,7 @@ async function convert(file /* File */) -> Promise<{
 
 - 行点击：`.md` → 内置查看器（`readContentUri` 经 `ContentResolver` 读，≤4 Mi 字符 + 截断标记；复用 058 `openMarkdownViewer`）；`.zip` → `ACTION_VIEW` + content URI + `FLAG_GRANT_READ_URI_PERMISSION` + `ClipData`；失败可见且分享仍可用。⛔ 用 `ACTION_SEND` 代替打开。
 - 右侧图标：`ACTION_SEND` + `EXTRA_STREAM` = content URI + 正确 MIME + 临时读授权 + `ClipData` + `createChooser`；真机验收要求**接收方实际打开 / 保存**（只看面板弹出不算过）。
-- **分享 MIME 兼容**（2026-10-23 真机）：`.md` 用 `application/octet-stream` 分享 —— QQ 收到 `text/markdown` 会当**文本预览**（只存进「QQ > 文件」，没有发送动作，用户实测「跳转了但没发出去」）；zip 仍 `application/zip`。接收方读到的字节不变。
+- **分享 MIME（兼容例外 · 2026-10-23 拍板 A）**：文件分享 Intent 的 `.md` = `application/octet-stream` —— QQ 收到 `text/markdown` 会当**文本预览**（只存进「QQ > 文件」，没有发送动作）。⚠️ 这是**兼容性例外**，⛔ 不得描述为 Android 官方推荐标准。MediaStore 保存的 MIME 仍为 `text/markdown`、扩展名保持 `.md`；ZIP 分享仍 `application/zip`；⛔ `*/*`、⛔ 按目标应用分流。接收方读到的字节不变。
 - ⛔ 不引入 FileProvider（卡 013 删掉的不是原样恢复）；分享 / 打开只用 MediaStore `content://` + 临时授权。⛔ 新增任何权限（release 仍只有 `INTERNET`）。
 
 ### 10.5 支持矩阵（写死；Z10 与真机共用）
@@ -314,7 +314,7 @@ async function convert(file /* File */) -> Promise<{
 
 ### 10.6 交互口径
 
-- 搜索框**常显**在列表上方（2026-10-23 口径：与转换结果搜索同一形态，不再用 app bar 图标；`type="text"` + `inputmode="search"` + `enterkeyhint="search"`，⛔ `type="search"` 双 X）；输入时**框内实时「匹配 N」** + 页头 `匹配 N / 共 M 项`；按键盘「搜索」键 ⇒ 跳到首条匹配并高亮 1.6 s；无匹配独立空态；切走 Tab 清空关键词；搜索不改数据。
+- 搜索 = **app bar 图标 → 点击展开输入框 → `✕` 收起**（2026-10-23 拍板恢复卡面 / v8 形态；⛔ 列表上方常显框）：图标只在「文件」页显示，展开后 app bar 进搜索态（标题/图标让位）且输入框聚焦，收起时清空关键词；`type="text"` + `inputmode="search"` + `enterkeyhint="search"`（⛔ `type="search"` 双 X）；输入时**框内实时「匹配 N」** + 页头 `匹配 N / 共 M 项`；按键盘「搜索」键 ⇒ 跳到首条匹配并高亮 1.6 s；无匹配独立空态；切走 Tab 退出搜索；搜索不改数据。
 - 清除：设置「历史」组入口 → 二次确认（focus trap / Esc 取消）→ 只清记录、`keepHistory` 不变；空态「历史记录已清除」。
 - 保留开关默认开；关闭后新转换不写、旧记录保留、当前结果仍可查看 / 分享；状态跨重启持久。
 - 「上次转换」读**同一数据源**（本次会话结果优先，否则最近一条记录）；点击切「文件」Tab + 滚动定位 + 高亮；⛔ 另造第二份数据。

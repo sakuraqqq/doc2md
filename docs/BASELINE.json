@@ -4,27 +4,27 @@
   "contract": {
     "local_with_fixtures": {
       "counts": {
-        "total": 399,
-        "pass": 397,
+        "total": 404,
+        "pass": 402,
         "fail": 0,
         "skip": 2
       },
       "measured": {
-        "at": "2026-10-22",
-        "source": "2026-10-22 卡 060 实测（本机）：npm test → # tests 399 / # pass 397 / # fail 0 / # skipped 2（= 059 末值 388/386 再 + Z10 十一项）。Z10 新增 11 条（Z10-0…Z10-9 + 组壳）；先红 10/11（改前产物无 __doc2md.history）→ 后绿 11/11。TAP：.私档/卡/c060/证据/c060-local-r1.tap（先红/后绿分档 z10-red.tap / z10-green.tap 同目录）。"
+        "at": "2026-10-23",
+        "source": "2026-10-23 卡 060 退回重修实测（本机）：npm test → # tests 404 / # pass 402 / # fail 0 / # skipped 2（= 399/397 + 5 条新断言 Z10-2b/6b/6c/6d/7b）。Z10 共 16 条全绿；F1 红绿证据 .私档/卡/c060/证据/f1-race-redgreen.tap（旧实现磁盘 1 条 → 新实现 3 条）。TAP：.私档/卡/c060/证据/c060-rework-20261023.tap（119,013 B / 4FEF15F6…）。"
       },
       "scope": "本机口径：.私档/传输-手机-20260918 四档夹具在位 ⇒ 组 Y 真跑（组壳+Y1+Y2+Y3，全绿）；卡 002 前为 271/3（组 Y 预期先红：Y2 无 meta.scan · Y3 超 5s · 组壳）。与 CI 口径不可混用"
     },
     "ci_clean_checkout": {
       "counts": {
-        "total": 396,
-        "pass": 393,
+        "total": 401,
+        "pass": 398,
         "fail": 0,
         "skip": 3
       },
       "measured": {
-        "at": "2026-10-22",
-        "source": "2026-10-22 卡 060（CI 口径）：按既有映射推得 # tests 396 / # pass 393 / # fail 0 / # skipped 3（= 385/382/0/3 + Z10 十一项；相对本机 399/397/0/2 = total −3 / pass −4 / skip +1，口径未变）。已对账：CI run 39817173204（PR #86，2026-10-22）TAP 步实测 396/393/0/3，--from-tap 逐项一致。"
+        "at": "2026-10-23",
+        "source": "2026-10-23 卡 060 退回重修（CI 口径）：按既有映射推得 # tests 401 / # pass 398 / # fail 0 / # skipped 3（= 本机 404/402/0/2 ⇒ total −3 / pass −4 / skip +1，口径未变）。上一轮 396/393 已由 CI run 39817173204 对账；本轮待推送后由 CI 的 --from-tap 步确认。"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }
