@@ -8065,6 +8065,51 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(r.missing, 'application/octet-stream', '缺 mime 时未回落文件型 MIME');
       });
 
+      await t.test('Z10-7c A7 分享状态终态：成功 ⇒ 已打开分享；失败 ⇒ 可见错误（⛔ 停在「正在打开」）', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'share-a.md', uri: 'content://x/a', bytes: 12 });
+          await h.refresh();
+          document.getElementById('tab-files').click();
+          window.__shareCalls = [];
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                shareContentUri: (arg) => {
+                  window.__shareCalls.push(arg);
+                  return Promise.resolve({ ok: true });
+                },
+              },
+            },
+          };
+        });
+        await page.waitForTimeout(150);
+        await page.click('#filesList .file-share');
+        await page.waitForTimeout(300);
+        const okState = await page.evaluate(() => ({
+          status: (document.getElementById('status') || {}).textContent || '',
+          calls: window.__shareCalls,
+        }));
+        assert.equal(okState.calls.length, 1, '分享未调用原生 shareContentUri');
+        assert.equal(okState.calls[0].mime, 'application/octet-stream', 'md 分享 MIME 不是兼容例外');
+        assert.ok(okState.status.includes('已打开分享'), '分享成功后状态未给终态：' + okState.status);
+        assert.ok(!okState.status.includes('正在打开'), '分享成功后仍停在「正在打开分享」：' + okState.status);
+
+        await page.evaluate(() => {
+          window.Capacitor.Plugins.Doc2mdNative.shareContentUri = () => Promise.resolve({ ok: false, error: 'boom' });
+        });
+        await page.click('#filesList .file-share');
+        await page.waitForTimeout(300);
+        const failState = await page.evaluate(() => (document.getElementById('status') || {}).textContent || '');
+        assert.ok(failState.includes('分享失败'), '分享失败不可见：' + failState);
+        await page.evaluate(() => {
+          delete window.Capacitor;
+        });
+      });
+
       await t.test('Z10-8 A9 清除：二次确认、取消不变、确认只清记录、keep 不变', async () => {
         await page.evaluate(async () => {
           const h = window.__doc2md.history;

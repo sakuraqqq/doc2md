@@ -1671,6 +1671,9 @@ async function shareHistoryRecord(rec) {
   try {
     const res = await plugin.shareContentUri({ uri: rec.uri, mime: shareMimeOf(rec), name: rec.name });
     if (!res || res.ok !== true) setStatus(shareFailMessage(res), true);
+    // 2026-10-23 真机反馈：成功后状态一直停在「正在打开分享……」⇒ 必须给出终态（⛔ 不宣称「已发送」）
+    else setStatus('已打开分享：' + rec.name);
+
   } catch (e) {
     setStatus('分享失败：' + (e && e.message ? e.message : '未知错误'), true);
   }
