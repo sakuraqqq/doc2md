@@ -3252,8 +3252,10 @@ ${xlsxRowsToMd(kept)}`);
       }
     }
     const where = isNativeRuntime() ? "\u4E0B\u8F7D/WenZhuanMD" : "\u6D4F\u89C8\u5668\u4E0B\u8F7D\u76EE\u5F55";
-    const msg = failed === 0 ? "\u2705 \u5DF2\u4FDD\u5B58 " + ok + " \u4E2A .md \u5230\u300C" + where + "\u300D" : "\u5DF2\u4FDD\u5B58 " + ok + " \u4E2A / " + failed + " \u4E2A\u5931\u8D25\uFF08\u5171 " + (ok + failed) + " \u4E2A\uFF09";
-    setStatus(msg, failed > 0);
+    const note = recordSkipNote;
+    recordSkipNote = "";
+    const msg = saveSummary(ok, failed, where, note);
+    setStatus(msg, failed > 0 || Boolean(note));
     if (isNativeRuntime()) showToast(msg, failed > 0);
     return { ok, failed };
   }
@@ -4181,9 +4183,9 @@ ${xlsxRowsToMd(kept)}`);
     el.searchCount.hidden = !on;
     el.searchCount.textContent = on ? "\u5339\u914D " + shownCount : "";
   }
-  function paintSearchButton(el, supported) {
+  function paintSearchButton(el) {
     if (!el.searchBtn) return;
-    el.searchBtn.hidden = !(supported && activeTabName === "files");
+    el.searchBtn.hidden = activeTabName !== "files";
     if (el.searchBar) el.searchBtn.setAttribute("aria-expanded", String(!el.searchBar.hidden));
   }
   function paintRetry(el, supported) {
@@ -4213,7 +4215,7 @@ ${xlsxRowsToMd(kept)}`);
     const supported = Boolean(state2.support && state2.support.supported);
     paintMeta(el, shownCount, total);
     paintSearchCount(el, shownCount);
-    paintSearchButton(el, supported);
+    paintSearchButton(el);
     paintRetry(el, supported);
     paintKeep(el, state2, supported);
     paintClear(el, state2, supported, total);
@@ -4552,6 +4554,11 @@ ${xlsxRowsToMd(kept)}`);
       renderFilesPanel(getState());
     }).catch(() => setStatus("\u4FDD\u7559\u5F00\u5173\u4FDD\u5B58\u5931\u8D25", true));
   }
+  var recordSkipNote = "";
+  function saveSummary(ok, failed, where, note) {
+    const base = failed === 0 ? "\u2705 \u5DF2\u4FDD\u5B58 " + ok + " \u4E2A .md \u5230\u300C" + where + "\u300D" : "\u5DF2\u4FDD\u5B58 " + ok + " \u4E2A / " + failed + " \u4E2A\u5931\u8D25\uFF08\u5171 " + (ok + failed) + " \u4E2A\uFF09";
+    return note ? base + " \xB7 " + note : base;
+  }
   async function resetHistory() {
     const r = await clear();
     if (!r || !r.ok) {
@@ -4571,6 +4578,11 @@ ${xlsxRowsToMd(kept)}`);
       return;
     }
     if (r && r.skipped === "keep-off") return;
+    if (r && r.skipped === "unsupported") {
+      recordSkipNote = "\u672A\u8BB0\u5165\u5386\u53F2\uFF08\u9700 Android 10+\uFF09";
+      nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u672A\u8BB0\u5F55\uFF1A\u9700 Android 10+\uFF08\u5F53\u524D\u7CFB\u7EDF\u4E0D\u652F\u6301\u5386\u53F2\u8BB0\u5F55\uFF09", true);
+      return;
+    }
     nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
   }
   function recordHistory(res, kind) {
@@ -5331,6 +5343,8 @@ ${p.text}
     },
     openExternal: openExternalDocument,
     normalizeExternalText,
+    /* A11 / R2-03 测试缝：批量保存汇总句（纯函数） */
+    saveSummary,
     /* 卡 060 / 2-5：转换历史库（数据层 + 刷新入口；测试缝与实现共用同一份函数） */
     history: {
       load,

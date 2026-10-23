@@ -346,11 +346,10 @@ export async function saveAllArtifacts(items) {
     }
   }
   const where = isNativeRuntime() ? '下载/WenZhuanMD' : '浏览器下载目录';
-  const msg =
-    failed === 0
-      ? '✅ 已保存 ' + ok + ' 个 .md 到「' + where + '」'
-      : '已保存 ' + ok + ' 个 / ' + failed + ' 个失败（共 ' + (ok + failed) + ' 个）';
-  setStatus(msg, failed > 0);
+  const note = recordSkipNote;
+  recordSkipNote = '';
+  const msg = saveSummary(ok, failed, where, note);
+  setStatus(msg, failed > 0 || Boolean(note));
   if (isNativeRuntime()) showToast(msg, failed > 0);
   return { ok, failed };
 }
@@ -1365,9 +1364,11 @@ function paintSearchCount(el, shownCount) {
 
 // 卡 060 / A8/A16（2026-10-23 拍板一）：恢复 v8 交互 —— app bar 搜索图标只在「文件」页出现；
 // 点击展开输入框（app bar 让位），关闭恢复图标。⛔ 不再用列表上方常显搜索框。
-function paintSearchButton(el, supported) {
+// R2-02（2026-10-23 第二轮退回）：搜索图标只取决于「当前 Tab」，⛔ 与历史写入支持位耦合 ——
+// SDK 28 上列表/搜索仍可用（A11 支持矩阵），图标不能因为「不支持写入」而消失。
+function paintSearchButton(el) {
   if (!el.searchBtn) return;
-  el.searchBtn.hidden = !(supported && activeTabName === 'files');
+  el.searchBtn.hidden = activeTabName !== 'files';
   if (el.searchBar) el.searchBtn.setAttribute('aria-expanded', String(!el.searchBar.hidden));
 }
 
@@ -1405,7 +1406,7 @@ function paintChrome(state, shownCount, total) {
   const supported = Boolean(state.support && state.support.supported);
   paintMeta(el, shownCount, total);
   paintSearchCount(el, shownCount);
-  paintSearchButton(el, supported);
+  paintSearchButton(el);
   paintRetry(el, supported);
   paintKeep(el, state, supported);
   paintClear(el, state, supported, total);
@@ -1796,6 +1797,17 @@ function toggleKeep() {
     .catch(() => setStatus('保留开关保存失败', true));
 }
 
+/** R2-03：本批保存里是否有「未记入历史（需 Android 10+）」——批量汇总必须带出来，⛔ 被成功句覆盖 */
+let recordSkipNote = '';
+
+/** 批量保存汇总句（纯函数；R2-03 的原因后缀不得丢） */
+export function saveSummary(ok, failed, where, note) {
+  const base = failed === 0
+    ? '✅ 已保存 ' + ok + ' 个 .md 到「' + where + '」'
+    : '已保存 ' + ok + ' 个 / ' + failed + ' 个失败（共 ' + (ok + failed) + ' 个）';
+  return note ? base + ' · ' + note : base;
+}
+
 async function resetHistory() {
   const r = await historyClear();
   if (!r || !r.ok) {
@@ -1814,6 +1826,12 @@ function recordAppendResult(r) {
     return;
   }
   if (r && r.skipped === 'keep-off') return;
+  // R2-03：不支持历史的系统必须给专有说明（需 Android 10+），⛔ 泛化成「未写入」
+  if (r && r.skipped === 'unsupported') {
+    recordSkipNote = '未记入历史（需 Android 10+）';
+    nativeNotice('已保存，但历史未记录：需 Android 10+（当前系统不支持历史记录）', true);
+    return;
+  }
   nativeNotice('已保存，但历史记录未写入', true);
 }
 

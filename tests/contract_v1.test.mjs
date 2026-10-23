@@ -7911,6 +7911,11 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(r.rows, 1, '不支持历史时行未渲染（A11 要求明说 + 可读）');
         assert.equal(r.shareDisabled, true, '不支持历史时分享按钮未禁用');
         assert.equal(r.mainDisabled, true, '不支持历史时行点击未禁用');
+        // R2-02：列表/搜索在 SDK 28 仍可用 ⇒ 搜索图标不得因「不支持写入」而消失
+        await page.click('#tab-files');
+        await page.waitForTimeout(120);
+        const searchBtnHidden = await page.evaluate(() => document.getElementById('filesSearchBtn').hidden);
+        assert.equal(searchBtnHidden, false, '不支持历史时搜索图标被隐藏（列表/搜索应仍可用）');
       });
 
       await t.test('Z10-6e A5 整次核验失败 ⇒ 状态未知 + 重试入口（⛔ 静默当作都在）', async () => {
@@ -8108,6 +8113,20 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         await page.evaluate(() => {
           delete window.Capacitor;
         });
+      });
+
+      await t.test('Z10-6f A11 批量保存汇总：未记入历史的原因不被成功句覆盖', async () => {
+        const r = await page.evaluate(() => {
+          const build = window.__doc2md.saveSummary;
+          return {
+            plain: build(3, 0, '下载/WenZhuanMD', ''),
+            unsupported: build(3, 0, '下载/WenZhuanMD', '未记入历史（需 Android 10+）'),
+            failed: build(1, 2, '下载/WenZhuanMD', ''),
+          };
+        });
+        assert.ok(r.plain.includes('已保存 3 个'), '成功句丢了：' + r.plain);
+        assert.ok(r.unsupported.includes('需 Android 10+'), '未记入历史的原因被汇总抹掉：' + r.unsupported);
+        assert.ok(r.failed.includes('2 个失败'), '失败统计丢了：' + r.failed);
       });
 
       await t.test('Z10-8 A9 清除：二次确认、取消不变、确认只清记录、keep 不变', async () => {
