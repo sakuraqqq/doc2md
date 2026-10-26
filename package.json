@@ -22,25 +22,25 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.1",
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "dompurify": "3.4.17",
     "esbuild": "^0.28.2",
-    "eslint": "^10.10.0",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-sonarjs": "^4.2.0",
-    "globals": "^17.12.0",
-    "jscpd": "^5.2.1",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "globals": "^17.13.0",
+    "jscpd": "^5.4.2",
     "marked": "18.1.1",
     "pdfjs-dist": "^3.11.174",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.10",
     "read-excel-file": "^5.8.7",
     "tesseract.js": "^6.0.1"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.2",
-    "@capacitor/cli": "^8.5.2",
-    "@capacitor/core": "^8.5.2"
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3"
   }
 }
