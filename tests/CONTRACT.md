@@ -798,15 +798,31 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 | Z10-0 | A1 数据层：`src/history-store.js` 存在；`LIMIT = 200` **唯一一处**；无 localStorage / sessionStorage / indexedDB / fetch / XHR / WebSocket（先剥注释再扫） | 静态 | ✅ 绿（2026-10-22 卡 060） |
 | Z10-1 | A1/A3/A6/A7 原生：`doc2md-history.json` + `.tmp` + `getFD().sync()` **先于** `renameTo`；`writeTextToDownloads` 回查真实 `DISPLAY_NAME`；打开 = `ACTION_VIEW` + 读授权 + `ClipData`；分享 = `ACTION_SEND` + `EXTRA_STREAM` + `createChooser`；`historyCheck` 区分 `FileNotFoundException`；release manifest 仅 INTERNET 且无 `<provider>`（剥注释） | 静态 | ✅ 绿 |
 | Z10-2 | A2 200/201：恰好 200 不淘汰；第 201 条后仍 200、新记录在列、`createdAt` 最小者被淘汰、恰好 1 条 | 运行时（memory 后端） | ✅ 绿 |
+| Z10-2b | **F1 批量并发**：3 件同时 `append` + **慢写**（延迟写桩）⇒ 内存与磁盘都 **3 条**；迟到旧写不得覆盖新写 | 运行时（memory 后端 + 慢写桩） | ✅ 绿（2026-10-23 退回重修） |
 | Z10-3 | A2/A8 顺序与搜索：`createdAt` 倒序；同毫秒按插入序（后插入在前）；搜索大小写不敏感子串且**不改**数组 / 顺序 / `createdAt` | 运行时 | ✅ 绿 |
 | Z10-4 | A4 稳定 ID：同名两条 id 不同且为 UUID v4；按 id 只删一条 | 运行时 | ✅ 绿 |
 | Z10-5 | A9 保留开关：off 不写、旧记录保留、跨 `load` 持久 | 运行时 | ✅ 绿 |
 | Z10-6 | A1 损坏可见：坏 JSON ⇒ `corrupt` + 文件页「历史记录读取失败」+ 重置入口 | 运行时 DOM | ✅ 绿 |
-| Z10-7 | A5/A8 列表与搜索：行 / 计数 / 大小 / 分享 `aria-label`；实时过滤；`匹配 N / 共 M 项`；无匹配空态；清除搜索恢复全量；切走 Tab 自动退出搜索 | 运行时 DOM | ✅ 绿 |
+| Z10-6b | A1 `keepHistory` **严格布尔**：缺省 / 字符串 / 数字 ⇒ `corrupt`（⛔ 静默改成 true） | 运行时 | ✅ 绿 |
+| Z10-6c | A1/A9 写失败回滚：`append` 失败 ⇒ 内存与磁盘**均不变**（⛔ 只验数据层；UI 提示不在本断言内） | 运行时（memory 后端） | ✅ 绿 |
+| Z10-6d | A11 不支持历史（SDK 28 / 浏览器）：数据层拒绝 `append` / `remove`；行点击与分享**禁用**；行仍可读；**搜索图标仍显示**（R2-02：只依赖当前 Tab） | 运行时 | ✅ 绿 |
+| Z10-6e | A5 整次核验失败（`check` 返回 `ok:false` / 抛错）⇒ 页头明示「核验失败，文件状态未知」+「重试核验」入口；**行保留、不判失效、分享不禁用**；重试成功后入口消失 | 运行时 DOM | ✅ 绿 |
+| Z10-6f | A11/R2-03 批量保存汇总：`未记入历史（需 Android 10+）` 是**后缀**，⛔ 被「✅ 已保存 N 个」覆盖；失败统计同样保留 | 纯函数（`window.__doc2md.saveSummary`） | ✅ 绿 |
+| Z10-7 | A5/A8 列表与搜索：行 / 计数 / 大小 / 分享 `aria-label`；**app bar 搜索图标仅文件页显示 → 点击展开输入框并聚焦（app bar 进搜索态）→ `✕` 收起且清空**；实时过滤；框内「匹配 N」+ 页头 `匹配 N / 共 M 项`；回车跳首条并高亮；无匹配空态；清除搜索恢复全量；切走 Tab 退出搜索 | 运行时 DOM | ✅ 绿 |
+| Z10-7b | A7 分享 MIME（拍板 A · 兼容例外）：`.md` ⇒ `application/octet-stream`；`.zip` ⇒ `application/zip`；缺 mime 回落文件型 | 纯函数 | ✅ 绿 |
+| Z10-7c | A7 分享**状态终态**：成功 ⇒ 「已打开分享：名」；失败 ⇒ 可见「分享失败」；⛔ 成功后停在「正在打开分享……」 | 运行时 DOM（原生桩） | ✅ 绿 |
 | Z10-8 | A9 清除：二次确认；Esc 取消不改记录；确认后记录 0、keep 不变、计数归零、「历史记录已清除」空态 | 运行时 DOM | ✅ 绿 |
-| Z10-9 | A13 产物：`index.html` 含 `filesList` / `clearDialog` / `keepHistorySwitch` / `filesSearchBtn` / `__setBackend` 测试缝 | 静态产物 | ✅ 绿 |
+| Z10-9 | A13 产物：`index.html` 含 `filesList` / `clearDialog` / `keepHistorySwitch` / `filesSearchBar` / `filesSearchBtn` / `filesSearchClose` / `sessionResult` / `__setBackend` 测试缝 | 静态产物 | ✅ 绿 |
+| Z10-11 | A16/§17：三 Tab 顶栏栏高一致（文件页搜索按钮不再撑高 45 物理像素），搜索展开/收起不改变框架高度 | 运行时 DOM | ✅ 绿 |
+| Z10-10 | A10/R2-01（拍板 A）：结果面板出现后「本次结果」入口**可见可点**（宽高 > 0）；keep-off ⇒ 点击说明真实原因并**留在当前结果**；已记入 ⇒ 点击切「文件」页并高亮该记录 | 运行时 DOM | ✅ 绿 |
 
-**两相实测（本机 · 卡 060）**：改前（HEAD `46414b5` 的 `index.html` 217,751 B / `5470A6D8…` + 无 `src/history-store.js`）⇒ Z10 **`# tests 11 / # pass 1 / # fail 10`**（红因：`window.__doc2md.history` 不存在；TAP `.私档/卡/c060/证据/z10-red.tap`）→ 实现后 **11 / 11**（`.私档/卡/c060/证据/z10-green.tap`）。全量 **399 / 397 / 0 / 2**（= 059 末值 388/386 **+** Z10 十一项；CI 口径按同一映射 **396 / 393 / 0 / 3**，待真 CI run 对账）。`index.html` **217,751 B / `5470A6D8…` → 258,153 B / `F4CD544E…`**（构建幂等；`www/` 同源）。真机验收后按维护者口径修整（同卡范围）：① 文件行图标换线性 SVG（文档/压缩包/丢失/分享/删除），删除改图标按钮 + `aria-label`；② 文件页搜索改**列表上方常显搜索框**（与转换结果搜索同一形态，去掉 app bar 图标），框内实时「匹配 N」，按键盘「搜索」键**跳到首条并高亮 1.6 s**；③ 修 `<button class="file-main">` 默认底色（行中间灰块）；④ `.md` 分享 MIME 改 `application/octet-stream`（QQ 把 `text/markdown` 当文本预览、不发文件；zip 不变）；⑤ 补 `#filesEmptySub` 让「不支持历史」文案能落进空态；⑥ 诊断日志 `status` 行不再落文案（原样落文案会把真实文件名写进 `.log`）；⑦ 转换页空态/选择卡片去掉「拖放」措辞（手机无拖放）。
+**两相实测（本机 · 卡 060）**：改前（HEAD `46414b5` 的 `index.html` 217,751 B / `5470A6D8…` + 无 `src/history-store.js`）⇒ Z10 **`# tests 11 / # pass 1 / # fail 10`**（红因：`window.__doc2md.history` 不存在；TAP `.私档/卡/c060/证据/z10-red.tap`）→ 实现后 **11 / 11**（`.私档/卡/c060/证据/z10-green.tap`）。全量 **399 / 397 / 0 / 2**（= 059 末值 388/386 **+** Z10 十一项；CI 口径按同一映射 **396 / 393 / 0 / 3**，已由 CI run `39817173204` 对账）。`index.html` **217,751 B / `5470A6D8…` → 258,153 B / `F4CD544E…`**（构建幂等；`www/` 同源）。真机验收后按维护者口径修整（同卡范围）：① 文件行图标换线性 SVG（文档/压缩包/丢失/分享/删除），删除改图标按钮 + `aria-label`；② 文件页搜索一度改成常显框（**2026-10-23 对抗验收后按拍板恢复 app bar 图标**，见下段）；③ 修 `<button class="file-main">` 默认底色（行中间灰块）；④ `.md` 分享 MIME 改 `application/octet-stream`（QQ 把 `text/markdown` 当文本预览、不发文件；zip 不变）；⑤ 补 `#filesEmptySub` 让「不支持历史」文案能落进空态；⑥ 诊断日志 `status` 行不再落文案（原样落文案会把真实文件名写进 `.log`）；⑦ 转换页空态/选择卡片去掉「拖放」措辞（手机无拖放）。
+
+**2026-10-23 退回重修（对抗验收 FAIL · 卡面 §14/§15）**：F1 单写队列（`writeChain`）+ `recordHistory` 返回 Promise、`saveAllArtifacts` 等每件历史提交 ⇒ **Z10-2b**（红绿证据 `.私档/卡/c060/证据/f1-race-redgreen.tap`：旧实现磁盘 1 条 → 新实现 3 条）；F2 搜索恢复 app bar 图标（Z10-7 加「图标 → 展开 → `✕` 收起」断言，常显框断言已删）；F3 MIME 兼容例外（Z10-7b）；F6 支持门（Z10-6d）；F8 严格布尔（Z10-6b）；F10 写失败回滚（Z10-6c）；**R2-02** 搜索图标与「是否支持写入」解耦（Z10-6d 加断言：SDK 28 有记录时图标仍显示）；**R2-03** 未记入历史改「需 Android 10+」且不被批量汇总覆盖（Z10-6f）；**R2-01** 结果面板内「本次结果」可见可点（Z10-10）；**A16/§17** 顶栏栏高三 Tab 一致（Z10-11）。全量 **409 / 407 / 0 / 2**（= 399/397 + 10 条新断言 Z10-2b/6b/6c/6d/6e/6f/7b/7c/10/11；CI 口径按同一映射 **406 / 403 / 0 / 3**，**待真 CI run 对账**）。`index.html` **258,153 B / `F4CD544E…` → 268,327 B / `DDFDECD6…`**（构建幂等，连跑两次哈希一致；`www/` 同源）。⭐ 中间值：`263,987 / A0211B53…` = `aa7cc1b`（F4–F10）、`264,772 / BC0271B6…` = `b9d4c03`（分享终态），**均非当前值**。
+
+**R2-08 红侧证据（2026-11-05，均由「撤掉对应修复」产生）**：6b 撤严格布尔 ⇒ `缺省 keepHistory 未判 corrupt`（`z10-6b-red.tap`）；6c 撤回滚 ⇒ `写失败后内存被污染`（`z10-6c-red.tap`）；7b 用记录 mime ⇒ `md 分享 Intent MIME 不是兼容例外 octet-stream`（`z10-7b-red.tap`）；6d 见 `z10-r2-red.tap`（`不支持历史时搜索图标被隐藏`）。恢复后 Z10 20/20（`z10-r208-green.tap`）。
+
+**R2-04 原生原子写阶段注入（2026-11-05，debug 包实测）**：`historyFailAtStage({stage})` 在 `writeHistoryAtomic` 的 **tmp / fsync / rename** 三处各注入一次失败（release 恒空操作）；任一失败或 `renameTo` 失败都会清掉 `.tmp` 并保留旧 JSON。设备实测（`base.apk` 22,947,288 B / `136216D1…`）：三阶段均返回 `ok:false / injected-<stage>-failure`，旧 JSON 保持 **51 B / `271a93dc…`**（前后逐字节一致、内容回读等于基线），`.tmp` **无残留**；UI 侧经真实 `__recordHistory` 路径 ⇒ 状态栏「已保存，但历史记录未写入」。证据：`.私档/卡/c060/证据/r204-staged-failures-20261105.tap`（含 before/after 字节 + SHA）、`29-R204-UI写失败提示.png`。⚠️ Z10-6c 只覆盖 memory 数据层，原生磁盘证据以本节为准（两者分列，不互相替代）。
 
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 

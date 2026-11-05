@@ -6182,7 +6182,7 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.equal(states.cleared, true, '「已清除」空态不应在从未转换时出现');
         assert.equal(states.search, true, '搜索空态不应在非搜索态出现');
         assert.equal(states.error, true, '读取失败空态不应在正常读取时出现');
-        assert.equal(states.searchBarHidden, false, '搜索框应常显（与转换页结果搜索同一形态，2026-10-22 口径）');
+        assert.equal(states.searchBarHidden, true, '搜索框默认应收起（拍板一：app bar 图标展开，⛔ 常显）');
       });
 
       await t.test('Z6-5 A6 设置四组齐 + 外观三档 + 「跟随系统」是真监听（emulateMedia 翻系统色必须生效）', async () => {
@@ -7748,6 +7748,28 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(r.evictedName, 'f-0.md', '淘汰的不是最旧一条');
       });
 
+      await t.test('Z10-2b F1 批量并发：3 件同时 append + 慢写 ⇒ 内存与磁盘都 3 条', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '', delayMs: 20 });
+          await h.load();
+          const mk = (n) => ({ name: n, uri: 'content://x/' + n, bytes: 10, kind: 'md', createdAt: Date.now() });
+          const results = await Promise.all([h.append(mk('one.md')), h.append(mk('two.md')), h.append(mk('three.md'))]);
+          const stateNames = h.getState().records.map((x) => x.name).sort();
+          let diskNames = [];
+          try {
+            diskNames = JSON.parse(h.__diskJson()).records.map((x) => x.name).sort();
+          } catch {
+            diskNames = ['<bad-json>'];
+          }
+          return { allOk: results.every((x) => x && x.ok === true), stateNames, diskNames };
+        });
+        assert.equal(r.allOk, true, '并发 append 有失败');
+        assert.deepEqual(r.stateNames, ['one.md', 'three.md', 'two.md'], '并发 append 丢记录（内存）');
+        assert.deepEqual(r.diskNames, ['one.md', 'three.md', 'two.md'], '并发 append 丢记录（磁盘 JSON）');
+      });
+
       await t.test('Z10-3 A2/A8 顺序与搜索：createdAt 倒序、同毫秒按插入序、搜索不改数据', async () => {
         const r = await page.evaluate(async () => {
           const h = window.__doc2md.history;
@@ -7822,6 +7844,116 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(r.hasReset, true, '缺「重置记录」入口');
       });
 
+      await t.test('Z10-6b A1 keepHistory 严格布尔：缺省 / 字符串 / 数字 ⇒ corrupt', async () => {
+        const r = await page.evaluate(() => {
+          const h = window.__doc2md.history;
+          const mk = (keep) => JSON.stringify({ schemaVersion: 1, keepHistory: keep, records: [] });
+          return {
+            missing: h.parseState(JSON.stringify({ schemaVersion: 1, records: [] })).ok,
+            str: h.parseState(mk('false')).ok,
+            num: h.parseState(mk(0)).ok,
+            good: h.parseState(mk(false)).ok,
+          };
+        });
+        assert.equal(r.missing, false, '缺省 keepHistory 未判 corrupt');
+        assert.equal(r.str, false, '字符串 keepHistory 未判 corrupt');
+        assert.equal(r.num, false, '数字 keepHistory 未判 corrupt');
+        assert.equal(r.good, true, '合法布尔 keepHistory 被判 corrupt');
+      });
+
+      await t.test('Z10-6c A1/A9 写失败回滚：append 失败后内存与磁盘均不变', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'keep.md', uri: 'content://x/keep', bytes: 10 });
+          const before = JSON.stringify(h.getState().records);
+          const diskBefore = h.__diskJson();
+          h.__setBackend('memory', { failNextWrite: true });
+          const res = await h.append({ name: 'lost.md', uri: 'content://x/lost', bytes: 10 });
+          return {
+            ok: res && res.ok,
+            sameMem: JSON.stringify(h.getState().records) === before,
+            sameDisk: h.__diskJson() === diskBefore,
+          };
+        });
+        assert.equal(r.ok, false, '写失败仍报成功');
+        assert.equal(r.sameMem, true, '写失败后内存被污染');
+        assert.equal(r.sameDisk, true, '写失败后磁盘被污染');
+      });
+
+      await t.test('Z10-6d A11 不支持历史：数据层拒绝写入 / 行操作禁用', async () => {
+        const r = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'x.md', uri: 'content://x/1', bytes: 10 });
+          h.__setBackend('memory', { support: false, sdkInt: 28 });
+          await h.load();
+          await h.refresh();
+          const row = document.querySelector('#filesList .file-row');
+          const res = await h.append({ name: 'y.md', uri: 'content://x/2', bytes: 10 });
+          const removed = await h.remove('x');
+          return {
+            appendOk: res && res.ok,
+            removedOk: removed && removed.ok,
+            rows: document.querySelectorAll('#filesList .file-row').length,
+            shareDisabled: row ? row.querySelector('.file-share').disabled : null,
+            mainDisabled: row ? row.querySelector('.file-main').disabled : null,
+            supported: h.getState().support.supported,
+          };
+        });
+        assert.equal(r.supported, false, 'support 覆盖未生效');
+        assert.equal(r.appendOk, false, '不支持历史时 append 仍成功');
+        assert.equal(r.removedOk, false, '不支持历史时 remove 仍成功');
+        assert.equal(r.rows, 1, '不支持历史时行未渲染（A11 要求明说 + 可读）');
+        assert.equal(r.shareDisabled, true, '不支持历史时分享按钮未禁用');
+        assert.equal(r.mainDisabled, true, '不支持历史时行点击未禁用');
+        // R2-02：列表/搜索在 SDK 28 仍可用 ⇒ 搜索图标不得因「不支持写入」而消失
+        await page.click('#tab-files');
+        await page.waitForTimeout(120);
+        const searchBtnHidden = await page.evaluate(() => document.getElementById('filesSearchBtn').hidden);
+        assert.equal(searchBtnHidden, false, '不支持历史时搜索图标被隐藏（列表/搜索应仍可用）');
+      });
+
+      await t.test('Z10-6e A5 整次核验失败 ⇒ 状态未知 + 重试入口（⛔ 静默当作都在）', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '', checkFails: true });
+          await h.load();
+          await h.append({ name: 'unknown.md', uri: 'content://x/u1', bytes: 10 });
+          await h.refresh();
+        });
+        // 真机路径下用户在「文件」页：先切 Tab，否则按钮虽未 hidden 但整页不可见
+        await page.click('#tab-files');
+        await page.waitForTimeout(150);
+        const failed = await page.evaluate(() => ({
+          retryHidden: document.getElementById('filesRetry').hidden,
+          meta: document.getElementById('filesMeta').textContent,
+          rows: document.querySelectorAll('#filesList .file-row').length,
+          invalid: document.querySelectorAll('#filesList .file-row.invalid').length,
+          shareDisabled: document.querySelector('#filesList .file-share').disabled,
+        }));
+        assert.equal(failed.retryHidden, false, '核验失败未显示重试入口');
+        assert.ok(failed.meta.includes('状态未知'), '核验失败未明示「状态未知」：' + failed.meta);
+        assert.equal(failed.rows, 1, '核验失败把行弄没了');
+        assert.equal(failed.invalid, 0, '核验失败被当成「文件不存在」');
+        assert.equal(failed.shareDisabled, false, '核验失败时分享被误禁用');
+        // 排除故障后走真实用户路径：点「重试核验」⇒ 本次成功、入口消失
+        await page.evaluate(() => window.__doc2md.history.__setBackend('memory', { checkFails: false }));
+        await page.click('#filesRetry');
+        await page.waitForTimeout(200);
+        const retried = await page.evaluate(() => ({
+          retryHidden: document.getElementById('filesRetry').hidden,
+          meta: document.getElementById('filesMeta').textContent,
+        }));
+        assert.equal(retried.retryHidden, true, '重试成功后入口未消失');
+        assert.ok(!retried.meta.includes('状态未知'), '重试成功后仍标状态未知：' + retried.meta);
+      });
+
       await t.test('Z10-7 A5/A8 列表与搜索：行 / 计数 / 实时过滤 / 无匹配空态 / 清除', async () => {
         // A11：不支持历史的环境（浏览器 / API 24–28）必须在空态里明说，⛔ 静默。
         const browserNote = await page.evaluate(async () => {
@@ -7844,7 +7976,22 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         });
         await page.click('#tab-files');
         await page.waitForTimeout(150);
-        assert.equal(await page.evaluate(() => document.getElementById('filesSearchBar').hidden), false, '文件页搜索框应常显');
+        const closed = await page.evaluate(() => ({
+          bar: document.getElementById('filesSearchBar').hidden,
+          btn: document.getElementById('filesSearchBtn').hidden,
+        }));
+        assert.equal(closed.btn, false, '文件页应显示 app bar 搜索图标（拍板一：恢复 v8 交互）');
+        assert.equal(closed.bar, true, '搜索框默认应收起（⛔ 列表上方常显框）');
+        await page.click('#filesSearchBtn');
+        await page.waitForTimeout(80);
+        const opened = await page.evaluate(() => ({
+          bar: document.getElementById('filesSearchBar').hidden,
+          focused: document.activeElement === document.getElementById('filesSearch'),
+          searching: document.querySelector('.appbar').classList.contains('searching'),
+        }));
+        assert.equal(opened.bar, false, '点搜索图标未展开输入框');
+        assert.equal(opened.focused, true, '展开后输入框未聚焦');
+        assert.equal(opened.searching, true, 'app bar 未进入搜索态（标题/图标应让位）');
         const rows = await page.evaluate(() =>
           [...document.querySelectorAll('#filesList .file-row')].map((row) => ({
             name: row.querySelector('.file-name').textContent,
@@ -7887,10 +8034,183 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         await page.click('#filesSearchReset');
         await page.waitForTimeout(80);
         assert.equal(await page.locator('#filesList .file-row').count(), 2, '清除搜索未恢复全量');
+        await page.click('#filesSearchClose');
+        await page.waitForTimeout(80);
+        const closedByX = await page.evaluate(() => ({
+          bar: document.getElementById('filesSearchBar').hidden,
+          q: document.getElementById('filesSearch').value,
+          searching: document.querySelector('.appbar').classList.contains('searching'),
+        }));
+        assert.equal(closedByX.bar, true, '点 X 未收起搜索框');
+        assert.equal(closedByX.q, '', '收起搜索未清空关键词');
+        assert.equal(closedByX.searching, false, '收起后 app bar 未恢复标题/图标');
         await page.click('#tab-settings');
         await page.waitForTimeout(80);
-        const queryCleared = await page.evaluate(() => document.getElementById('filesSearch').value);
-        assert.equal(queryCleared, '', '切走 Tab 未退出搜索（A8：关键词应被清空）');
+        const gone = await page.evaluate(() => ({
+          btn: document.getElementById('filesSearchBtn').hidden,
+          q: document.getElementById('filesSearch').value,
+          bar: document.getElementById('filesSearchBar').hidden,
+        }));
+        assert.equal(gone.btn, true, '离开「文件」页后搜索图标应隐藏');
+        assert.equal(gone.bar, true, '离开「文件」页后搜索框应收起（A8：切走 Tab 退出搜索）');
+        assert.equal(gone.q, '', '切走 Tab 后关键词应清空');
+      });
+
+      await t.test('Z10-7b A7 分享 MIME（拍板 A 兼容例外）：md ⇒ octet-stream；zip ⇒ application/zip', async () => {
+        const r = await page.evaluate(() => {
+          const h = window.__doc2md.history;
+          return {
+            md: h.shareMimeOf({ kind: 'md', mime: 'text/markdown' }),
+            zip: h.shareMimeOf({ kind: 'zip', mime: 'application/zip' }),
+            missing: h.shareMimeOf({ kind: 'zip', mime: '' }),
+          };
+        });
+        assert.equal(r.md, 'application/octet-stream', 'md 分享 Intent MIME 不是兼容例外 octet-stream');
+        assert.equal(r.zip, 'application/zip', 'zip 分享 MIME 被改动');
+        assert.equal(r.missing, 'application/octet-stream', '缺 mime 时未回落文件型 MIME');
+      });
+
+      await t.test('Z10-7c A7 分享状态终态：成功 ⇒ 已打开分享；失败 ⇒ 可见错误（⛔ 停在「正在打开」）', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.append({ name: 'share-a.md', uri: 'content://x/a', bytes: 12 });
+          await h.refresh();
+          document.getElementById('tab-files').click();
+          window.__shareCalls = [];
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                shareContentUri: (arg) => {
+                  window.__shareCalls.push(arg);
+                  return Promise.resolve({ ok: true });
+                },
+              },
+            },
+          };
+        });
+        await page.waitForTimeout(150);
+        await page.click('#filesList .file-share');
+        await page.waitForTimeout(300);
+        const okState = await page.evaluate(() => ({
+          status: (document.getElementById('status') || {}).textContent || '',
+          calls: window.__shareCalls,
+        }));
+        assert.equal(okState.calls.length, 1, '分享未调用原生 shareContentUri');
+        assert.equal(okState.calls[0].mime, 'application/octet-stream', 'md 分享 MIME 不是兼容例外');
+        assert.ok(okState.status.includes('已打开分享'), '分享成功后状态未给终态：' + okState.status);
+        assert.ok(!okState.status.includes('正在打开'), '分享成功后仍停在「正在打开分享」：' + okState.status);
+
+        await page.evaluate(() => {
+          window.Capacitor.Plugins.Doc2mdNative.shareContentUri = () => Promise.resolve({ ok: false, error: 'boom' });
+        });
+        await page.click('#filesList .file-share');
+        await page.waitForTimeout(300);
+        const failState = await page.evaluate(() => (document.getElementById('status') || {}).textContent || '');
+        assert.ok(failState.includes('分享失败'), '分享失败不可见：' + failState);
+        await page.evaluate(() => {
+          delete window.Capacitor;
+        });
+      });
+
+      await t.test('Z10-6f A11 批量保存汇总：未记入历史的原因不被成功句覆盖', async () => {
+        const r = await page.evaluate(() => {
+          const build = window.__doc2md.saveSummary;
+          return {
+            plain: build(3, 0, '下载/WenZhuanMD', ''),
+            unsupported: build(3, 0, '下载/WenZhuanMD', '未记入历史（需 Android 10+）'),
+            failed: build(1, 2, '下载/WenZhuanMD', ''),
+          };
+        });
+        assert.ok(r.plain.includes('已保存 3 个'), '成功句丢了：' + r.plain);
+        assert.ok(r.unsupported.includes('需 Android 10+'), '未记入历史的原因被汇总抹掉：' + r.unsupported);
+        assert.ok(r.failed.includes('2 个失败'), '失败统计丢了：' + r.failed);
+      });
+
+      await t.test('Z10-11 A16 顶栏栏高稳定：三 Tab 一致、搜索展开不改变框架', async () => {
+        await page.evaluate(() => {
+          document.getElementById('tab-convert').click();
+        });
+        await page.waitForTimeout(200);
+        const h = await page.evaluate(async () => {
+          const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+          const bar = document.querySelector('.appbar');
+          const out = {};
+          for (const [k, sel] of [['convert', '#tab-convert'], ['files', '#tab-files'], ['settings', '#tab-settings']]) {
+            document.querySelector(sel).click();
+            await wait(180);
+            out[k] = bar.getBoundingClientRect().height;
+          }
+          document.getElementById('tab-files').click();
+          await wait(180);
+          document.getElementById('filesSearchBtn').click();
+          await wait(220);
+          out.searchOpen = bar.getBoundingClientRect().height;
+          document.getElementById('filesSearchClose').click();
+          await wait(180);
+          out.searchClosed = bar.getBoundingClientRect().height;
+          return out;
+        });
+        assert.ok(Math.abs(h.convert - h.files) <= 0.5, '文件页顶栏比转换页高 ' + (h.files - h.convert).toFixed(2) + 'px');
+        assert.ok(Math.abs(h.convert - h.settings) <= 0.5, '设置页顶栏高度不一致：' + (h.settings - h.convert).toFixed(2) + 'px');
+        assert.ok(Math.abs(h.searchOpen - h.convert) <= 0.5, '搜索展开改变了顶栏高度：' + (h.searchOpen - h.convert).toFixed(2) + 'px');
+        assert.ok(Math.abs(h.searchClosed - h.convert) <= 0.5, '搜索收起后顶栏高度不一致：' + (h.searchClosed - h.convert).toFixed(2) + 'px');
+      });
+
+      await t.test('Z10-10 A10/R2-01 keep-off「本次结果」可见可点：说明原因并留在当前结果', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.setKeep(false);
+          document.getElementById('tab-convert').click();
+          const dt = new DataTransfer();
+          dt.items.add(new File(['# r201\n\nDOC2MD-R201\n'], 'r201.txt', { type: 'text/plain' }));
+          const input = document.getElementById('fileInput');
+          input.files = dt.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitForFunction(() => document.querySelectorAll('#results .result-card, #results .card').length >= 1, null, { timeout: 15000 });
+        await page.evaluate(() => window.__doc2md.__recordHistory({ filename: 'r201.md', uri: 'content://x/r201', bytes: 18 }, 'md'));
+        await page.waitForTimeout(250);
+        const st = await page.evaluate(() => {
+          const el = document.getElementById('sessionResult');
+          const r = el.getBoundingClientRect();
+          return { hidden: el.hidden, w: Math.round(r.width), h: Math.round(r.height), text: el.textContent, records: window.__doc2md.history.getState().records.length };
+        });
+        assert.equal(st.hidden, false, '结果面板出现后「本次结果」入口被隐藏');
+        assert.ok(st.w > 0 && st.h > 0, '入口尺寸为 0（不可见）：' + st.w + 'x' + st.h);
+        assert.ok(st.text.includes('未记入历史'), '入口未标注未记入历史：' + st.text);
+        assert.equal(st.records, 0, 'keep-off 仍写入历史');
+
+        await page.click('#sessionResult');
+        await page.waitForTimeout(150);
+        const after = await page.evaluate(() => ({
+          status: (document.getElementById('status') || {}).textContent || '',
+          filesVisible: document.getElementById('panel-files').hidden === false,
+          panelHidden: document.getElementById('resultsPanel').hidden,
+        }));
+        assert.ok(after.status.includes('未记入历史'), '点击后未说明原因：' + after.status);
+        assert.equal(after.filesVisible, false, 'keep-off 点击后跳到了「文件」页');
+        assert.equal(after.panelHidden, false, 'keep-off 点击后离开了当前结果');
+
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          await h.setKeep(true);
+          await window.__doc2md.__recordHistory({ filename: 'r201.md', uri: 'content://x/r201', bytes: 18 }, 'md');
+        });
+        await page.waitForTimeout(300);
+        await page.click('#sessionResult');
+        await page.waitForTimeout(400);
+        const rec = await page.evaluate(() => ({
+          filesVisible: document.getElementById('panel-files').hidden === false,
+          highlight: Boolean(document.querySelector('#filesList .file-row.highlight')),
+        }));
+        assert.equal(rec.filesVisible, true, '已记入历史：点击未定位到「文件」页');
+        assert.equal(rec.highlight, true, '已记入历史：未高亮对应记录');
       });
 
       await t.test('Z10-8 A9 清除：二次确认、取消不变、确认只清记录、keep 不变', async () => {
@@ -7929,7 +8249,7 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
 
       await t.test('Z10-9 A13 产物：index.html 含文件页结构 / 清除对话框 / 历史测试缝', () => {
         const html = fs.readFileSync(PAGE, 'utf8');
-        for (const marker of ['id="filesList"', 'id="clearDialog"', 'id="keepHistorySwitch"', 'id="filesSearchBar"']) {
+        for (const marker of ['id="filesList"', 'id="clearDialog"', 'id="keepHistorySwitch"', 'id="filesSearchBar"', 'id="filesSearchBtn"', 'id="filesSearchClose"']) {
           assert.ok(html.includes(marker), 'index.html 缺 ' + marker);
         }
         assert.ok(html.includes('__setBackend'), 'index.html 缺历史库测试缝（__setBackend）');

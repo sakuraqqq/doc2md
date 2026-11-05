@@ -60,6 +60,8 @@
     position: sticky; top: 0; z-index: 10;
     display: flex; align-items: center; gap: 10px;
     padding: calc(10px + var(--safe-top)) 16px 10px;
+    /* A16/§17（2026-11-05）：三 Tab 共用稳定栏高 —— 40px 搜索按钮/搜索框不再把顶栏撑高 45 物理像素 */
+    min-height: calc(var(--safe-top) + 61px); /* 40px 内容 + 上下 10px 内边距 + 1px 分隔线 */
     background: var(--panel); border-bottom: 1px solid var(--border);
   }
   .appbar h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .2px; }
@@ -289,6 +291,10 @@
   .results-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .results-head h2 { font-size: 17px; margin: 0; }
   .results-count { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+/* R2-01（拍板 A）：结果面板出现后，「本次结果」仍有可见可点载体 */
+.session-result { display: block; width: 100%; text-align: left; margin: 6px 0 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); color: inherit; font-size: 13px; line-height: 1.35; }
+.session-result.muted { color: var(--muted); }
+.session-result:active { opacity: .85; }
   .results-search { position: relative; margin: 10px 0 6px; }
   .results-search svg { position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8; }
   #resultsSearch { width: 100%; padding: 10px 12px 10px 38px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font: inherit; font-size: 14px; }
@@ -347,7 +353,9 @@
   .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; background: transparent; color: var(--fg); border-radius: 10px; padding: 0; }
   .iconbtn svg { width: 20px; height: 20px; }
   .iconbtn[aria-expanded="true"] { background: var(--panel2); color: var(--accent-soft); }
-  .files-search { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; padding: 0 6px 0 12px; height: 44px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
+  .files-search { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; margin: 0; padding: 0 4px 0 12px; height: 40px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel2); }
+/* 卡 060 / A8/A16：app bar 搜索态 —— 标题 / 间隔 / 标签 / 图标让位给输入框（v8 原型口径） */
+.appbar.searching h1, .appbar.searching .grow, .appbar.searching .tag, .appbar.searching #filesSearchBtn { display: none; }
   .files-search svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; color: var(--muted); flex: 0 0 auto; }
   .files-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; }
   .files-search input:focus { outline: none; }
@@ -389,6 +397,15 @@
 <header class="appbar">
   <h1>文转MD助手</h1>
   <span class="grow"></span>
+  <button class="iconbtn" type="button" id="filesSearchBtn" aria-label="搜索记录" aria-expanded="false" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+  </button>
+  <div class="files-search" id="filesSearchBar" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+    <input id="filesSearch" type="text" inputmode="search" enterkeyhint="search" placeholder="搜索文件名" aria-label="搜索文件名" autocomplete="off">
+    <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
+    <button type="button" class="files-search-clear" id="filesSearchClose" aria-label="关闭搜索">✕</button>
+  </div>
   <span class="tag">本地 · 零外发</span>
 </header>
 
@@ -419,6 +436,7 @@
         <h2 id="resultsTitle">转换结果</h2>
         <span class="results-count" id="resultsCount">已完成 0 个文件</span>
       </div>
+      <button type="button" class="session-result" id="sessionResult" hidden></button>
       <div class="results-search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         <input id="resultsSearch" type="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
@@ -447,13 +465,7 @@
 
   <!-- ── 文件 ── 卡 060 / 2-5：App 转换历史库（只列本 App 转过的文件；⛔ 不读全局 Download） ───────── -->
   <section class="tabpanel" id="panel-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0">
-    <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span></div>
-    <div class="files-search" id="filesSearchBar">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
-      <input id="filesSearch" type="text" inputmode="search" enterkeyhint="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
-      <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
-      <button type="button" class="files-search-clear" id="filesSearchClear" aria-label="清除搜索" hidden>✕</button>
-    </div>
+    <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span><button type="button" class="row-action" id="filesRetry" hidden>重试核验</button></div>
     <div class="files-list" id="filesList" role="list"></div>
     <div class="empty-state" id="filesEmpty">
       <div class="empty-state-icon" aria-hidden="true">🗂️</div>
@@ -2593,6 +2605,7 @@ ${xlsxRowsToMd(kept)}`);
   var backendKind = "web";
   var loadError = null;
   var support = { supported: false, sdkInt: 0, reason: "web" };
+  var supportOverride = null;
   function emptyState() {
     return { schemaVersion: SCHEMA_VERSION, keepHistory: true, records: [] };
   }
@@ -2666,12 +2679,13 @@ ${xlsxRowsToMd(kept)}`);
     const obj = safeParse(text);
     if (!obj) return { ok: false, error: "corrupt" };
     if (obj.schemaVersion !== SCHEMA_VERSION) return { ok: false, error: "schema" };
+    if (typeof obj.keepHistory !== "boolean") return { ok: false, error: "corrupt" };
     if (!Array.isArray(obj.records)) return { ok: false, error: "corrupt" };
     const records = collectRecords(obj.records);
     if (!records) return { ok: false, error: "corrupt" };
     return {
       ok: true,
-      state: { schemaVersion: SCHEMA_VERSION, keepHistory: obj.keepHistory !== false, records }
+      state: { schemaVersion: SCHEMA_VERSION, keepHistory: obj.keepHistory, records }
     };
   }
   function listOrder(records) {
@@ -2729,9 +2743,23 @@ ${xlsxRowsToMd(kept)}`);
   var memoryBackend = {
     json: "",
     failNextWrite: false,
+    checkFails: false,
+    delayMs: 0,
     support: async () => ({ supported: true, sdkInt: 30, reason: "memory" }),
+    // 测试用：整次核验（F9）故障注入；默认「都在」，不影响既有用例
+    check: async (uris) => {
+      if (memoryBackend.checkFails) {
+        return { ok: false, error: "check-failed", results: [] };
+      }
+      return { ok: true, results: uris.map((uri) => ({ uri, exists: true })) };
+    },
     load: async () => ({ ok: true, json: memoryBackend.json || "" }),
     save: async (json) => {
+      if (memoryBackend.delayMs > 0) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, memoryBackend.delayMs);
+        });
+      }
       if (memoryBackend.failNextWrite) {
         memoryBackend.failNextWrite = false;
         return { ok: false, error: "write-failed" };
@@ -2776,15 +2804,30 @@ ${xlsxRowsToMd(kept)}`);
       save: (json) => nativeSave(plugin, json)
     };
   }
+  function applyMemoryOptions(o) {
+    if (typeof o.json === "string") memoryBackend.json = o.json;
+    if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+    if (typeof o.checkFails === "boolean") memoryBackend.checkFails = o.checkFails;
+    memoryBackend.delayMs = typeof o.delayMs === "number" && o.delayMs > 0 ? o.delayMs : 0;
+  }
+  function supportOverrideOf(o) {
+    if (o.support !== false) return null;
+    return {
+      supported: false,
+      sdkInt: typeof o.sdkInt === "number" ? o.sdkInt : 28,
+      reason: o.reason || "forced-unsupported"
+    };
+  }
   function __setBackend(kind, opts) {
     const o = opts || {};
     if (kind === "memory") {
-      if (typeof o.json === "string") memoryBackend.json = o.json;
-      if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+      applyMemoryOptions(o);
+      supportOverride = supportOverrideOf(o);
       backend = memoryBackend;
       backendKind = "memory";
       return "memory";
     }
+    supportOverride = null;
     if (kind === "native") {
       const plugin = nativePlugin();
       backend = plugin ? nativeBackendFor(plugin) : webBackend;
@@ -2812,13 +2855,28 @@ ${xlsxRowsToMd(kept)}`);
     state = emptyState();
     return { ok: false, error, state: snapshot() };
   }
-  async function load() {
+  var writeChain = Promise.resolve();
+  function enqueueWrite(task) {
+    const run = writeChain.then(task, task);
+    writeChain = run.then(
+      () => {
+      },
+      () => {
+      }
+    );
+    return run;
+  }
+  function load() {
+    return enqueueWrite(loadNow);
+  }
+  async function loadNow() {
     const b = pickBackend();
     try {
       support = await b.support();
     } catch {
       support = { supported: false, sdkInt: 0, reason: "error" };
     }
+    if (supportOverride) support = { ...supportOverride };
     const res = await b.load();
     if (!res.ok) return emptyLoadResult(res.error || "read-failed");
     if (!res.json) {
@@ -2871,9 +2929,12 @@ ${xlsxRowsToMd(kept)}`);
     state = { schemaVersion: SCHEMA_VERSION, keepHistory: state.keepHistory, records: prev };
     return { ok: false, error: saved.error || "write-failed" };
   }
-  async function append(input) {
+  function append(input) {
+    return enqueueWrite(() => appendNow(input));
+  }
+  async function appendNow(input) {
     if (!state.keepHistory) return { ok: false, skipped: "keep-off" };
-    if (backendKind === "web") return { ok: false, skipped: "unsupported" };
+    if (backendKind === "web" || !support.supported) return { ok: false, skipped: "unsupported" };
     const record = buildRecord(input);
     if (!record) return { ok: false, error: "invalid-record" };
     const { next, evicted } = withEvictions(state.records, record);
@@ -2881,18 +2942,30 @@ ${xlsxRowsToMd(kept)}`);
     if (!saved.ok) return { ok: false, error: saved.error, record };
     return { ok: true, record, evicted };
   }
-  async function remove(id) {
+  function remove(id) {
+    return enqueueWrite(() => removeNow(id));
+  }
+  async function removeNow(id) {
+    if (!support.supported) return { ok: false, error: "unsupported" };
     const target = String(id || "");
     const next = state.records.filter((r) => r.id !== target);
     if (next.length === state.records.length) return { ok: false, error: "not-found" };
     return commit(next);
   }
-  async function clear() {
+  function clear() {
+    return enqueueWrite(clearNow);
+  }
+  async function clearNow() {
+    if (!support.supported) return { ok: false, error: "unsupported" };
     const saved = await commit([]);
     if (saved.ok) loadError = null;
     return saved;
   }
-  async function setKeep(on) {
+  function setKeep(on) {
+    return enqueueWrite(() => setKeepNow(on));
+  }
+  async function setKeepNow(on) {
+    if (!support.supported) return { ok: false, error: "unsupported" };
     const prev = state.keepHistory;
     state = { schemaVersion: SCHEMA_VERSION, keepHistory: on === true, records: state.records.slice() };
     const saved = await persist();
@@ -2931,7 +3004,13 @@ ${xlsxRowsToMd(kept)}`);
   async function check(records) {
     const list = (records || []).filter((r) => r && r.uri);
     if (!list.length) return { ok: true, results: [] };
+    if (backendKind === "memory" && typeof memoryBackend.check === "function") {
+      return memoryBackend.check(list.map((r) => r.uri));
+    }
     return checkNative(list);
+  }
+  function __diskJson() {
+    return backendKind === "memory" ? memoryBackend.json : "";
   }
   function __reset() {
     state = emptyState();
@@ -2939,6 +3018,8 @@ ${xlsxRowsToMd(kept)}`);
     backend = null;
     backendKind = "web";
     support = { supported: false, sdkInt: 0, reason: "web" };
+    supportOverride = null;
+    writeChain = Promise.resolve();
   }
 
   // src/ui.js
@@ -3144,7 +3225,7 @@ ${xlsxRowsToMd(kept)}`);
       const saved = NATIVE_SAVED + (res && res.filename || base + ".md");
       diag("save", "native");
       nativeNotice(saved);
-      recordHistory(res, "md");
+      await recordHistory(res, "md");
       return "native";
     }
     if (isNativeRuntime()) {
@@ -3178,8 +3259,10 @@ ${xlsxRowsToMd(kept)}`);
       }
     }
     const where = isNativeRuntime() ? "\u4E0B\u8F7D/WenZhuanMD" : "\u6D4F\u89C8\u5668\u4E0B\u8F7D\u76EE\u5F55";
-    const msg = failed === 0 ? "\u2705 \u5DF2\u4FDD\u5B58 " + ok + " \u4E2A .md \u5230\u300C" + where + "\u300D" : "\u5DF2\u4FDD\u5B58 " + ok + " \u4E2A / " + failed + " \u4E2A\u5931\u8D25\uFF08\u5171 " + (ok + failed) + " \u4E2A\uFF09";
-    setStatus(msg, failed > 0);
+    const note = recordSkipNote;
+    recordSkipNote = "";
+    const msg = saveSummary(ok, failed, where, note);
+    setStatus(msg, failed > 0 || Boolean(note));
     if (isNativeRuntime()) showToast(msg, failed > 0);
     return { ok, failed };
   }
@@ -3221,6 +3304,7 @@ ${xlsxRowsToMd(kept)}`);
   function updateResultsChrome() {
     const hasResults = resultRows.length > 0;
     resultsPanel.hidden = !hasResults;
+    paintSessionResult();
     hintEl.style.display = hasResults ? "none" : "";
     document.body.classList.toggle("has-results", hasResults);
     if (pickerTitle) pickerTitle.textContent = hasResults ? "\u7EE7\u7EED\u6DFB\u52A0\u6587\u6863" : "\u9009\u62E9\u6587\u6863";
@@ -3357,7 +3441,7 @@ ${xlsxRowsToMd(kept)}`);
       const res = await plugin.endBinary({ commit: true });
       started = false;
       nativeNotice(NATIVE_SAVED + (res && res.filename || filename));
-      recordHistory(res, "zip");
+      await recordHistory(res, "zip");
       return "native";
     } catch (e) {
       if (started) {
@@ -3852,9 +3936,10 @@ ${xlsxRowsToMd(kept)}`);
       }
     }
     const active = target.dataset.tab || null;
+    activeTabName = active;
     if (active === "files") refreshFilesPanel().catch(() => {
     });
-    else setFilesQuery("");
+    else toggleFilesSearch(false);
     return active;
   }
   function focusTab(step) {
@@ -4023,6 +4108,9 @@ ${xlsxRowsToMd(kept)}`);
   }
   var filesQuery = "";
   var filesCleared = false;
+  var checkFailed = false;
+  var sessionLast = null;
+  var activeTabName = "convert";
   var invalidByUri = /* @__PURE__ */ new Set();
   var checkErrorByUri = /* @__PURE__ */ new Set();
   function filesEls() {
@@ -4038,10 +4126,13 @@ ${xlsxRowsToMd(kept)}`);
       emptySearchTitle: byId("filesEmptySearchTitle"),
       errorBox: byId("filesError"),
       errorSub: byId("filesErrorSub"),
+      appbar: document.querySelector(".appbar"),
       searchBar: byId("filesSearchBar"),
       searchInput: byId("filesSearch"),
-      searchClear: byId("filesSearchClear"),
+      searchClose: byId("filesSearchClose"),
       searchCount: byId("filesSearchCount"),
+      searchBtn: byId("filesSearchBtn"),
+      retry: byId("filesRetry"),
       searchReset: byId("filesSearchReset"),
       keepSwitch: byId("keepHistorySwitch"),
       keepSub: byId("keepHistorySub"),
@@ -4086,8 +4177,9 @@ ${xlsxRowsToMd(kept)}`);
     return "never";
   }
   function filesMetaText(shownCount, total) {
-    if (filesQuery.trim()) return "\u5339\u914D " + shownCount + " / \u5171 " + total + " \u9879";
-    if (total > 0) return "\u5171 " + total + " \u9879 \xB7 \u4FDD\u5B58\u5728 Download/WenZhuanMD";
+    const unknown = checkFailed ? " \xB7 \u6838\u9A8C\u5931\u8D25\uFF0C\u6587\u4EF6\u72B6\u6001\u672A\u77E5" : "";
+    if (filesQuery.trim()) return "\u5339\u914D " + shownCount + " / \u5171 " + total + " \u9879" + unknown;
+    if (total > 0) return "\u5171 " + total + " \u9879 \xB7 \u4FDD\u5B58\u5728 Download/WenZhuanMD" + unknown;
     return "\u5171 0 \u9879";
   }
   function paintMeta(el, shownCount, total) {
@@ -4098,6 +4190,15 @@ ${xlsxRowsToMd(kept)}`);
     const on = filesQuery.trim() !== "";
     el.searchCount.hidden = !on;
     el.searchCount.textContent = on ? "\u5339\u914D " + shownCount : "";
+  }
+  function paintSearchButton(el) {
+    if (!el.searchBtn) return;
+    el.searchBtn.hidden = activeTabName !== "files";
+    if (el.searchBar) el.searchBtn.setAttribute("aria-expanded", String(!el.searchBar.hidden));
+  }
+  function paintRetry(el, supported) {
+    if (!el.retry) return;
+    el.retry.hidden = !(supported && checkFailed);
   }
   function paintKeep(el, state2, supported) {
     if (el.keepSwitch) {
@@ -4122,6 +4223,8 @@ ${xlsxRowsToMd(kept)}`);
     const supported = Boolean(state2.support && state2.support.supported);
     paintMeta(el, shownCount, total);
     paintSearchCount(el, shownCount);
+    paintSearchButton(el);
+    paintRetry(el, supported);
     paintKeep(el, state2, supported);
     paintClear(el, state2, supported, total);
   }
@@ -4160,13 +4263,13 @@ ${xlsxRowsToMd(kept)}`);
       });
     }).catch(() => setStatus("\u79FB\u9664\u8BB0\u5F55\u5931\u8D25", true));
   }
-  function makeShareButton(rec, invalid) {
+  function makeShareButton(rec, invalid, supported) {
     const share = document.createElement("button");
     share.type = "button";
     share.className = "file-share";
     share.innerHTML = FILE_SVG.share;
     share.setAttribute("aria-label", "\u5206\u4EAB " + rec.name);
-    share.disabled = invalid;
+    share.disabled = invalid || !supported;
     share.addEventListener("click", (e) => {
       e.stopPropagation();
       shareHistoryRecord(rec);
@@ -4185,11 +4288,12 @@ ${xlsxRowsToMd(kept)}`);
     });
     return rm;
   }
-  function makeMainButton(rec, invalid) {
+  function makeMainButton(rec, invalid, supported) {
     const main = document.createElement("button");
     main.type = "button";
     main.className = "file-main";
     main.setAttribute("aria-label", "\u6253\u5F00 " + rec.name);
+    main.disabled = !supported;
     const name = document.createElement("span");
     name.className = "file-name";
     name.textContent = rec.name;
@@ -4200,15 +4304,15 @@ ${xlsxRowsToMd(kept)}`);
     main.addEventListener("click", () => openHistoryRecord(rec));
     return main;
   }
-  function renderRecordRow(rec) {
+  function renderRecordRow(rec, supported) {
     const invalid = invalidByUri.has(rec.uri);
     const row = document.createElement("div");
     row.className = "file-row" + (invalid ? " invalid" : "");
     row.setAttribute("role", "listitem");
     row.dataset.id = rec.id;
-    row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid));
-    if (invalid) row.append(makeRemoveButton(rec));
-    row.append(makeShareButton(rec, invalid));
+    row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid, supported));
+    if (invalid && supported) row.append(makeRemoveButton(rec));
+    row.append(makeShareButton(rec, invalid, supported));
     return row;
   }
   function renderFilesPanel(state2) {
@@ -4216,9 +4320,10 @@ ${xlsxRowsToMd(kept)}`);
     if (!el.panel) return;
     const all = state2.records || [];
     const shown = filesQuery.trim() ? search(filesQuery) : all;
+    const supported = Boolean(state2.support && state2.support.supported);
     if (el.list) el.list.innerHTML = "";
     if (el.list && shown.length) {
-      for (const rec of shown) el.list.append(renderRecordRow(rec));
+      for (const rec of shown) el.list.append(renderRecordRow(rec, supported));
     }
     paintChrome(state2, shown.length, all.length);
     paintEmptyStates(state2, shown.length, all.length);
@@ -4237,9 +4342,11 @@ ${xlsxRowsToMd(kept)}`);
   async function verifyRecords(state2) {
     invalidByUri = /* @__PURE__ */ new Set();
     checkErrorByUri = /* @__PURE__ */ new Set();
+    checkFailed = false;
     if (!(state2.support && state2.support.supported) || !state2.records.length) return;
     const chk = await check(state2.records);
     if (chk && chk.ok) collectCheckResults(chk.results);
+    else checkFailed = true;
   }
   async function refreshFilesPanel() {
     const state2 = await loadPanelState();
@@ -4248,9 +4355,50 @@ ${xlsxRowsToMd(kept)}`);
     updateLastConversion(state2);
     return state2;
   }
+  function paintSessionResult() {
+    const el = document.getElementById("sessionResult");
+    if (!el) return;
+    if (!sessionLast) {
+      el.hidden = true;
+      el.onclick = null;
+      return;
+    }
+    el.hidden = false;
+    el.classList.toggle("muted", !sessionLast.recorded);
+    el.textContent = "\u672C\u6B21\uFF1A" + (sessionLast.name || "\uFF08\u672A\u547D\u540D\uFF09") + (sessionLast.recorded ? " \xB7 \u5DF2\u8BB0\u5165\u5386\u53F2 \xB7 \u70B9\u6B64\u5B9A\u4F4D" : " \xB7 \u672A\u8BB0\u5165\u5386\u53F2 \xB7 \u70B9\u6B64\u67E5\u770B\u539F\u56E0");
+    el.onclick = onSessionResultClick;
+  }
+  function onSessionResultClick() {
+    if (!sessionLast) return;
+    if (!sessionLast.recorded) {
+      const why = sessionLast.reason || "\u4FDD\u7559\u5F00\u5173\u5DF2\u5173\u6216\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D";
+      setStatus("\u672C\u6B21\u8F6C\u6362\u672A\u8BB0\u5165\u5386\u53F2\uFF1A" + why + "\uFF1B\u6587\u4EF6\u5DF2\u4FDD\u5B58\uFF0C\u53EF\u5728\u6587\u4EF6\u7BA1\u7406\u5668\u4E2D\u627E\u5230", true);
+      return;
+    }
+    activateTab("files");
+    const rec = getState().records.find((r) => r.uri === sessionLast.uri);
+    if (rec) highlightRecord(rec.id);
+    else setStatus("\u672C\u6B21\u8BB0\u5F55\u4E0D\u5728\u5386\u53F2\u91CC\uFF08\u53EF\u80FD\u5DF2\u88AB\u6E05\u9664\u6216\u6DD8\u6C70\uFF09", true);
+  }
   function updateLastConversion(state2) {
+    paintSessionResult();
     const empty = document.getElementById("lastEmpty");
     if (!empty) return;
+    if (sessionLast) {
+      empty.textContent = "\u672C\u6B21\uFF1A" + (sessionLast.name || "\uFF08\u672A\u547D\u540D\uFF09") + (sessionLast.recorded ? " \xB7 \u5DF2\u8BB0\u5165\u5386\u53F2" : " \xB7 \u672A\u8BB0\u5165\u5386\u53F2\uFF08\u4FDD\u7559\u5F00\u5173\u5DF2\u5173\u6216\u672A\u62FF\u5230\u771F\u5B9E\u540D\uFF09") + " \xB7 \u70B9\u6B64\u5B9A\u4F4D\u5230\u300C\u6587\u4EF6\u300D";
+      empty.style.cursor = "pointer";
+      empty.onclick = () => {
+        if (!sessionLast.recorded) {
+          setStatus("\u672C\u6B21\u8F6C\u6362\u672A\u8BB0\u5165\u5386\u53F2\uFF08\u4FDD\u7559\u5F00\u5173\u5DF2\u5173 / \u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D\uFF09\uFF1B\u6587\u4EF6\u5DF2\u4FDD\u5B58\uFF0C\u53EF\u5728\u6587\u4EF6\u7BA1\u7406\u5668\u4E2D\u627E\u5230", true);
+          return;
+        }
+        activateTab("files");
+        const rec2 = state2.records.find((r) => r.uri === sessionLast.uri);
+        if (rec2) highlightRecord(rec2.id);
+        else setStatus("\u672C\u6B21\u8BB0\u5F55\u4E0D\u5728\u5386\u53F2\u91CC\uFF08\u53EF\u80FD\u5DF2\u88AB\u6E05\u9664\u6216\u6DD8\u6C70\uFF09", true);
+      };
+      return;
+    }
     const rec = state2.records[0];
     if (!rec) {
       empty.textContent = "\u8FD8\u6CA1\u6709\u8F6C\u6362\u8BB0\u5F55 \u2014\u2014 \u8F6C\u6362\u5B8C\u6210\u540E\u4F1A\u663E\u793A\u5728\u8FD9\u91CC\u3002";
@@ -4296,6 +4444,16 @@ ${xlsxRowsToMd(kept)}`);
     if (el.searchClear) el.searchClear.hidden = !filesQuery;
     renderFilesPanel(getState());
   }
+  function toggleFilesSearch(on) {
+    const el = filesEls();
+    if (!el.searchBar) return;
+    const open = on === void 0 ? el.searchBar.hidden : on;
+    el.searchBar.hidden = !open;
+    if (el.appbar) el.appbar.classList.toggle("searching", open);
+    if (el.searchBtn) el.searchBtn.setAttribute("aria-expanded", String(open));
+    if (!open) setFilesQuery("");
+    else if (el.searchInput) el.searchInput.focus();
+  }
   function shareFailMessage(res) {
     if (!res) return "\u5206\u4EAB\u5931\u8D25\uFF1A\u672A\u77E5\u9519\u8BEF";
     if (res.error === "no_app") return "\u6CA1\u6709\u53EF\u7528\u7684\u5206\u4EAB\u5E94\u7528";
@@ -4319,6 +4477,7 @@ ${xlsxRowsToMd(kept)}`);
     try {
       const res = await plugin.shareContentUri({ uri: rec.uri, mime: shareMimeOf(rec), name: rec.name });
       if (!res || res.ok !== true) setStatus(shareFailMessage(res), true);
+      else setStatus("\u5DF2\u6253\u5F00\u5206\u4EAB\uFF1A" + rec.name);
     } catch (e) {
       setStatus("\u5206\u4EAB\u5931\u8D25\uFF1A" + (e && e.message ? e.message : "\u672A\u77E5\u9519\u8BEF"), true);
     }
@@ -4429,6 +4588,11 @@ ${xlsxRowsToMd(kept)}`);
       renderFilesPanel(getState());
     }).catch(() => setStatus("\u4FDD\u7559\u5F00\u5173\u4FDD\u5B58\u5931\u8D25", true));
   }
+  var recordSkipNote = "";
+  function saveSummary(ok, failed, where, note) {
+    const base = failed === 0 ? "\u2705 \u5DF2\u4FDD\u5B58 " + ok + " \u4E2A .md \u5230\u300C" + where + "\u300D" : "\u5DF2\u4FDD\u5B58 " + ok + " \u4E2A / " + failed + " \u4E2A\u5931\u8D25\uFF08\u5171 " + (ok + failed) + " \u4E2A\uFF09";
+    return note ? base + " \xB7 " + note : base;
+  }
   async function resetHistory() {
     const r = await clear();
     if (!r || !r.ok) {
@@ -4440,6 +4604,12 @@ ${xlsxRowsToMd(kept)}`);
     refreshFilesPanel().catch(() => {
     });
   }
+  function sessionReasonOf(r) {
+    if (r && r.ok) return "";
+    if (r && r.skipped === "keep-off") return "\u4FDD\u7559\u5F00\u5173\u5DF2\u5173\u95ED";
+    if (r && r.skipped === "unsupported") return "\u5F53\u524D\u7CFB\u7EDF\u4E0D\u652F\u6301\u5386\u53F2\u8BB0\u5F55\uFF08\u9700 Android 10+\uFF09";
+    return "\u5386\u53F2\u8BB0\u5F55\u5199\u5165\u5931\u8D25";
+  }
   function recordAppendResult(r) {
     if (r && r.ok) {
       filesCleared = false;
@@ -4448,20 +4618,46 @@ ${xlsxRowsToMd(kept)}`);
       return;
     }
     if (r && r.skipped === "keep-off") return;
+    if (r && r.skipped === "unsupported") {
+      recordSkipNote = "\u672A\u8BB0\u5165\u5386\u53F2\uFF08\u9700 Android 10+\uFF09";
+      nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u672A\u8BB0\u5F55\uFF1A\u9700 Android 10+\uFF08\u5F53\u524D\u7CFB\u7EDF\u4E0D\u652F\u6301\u5386\u53F2\u8BB0\u5F55\uFF09", true);
+      return;
+    }
     nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
   }
   function recordHistory(res, kind) {
-    if (!res || !res.uri || res.bytes <= 0 || !res.filename) return;
+    if (!res || !res.uri || res.bytes <= 0) return Promise.resolve({ ok: false, skipped: "invalid" });
     const isZip = kind === "zip";
-    append({
+    if (!res.filename) {
+      sessionLast = { name: "", uri: res.uri, recorded: false, reason: "\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D" };
+      nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165\uFF08\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D\uFF09", true);
+      return Promise.resolve({ ok: false, skipped: "no-name" });
+    }
+    sessionLast = { name: res.filename, uri: res.uri, recorded: false, reason: "" };
+    return append({
       name: res.filename,
       uri: res.uri,
       bytes: res.bytes,
       kind: isZip ? "zip" : "md",
       mime: isZip ? "application/zip" : "text/markdown"
-    }).then(recordAppendResult).catch(() => nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true));
+    }).then((r) => {
+      recordAppendResult(r);
+      sessionLast = {
+        name: res.filename,
+        uri: res.uri,
+        recorded: Boolean(r && r.ok),
+        reason: sessionReasonOf(r)
+      };
+      updateLastConversion(getState());
+      return r;
+    }).catch(() => {
+      if (sessionLast) sessionLast.reason = "\u5386\u53F2\u8BB0\u5F55\u5199\u5165\u5931\u8D25";
+      nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
+      return { ok: false, error: "append-failed" };
+    });
   }
   function wireFilesSearch(el) {
+    if (el.searchBtn) el.searchBtn.addEventListener("click", () => toggleFilesSearch());
     if (el.searchInput) {
       el.searchInput.addEventListener("input", () => setFilesQuery(el.searchInput.value));
       el.searchInput.addEventListener("keydown", (e) => {
@@ -4470,10 +4666,10 @@ ${xlsxRowsToMd(kept)}`);
           flashFirstMatch();
           return;
         }
-        if (e.key === "Escape") setFilesQuery("");
+        if (e.key === "Escape") toggleFilesSearch(false);
       });
     }
-    if (el.searchClear) el.searchClear.addEventListener("click", () => setFilesQuery(""));
+    if (el.searchClose) el.searchClose.addEventListener("click", () => toggleFilesSearch(false));
     if (el.searchReset) el.searchReset.addEventListener("click", () => setFilesQuery(""));
   }
   function wireHistoryControls(el) {
@@ -4482,6 +4678,8 @@ ${xlsxRowsToMd(kept)}`);
     }));
     if (el.keepSwitch) el.keepSwitch.addEventListener("click", () => toggleKeep());
     if (el.clearBtn) el.clearBtn.addEventListener("click", () => openClearDialog());
+    if (el.retry) el.retry.addEventListener("click", () => refreshFilesPanel().catch(() => {
+    }));
   }
   function wireClearDialog(el) {
     const cancel = document.getElementById("clearCancel");
@@ -5191,6 +5389,10 @@ ${p.text}
     },
     openExternal: openExternalDocument,
     normalizeExternalText,
+    /* A11 / R2-03 测试缝：批量保存汇总句（纯函数） */
+    saveSummary,
+    /* A10 / R2-01 测试缝：真实 recordHistory 路径（用于可见/点击断言） */
+    __recordHistory: recordHistory,
     /* 卡 060 / 2-5：转换历史库（数据层 + 刷新入口；测试缝与实现共用同一份函数） */
     history: {
       load,
@@ -5203,6 +5405,8 @@ ${p.text}
       check,
       __setBackend,
       __reset,
+      __diskJson,
+      shareMimeOf,
       refresh: refreshFilesPanel,
       LIMIT,
       relTime,

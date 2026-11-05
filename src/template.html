@@ -60,6 +60,8 @@
     position: sticky; top: 0; z-index: 10;
     display: flex; align-items: center; gap: 10px;
     padding: calc(10px + var(--safe-top)) 16px 10px;
+    /* A16/§17（2026-11-05）：三 Tab 共用稳定栏高 —— 40px 搜索按钮/搜索框不再把顶栏撑高 45 物理像素 */
+    min-height: calc(var(--safe-top) + 61px); /* 40px 内容 + 上下 10px 内边距 + 1px 分隔线 */
     background: var(--panel); border-bottom: 1px solid var(--border);
   }
   .appbar h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .2px; }
@@ -289,6 +291,10 @@
   .results-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .results-head h2 { font-size: 17px; margin: 0; }
   .results-count { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+/* R2-01（拍板 A）：结果面板出现后，「本次结果」仍有可见可点载体 */
+.session-result { display: block; width: 100%; text-align: left; margin: 6px 0 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); color: inherit; font-size: 13px; line-height: 1.35; }
+.session-result.muted { color: var(--muted); }
+.session-result:active { opacity: .85; }
   .results-search { position: relative; margin: 10px 0 6px; }
   .results-search svg { position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8; }
   #resultsSearch { width: 100%; padding: 10px 12px 10px 38px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font: inherit; font-size: 14px; }
@@ -347,7 +353,9 @@
   .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; background: transparent; color: var(--fg); border-radius: 10px; padding: 0; }
   .iconbtn svg { width: 20px; height: 20px; }
   .iconbtn[aria-expanded="true"] { background: var(--panel2); color: var(--accent-soft); }
-  .files-search { display: flex; align-items: center; gap: 8px; margin: 4px 0 10px; padding: 0 6px 0 12px; height: 44px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
+  .files-search { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; margin: 0; padding: 0 4px 0 12px; height: 40px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel2); }
+/* 卡 060 / A8/A16：app bar 搜索态 —— 标题 / 间隔 / 标签 / 图标让位给输入框（v8 原型口径） */
+.appbar.searching h1, .appbar.searching .grow, .appbar.searching .tag, .appbar.searching #filesSearchBtn { display: none; }
   .files-search svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; color: var(--muted); flex: 0 0 auto; }
   .files-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; }
   .files-search input:focus { outline: none; }
@@ -389,6 +397,15 @@
 <header class="appbar">
   <h1>文转MD助手</h1>
   <span class="grow"></span>
+  <button class="iconbtn" type="button" id="filesSearchBtn" aria-label="搜索记录" aria-expanded="false" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+  </button>
+  <div class="files-search" id="filesSearchBar" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+    <input id="filesSearch" type="text" inputmode="search" enterkeyhint="search" placeholder="搜索文件名" aria-label="搜索文件名" autocomplete="off">
+    <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
+    <button type="button" class="files-search-clear" id="filesSearchClose" aria-label="关闭搜索">✕</button>
+  </div>
   <span class="tag">本地 · 零外发</span>
 </header>
 
@@ -419,6 +436,7 @@
         <h2 id="resultsTitle">转换结果</h2>
         <span class="results-count" id="resultsCount">已完成 0 个文件</span>
       </div>
+      <button type="button" class="session-result" id="sessionResult" hidden></button>
       <div class="results-search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         <input id="resultsSearch" type="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
@@ -447,13 +465,7 @@
 
   <!-- ── 文件 ── 卡 060 / 2-5：App 转换历史库（只列本 App 转过的文件；⛔ 不读全局 Download） ───────── -->
   <section class="tabpanel" id="panel-files" role="tabpanel" aria-labelledby="tab-files" tabindex="0">
-    <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span></div>
-    <div class="files-search" id="filesSearchBar">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
-      <input id="filesSearch" type="text" inputmode="search" enterkeyhint="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
-      <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
-      <button type="button" class="files-search-clear" id="filesSearchClear" aria-label="清除搜索" hidden>✕</button>
-    </div>
+    <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span><button type="button" class="row-action" id="filesRetry" hidden>重试核验</button></div>
     <div class="files-list" id="filesList" role="list"></div>
     <div class="empty-state" id="filesEmpty">
       <div class="empty-state-icon" aria-hidden="true">🗂️</div>

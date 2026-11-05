@@ -26,6 +26,7 @@ let backend = null;
 let backendKind = 'web';
 let loadError = null;
 let support = { supported: false, sdkInt: 0, reason: 'web' };
+let supportOverride = null;
 
 /** 空历史（schema v1）。keepHistory 默认开（拍板 A9：默认开）。 */
 export function emptyState() {
@@ -115,12 +116,14 @@ export function parseState(text) {
   const obj = safeParse(text);
   if (!obj) return { ok: false, error: 'corrupt' };
   if (obj.schemaVersion !== SCHEMA_VERSION) return { ok: false, error: 'schema' };
+  // F8：keepHistory 必须是**严格布尔** —— 缺省 / "false" / 0 一律判 corrupt（⛔ 静默改 true）。
+  if (typeof obj.keepHistory !== 'boolean') return { ok: false, error: 'corrupt' };
   if (!Array.isArray(obj.records)) return { ok: false, error: 'corrupt' };
   const records = collectRecords(obj.records);
   if (!records) return { ok: false, error: 'corrupt' };
   return {
     ok: true,
-    state: { schemaVersion: SCHEMA_VERSION, keepHistory: obj.keepHistory !== false, records },
+    state: { schemaVersion: SCHEMA_VERSION, keepHistory: obj.keepHistory, records },
   };
 }
 
@@ -196,9 +199,24 @@ function errMessage(e) {
 const memoryBackend = {
   json: '',
   failNextWrite: false,
+  checkFails: false,
+  delayMs: 0,
   support: async () => ({ supported: true, sdkInt: 30, reason: 'memory' }),
+  // 测试用：整次核验（F9）故障注入；默认「都在」，不影响既有用例
+  check: async (uris) => {
+    if (memoryBackend.checkFails) {
+      return { ok: false, error: 'check-failed', results: [] };
+    }
+    return { ok: true, results: uris.map((uri) => ({ uri, exists: true })) };
+  },
   load: async () => ({ ok: true, json: memoryBackend.json || '' }),
   save: async (json) => {
+    // 测试用：模拟慢写（F1 并发回归用；真实后端走原生 IPC）
+    if (memoryBackend.delayMs > 0) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, memoryBackend.delayMs);
+      });
+    }
     if (memoryBackend.failNextWrite) {
       memoryBackend.failNextWrite = false;
       return { ok: false, error: 'write-failed' };
@@ -249,16 +267,34 @@ function nativeBackendFor(plugin) {
   };
 }
 
+function applyMemoryOptions(o) {
+  if (typeof o.json === 'string') memoryBackend.json = o.json;
+  if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+  if (typeof o.checkFails === 'boolean') memoryBackend.checkFails = o.checkFails;
+  memoryBackend.delayMs = typeof o.delayMs === 'number' && o.delayMs > 0 ? o.delayMs : 0;
+}
+
+function supportOverrideOf(o) {
+  if (o.support !== false) return null;
+  return {
+    supported: false,
+    sdkInt: typeof o.sdkInt === 'number' ? o.sdkInt : 28,
+    reason: o.reason || 'forced-unsupported',
+  };
+}
+
 /** 选后端：测试可强制 memory；原生壳有插件走 native；否则 web（不保存历史）。 */
 export function __setBackend(kind, opts) {
   const o = opts || {};
   if (kind === 'memory') {
-    if (typeof o.json === 'string') memoryBackend.json = o.json;
-    if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+    applyMemoryOptions(o);
+    // A11 测试缝：强制 simulate API 24–28 / 浏览器这类「不支持」的系统。
+    supportOverride = supportOverrideOf(o);
     backend = memoryBackend;
     backendKind = 'memory';
     return 'memory';
   }
+  supportOverride = null;
   if (kind === 'native') {
     const plugin = nativePlugin();
     backend = plugin ? nativeBackendFor(plugin) : webBackend;
@@ -291,13 +327,32 @@ function emptyLoadResult(error) {
   return { ok: false, error, state: snapshot() };
 }
 
-export async function load() {
+/* 单写队列（F1）：所有「读-改-写」串行执行 —— 并发的 append 若各自基于旧 state 构造 next，
+ * 后到的旧 JSON 会覆盖先到的新 JSON（实测 3 件只剩 1 条）。队列保证同一时刻只有一个
+ * 「构造 next → persist → 提交/回滚」在跑，后来者读到的是前一个提交后的 state。 */
+let writeChain = Promise.resolve();
+
+function enqueueWrite(task) {
+  const run = writeChain.then(task, task);
+  writeChain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+}
+
+export function load() {
+  return enqueueWrite(loadNow);
+}
+
+async function loadNow() {
   const b = pickBackend();
   try {
     support = await b.support();
   } catch {
     support = { supported: false, sdkInt: 0, reason: 'error' };
   }
+  if (supportOverride) support = { ...supportOverride };
   const res = await b.load();
   if (!res.ok) return emptyLoadResult(res.error || 'read-failed');
   if (!res.json) {
@@ -360,9 +415,13 @@ async function commit(nextRecords) {
  * 追加一条记录（只接受**成功保存**的入参；调用方负责 uri / bytes / 真实名）。
  * keepHistory=false ⇒ 不写；总量超 LIMIT ⇒ FIFO 淘汰最旧一条（只删记录）。
  */
-export async function append(input) {
+export function append(input) {
+  return enqueueWrite(() => appendNow(input));
+}
+
+async function appendNow(input) {
   if (!state.keepHistory) return { ok: false, skipped: 'keep-off' };
-  if (backendKind === 'web') return { ok: false, skipped: 'unsupported' };
+  if (backendKind === 'web' || !support.supported) return { ok: false, skipped: 'unsupported' };
   const record = buildRecord(input);
   if (!record) return { ok: false, error: 'invalid-record' };
   const { next, evicted } = withEvictions(state.records, record);
@@ -372,7 +431,12 @@ export async function append(input) {
 }
 
 /** 移除一条记录（按 id；⛔ 不删文件）。 */
-export async function remove(id) {
+export function remove(id) {
+  return enqueueWrite(() => removeNow(id));
+}
+
+async function removeNow(id) {
+  if (!support.supported) return { ok: false, error: 'unsupported' };
   const target = String(id || '');
   const next = state.records.filter((r) => r.id !== target);
   if (next.length === state.records.length) return { ok: false, error: 'not-found' };
@@ -380,14 +444,24 @@ export async function remove(id) {
 }
 
 /** 清除全部记录（⛔ 不删文件、⛔ 不改 keepHistory）。 */
-export async function clear() {
+export function clear() {
+  return enqueueWrite(clearNow);
+}
+
+async function clearNow() {
+  if (!support.supported) return { ok: false, error: 'unsupported' };
   const saved = await commit([]);
   if (saved.ok) loadError = null;
   return saved;
 }
 
 /** 保留开关（跨重启持久；写失败返回 error，调用方回退 UI）。 */
-export async function setKeep(on) {
+export function setKeep(on) {
+  return enqueueWrite(() => setKeepNow(on));
+}
+
+async function setKeepNow(on) {
+  if (!support.supported) return { ok: false, error: 'unsupported' };
   const prev = state.keepHistory;
   state = { schemaVersion: SCHEMA_VERSION, keepHistory: on === true, records: state.records.slice() };
   const saved = await persist();
@@ -434,7 +508,16 @@ async function checkNative(records) {
 export async function check(records) {
   const list = (records || []).filter((r) => r && r.uri);
   if (!list.length) return { ok: true, results: [] };
+  // 测试后端走内存实现（可注入整次失败）；原生壳仍走 historyCheck
+  if (backendKind === 'memory' && typeof memoryBackend.check === 'function') {
+    return memoryBackend.check(list.map((r) => r.uri));
+  }
   return checkNative(list);
+}
+
+/** 调试 / 测试用：当前后端里真正落盘的 JSON（内存后端 = 模拟磁盘；其它后端为空）。 */
+export function __diskJson() {
+  return backendKind === 'memory' ? memoryBackend.json : '';
 }
 
 /** 调试 / 测试用：重置内存状态（不写后端）。 */
@@ -444,4 +527,6 @@ export function __reset() {
   backend = null;
   backendKind = 'web';
   support = { supported: false, sdkInt: 0, reason: 'web' };
+  supportOverride = null;
+  writeChain = Promise.resolve();
 }

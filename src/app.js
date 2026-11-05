@@ -10,7 +10,7 @@ import { convert, registry, MAX_BYTES } from './convert.js';
 import { collapseCjkSpaces } from './cjk.js';
 import { htmlToMarkdown } from './html2md.js';
 import { decodeText, sniff } from './sniff.js';
-import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument, normalizeExternalText, refreshFilesPanel } from './ui.js';
+import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument, normalizeExternalText, refreshFilesPanel, shareMimeOf, saveSummary, recordHistory } from './ui.js';
 import { mountPreview, renderMarkdown } from './markdown-preview.js';
 import * as historyStore from './history-store.js';
 
@@ -107,6 +107,10 @@ window.__doc2md = {
   set embedMaxBytes(n) { setEmbedMaxBytes(n); },
   openExternal: openExternalDocument,
   normalizeExternalText: normalizeExternalText,
+  /* A11 / R2-03 测试缝：批量保存汇总句（纯函数） */
+  saveSummary,
+  /* A10 / R2-01 测试缝：真实 recordHistory 路径（用于可见/点击断言） */
+  __recordHistory: recordHistory,
   /* 卡 060 / 2-5：转换历史库（数据层 + 刷新入口；测试缝与实现共用同一份函数） */
   history: {
     load: historyStore.load,
@@ -119,6 +123,8 @@ window.__doc2md = {
     check: historyStore.check,
     __setBackend: historyStore.__setBackend,
     __reset: historyStore.__reset,
+    __diskJson: historyStore.__diskJson,
+    shareMimeOf,
     refresh: refreshFilesPanel,
     LIMIT: historyStore.LIMIT,
     relTime: historyStore.relTime,

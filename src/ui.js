@@ -299,7 +299,8 @@ export async function saveTextArtifact(text, fileName, mime = 'text/markdown;cha
     diag('save', 'native');
     nativeNotice(saved);
     // 卡 060 / A3：只记**成功保存**（uri 非空 + bytes>0 + 真实名由 recordHistory 再判一次）。
-    recordHistory(res, 'md');
+    // F1：等历史提交完再返回，批量循环因此天然串行（队列兜底）。
+    await recordHistory(res, 'md');
     return 'native';
   }
   if (isNativeRuntime()) {
@@ -345,11 +346,10 @@ export async function saveAllArtifacts(items) {
     }
   }
   const where = isNativeRuntime() ? '下载/WenZhuanMD' : '浏览器下载目录';
-  const msg =
-    failed === 0
-      ? '✅ 已保存 ' + ok + ' 个 .md 到「' + where + '」'
-      : '已保存 ' + ok + ' 个 / ' + failed + ' 个失败（共 ' + (ok + failed) + ' 个）';
-  setStatus(msg, failed > 0);
+  const note = recordSkipNote;
+  recordSkipNote = '';
+  const msg = saveSummary(ok, failed, where, note);
+  setStatus(msg, failed > 0 || Boolean(note));
   if (isNativeRuntime()) showToast(msg, failed > 0);
   return { ok, failed };
 }
@@ -393,6 +393,7 @@ function syncSelectAll() {
 function updateResultsChrome() {
   const hasResults = resultRows.length > 0;
   resultsPanel.hidden = !hasResults;
+  paintSessionResult();
   hintEl.style.display = hasResults ? 'none' : '';
   document.body.classList.toggle('has-results', hasResults);
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
@@ -552,7 +553,8 @@ async function saveZipNative(plugin, bytes, filename) {
     started = false; // 已正常收尾 ⇒ 不再回滚
     nativeNotice(NATIVE_SAVED + ((res && res.filename) || filename));
     // 卡 060 / A3：zip 记录在 endBinary commit 之后写（kind=zip；失败不影响文件已保存这一事实）。
-    recordHistory(res, 'zip');
+    // F1：等历史提交完再返回（批量保存不并发覆盖）。
+    await recordHistory(res, 'zip');
     return 'native';
   } catch (e) {
     if (started) {
@@ -1076,9 +1078,10 @@ export function activateTab(name) {
     }
   }
   const active = target.dataset.tab || null;
-  // 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时清空关键词（A8：切走 Tab 自动退出搜索）。
+  activeTabName = active;
+  // 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。
   if (active === 'files') refreshFilesPanel().catch(() => {});
-  else setFilesQuery('');
+  else toggleFilesSearch(false);
   return active;
 }
 function focusTab(step) {
@@ -1262,6 +1265,9 @@ function initMarkdownViewer() {
 
 let filesQuery = '';
 let filesCleared = false;
+let checkFailed = false;
+let sessionLast = null;
+let activeTabName = 'convert';
 let invalidByUri = new Set();
 let checkErrorByUri = new Set();
 
@@ -1278,10 +1284,13 @@ function filesEls() {
     emptySearchTitle: byId('filesEmptySearchTitle'),
     errorBox: byId('filesError'),
     errorSub: byId('filesErrorSub'),
+    appbar: document.querySelector('.appbar'),
     searchBar: byId('filesSearchBar'),
     searchInput: byId('filesSearch'),
-    searchClear: byId('filesSearchClear'),
+    searchClose: byId('filesSearchClose'),
     searchCount: byId('filesSearchCount'),
+    searchBtn: byId('filesSearchBtn'),
+    retry: byId('filesRetry'),
     searchReset: byId('filesSearchReset'),
     keepSwitch: byId('keepHistorySwitch'),
     keepSub: byId('keepHistorySub'),
@@ -1335,8 +1344,10 @@ function emptyKind(state, shownCount, total) {
 }
 
 function filesMetaText(shownCount, total) {
-  if (filesQuery.trim()) return '匹配 ' + shownCount + ' / 共 ' + total + ' 项';
-  if (total > 0) return '共 ' + total + ' 项 · 保存在 Download/WenZhuanMD';
+  // F9：整次核验失败 ⇒ 页头明示「状态未知」，⛔ 把「没核验」冒充「文件都在」
+  const unknown = checkFailed ? ' · 核验失败，文件状态未知' : '';
+  if (filesQuery.trim()) return '匹配 ' + shownCount + ' / 共 ' + total + ' 项' + unknown;
+  if (total > 0) return '共 ' + total + ' 项 · 保存在 Download/WenZhuanMD' + unknown;
   return '共 0 项';
 }
 
@@ -1352,8 +1363,23 @@ function paintSearchCount(el, shownCount) {
   el.searchCount.textContent = on ? '匹配 ' + shownCount : '';
 }
 
-function paintKeep(el, state, supported) {
-  if (el.keepSwitch) {
+// 卡 060 / A8/A16（2026-10-23 拍板一）：恢复 v8 交互 —— app bar 搜索图标只在「文件」页出现；
+// 点击展开输入框（app bar 让位），关闭恢复图标。⛔ 不再用列表上方常显搜索框。
+// R2-02（2026-10-23 第二轮退回）：搜索图标只取决于「当前 Tab」，⛔ 与历史写入支持位耦合 ——
+// SDK 28 上列表/搜索仍可用（A11 支持矩阵），图标不能因为「不支持写入」而消失。
+function paintSearchButton(el) {
+  if (!el.searchBtn) return;
+  el.searchBtn.hidden = activeTabName !== 'files';
+  if (el.searchBar) el.searchBtn.setAttribute('aria-expanded', String(!el.searchBar.hidden));
+}
+
+// F9：整次核验失败 ≠ 文件不存在 —— 明示「状态未知」并给重试入口（⛔ 静默忽略）。
+function paintRetry(el, supported) {
+  if (!el.retry) return;
+  el.retry.hidden = !(supported && checkFailed);
+}
+
+function paintKeep(el, state, supported) {  if (el.keepSwitch) {
     el.keepSwitch.setAttribute('aria-checked', String(state.keepHistory !== false));
     el.keepSwitch.setAttribute('aria-disabled', String(!supported));
     el.keepSwitch.disabled = !supported;
@@ -1381,6 +1407,8 @@ function paintChrome(state, shownCount, total) {
   const supported = Boolean(state.support && state.support.supported);
   paintMeta(el, shownCount, total);
   paintSearchCount(el, shownCount);
+  paintSearchButton(el);
+  paintRetry(el, supported);
   paintKeep(el, state, supported);
   paintClear(el, state, supported, total);
 }
@@ -1427,14 +1455,15 @@ function removeRecord(rec) {
     .catch(() => setStatus('移除记录失败', true));
 }
 
-function makeShareButton(rec, invalid) {
+function makeShareButton(rec, invalid, supported) {
   const share = document.createElement('button');
   share.type = 'button';
   share.className = 'file-share';
   // 分享语义 = 三点连线（Material share）；⛔ 用 ↗（会被读成「跳到外部/文件管理器」）。
   share.innerHTML = FILE_SVG.share;
   share.setAttribute('aria-label', '分享 ' + rec.name);
-  share.disabled = invalid;
+  // A11：不支持历史的系统上，行操作一并禁用（⛔ 只锁文案不锁操作）。
+  share.disabled = invalid || !supported;
   share.addEventListener('click', (e) => {
     e.stopPropagation();
     shareHistoryRecord(rec);
@@ -1455,11 +1484,12 @@ function makeRemoveButton(rec) {
   return rm;
 }
 
-function makeMainButton(rec, invalid) {
+function makeMainButton(rec, invalid, supported) {
   const main = document.createElement('button');
   main.type = 'button';
   main.className = 'file-main';
   main.setAttribute('aria-label', '打开 ' + rec.name);
+  main.disabled = !supported;
   const name = document.createElement('span');
   name.className = 'file-name';
   name.textContent = rec.name;
@@ -1471,15 +1501,15 @@ function makeMainButton(rec, invalid) {
   return main;
 }
 
-function renderRecordRow(rec) {
+function renderRecordRow(rec, supported) {
   const invalid = invalidByUri.has(rec.uri);
   const row = document.createElement('div');
   row.className = 'file-row' + (invalid ? ' invalid' : '');
   row.setAttribute('role', 'listitem');
   row.dataset.id = rec.id;
-  row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid));
-  if (invalid) row.append(makeRemoveButton(rec));
-  row.append(makeShareButton(rec, invalid));
+  row.append(makeTypeIcon(rec, invalid), makeMainButton(rec, invalid, supported));
+  if (invalid && supported) row.append(makeRemoveButton(rec));
+  row.append(makeShareButton(rec, invalid, supported));
   return row;
 }
 
@@ -1488,9 +1518,10 @@ function renderFilesPanel(state) {
   if (!el.panel) return;
   const all = state.records || [];
   const shown = filesQuery.trim() ? historySearch(filesQuery) : all;
+  const supported = Boolean(state.support && state.support.supported);
   if (el.list) el.list.innerHTML = '';
   if (el.list && shown.length) {
-    for (const rec of shown) el.list.append(renderRecordRow(rec));
+    for (const rec of shown) el.list.append(renderRecordRow(rec, supported));
   }
   paintChrome(state, shown.length, all.length);
   paintEmptyStates(state, shown.length, all.length);
@@ -1512,9 +1543,11 @@ function collectCheckResults(results) {
 async function verifyRecords(state) {
   invalidByUri = new Set();
   checkErrorByUri = new Set();
+  checkFailed = false;
   if (!(state.support && state.support.supported) || !state.records.length) return;
   const chk = await historyCheck(state.records);
   if (chk && chk.ok) collectCheckResults(chk.results);
+  else checkFailed = true; // F9：整次核验失败 ⇒ 「状态未知」，不冒充「文件都在」
 }
 
 /** 进入 / 刷新文件页：重读数据 + 逐条核验 uri（异常 ≠ 不存在）。 */
@@ -1526,9 +1559,59 @@ export async function refreshFilesPanel() {
   return state;
 }
 
+/** R2-01（2026-11-05 拍板 A）：结果面板出现后，「本次结果」仍须有**可见可点**载体。
+ *  keep-off ⇒ 点击只说明真实原因、**留在当前结果**（⛔ 跳转）；已记入 ⇒ 走 A10 的定位 + 高亮。 */
+function paintSessionResult() {
+  const el = document.getElementById('sessionResult');
+  if (!el) return;
+  if (!sessionLast) {
+    el.hidden = true;
+    el.onclick = null;
+    return;
+  }
+  el.hidden = false;
+  el.classList.toggle('muted', !sessionLast.recorded);
+  el.textContent = '本次：' + (sessionLast.name || '（未命名）') +
+    (sessionLast.recorded ? ' · 已记入历史 · 点此定位' : ' · 未记入历史 · 点此查看原因');
+  el.onclick = onSessionResultClick;
+}
+
+function onSessionResultClick() {
+  if (!sessionLast) return;
+  if (!sessionLast.recorded) {
+    const why = sessionLast.reason || '保留开关已关或未拿到真实文件名';
+    setStatus('本次转换未记入历史：' + why + '；文件已保存，可在文件管理器中找到', true);
+    return;
+  }
+  activateTab('files');
+  const rec = historyGetState().records.find((r) => r.uri === sessionLast.uri);
+  if (rec) highlightRecord(rec.id);
+  else setStatus('本次记录不在历史里（可能已被清除或淘汰）', true);
+}
+
 function updateLastConversion(state) {
+  paintSessionResult();
   const empty = document.getElementById('lastEmpty');
   if (!empty) return;
+  // F5：本次会话的结果优先（keep-off 时它不在历史里，但用户刚转完，首页要能看到）。
+  if (sessionLast) {
+    empty.textContent =
+      '本次：' + (sessionLast.name || '（未命名）') +
+      (sessionLast.recorded ? ' · 已记入历史' : ' · 未记入历史（保留开关已关或未拿到真实名）') +
+      ' · 点此定位到「文件」';
+    empty.style.cursor = 'pointer';
+    empty.onclick = () => {
+      if (!sessionLast.recorded) {
+        setStatus('本次转换未记入历史（保留开关已关 / 未拿到真实文件名）；文件已保存，可在文件管理器中找到', true);
+        return;
+      }
+      activateTab('files');
+      const rec = state.records.find((r) => r.uri === sessionLast.uri);
+      if (rec) highlightRecord(rec.id);
+      else setStatus('本次记录不在历史里（可能已被清除或淘汰）', true);
+    };
+    return;
+  }
   const rec = state.records[0];
   if (!rec) {
     empty.textContent = '还没有转换记录 —— 转换完成后会显示在这里。';
@@ -1580,6 +1663,19 @@ function setFilesQuery(q) {
   renderFilesPanel(historyGetState());
 }
 
+/* 卡 060 / A8（拍板一）：app bar 搜索开合 —— 打开 = 图标让位、输入框展开并聚焦；
+ * 关闭 = 清空关键词并恢复标题/图标。 */
+function toggleFilesSearch(on) {
+  const el = filesEls();
+  if (!el.searchBar) return;
+  const open = on === undefined ? el.searchBar.hidden : on;
+  el.searchBar.hidden = !open;
+  if (el.appbar) el.appbar.classList.toggle('searching', open);
+  if (el.searchBtn) el.searchBtn.setAttribute('aria-expanded', String(open));
+  if (!open) setFilesQuery('');
+  else if (el.searchInput) el.searchInput.focus();
+}
+
 function shareFailMessage(res) {
   if (!res) return '分享失败：未知错误';
   if (res.error === 'no_app') return '没有可用的分享应用';
@@ -1589,7 +1685,7 @@ function shareFailMessage(res) {
 // 分享用的 MIME：QQ 把 `text/markdown` 当**文本预览**（只存进「QQ > 文件」，没有发送动作）
 // ⇒ `.md` 改用文件型 `application/octet-stream`，QQ 才会走「选择聊天 → 发送文件」流程。
 // （内容仍是同一条 content://，接收方读到的字节不变；2026-10-23 真机实测。）
-function shareMimeOf(rec) {
+export function shareMimeOf(rec) {
   if (rec.kind === 'md') return 'application/octet-stream';
   return rec.mime || 'application/octet-stream';
 }
@@ -1608,6 +1704,9 @@ async function shareHistoryRecord(rec) {
   try {
     const res = await plugin.shareContentUri({ uri: rec.uri, mime: shareMimeOf(rec), name: rec.name });
     if (!res || res.ok !== true) setStatus(shareFailMessage(res), true);
+    // 2026-10-23 真机反馈：成功后状态一直停在「正在打开分享……」⇒ 必须给出终态（⛔ 不宣称「已发送」）
+    else setStatus('已打开分享：' + rec.name);
+
   } catch (e) {
     setStatus('分享失败：' + (e && e.message ? e.message : '未知错误'), true);
   }
@@ -1730,6 +1829,17 @@ function toggleKeep() {
     .catch(() => setStatus('保留开关保存失败', true));
 }
 
+/** R2-03：本批保存里是否有「未记入历史（需 Android 10+）」——批量汇总必须带出来，⛔ 被成功句覆盖 */
+let recordSkipNote = '';
+
+/** 批量保存汇总句（纯函数；R2-03 的原因后缀不得丢） */
+export function saveSummary(ok, failed, where, note) {
+  const base = failed === 0
+    ? '✅ 已保存 ' + ok + ' 个 .md 到「' + where + '」'
+    : '已保存 ' + ok + ' 个 / ' + failed + ' 个失败（共 ' + (ok + failed) + ' 个）';
+  return note ? base + ' · ' + note : base;
+}
+
 async function resetHistory() {
   const r = await historyClear();
   if (!r || !r.ok) {
@@ -1741,6 +1851,14 @@ async function resetHistory() {
   refreshFilesPanel().catch(() => {});
 }
 
+/** R2-01：未记入历史的真实原因（keep-off / 不支持 / 写失败）——纯函数，供「本次结果」入口展示 */
+function sessionReasonOf(r) {
+  if (r && r.ok) return '';
+  if (r && r.skipped === 'keep-off') return '保留开关已关闭';
+  if (r && r.skipped === 'unsupported') return '当前系统不支持历史记录（需 Android 10+）';
+  return '历史记录写入失败';
+}
+
 function recordAppendResult(r) {
   if (r && r.ok) {
     filesCleared = false;
@@ -1748,38 +1866,68 @@ function recordAppendResult(r) {
     return;
   }
   if (r && r.skipped === 'keep-off') return;
+  // R2-03：不支持历史的系统必须给专有说明（需 Android 10+），⛔ 泛化成「未写入」
+  if (r && r.skipped === 'unsupported') {
+    recordSkipNote = '未记入历史（需 Android 10+）';
+    nativeNotice('已保存，但历史未记录：需 Android 10+（当前系统不支持历史记录）', true);
+    return;
+  }
   nativeNotice('已保存，但历史记录未写入', true);
 }
 
-/** 保存成功后写历史（A3：uri 非空 + bytes>0 + 真实名；失败可见但不回滚文件）。 */
+/** 保存成功后写历史（A3：uri 非空 + bytes>0 + 真实名；失败可见但不回滚文件）。
+ *  F1：返回 Promise —— 批量保存要**等每件历史提交完**，否则并发 append 会互相覆盖（实测 3 件只剩 1 条）。 */
 export function recordHistory(res, kind) {
-  if (!res || !res.uri || res.bytes <= 0 || !res.filename) return;
+  if (!res || !res.uri || res.bytes <= 0) return Promise.resolve({ ok: false, skipped: 'invalid' });
   const isZip = kind === 'zip';
-  historyAppend({
+  if (!res.filename) {
+    // F7：拿不到真实文件名 ⇒ 不记录（避免把请求名当真实名写进历史），但文件已保存 ⇒ 明示。
+    sessionLast = { name: '', uri: res.uri, recorded: false, reason: '未拿到真实文件名' };
+    nativeNotice('已保存，但历史记录未写入（未拿到真实文件名）', true);
+    return Promise.resolve({ ok: false, skipped: 'no-name' });
+  }
+  sessionLast = { name: res.filename, uri: res.uri, recorded: false, reason: '' };
+  return historyAppend({
     name: res.filename,
     uri: res.uri,
     bytes: res.bytes,
     kind: isZip ? 'zip' : 'md',
     mime: isZip ? 'application/zip' : 'text/markdown',
   })
-    .then(recordAppendResult)
-    .catch(() => nativeNotice('已保存，但历史记录未写入', true));
+    .then((r) => {
+      recordAppendResult(r);
+      // R2-01：记录结果 + 未记入历史的真实原因（抽成纯函数，避免 recordHistory 复杂度超限）
+      sessionLast = {
+        name: res.filename,
+        uri: res.uri,
+        recorded: Boolean(r && r.ok),
+        reason: sessionReasonOf(r),
+      };
+      updateLastConversion(historyGetState());
+      return r;
+    })
+    .catch(() => {
+      if (sessionLast) sessionLast.reason = '历史记录写入失败';
+      nativeNotice('已保存，但历史记录未写入', true);
+      return { ok: false, error: 'append-failed' };
+    });
 }
 
 function wireFilesSearch(el) {
+  if (el.searchBtn) el.searchBtn.addEventListener('click', () => toggleFilesSearch());
   if (el.searchInput) {
     el.searchInput.addEventListener('input', () => setFilesQuery(el.searchInput.value));
     el.searchInput.addEventListener('keydown', (e) => {
-      // 搜索框常显 ⇒ Esc 的语义 = 清空关键词；Enter（键盘「搜索」键）= 跳到首条匹配并闪高亮。
+      // A8：Esc 关闭搜索；Enter（键盘「搜索」键）跳到首条匹配并闪高亮（用户 2026-10-22 口头要求）。
       if (e.key === 'Enter') {
         e.preventDefault();
         flashFirstMatch();
         return;
       }
-      if (e.key === 'Escape') setFilesQuery('');
+      if (e.key === 'Escape') toggleFilesSearch(false);
     });
   }
-  if (el.searchClear) el.searchClear.addEventListener('click', () => setFilesQuery(''));
+  if (el.searchClose) el.searchClose.addEventListener('click', () => toggleFilesSearch(false));
   if (el.searchReset) el.searchReset.addEventListener('click', () => setFilesQuery(''));
 }
 
@@ -1788,6 +1936,7 @@ function wireHistoryControls(el) {
   if (el.reset) el.reset.addEventListener('click', () => resetHistory().catch(() => {}));
   if (el.keepSwitch) el.keepSwitch.addEventListener('click', () => toggleKeep());
   if (el.clearBtn) el.clearBtn.addEventListener('click', () => openClearDialog());
+  if (el.retry) el.retry.addEventListener('click', () => refreshFilesPanel().catch(() => {}));
 }
 
 function wireClearDialog(el) {
