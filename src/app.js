@@ -10,7 +10,7 @@ import { convert, registry, MAX_BYTES } from './convert.js';
 import { collapseCjkSpaces } from './cjk.js';
 import { htmlToMarkdown } from './html2md.js';
 import { decodeText, sniff } from './sniff.js';
-import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument, normalizeExternalText, refreshFilesPanel, shareMimeOf, saveSummary, recordHistory } from './ui.js';
+import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, getEmbedMaxBytes, setEmbedMaxBytes, openExternalDocument, normalizeExternalText, refreshFilesPanel, shareMimeOf, saveSummary, recordHistory, saveTextArtifact } from './ui.js';
 import { mountPreview, renderMarkdown } from './markdown-preview.js';
 import * as historyStore from './history-store.js';
 
@@ -111,6 +111,8 @@ window.__doc2md = {
   saveSummary,
   /* A10 / R2-01 测试缝：真实 recordHistory 路径（用于可见/点击断言） */
   __recordHistory: recordHistory,
+  /* A11 / F-02 测试缝：真实单件保存路径（native 桩 + support=false 验证终态文案） */
+  __saveTextArtifact: saveTextArtifact,
   /* 卡 060 / 2-5：转换历史库（数据层 + 刷新入口；测试缝与实现共用同一份函数） */
   history: {
     load: historyStore.load,

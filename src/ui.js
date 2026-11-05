@@ -1884,6 +1884,7 @@ export function recordHistory(res, kind) {
     // F7：拿不到真实文件名 ⇒ 不记录（避免把请求名当真实名写进历史），但文件已保存 ⇒ 明示。
     sessionLast = { name: '', uri: res.uri, recorded: false, reason: '未拿到真实文件名' };
     nativeNotice('已保存，但历史记录未写入（未拿到真实文件名）', true);
+    updateLastConversion(historyGetState()); // F-06：错误路径也必须重绘「本次结果」，⛔ 残留上一次
     return Promise.resolve({ ok: false, skipped: 'no-name' });
   }
   sessionLast = { name: res.filename, uri: res.uri, recorded: false, reason: '' };
@@ -1909,6 +1910,7 @@ export function recordHistory(res, kind) {
     .catch(() => {
       if (sessionLast) sessionLast.reason = '历史记录写入失败';
       nativeNotice('已保存，但历史记录未写入', true);
+      updateLastConversion(historyGetState()); // F-06：写失败路径同样重绘
       return { ok: false, error: 'append-failed' };
     });
 }

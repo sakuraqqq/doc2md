@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-11-05T12:24:09.079Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-11-05T18:12:53.581Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -34,7 +34,7 @@
 | src/xlsx.js | sigDigitsOf | 585 | 10 | 10 |
 | tools/measure-xlsx-peak.mjs | main | 276 | 10 | 10 |
 | tools/verify-release-online.mjs | main | 67 | 10 | 10 |
-| src/app.js | consumePendingOpen | 149 | 10 | 9 |
+| src/app.js | consumePendingOpen | 151 | 10 | 9 |
 | src/history-store.js | normalizeRecord | 81 | 10 | 9 |
 | src/ui.js | openExternalDocument | 852 | 10 | 9 |
 | src/ui.js | keepDialogKey | 1795 | 10 | 9 |
@@ -103,7 +103,7 @@
 | tools/deploy-smoke.mjs | checkSite | 135 | 7 | 9 |
 | src/docx.js | ommlEnclosingPara | 143 | 7 | 8 |
 | src/markdown-preview.js | consumeSegmentLine | 301 | 7 | 8 |
-| src/ui.js | wireFilesSearch | 1916 | 7 | 8 |
+| src/ui.js | wireFilesSearch | 1918 | 7 | 8 |
 | src/xlsx.js | zipDirectory | 58 | 7 | 8 |
 | src/xlsx.js | xlsxSelfParse | 710 | 7 | 8 |
 | src/app.js | handleFiles | 17 | 7 | 7 |
@@ -186,7 +186,7 @@
 | tools/check-pages-allowlist.mjs | main | 69 | 6 | 6 |
 | tools/ci-step-guard-check.mjs | checkSteps | 120 | 6 | 6 |
 | tools/gen-icons.mjs | onTextLine | 67 | 6 | 6 |
-| src/app.js | nativeOpenPlugin | 143 | 6 | 5 |
+| src/app.js | nativeOpenPlugin | 145 | 6 | 5 |
 | src/convert.js | ocrWarnings | 69 | 6 | 5 |
 | src/docx.js | ommlDelim | 91 | 6 | 5 |
 | src/docx.js | dstrikeAttrPlan | 196 | 6 | 5 |
@@ -213,7 +213,7 @@
 | src/ui.js | openClearDialog | 1785 | 6 | 5 |
 | src/ui.js | toggleKeep | 1817 | 6 | 5 |
 | src/ui.js | (anonymous) | 1821 | 6 | 5 |
-| src/ui.js | wireHistoryControls | 1934 | 6 | 5 |
+| src/ui.js | wireHistoryControls | 1936 | 6 | 5 |
 | src/xlsx.js | zipEntryMeta | 94 | 6 | 5 |
 | src/xlsx.js | parseCellAt | 252 | 6 | 5 |
 | src/xlsx.js | extractInlineText | 418 | 6 | 5 |
@@ -306,7 +306,7 @@
 | src/ui.js | confirmClear | 1770 | 5 | 4 |
 | src/ui.js | (anonymous) | 1772 | 5 | 4 |
 | src/ui.js | resetHistory | 1843 | 5 | 4 |
-| src/ui.js | wireClearDialog | 1942 | 5 | 4 |
+| src/ui.js | wireClearDialog | 1944 | 5 | 4 |
 | src/xlsx.js | decodeXmlEntity | 213 | 5 | 4 |
 | src/xlsx.js | takeRowUnit | 316 | 5 | 4 |
 | src/xlsx.js | elemAt | 361 | 5 | 4 |
@@ -534,8 +534,8 @@
 | src/ui.js | flashRow | 1630 | 3 | 2 |
 | src/ui.js | shareMimeOf | 1688 | 3 | 2 |
 | src/ui.js | saveSummary | 1836 | 3 | 2 |
-| src/ui.js | (anonymous) | 1920 | 3 | 2 |
-| src/ui.js | initShell | 1963 | 3 | 2 |
+| src/ui.js | (anonymous) | 1922 | 3 | 2 |
+| src/ui.js | initShell | 1965 | 3 | 2 |
 | src/xlsx.js | normalizeSheetTarget | 193 | 3 | 2 |
 | src/xlsx.js | xlsxSheetNames | 201 | 3 | 2 |
 | src/xlsx.js | textPuller | 292 | 3 | 2 |
@@ -585,7 +585,7 @@
 | tools/race-060.mjs | (anonymous) | 231 | 3 | 2 |
 | tools/verify-release-online.mjs | fetchRaw | 55 | 3 | 2 |
 | src/app.js | (anonymous) | 66 | 2 | 1 |
-| src/app.js | (anonymous) | 161 | 2 | 1 |
+| src/app.js | (anonymous) | 163 | 2 | 1 |
 | src/bline.js | fetchTxt | 7 | 2 | 1 |
 | src/bline.js | (anonymous) | 7 | 2 | 1 |
 | src/bline.js | pdfWorkerUrl | 15 | 2 | 1 |
@@ -678,10 +678,10 @@
 | src/ui.js | makeMainButton | 1487 | 2 | 1 |
 | src/ui.js | highlightRecord | 1637 | 2 | 1 |
 | src/ui.js | (anonymous) | 1638 | 2 | 1 |
-| src/ui.js | (anonymous) | 1897 | 2 | 1 |
-| src/ui.js | (anonymous) | 1909 | 2 | 1 |
-| src/ui.js | (anonymous) | 1949 | 2 | 1 |
-| src/ui.js | initHistoryUI | 1954 | 2 | 1 |
+| src/ui.js | (anonymous) | 1898 | 2 | 1 |
+| src/ui.js | (anonymous) | 1910 | 2 | 1 |
+| src/ui.js | (anonymous) | 1951 | 2 | 1 |
+| src/ui.js | initHistoryUI | 1956 | 2 | 1 |
 | src/xlsx.js | zipEntry | 111 | 2 | 1 |
 | src/xlsx.js | decodeXml | 218 | 2 | 1 |
 | src/xlsx.js | inRange | 357 | 2 | 1 |
@@ -750,9 +750,9 @@
 | src/app.js | (anonymous) | 85 | 1 | 0 |
 | src/app.js | embedMaxBytes | 106 | 1 | 0 |
 | src/app.js | embedMaxBytes | 107 | 1 | 0 |
-| src/app.js | (anonymous) | 171 | 1 | 0 |
-| src/app.js | (anonymous) | 179 | 1 | 0 |
-| src/app.js | (anonymous) | 180 | 1 | 0 |
+| src/app.js | (anonymous) | 173 | 1 | 0 |
+| src/app.js | (anonymous) | 181 | 1 | 0 |
+| src/app.js | (anonymous) | 182 | 1 | 0 |
 | src/convert.js | poorOcr | 64 | 1 | 0 |
 | src/docx.js | (anonymous) | 99 | 1 | 0 |
 | src/docx.js | (anonymous) | 103 | 1 | 0 |
@@ -951,23 +951,23 @@
 | src/ui.js | (anonymous) | 1829 | 1 | 0 |
 | src/ui.js | (anonymous) | 1851 | 1 | 0 |
 | src/ui.js | (anonymous) | 1865 | 1 | 0 |
-| src/ui.js | (anonymous) | 1917 | 1 | 0 |
 | src/ui.js | (anonymous) | 1919 | 1 | 0 |
-| src/ui.js | (anonymous) | 1930 | 1 | 0 |
-| src/ui.js | (anonymous) | 1931 | 1 | 0 |
-| src/ui.js | (anonymous) | 1935 | 1 | 0 |
-| src/ui.js | (anonymous) | 1936 | 1 | 0 |
-| src/ui.js | (anonymous) | 1936 | 1 | 0 |
+| src/ui.js | (anonymous) | 1921 | 1 | 0 |
+| src/ui.js | (anonymous) | 1932 | 1 | 0 |
+| src/ui.js | (anonymous) | 1933 | 1 | 0 |
 | src/ui.js | (anonymous) | 1937 | 1 | 0 |
 | src/ui.js | (anonymous) | 1938 | 1 | 0 |
+| src/ui.js | (anonymous) | 1938 | 1 | 0 |
 | src/ui.js | (anonymous) | 1939 | 1 | 0 |
-| src/ui.js | (anonymous) | 1939 | 1 | 0 |
-| src/ui.js | (anonymous) | 1944 | 1 | 0 |
+| src/ui.js | (anonymous) | 1940 | 1 | 0 |
+| src/ui.js | (anonymous) | 1941 | 1 | 0 |
+| src/ui.js | (anonymous) | 1941 | 1 | 0 |
 | src/ui.js | (anonymous) | 1946 | 1 | 0 |
-| src/ui.js | (anonymous) | 1960 | 1 | 0 |
-| src/ui.js | (anonymous) | 1971 | 1 | 0 |
-| src/ui.js | (anonymous) | 1974 | 1 | 0 |
-| src/ui.js | (anonymous) | 1975 | 1 | 0 |
+| src/ui.js | (anonymous) | 1948 | 1 | 0 |
+| src/ui.js | (anonymous) | 1962 | 1 | 0 |
+| src/ui.js | (anonymous) | 1973 | 1 | 0 |
+| src/ui.js | (anonymous) | 1976 | 1 | 0 |
+| src/ui.js | (anonymous) | 1977 | 1 | 0 |
 | src/xlsx.js | centralEntryAt | 28 | 1 | 0 |
 | src/xlsx.js | (anonymous) | 86 | 1 | 0 |
 | src/xlsx.js | start | 122 | 1 | 0 |
