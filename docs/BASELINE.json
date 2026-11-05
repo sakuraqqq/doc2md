@@ -23,8 +23,8 @@
         "skip": 3
       },
       "measured": {
-        "at": "2026-10-23",
-        "source": "2026-10-23 卡 060 退回重修（CI 口径）：按既有映射推得 # tests 406 / # pass 403 / # fail 0 / # skipped 3（= 本机 409/407/0/2 ⇒ total −3 / pass −4 / skip +1，口径未变）。上一轮 396/393 已由 CI run 39817173204 对账；本轮待推送后由 CI 的 --from-tap 步确认。"
+        "at": "2026-11-05",
+        "source": "2026-11-05 卡 060 退回重修（CI 口径）：CI run 42028155613（PR #89，head 423e645，**检出 f423365** = GitHub PR merge ref）实测 # tests 406 / # pass 403 / # fail 0 / # skipped 3；同 run 的 TAP ↔ BASELINE 对账步输出「逐项一致」。映射关系未变（本机 409/407/0/2 ⇒ total −3 / pass −4 / skip +1）。"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }
