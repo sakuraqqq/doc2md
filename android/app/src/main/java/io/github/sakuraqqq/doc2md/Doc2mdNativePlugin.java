@@ -911,24 +911,60 @@ public class Doc2mdNativePlugin extends Plugin {
     // 定义，原生只做四件事：读整份 JSON / 原子写整份 JSON / 逐条核验 uri / 报告 API 支持位。
     // 原子写 = tmp + fsync + rename；rename 失败时【旧文件保持原样】并返回 ok=false（⛔ 先删旧文件）。
     private boolean historyFailOnce = false;
+    // debug-only：在原子写的具体阶段注入失败（tmp / fsync / rename），release 恒为空串
+    private static final String FAIL_TMP = "tmp";
+    private static final String FAIL_FSYNC = "fsync";
+    private static final String FAIL_RENAME = "rename";
+    private String historyFailStage = "";
 
     private File historyFile() {
         return new File(getContext().getFilesDir(), "doc2md-history.json");
     }
 
+    /** debug-only：命中指定阶段则抛错（一次性；release 下 historyFailStage 恒为空 ⇒ 永不命中） */
+    private void maybeFailAt(String stage) throws Exception {
+        if (stage.equals(historyFailStage)) {
+            historyFailStage = "";
+            throw new Exception("injected-" + stage + "-failure");
+        }
+    }
+
+    /** 原子写 = tmp 写入 → fsync → rename。任一阶段失败：旧文件保持原样、清掉 tmp（⛔ 先删旧文件）。 */
     private void writeHistoryAtomic(String json) throws Exception {
         File target = historyFile();
         File tmp = new File(target.getParentFile(), target.getName() + ".tmp");
         FileOutputStream fos = new FileOutputStream(tmp);
         try {
+            maybeFailAt(FAIL_TMP);
             fos.write(json.getBytes(StandardCharsets.UTF_8));
             fos.flush();
+            maybeFailAt(FAIL_FSYNC);
             fos.getFD().sync();
-        } finally {
+        } catch (Exception e) {
             fos.close();
+            deleteQuietly(tmp);
+            throw e;
+        }
+        fos.close();
+        try {
+            maybeFailAt(FAIL_RENAME);
+        } catch (Exception e) {
+            deleteQuietly(tmp);
+            throw e;
         }
         if (!tmp.renameTo(target)) {
+            deleteQuietly(tmp);
             throw new Exception("rename failed");
+        }
+    }
+
+    private static void deleteQuietly(File f) {
+        try {
+            if (f != null && f.exists()) {
+                f.delete();
+            }
+        } catch (Exception ignored) {
+            // 清理失败不掩盖原始错误
         }
     }
 
@@ -1007,6 +1043,29 @@ public class Doc2mdNativePlugin extends Plugin {
         }
         JSObject ret = new JSObject();
         ret.put("ok", true);
+        call.resolve(ret);
+    }
+
+    // debug-only：在原子写的指定阶段注入一次失败（tmp / fsync / rename）；release 返回 ok=false。
+    @PluginMethod
+    public void historyFailAtStage(PluginCall call) {
+        JSObject ret = new JSObject();
+        if (!isDebuggable()) {
+            ret.put("ok", false);
+            ret.put("error", "release");
+            call.resolve(ret);
+            return;
+        }
+        String stage = call.getString("stage", "");
+        if (!FAIL_TMP.equals(stage) && !FAIL_FSYNC.equals(stage) && !FAIL_RENAME.equals(stage)) {
+            ret.put("ok", false);
+            ret.put("error", "unknown-stage");
+            call.resolve(ret);
+            return;
+        }
+        historyFailStage = stage;
+        ret.put("ok", true);
+        ret.put("stage", stage);
         call.resolve(ret);
     }
 

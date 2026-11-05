@@ -822,6 +822,8 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 
 **R2-08 红侧证据（2026-11-05，均由「撤掉对应修复」产生）**：6b 撤严格布尔 ⇒ `缺省 keepHistory 未判 corrupt`（`z10-6b-red.tap`）；6c 撤回滚 ⇒ `写失败后内存被污染`（`z10-6c-red.tap`）；7b 用记录 mime ⇒ `md 分享 Intent MIME 不是兼容例外 octet-stream`（`z10-7b-red.tap`）；6d 见 `z10-r2-red.tap`（`不支持历史时搜索图标被隐藏`）。恢复后 Z10 20/20（`z10-r208-green.tap`）。
 
+**R2-04 原生原子写阶段注入（2026-11-05，debug 包实测）**：`historyFailAtStage({stage})` 在 `writeHistoryAtomic` 的 **tmp / fsync / rename** 三处各注入一次失败（release 恒空操作）；任一失败或 `renameTo` 失败都会清掉 `.tmp` 并保留旧 JSON。设备实测（`base.apk` 22,947,288 B / `136216D1…`）：三阶段均返回 `ok:false / injected-<stage>-failure`，旧 JSON 保持 **51 B / `271a93dc…`**（前后逐字节一致、内容回读等于基线），`.tmp` **无残留**；UI 侧经真实 `__recordHistory` 路径 ⇒ 状态栏「已保存，但历史记录未写入」。证据：`.私档/卡/c060/证据/r204-staged-failures-20261105.tap`（含 before/after 字节 + SHA）、`29-R204-UI写失败提示.png`。⚠️ Z10-6c 只覆盖 memory 数据层，原生磁盘证据以本节为准（两者分列，不互相替代）。
+
 ## 3. 样例清单（脱敏合成数据；字节级锁在 manifest.json）
 
 | 文件 | 类别 | 关键令牌（断言） | 内容要点 |
