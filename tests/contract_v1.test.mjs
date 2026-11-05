@@ -8129,6 +8129,36 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.ok(r.failed.includes('2 个失败'), '失败统计丢了：' + r.failed);
       });
 
+      await t.test('Z10-11 A16 顶栏栏高稳定：三 Tab 一致、搜索展开不改变框架', async () => {
+        await page.evaluate(() => {
+          document.getElementById('tab-convert').click();
+        });
+        await page.waitForTimeout(200);
+        const h = await page.evaluate(async () => {
+          const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+          const bar = document.querySelector('.appbar');
+          const out = {};
+          for (const [k, sel] of [['convert', '#tab-convert'], ['files', '#tab-files'], ['settings', '#tab-settings']]) {
+            document.querySelector(sel).click();
+            await wait(180);
+            out[k] = bar.getBoundingClientRect().height;
+          }
+          document.getElementById('tab-files').click();
+          await wait(180);
+          document.getElementById('filesSearchBtn').click();
+          await wait(220);
+          out.searchOpen = bar.getBoundingClientRect().height;
+          document.getElementById('filesSearchClose').click();
+          await wait(180);
+          out.searchClosed = bar.getBoundingClientRect().height;
+          return out;
+        });
+        assert.ok(Math.abs(h.convert - h.files) <= 0.5, '文件页顶栏比转换页高 ' + (h.files - h.convert).toFixed(2) + 'px');
+        assert.ok(Math.abs(h.convert - h.settings) <= 0.5, '设置页顶栏高度不一致：' + (h.settings - h.convert).toFixed(2) + 'px');
+        assert.ok(Math.abs(h.searchOpen - h.convert) <= 0.5, '搜索展开改变了顶栏高度：' + (h.searchOpen - h.convert).toFixed(2) + 'px');
+        assert.ok(Math.abs(h.searchClosed - h.convert) <= 0.5, '搜索收起后顶栏高度不一致：' + (h.searchClosed - h.convert).toFixed(2) + 'px');
+      });
+
       await t.test('Z10-10 A10/R2-01 keep-off「本次结果」可见可点：说明原因并留在当前结果', async () => {
         await page.evaluate(async () => {
           const h = window.__doc2md.history;

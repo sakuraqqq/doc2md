@@ -60,6 +60,8 @@
     position: sticky; top: 0; z-index: 10;
     display: flex; align-items: center; gap: 10px;
     padding: calc(10px + var(--safe-top)) 16px 10px;
+    /* A16/§17（2026-11-05）：三 Tab 共用稳定栏高 —— 40px 搜索按钮/搜索框不再把顶栏撑高 45 物理像素 */
+    min-height: calc(var(--safe-top) + 61px); /* 40px 内容 + 上下 10px 内边距 + 1px 分隔线 */
     background: var(--panel); border-bottom: 1px solid var(--border);
   }
   .appbar h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .2px; }
