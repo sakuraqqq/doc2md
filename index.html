@@ -4631,6 +4631,7 @@ ${xlsxRowsToMd(kept)}`);
     if (!res.filename) {
       sessionLast = { name: "", uri: res.uri, recorded: false, reason: "\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D" };
       nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165\uFF08\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D\uFF09", true);
+      updateLastConversion(getState());
       return Promise.resolve({ ok: false, skipped: "no-name" });
     }
     sessionLast = { name: res.filename, uri: res.uri, recorded: false, reason: "" };
@@ -4653,6 +4654,7 @@ ${xlsxRowsToMd(kept)}`);
     }).catch(() => {
       if (sessionLast) sessionLast.reason = "\u5386\u53F2\u8BB0\u5F55\u5199\u5165\u5931\u8D25";
       nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
+      updateLastConversion(getState());
       return { ok: false, error: "append-failed" };
     });
   }
@@ -5393,6 +5395,8 @@ ${p.text}
     saveSummary,
     /* A10 / R2-01 测试缝：真实 recordHistory 路径（用于可见/点击断言） */
     __recordHistory: recordHistory,
+    /* A11 / F-02 测试缝：真实单件保存路径（native 桩 + support=false 验证终态文案） */
+    __saveTextArtifact: saveTextArtifact,
     /* 卡 060 / 2-5：转换历史库（数据层 + 刷新入口；测试缝与实现共用同一份函数） */
     history: {
       load,

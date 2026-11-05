@@ -8213,6 +8213,82 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(rec.highlight, true, '已记入历史：未高亮对应记录');
       });
 
+      await t.test('Z10-12 A11/R2-03 端到端：SDK28 保存后 #status 含「需 Android 10+」', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '', support: false, sdkInt: 28 });
+          await h.load();
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                saveText: () => Promise.resolve({ filename: 'sdk28.md', uri: 'content://x/sdk28', bytes: 12 }),
+                historySupport: () => Promise.resolve({ supported: false, sdkInt: 28, reason: 'sdk<29' }),
+              },
+            },
+          };
+        });
+        await page.evaluate(async () => {
+          await window.__doc2md.__saveTextArtifact('# sdk28\n\nDOC2MD-SDK28\n', 'sdk28.txt');
+        });
+        await page.waitForTimeout(200);
+        const status = await page.evaluate(() => (document.getElementById('status') || {}).textContent || '');
+        assert.ok(status.includes('需 Android 10+'), 'SDK28 保存后状态未说明原因：' + status);
+        assert.ok(!/^✅ 已保存 1 个/.test(status), 'SDK28 保存后仍只显示成功句：' + status);
+        await page.evaluate(() => {
+          delete window.Capacitor;
+        });
+      });
+
+      await t.test('Z10-13 A10/F-06 错误路径重绘「本次结果」：无真实名 / 写失败', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          document.getElementById('tab-convert').click();
+          const dt = new DataTransfer();
+          dt.items.add(new File(['# f06\n\nDOC2MD-F06\n'], 'f06.txt', { type: 'text/plain' }));
+          const input = document.getElementById('fileInput');
+          input.files = dt.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitForFunction(() => document.querySelectorAll('#results .result-card, #results .card').length >= 1, null, { timeout: 15000 });
+
+        await page.evaluate(() => window.__doc2md.__recordHistory({ uri: 'content://x/noname', bytes: 8 }, 'md'));
+        await page.waitForTimeout(200);
+        const a = await page.evaluate(() => {
+          const el = document.getElementById('sessionResult');
+          return { hidden: el.hidden, text: el.textContent, w: el.getBoundingClientRect().width };
+        });
+        assert.equal(a.hidden, false, '无真实名路径未显示「本次结果」');
+        assert.ok(a.text.includes('未记入历史'), '无真实名路径未标未记入历史：' + a.text);
+        assert.ok(a.text.includes('（未命名）'), '无真实名路径未重绘当前载体（还是上一条结果）：' + a.text);
+        assert.ok(a.w > 0, '无真实名路径「本次结果」尺寸为 0');
+        await page.click('#sessionResult');
+        await page.waitForTimeout(120);
+        const st1 = await page.evaluate(() => (document.getElementById('status') || {}).textContent || '');
+        assert.ok(st1.includes('未拿到真实文件名'), '点击后未说明真实原因：' + st1);
+
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__setBackend('memory', { json: '', failNextWrite: true });
+          await window.__doc2md.__recordHistory({ filename: 'fail.md', uri: 'content://x/fail', bytes: 8 }, 'md');
+        });
+        await page.waitForTimeout(300);
+        const b = await page.evaluate(() => {
+          const el = document.getElementById('sessionResult');
+          return { hidden: el.hidden, text: el.textContent };
+        });
+        assert.equal(b.hidden, false, '写失败路径未显示「本次结果」');
+        assert.ok(b.text.includes('未记入历史'), '写失败路径未标未记入历史：' + b.text);
+        assert.ok(b.text.includes('fail.md'), '写失败路径未重绘当前载体（还是上一条结果）：' + b.text);
+        await page.click('#sessionResult');
+        await page.waitForTimeout(120);
+        const st2 = await page.evaluate(() => (document.getElementById('status') || {}).textContent || '');
+        assert.ok(st2.includes('历史记录写入失败'), '点击后未说明写失败：' + st2);
+      });
+
       await t.test('Z10-8 A9 清除：二次确认、取消不变、确认只清记录、keep 不变', async () => {
         await page.evaluate(async () => {
           const h = window.__doc2md.history;
