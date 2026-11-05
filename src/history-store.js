@@ -199,6 +199,8 @@ function errMessage(e) {
 const memoryBackend = {
   json: '',
   failNextWrite: false,
+  // F4-02：让 append 真正 reject（区别于 save 返回 {ok:false} 的 .then 分支）
+  appendThrows: false,
   checkFails: false,
   delayMs: 0,
   support: async () => ({ supported: true, sdkInt: 30, reason: 'memory' }),
@@ -270,6 +272,7 @@ function nativeBackendFor(plugin) {
 function applyMemoryOptions(o) {
   if (typeof o.json === 'string') memoryBackend.json = o.json;
   if (o.failNextWrite === true) memoryBackend.failNextWrite = true;
+  if (o.appendThrows === true) memoryBackend.appendThrows = true;
   if (typeof o.checkFails === 'boolean') memoryBackend.checkFails = o.checkFails;
   memoryBackend.delayMs = typeof o.delayMs === 'number' && o.delayMs > 0 ? o.delayMs : 0;
 }
@@ -420,6 +423,10 @@ export function append(input) {
 }
 
 async function appendNow(input) {
+  if (memoryBackend.appendThrows) {
+    memoryBackend.appendThrows = false;
+    throw new Error('injected-append-rejection');
+  }
   if (!state.keepHistory) return { ok: false, skipped: 'keep-off' };
   if (backendKind === 'web' || !support.supported) return { ok: false, skipped: 'unsupported' };
   const record = buildRecord(input);

@@ -1,6 +1,6 @@
 # docs/CODE-METRICS.md — doc2md 代码度量报告（防屎山 ①/③）
 
-> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-11-05T18:12:53.581Z
+> 生成命令：`npm run metrics`（node tools/metrics.mjs）；生成时间：2026-11-05T19:22:13.375Z
 > 度量对象：`src/**/*.js`（主应用源码）+ `tools/**/*.mjs`（开发脚本）——**只看仓库文件**（跳过 `.gitignore` 中的精确路径/目录前缀条目，如私有脚本）；与 eslint.config.js 白名单一致。
 > 阈值：重复率 <5%（jscpd）；圈复杂度 ≤10、认知 ≤15（超限 = 超阈值函数，红名单）。
 
@@ -34,7 +34,7 @@
 | src/xlsx.js | sigDigitsOf | 585 | 10 | 10 |
 | tools/measure-xlsx-peak.mjs | main | 276 | 10 | 10 |
 | tools/verify-release-online.mjs | main | 67 | 10 | 10 |
-| src/app.js | consumePendingOpen | 151 | 10 | 9 |
+| src/app.js | consumePendingOpen | 153 | 10 | 9 |
 | src/history-store.js | normalizeRecord | 81 | 10 | 9 |
 | src/ui.js | openExternalDocument | 852 | 10 | 9 |
 | src/ui.js | keepDialogKey | 1795 | 10 | 9 |
@@ -77,8 +77,8 @@
 | src/convert.js | convert | 108 | 8 | 7 |
 | src/convert.js | runConverter | 234 | 8 | 7 |
 | src/history-store.js | relTime | 155 | 8 | 7 |
-| src/history-store.js | buildRecord | 376 | 8 | 7 |
-| src/history-store.js | checkNative | 494 | 8 | 7 |
+| src/history-store.js | buildRecord | 379 | 8 | 7 |
+| src/history-store.js | checkNative | 501 | 8 | 7 |
 | src/markdown-preview.js | mountPreview | 501 | 8 | 7 |
 | src/sniff.js | sniff | 189 | 8 | 7 |
 | src/ui.js | diagBoot | 140 | 8 | 7 |
@@ -116,9 +116,11 @@
 | src/convert.js | ocrOnce | 44 | 7 | 6 |
 | src/convert.js | unsupportedError | 211 | 7 | 6 |
 | src/history-store.js | fmtSize | 173 | 7 | 6 |
-| src/history-store.js | nativeSupport | 235 | 7 | 6 |
-| src/history-store.js | nativeLoad | 244 | 7 | 6 |
-| src/history-store.js | loadNow | 348 | 7 | 6 |
+| src/history-store.js | nativeSupport | 237 | 7 | 6 |
+| src/history-store.js | nativeLoad | 246 | 7 | 6 |
+| src/history-store.js | applyMemoryOptions | 272 | 7 | 6 |
+| src/history-store.js | loadNow | 351 | 7 | 6 |
+| src/history-store.js | appendNow | 425 | 7 | 6 |
 | src/html2md.js | linkFrag | 95 | 7 | 6 |
 | src/markdown-preview.js | splitNote | 365 | 7 | 6 |
 | src/markdown-preview.js | renderMarkdown | 413 | 7 | 6 |
@@ -162,7 +164,7 @@
 | src/pdf.js | lineText | 240 | 6 | 8 |
 | src/pdf.js | textQualityRatio | 362 | 6 | 8 |
 | tools/audit-delivery.mjs | judged | 191 | 6 | 8 |
-| src/history-store.js | __setBackend | 287 | 6 | 7 |
+| src/history-store.js | __setBackend | 290 | 6 | 7 |
 | src/markdown-preview.js | collectRefDefinitions | 348 | 6 | 7 |
 | src/pdf.js | groupRunsIntoLines | 213 | 6 | 7 |
 | src/pdf.js | monospaceFontsOf | 289 | 6 | 7 |
@@ -186,7 +188,7 @@
 | tools/check-pages-allowlist.mjs | main | 69 | 6 | 6 |
 | tools/ci-step-guard-check.mjs | checkSteps | 120 | 6 | 6 |
 | tools/gen-icons.mjs | onTextLine | 67 | 6 | 6 |
-| src/app.js | nativeOpenPlugin | 145 | 6 | 5 |
+| src/app.js | nativeOpenPlugin | 147 | 6 | 5 |
 | src/convert.js | ocrWarnings | 69 | 6 | 5 |
 | src/docx.js | ommlDelim | 91 | 6 | 5 |
 | src/docx.js | dstrikeAttrPlan | 196 | 6 | 5 |
@@ -194,9 +196,7 @@
 | src/docx.js | docxConvert | 302 | 6 | 5 |
 | src/history-store.js | safeParse | 93 | 6 | 5 |
 | src/history-store.js | parseState | 115 | 6 | 5 |
-| src/history-store.js | applyMemoryOptions | 270 | 6 | 5 |
-| src/history-store.js | appendNow | 422 | 6 | 5 |
-| src/history-store.js | check | 508 | 6 | 5 |
+| src/history-store.js | check | 515 | 6 | 5 |
 | src/html2md.js | codeFrag | 77 | 6 | 5 |
 | src/html2md.js | liTailToLines | 273 | 6 | 5 |
 | src/markdown-preview.js | trackLine | 291 | 6 | 5 |
@@ -273,7 +273,7 @@
 | src/convert.js | xlsxPreflight | 153 | 5 | 4 |
 | src/docx.js | extForContentType | 21 | 5 | 4 |
 | src/history-store.js | nativePlugin | 189 | 5 | 4 |
-| src/history-store.js | nativeSave | 253 | 5 | 4 |
+| src/history-store.js | nativeSave | 255 | 5 | 4 |
 | src/html2md.js | liChildToLines | 284 | 5 | 4 |
 | src/html2md.js | cellToMd | 347 | 5 | 4 |
 | src/markdown-preview.js | sanitizeAnchor | 122 | 5 | 4 |
@@ -379,10 +379,10 @@
 | src/docx.js | ommlRad | 83 | 4 | 3 |
 | src/docx.js | docxImageNames | 135 | 4 | 3 |
 | src/docx.js | (anonymous) | 295 | 4 | 3 |
-| src/history-store.js | supportOverrideOf | 277 | 4 | 3 |
-| src/history-store.js | pickBackend | 309 | 4 | 3 |
-| src/history-store.js | removeNow | 438 | 4 | 3 |
-| src/history-store.js | setKeepNow | 463 | 4 | 3 |
+| src/history-store.js | supportOverrideOf | 280 | 4 | 3 |
+| src/history-store.js | pickBackend | 312 | 4 | 3 |
+| src/history-store.js | removeNow | 445 | 4 | 3 |
+| src/history-store.js | setKeepNow | 470 | 4 | 3 |
 | src/html2md.js | pushMarkerLine | 241 | 4 | 3 |
 | src/html2md.js | spanOf | 341 | 4 | 3 |
 | src/markdown-preview.js | sanitizeImage | 136 | 4 | 3 |
@@ -485,9 +485,9 @@
 | src/history-store.js | asCount | 40 | 3 | 2 |
 | src/history-store.js | filterRecords | 148 | 3 | 2 |
 | src/history-store.js | errMessage | 195 | 3 | 2 |
-| src/history-store.js | save | 213 | 3 | 2 |
-| src/history-store.js | commit | 405 | 3 | 2 |
-| src/history-store.js | clearNow | 451 | 3 | 2 |
+| src/history-store.js | save | 215 | 3 | 2 |
+| src/history-store.js | commit | 408 | 3 | 2 |
+| src/history-store.js | clearNow | 458 | 3 | 2 |
 | src/html2md.js | brFrag | 55 | 3 | 2 |
 | src/html2md.js | emphasisFrag | 64 | 3 | 2 |
 | src/html2md.js | imgFrag | 115 | 3 | 2 |
@@ -585,7 +585,7 @@
 | tools/race-060.mjs | (anonymous) | 231 | 3 | 2 |
 | tools/verify-release-online.mjs | fetchRaw | 55 | 3 | 2 |
 | src/app.js | (anonymous) | 66 | 2 | 1 |
-| src/app.js | (anonymous) | 163 | 2 | 1 |
+| src/app.js | (anonymous) | 165 | 2 | 1 |
 | src/bline.js | fetchTxt | 7 | 2 | 1 |
 | src/bline.js | (anonymous) | 7 | 2 | 1 |
 | src/bline.js | pdfWorkerUrl | 15 | 2 | 1 |
@@ -603,12 +603,12 @@
 | src/history-store.js | mimeOf | 48 | 2 | 1 |
 | src/history-store.js | listOrder | 131 | 2 | 1 |
 | src/history-store.js | (anonymous) | 134 | 2 | 1 |
-| src/history-store.js | check | 206 | 2 | 1 |
-| src/history-store.js | load | 212 | 2 | 1 |
-| src/history-store.js | persist | 370 | 2 | 1 |
-| src/history-store.js | withEvictions | 395 | 2 | 1 |
-| src/history-store.js | (anonymous) | 509 | 2 | 1 |
-| src/history-store.js | __diskJson | 519 | 2 | 1 |
+| src/history-store.js | check | 208 | 2 | 1 |
+| src/history-store.js | load | 214 | 2 | 1 |
+| src/history-store.js | persist | 373 | 2 | 1 |
+| src/history-store.js | withEvictions | 398 | 2 | 1 |
+| src/history-store.js | (anonymous) | 516 | 2 | 1 |
+| src/history-store.js | __diskJson | 526 | 2 | 1 |
 | src/html2md.js | flush | 154 | 2 | 1 |
 | src/html2md.js | headingBlock | 178 | 2 | 1 |
 | src/html2md.js | preBlock | 189 | 2 | 1 |
@@ -750,9 +750,9 @@
 | src/app.js | (anonymous) | 85 | 1 | 0 |
 | src/app.js | embedMaxBytes | 106 | 1 | 0 |
 | src/app.js | embedMaxBytes | 107 | 1 | 0 |
-| src/app.js | (anonymous) | 173 | 1 | 0 |
-| src/app.js | (anonymous) | 181 | 1 | 0 |
-| src/app.js | (anonymous) | 182 | 1 | 0 |
+| src/app.js | (anonymous) | 175 | 1 | 0 |
+| src/app.js | (anonymous) | 183 | 1 | 0 |
+| src/app.js | (anonymous) | 184 | 1 | 0 |
 | src/convert.js | poorOcr | 64 | 1 | 0 |
 | src/docx.js | (anonymous) | 99 | 1 | 0 |
 | src/docx.js | (anonymous) | 103 | 1 | 0 |
@@ -768,35 +768,35 @@
 | src/history-store.js | (anonymous) | 135 | 1 | 0 |
 | src/history-store.js | (anonymous) | 151 | 1 | 0 |
 | src/history-store.js | p | 168 | 1 | 0 |
-| src/history-store.js | support | 204 | 1 | 0 |
-| src/history-store.js | (anonymous) | 210 | 1 | 0 |
-| src/history-store.js | (anonymous) | 216 | 1 | 0 |
-| src/history-store.js | support | 230 | 1 | 0 |
-| src/history-store.js | load | 231 | 1 | 0 |
-| src/history-store.js | save | 232 | 1 | 0 |
-| src/history-store.js | nativeBackendFor | 262 | 1 | 0 |
-| src/history-store.js | support | 264 | 1 | 0 |
-| src/history-store.js | load | 265 | 1 | 0 |
-| src/history-store.js | save | 266 | 1 | 0 |
-| src/history-store.js | emptyLoadResult | 324 | 1 | 0 |
-| src/history-store.js | enqueueWrite | 335 | 1 | 0 |
-| src/history-store.js | (anonymous) | 338 | 1 | 0 |
-| src/history-store.js | (anonymous) | 339 | 1 | 0 |
-| src/history-store.js | load | 344 | 1 | 0 |
-| src/history-store.js | append | 418 | 1 | 0 |
-| src/history-store.js | (anonymous) | 419 | 1 | 0 |
-| src/history-store.js | remove | 434 | 1 | 0 |
-| src/history-store.js | (anonymous) | 435 | 1 | 0 |
-| src/history-store.js | (anonymous) | 441 | 1 | 0 |
-| src/history-store.js | clear | 447 | 1 | 0 |
-| src/history-store.js | setKeep | 459 | 1 | 0 |
-| src/history-store.js | (anonymous) | 460 | 1 | 0 |
-| src/history-store.js | search | 474 | 1 | 0 |
-| src/history-store.js | snapshot | 479 | 1 | 0 |
-| src/history-store.js | getState | 490 | 1 | 0 |
-| src/history-store.js | (anonymous) | 500 | 1 | 0 |
-| src/history-store.js | (anonymous) | 513 | 1 | 0 |
-| src/history-store.js | __reset | 524 | 1 | 0 |
+| src/history-store.js | support | 206 | 1 | 0 |
+| src/history-store.js | (anonymous) | 212 | 1 | 0 |
+| src/history-store.js | (anonymous) | 218 | 1 | 0 |
+| src/history-store.js | support | 232 | 1 | 0 |
+| src/history-store.js | load | 233 | 1 | 0 |
+| src/history-store.js | save | 234 | 1 | 0 |
+| src/history-store.js | nativeBackendFor | 264 | 1 | 0 |
+| src/history-store.js | support | 266 | 1 | 0 |
+| src/history-store.js | load | 267 | 1 | 0 |
+| src/history-store.js | save | 268 | 1 | 0 |
+| src/history-store.js | emptyLoadResult | 327 | 1 | 0 |
+| src/history-store.js | enqueueWrite | 338 | 1 | 0 |
+| src/history-store.js | (anonymous) | 341 | 1 | 0 |
+| src/history-store.js | (anonymous) | 342 | 1 | 0 |
+| src/history-store.js | load | 347 | 1 | 0 |
+| src/history-store.js | append | 421 | 1 | 0 |
+| src/history-store.js | (anonymous) | 422 | 1 | 0 |
+| src/history-store.js | remove | 441 | 1 | 0 |
+| src/history-store.js | (anonymous) | 442 | 1 | 0 |
+| src/history-store.js | (anonymous) | 448 | 1 | 0 |
+| src/history-store.js | clear | 454 | 1 | 0 |
+| src/history-store.js | setKeep | 466 | 1 | 0 |
+| src/history-store.js | (anonymous) | 467 | 1 | 0 |
+| src/history-store.js | search | 481 | 1 | 0 |
+| src/history-store.js | snapshot | 486 | 1 | 0 |
+| src/history-store.js | getState | 497 | 1 | 0 |
+| src/history-store.js | (anonymous) | 507 | 1 | 0 |
+| src/history-store.js | (anonymous) | 520 | 1 | 0 |
+| src/history-store.js | __reset | 531 | 1 | 0 |
 | src/html2md.js | escUrl | 16 | 1 | 0 |
 | src/html2md.js | (anonymous) | 82 | 1 | 0 |
 | src/html2md.js | strikeFrag | 90 | 1 | 0 |

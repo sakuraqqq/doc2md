@@ -8289,6 +8289,65 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.ok(st2.includes('历史记录写入失败'), '点击后未说明写失败：' + st2);
       });
 
+      await t.test('Z10-14 F4-03 端到端：saveAllArtifacts + support=false ⇒ 汇总保留「需 Android 10+」', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '', support: false, sdkInt: 28 });
+          await h.load();
+          document.getElementById('tab-convert').click();
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                saveText: (o) => Promise.resolve({ filename: o.fileName, uri: 'content://x/' + o.fileName, bytes: 10 }),
+                historySupport: () => Promise.resolve({ supported: false, sdkInt: 28, reason: 'sdk<29' }),
+              },
+            },
+          };
+        });
+        const batch = await page.evaluate(() => window.__doc2md.__saveAllArtifacts([
+          { text: '# a\n\nDOC2MD-Z14A\n', fileName: 'z14-a.txt' },
+          { text: '# b\n\nDOC2MD-Z14B\n', fileName: 'z14-b.txt' },
+        ]));
+        await page.waitForTimeout(250);
+        const status = await page.evaluate(() => (document.getElementById('status') || {}).textContent || '');
+        assert.equal(batch.ok, 2, '批量保存计数不对：' + JSON.stringify(batch));
+        assert.ok(status.includes('已保存 2 个'), '批量汇总句缺失：' + status);
+        assert.ok(status.includes('需 Android 10+'), '批量汇总吞掉了未记入原因：' + status);
+        await page.evaluate(() => {
+          delete window.Capacitor;
+        });
+      });
+
+      await t.test('Z10-15 F4-02 catch：append rejected ⇒ 结果区重绘本次结果并说明写失败', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          // 先放一条旧结果，作为「残留上一次」的对照
+          await window.__doc2md.__recordHistory({ filename: 'prev.md', uri: 'content://x/prev', bytes: 8 }, 'md');
+          h.__setBackend('memory', { json: '', appendThrows: true });
+        });
+        const out = await page.evaluate(async () => {
+          const r = await window.__doc2md.__recordHistory({ filename: 'reject.md', uri: 'content://x/reject', bytes: 8 }, 'md');
+          return { r };
+        });
+        await page.waitForTimeout(250);
+        assert.equal(out.r.ok, false, '注入的 rejection 未走失败分支：' + JSON.stringify(out.r));
+        const view = await page.evaluate(() => {
+          const el = document.getElementById('sessionResult');
+          return { hidden: el.hidden, text: el.textContent, w: el.getBoundingClientRect().width };
+        });
+        assert.equal(view.hidden, false, 'catch 路径未显示「本次结果」');
+        assert.ok(view.text.includes('reject.md'), 'catch 路径未重绘当前结果（还是上一条）：' + view.text);
+        assert.ok(view.w > 0, 'catch 路径「本次结果」尺寸为 0');
+        await page.click('#sessionResult');
+        await page.waitForTimeout(120);
+        const st = await page.evaluate(() => (document.getElementById('status') || {}).textContent || '');
+        assert.ok(st.includes('历史记录写入失败'), '点击后未说明写失败：' + st);
+      });
+
       await t.test('Z10-8 A9 清除：二次确认、取消不变、确认只清记录、keep 不变', async () => {
         await page.evaluate(async () => {
           const h = window.__doc2md.history;
