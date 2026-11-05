@@ -8129,6 +8129,60 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.ok(r.failed.includes('2 个失败'), '失败统计丢了：' + r.failed);
       });
 
+      await t.test('Z10-10 A10/R2-01 keep-off「本次结果」可见可点：说明原因并留在当前结果', async () => {
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          h.__reset();
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.setKeep(false);
+          document.getElementById('tab-convert').click();
+          const dt = new DataTransfer();
+          dt.items.add(new File(['# r201\n\nDOC2MD-R201\n'], 'r201.txt', { type: 'text/plain' }));
+          const input = document.getElementById('fileInput');
+          input.files = dt.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await page.waitForFunction(() => document.querySelectorAll('#results .result-card, #results .card').length >= 1, null, { timeout: 15000 });
+        await page.evaluate(() => window.__doc2md.__recordHistory({ filename: 'r201.md', uri: 'content://x/r201', bytes: 18 }, 'md'));
+        await page.waitForTimeout(250);
+        const st = await page.evaluate(() => {
+          const el = document.getElementById('sessionResult');
+          const r = el.getBoundingClientRect();
+          return { hidden: el.hidden, w: Math.round(r.width), h: Math.round(r.height), text: el.textContent, records: window.__doc2md.history.getState().records.length };
+        });
+        assert.equal(st.hidden, false, '结果面板出现后「本次结果」入口被隐藏');
+        assert.ok(st.w > 0 && st.h > 0, '入口尺寸为 0（不可见）：' + st.w + 'x' + st.h);
+        assert.ok(st.text.includes('未记入历史'), '入口未标注未记入历史：' + st.text);
+        assert.equal(st.records, 0, 'keep-off 仍写入历史');
+
+        await page.click('#sessionResult');
+        await page.waitForTimeout(150);
+        const after = await page.evaluate(() => ({
+          status: (document.getElementById('status') || {}).textContent || '',
+          filesVisible: document.getElementById('panel-files').hidden === false,
+          panelHidden: document.getElementById('resultsPanel').hidden,
+        }));
+        assert.ok(after.status.includes('未记入历史'), '点击后未说明原因：' + after.status);
+        assert.equal(after.filesVisible, false, 'keep-off 点击后跳到了「文件」页');
+        assert.equal(after.panelHidden, false, 'keep-off 点击后离开了当前结果');
+
+        await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          await h.setKeep(true);
+          await window.__doc2md.__recordHistory({ filename: 'r201.md', uri: 'content://x/r201', bytes: 18 }, 'md');
+        });
+        await page.waitForTimeout(300);
+        await page.click('#sessionResult');
+        await page.waitForTimeout(400);
+        const rec = await page.evaluate(() => ({
+          filesVisible: document.getElementById('panel-files').hidden === false,
+          highlight: Boolean(document.querySelector('#filesList .file-row.highlight')),
+        }));
+        assert.equal(rec.filesVisible, true, '已记入历史：点击未定位到「文件」页');
+        assert.equal(rec.highlight, true, '已记入历史：未高亮对应记录');
+      });
+
       await t.test('Z10-8 A9 清除：二次确认、取消不变、确认只清记录、keep 不变', async () => {
         await page.evaluate(async () => {
           const h = window.__doc2md.history;

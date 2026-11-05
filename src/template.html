@@ -289,6 +289,10 @@
   .results-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .results-head h2 { font-size: 17px; margin: 0; }
   .results-count { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+/* R2-01（拍板 A）：结果面板出现后，「本次结果」仍有可见可点载体 */
+.session-result { display: block; width: 100%; text-align: left; margin: 6px 0 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); color: inherit; font-size: 13px; line-height: 1.35; }
+.session-result.muted { color: var(--muted); }
+.session-result:active { opacity: .85; }
   .results-search { position: relative; margin: 10px 0 6px; }
   .results-search svg { position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8; }
   #resultsSearch { width: 100%; padding: 10px 12px 10px 38px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font: inherit; font-size: 14px; }
@@ -430,6 +434,7 @@
         <h2 id="resultsTitle">转换结果</h2>
         <span class="results-count" id="resultsCount">已完成 0 个文件</span>
       </div>
+      <button type="button" class="session-result" id="sessionResult" hidden></button>
       <div class="results-search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         <input id="resultsSearch" type="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">

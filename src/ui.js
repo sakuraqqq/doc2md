@@ -393,6 +393,7 @@ function syncSelectAll() {
 function updateResultsChrome() {
   const hasResults = resultRows.length > 0;
   resultsPanel.hidden = !hasResults;
+  paintSessionResult();
   hintEl.style.display = hasResults ? 'none' : '';
   document.body.classList.toggle('has-results', hasResults);
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
@@ -1558,7 +1559,38 @@ export async function refreshFilesPanel() {
   return state;
 }
 
+/** R2-01（2026-11-05 拍板 A）：结果面板出现后，「本次结果」仍须有**可见可点**载体。
+ *  keep-off ⇒ 点击只说明真实原因、**留在当前结果**（⛔ 跳转）；已记入 ⇒ 走 A10 的定位 + 高亮。 */
+function paintSessionResult() {
+  const el = document.getElementById('sessionResult');
+  if (!el) return;
+  if (!sessionLast) {
+    el.hidden = true;
+    el.onclick = null;
+    return;
+  }
+  el.hidden = false;
+  el.classList.toggle('muted', !sessionLast.recorded);
+  el.textContent = '本次：' + (sessionLast.name || '（未命名）') +
+    (sessionLast.recorded ? ' · 已记入历史 · 点此定位' : ' · 未记入历史 · 点此查看原因');
+  el.onclick = onSessionResultClick;
+}
+
+function onSessionResultClick() {
+  if (!sessionLast) return;
+  if (!sessionLast.recorded) {
+    const why = sessionLast.reason || '保留开关已关或未拿到真实文件名';
+    setStatus('本次转换未记入历史：' + why + '；文件已保存，可在文件管理器中找到', true);
+    return;
+  }
+  activateTab('files');
+  const rec = historyGetState().records.find((r) => r.uri === sessionLast.uri);
+  if (rec) highlightRecord(rec.id);
+  else setStatus('本次记录不在历史里（可能已被清除或淘汰）', true);
+}
+
 function updateLastConversion(state) {
+  paintSessionResult();
   const empty = document.getElementById('lastEmpty');
   if (!empty) return;
   // F5：本次会话的结果优先（keep-off 时它不在历史里，但用户刚转完，首页要能看到）。
@@ -1819,6 +1851,14 @@ async function resetHistory() {
   refreshFilesPanel().catch(() => {});
 }
 
+/** R2-01：未记入历史的真实原因（keep-off / 不支持 / 写失败）——纯函数，供「本次结果」入口展示 */
+function sessionReasonOf(r) {
+  if (r && r.ok) return '';
+  if (r && r.skipped === 'keep-off') return '保留开关已关闭';
+  if (r && r.skipped === 'unsupported') return '当前系统不支持历史记录（需 Android 10+）';
+  return '历史记录写入失败';
+}
+
 function recordAppendResult(r) {
   if (r && r.ok) {
     filesCleared = false;
@@ -1842,11 +1882,11 @@ export function recordHistory(res, kind) {
   const isZip = kind === 'zip';
   if (!res.filename) {
     // F7：拿不到真实文件名 ⇒ 不记录（避免把请求名当真实名写进历史），但文件已保存 ⇒ 明示。
-    sessionLast = { name: '', uri: res.uri, recorded: false };
+    sessionLast = { name: '', uri: res.uri, recorded: false, reason: '未拿到真实文件名' };
     nativeNotice('已保存，但历史记录未写入（未拿到真实文件名）', true);
     return Promise.resolve({ ok: false, skipped: 'no-name' });
   }
-  sessionLast = { name: res.filename, uri: res.uri, recorded: false };
+  sessionLast = { name: res.filename, uri: res.uri, recorded: false, reason: '' };
   return historyAppend({
     name: res.filename,
     uri: res.uri,
@@ -1856,11 +1896,18 @@ export function recordHistory(res, kind) {
   })
     .then((r) => {
       recordAppendResult(r);
-      if (r && r.ok) sessionLast = { name: res.filename, uri: res.uri, recorded: true };
+      // R2-01：记录结果 + 未记入历史的真实原因（抽成纯函数，避免 recordHistory 复杂度超限）
+      sessionLast = {
+        name: res.filename,
+        uri: res.uri,
+        recorded: Boolean(r && r.ok),
+        reason: sessionReasonOf(r),
+      };
       updateLastConversion(historyGetState());
       return r;
     })
     .catch(() => {
+      if (sessionLast) sessionLast.reason = '历史记录写入失败';
       nativeNotice('已保存，但历史记录未写入', true);
       return { ok: false, error: 'append-failed' };
     });

@@ -289,6 +289,10 @@
   .results-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .results-head h2 { font-size: 17px; margin: 0; }
   .results-count { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+/* R2-01（拍板 A）：结果面板出现后，「本次结果」仍有可见可点载体 */
+.session-result { display: block; width: 100%; text-align: left; margin: 6px 0 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); color: inherit; font-size: 13px; line-height: 1.35; }
+.session-result.muted { color: var(--muted); }
+.session-result:active { opacity: .85; }
   .results-search { position: relative; margin: 10px 0 6px; }
   .results-search svg { position: absolute; left: 12px; top: 50%; width: 18px; height: 18px; transform: translateY(-50%); fill: none; stroke: var(--muted); stroke-width: 1.8; }
   #resultsSearch { width: 100%; padding: 10px 12px 10px 38px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font: inherit; font-size: 14px; }
@@ -430,6 +434,7 @@
         <h2 id="resultsTitle">转换结果</h2>
         <span class="results-count" id="resultsCount">已完成 0 个文件</span>
       </div>
+      <button type="button" class="session-result" id="sessionResult" hidden></button>
       <div class="results-search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         <input id="resultsSearch" type="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
@@ -3297,6 +3302,7 @@ ${xlsxRowsToMd(kept)}`);
   function updateResultsChrome() {
     const hasResults = resultRows.length > 0;
     resultsPanel.hidden = !hasResults;
+    paintSessionResult();
     hintEl.style.display = hasResults ? "none" : "";
     document.body.classList.toggle("has-results", hasResults);
     if (pickerTitle) pickerTitle.textContent = hasResults ? "\u7EE7\u7EED\u6DFB\u52A0\u6587\u6863" : "\u9009\u62E9\u6587\u6863";
@@ -4347,7 +4353,33 @@ ${xlsxRowsToMd(kept)}`);
     updateLastConversion(state2);
     return state2;
   }
+  function paintSessionResult() {
+    const el = document.getElementById("sessionResult");
+    if (!el) return;
+    if (!sessionLast) {
+      el.hidden = true;
+      el.onclick = null;
+      return;
+    }
+    el.hidden = false;
+    el.classList.toggle("muted", !sessionLast.recorded);
+    el.textContent = "\u672C\u6B21\uFF1A" + (sessionLast.name || "\uFF08\u672A\u547D\u540D\uFF09") + (sessionLast.recorded ? " \xB7 \u5DF2\u8BB0\u5165\u5386\u53F2 \xB7 \u70B9\u6B64\u5B9A\u4F4D" : " \xB7 \u672A\u8BB0\u5165\u5386\u53F2 \xB7 \u70B9\u6B64\u67E5\u770B\u539F\u56E0");
+    el.onclick = onSessionResultClick;
+  }
+  function onSessionResultClick() {
+    if (!sessionLast) return;
+    if (!sessionLast.recorded) {
+      const why = sessionLast.reason || "\u4FDD\u7559\u5F00\u5173\u5DF2\u5173\u6216\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D";
+      setStatus("\u672C\u6B21\u8F6C\u6362\u672A\u8BB0\u5165\u5386\u53F2\uFF1A" + why + "\uFF1B\u6587\u4EF6\u5DF2\u4FDD\u5B58\uFF0C\u53EF\u5728\u6587\u4EF6\u7BA1\u7406\u5668\u4E2D\u627E\u5230", true);
+      return;
+    }
+    activateTab("files");
+    const rec = getState().records.find((r) => r.uri === sessionLast.uri);
+    if (rec) highlightRecord(rec.id);
+    else setStatus("\u672C\u6B21\u8BB0\u5F55\u4E0D\u5728\u5386\u53F2\u91CC\uFF08\u53EF\u80FD\u5DF2\u88AB\u6E05\u9664\u6216\u6DD8\u6C70\uFF09", true);
+  }
   function updateLastConversion(state2) {
+    paintSessionResult();
     const empty = document.getElementById("lastEmpty");
     if (!empty) return;
     if (sessionLast) {
@@ -4570,6 +4602,12 @@ ${xlsxRowsToMd(kept)}`);
     refreshFilesPanel().catch(() => {
     });
   }
+  function sessionReasonOf(r) {
+    if (r && r.ok) return "";
+    if (r && r.skipped === "keep-off") return "\u4FDD\u7559\u5F00\u5173\u5DF2\u5173\u95ED";
+    if (r && r.skipped === "unsupported") return "\u5F53\u524D\u7CFB\u7EDF\u4E0D\u652F\u6301\u5386\u53F2\u8BB0\u5F55\uFF08\u9700 Android 10+\uFF09";
+    return "\u5386\u53F2\u8BB0\u5F55\u5199\u5165\u5931\u8D25";
+  }
   function recordAppendResult(r) {
     if (r && r.ok) {
       filesCleared = false;
@@ -4589,11 +4627,11 @@ ${xlsxRowsToMd(kept)}`);
     if (!res || !res.uri || res.bytes <= 0) return Promise.resolve({ ok: false, skipped: "invalid" });
     const isZip = kind === "zip";
     if (!res.filename) {
-      sessionLast = { name: "", uri: res.uri, recorded: false };
+      sessionLast = { name: "", uri: res.uri, recorded: false, reason: "\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D" };
       nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165\uFF08\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D\uFF09", true);
       return Promise.resolve({ ok: false, skipped: "no-name" });
     }
-    sessionLast = { name: res.filename, uri: res.uri, recorded: false };
+    sessionLast = { name: res.filename, uri: res.uri, recorded: false, reason: "" };
     return append({
       name: res.filename,
       uri: res.uri,
@@ -4602,10 +4640,16 @@ ${xlsxRowsToMd(kept)}`);
       mime: isZip ? "application/zip" : "text/markdown"
     }).then((r) => {
       recordAppendResult(r);
-      if (r && r.ok) sessionLast = { name: res.filename, uri: res.uri, recorded: true };
+      sessionLast = {
+        name: res.filename,
+        uri: res.uri,
+        recorded: Boolean(r && r.ok),
+        reason: sessionReasonOf(r)
+      };
       updateLastConversion(getState());
       return r;
     }).catch(() => {
+      if (sessionLast) sessionLast.reason = "\u5386\u53F2\u8BB0\u5F55\u5199\u5165\u5931\u8D25";
       nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
       return { ok: false, error: "append-failed" };
     });
@@ -5345,6 +5389,8 @@ ${p.text}
     normalizeExternalText,
     /* A11 / R2-03 测试缝：批量保存汇总句（纯函数） */
     saveSummary,
+    /* A10 / R2-01 测试缝：真实 recordHistory 路径（用于可见/点击断言） */
+    __recordHistory: recordHistory,
     /* 卡 060 / 2-5：转换历史库（数据层 + 刷新入口；测试缝与实现共用同一份函数） */
     history: {
       load,
