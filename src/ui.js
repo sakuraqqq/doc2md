@@ -1601,6 +1601,7 @@ function updateLastConversion(state) {
       '本次：' + (sessionLast.name || '（未命名）') +
       (sessionLast.recorded ? ' · 已记入历史' : ' · 未记入历史（保留开关已关或未拿到真实名）') +
       ' · 点此定位到「文件」';
+    empty.classList.remove('lost');
     empty.style.cursor = 'pointer';
     empty.onclick = () => {
       if (!sessionLast.recorded) {
@@ -1617,11 +1618,16 @@ function updateLastConversion(state) {
   const rec = state.records[0];
   if (!rec) {
     empty.textContent = '还没有转换记录 —— 点击上方「选择文件」开始。';
+    empty.classList.remove('lost');
     empty.style.cursor = '';
     empty.onclick = null;
     return;
   }
-  empty.textContent = '上次：' + rec.name + ' · ' + historyRelTime(rec.createdAt) + ' · 点此定位到「文件」';
+  /* 卡 063 · A6b：记录指向的文件已被删除 ⇒ 首页该条红字说明「打不开」，点击仍定位到文件页的失效行 */
+  const lost = invalidByUri.has(rec.uri);
+  empty.textContent = '上次：' + rec.name + ' · ' + historyRelTime(rec.createdAt) +
+    (lost ? ' · 文件已不存在，无法打开' : '') + ' · 点此定位到「文件」';
+  empty.classList.toggle('lost', lost);
   empty.style.cursor = 'pointer';
   empty.onclick = () => {
     activateTab('files');

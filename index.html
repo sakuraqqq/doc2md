@@ -181,6 +181,8 @@
   .sect-last .sect-head { margin-bottom: 6px; }
   .sect-last .sect-empty { padding: 8px 12px; }
   .empty-hint { display: none; }
+  /* 卡 063 · A6b：上次转换指向的文件已被删除（红字） */
+  #lastEmpty.lost { color: var(--err); }
 
   /* ── 底部「目录页脚」（卡 063 · A1）：01/02/03 + 中文标签；无图标、无胶囊底；
    *    当前项 = 2×16 朱砂书签 + 朱砂序号 + 墨色标签；列间 1px rule；内容高 54 + safe-bottom。 ── */
@@ -198,12 +200,10 @@
     transition: color var(--dur-fast) var(--ease-standard);
   }
   .navitem + .navitem { border-left: 1px solid var(--border); }
-  .navitem .nav-col { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
-  /* 序号 = 生成内容（装饰）：DOM 文本仍是「转换/文件/设置」，键盘/读屏与既有断言不受影响 */
-  .navitem .nav-col::before { content: attr(data-no); font-size: 11px; line-height: 1.2; letter-spacing: .06em; color: var(--muted); }
-  .navitem .nav-label { font-size: 13px; line-height: 1.25; letter-spacing: .02em; }
+  /* 用户 2026-11-07 23:59 拍板：去掉序号，只留中文标签（书签仍标当前项） */
+  .navitem .nav-label { font-size: 13px; line-height: 1.25; letter-spacing: .04em; }
   .navitem[aria-selected="true"] { color: var(--text); }
-  .navitem[aria-selected="true"] .nav-col::before { color: var(--accent); font-weight: 600; }
+
   .navitem[aria-selected="true"] .nav-label { font-weight: 650; }
   /* 朱砂书签：只在当前项渲染（::before 是 flex 子项，未选中时 content 为空即不占位） */
   .navitem[aria-selected="true"]::before {
@@ -829,13 +829,13 @@
 
 <nav class="navbar" role="tablist" aria-label="主导航">
   <button class="navitem" type="button" role="tab" id="tab-convert" data-tab="convert" aria-controls="panel-convert" aria-selected="true">
-    <span class="nav-col" data-no="01"><span class="nav-label">转换</span></span>
+    <span class="nav-label">转换</span>
   </button>
   <button class="navitem" type="button" role="tab" id="tab-files" data-tab="files" aria-controls="panel-files" aria-selected="false" tabindex="-1">
-    <span class="nav-col" data-no="02"><span class="nav-label">文件</span></span>
+    <span class="nav-label">文件</span>
   </button>
   <button class="navitem" type="button" role="tab" id="tab-settings" data-tab="settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1">
-    <span class="nav-col" data-no="03"><span class="nav-label">设置</span></span>
+    <span class="nav-label">设置</span>
   </button>
 </nav>
 
@@ -4663,6 +4663,7 @@ ${xlsxRowsToMd(kept)}`);
     if (!empty) return;
     if (sessionLast) {
       empty.textContent = "\u672C\u6B21\uFF1A" + (sessionLast.name || "\uFF08\u672A\u547D\u540D\uFF09") + (sessionLast.recorded ? " \xB7 \u5DF2\u8BB0\u5165\u5386\u53F2" : " \xB7 \u672A\u8BB0\u5165\u5386\u53F2\uFF08\u4FDD\u7559\u5F00\u5173\u5DF2\u5173\u6216\u672A\u62FF\u5230\u771F\u5B9E\u540D\uFF09") + " \xB7 \u70B9\u6B64\u5B9A\u4F4D\u5230\u300C\u6587\u4EF6\u300D";
+      empty.classList.remove("lost");
       empty.style.cursor = "pointer";
       empty.onclick = () => {
         if (!sessionLast.recorded) {
@@ -4679,11 +4680,14 @@ ${xlsxRowsToMd(kept)}`);
     const rec = state2.records[0];
     if (!rec) {
       empty.textContent = "\u8FD8\u6CA1\u6709\u8F6C\u6362\u8BB0\u5F55 \u2014\u2014 \u70B9\u51FB\u4E0A\u65B9\u300C\u9009\u62E9\u6587\u4EF6\u300D\u5F00\u59CB\u3002";
+      empty.classList.remove("lost");
       empty.style.cursor = "";
       empty.onclick = null;
       return;
     }
-    empty.textContent = "\u4E0A\u6B21\uFF1A" + rec.name + " \xB7 " + relTime(rec.createdAt) + " \xB7 \u70B9\u6B64\u5B9A\u4F4D\u5230\u300C\u6587\u4EF6\u300D";
+    const lost = invalidByUri.has(rec.uri);
+    empty.textContent = "\u4E0A\u6B21\uFF1A" + rec.name + " \xB7 " + relTime(rec.createdAt) + (lost ? " \xB7 \u6587\u4EF6\u5DF2\u4E0D\u5B58\u5728\uFF0C\u65E0\u6CD5\u6253\u5F00" : "") + " \xB7 \u70B9\u6B64\u5B9A\u4F4D\u5230\u300C\u6587\u4EF6\u300D";
+    empty.classList.toggle("lost", lost);
     empty.style.cursor = "pointer";
     empty.onclick = () => {
       activateTab("files");
