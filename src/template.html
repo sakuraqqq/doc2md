@@ -547,7 +547,9 @@
   [data-theme="light"] .chip.err { background: rgba(158, 43, 30, .10); border-color: rgba(158, 43, 30, .30); color: var(--err); }
   [data-theme="light"] .card-body { padding: 12px 14px 14px; }
   [data-theme="light"] .result-row .card-body { padding: 0 10px 8px; }
-  [data-theme="light"] .result-row.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  /* 方案 H 的另一半：选中行的描边保持中性（红只在「勾」那一处细线；
+   * 选中提示由勾 + 「已选择 N 个」+ 批量条承担，避免整行 2px 朱砂框与勾抢同一块红） */
+  [data-theme="light"] .result-row.selected { border-color: var(--border); box-shadow: none; }
   [data-theme="light"] .warnings { font-size: 12px; color: var(--warn); }
   [data-theme="light"] .row-menu { background: var(--sheet); border-color: var(--border); box-shadow: 0 8px 24px rgba(60, 45, 30, .16); }
   [data-theme="light"] .row-menu button { min-height: 44px; font-size: 14px; }
@@ -572,13 +574,18 @@
     background-image: linear-gradient(var(--sheet), var(--sheet)), linear-gradient(var(--faint), var(--faint));
     cursor: pointer;
   }
+  /* 选中态（用户 2026-11-07 拍板 = 方案 H）：纸底方框 + **朱砂勾**，红只留 1.6px 边与勾这一条细线。
+   * ⚠️ 为什么不是实心块：20px 实心正红在通用 UI 里会被读成「告警」，也是朱砂最重的用法；
+   *    纸墨里朱砂是印章色 ⇒ 打勾更像盖章。图形用内联 SVG（零外链；xmlns 域名在契约 H2 白名单内），
+   *    颜色写死 = --accent 的 #C4432B 与纸面 #FFFCF5（改令牌时这里要同步）。 */
   [data-theme="light"] #selectAll:checked, [data-theme="light"] .row-select:checked {
-    background-image: linear-gradient(var(--accent), var(--accent));
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' rx='4' fill='%23FFFCF5' stroke='%23C4432B' stroke-width='1.6'/%3E%3Cpath d='M5.4 10.6l3.2 3.2 6-6.8' fill='none' stroke='%23C4432B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     background-size: 20px 20px; background-position: center;
   }
+  /* 半选（全选未满）同形，只把勾换成横线 */
   [data-theme="light"] #selectAll:indeterminate {
-    background-image: linear-gradient(var(--sheet), var(--sheet)), linear-gradient(var(--accent), var(--accent));
-    background-size: 10px 2px, 20px 20px; background-position: center, center;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' rx='4' fill='%23FFFCF5' stroke='%23C4432B' stroke-width='1.6'/%3E%3Cpath d='M6 10h8' fill='none' stroke='%23C4432B' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-size: 20px 20px; background-position: center;
   }
   /* 结果行内的复选框：左右各 -8 只吃掉 8px 布局（其余命中区落在内边距/间隙里）⇒ 文件名列不被 44 挤干 */
   [data-theme="light"] .row-select { margin: -12px -8px; }
