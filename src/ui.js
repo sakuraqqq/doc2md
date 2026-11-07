@@ -394,7 +394,9 @@ function updateResultsChrome() {
   const hasResults = resultRows.length > 0;
   resultsPanel.hidden = !hasResults;
   paintSessionResult();
-  hintEl.style.display = hasResults ? 'none' : '';
+  /* 卡 063 · A6：0 条时只留一块空提示（#lastEmpty），不再叠第二行长句 ⇒ #hint 恒隐藏
+   *（元素保留：app.js 仍 import hintEl 并在启动时置 none） */
+  hintEl.style.display = 'none';
   document.body.classList.toggle('has-results', hasResults);
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
   const lastSect = document.getElementById('lastTitle');
@@ -1614,7 +1616,7 @@ function updateLastConversion(state) {
   }
   const rec = state.records[0];
   if (!rec) {
-    empty.textContent = '还没有转换记录 —— 转换完成后会显示在这里。';
+    empty.textContent = '还没有转换记录 —— 选择下方的文件开始转换。';
     empty.style.cursor = '';
     empty.onclick = null;
     return;

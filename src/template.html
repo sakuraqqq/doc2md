@@ -23,7 +23,7 @@
     --text: #e6e9ef; --muted: #9aa3b2; --accent: #4f8cff; --accent2: #3b6fd4;
     --accent-soft: #8ab6ff; /* chip 文字亮蓝：on rgba(79,140,255,.15)+panel2 对比度 ≈6.7:1（≥4.5） */
     --ok: #3ecf8e; --err: #ff6b6b; --warn: #ffb454; --radius: 12px;
-    --bar-h: 56px; --nav-h: 64px;
+    --bar-h: 56px; --nav-h: 54px;      /* 卡 063：底部目录页脚（01/02/03，无图标）*/
     /* 卡 057 / A5（edge-to-edge）：两路来源取大者 ——
      *   env(safe-area-inset-*)     WebView ≥140 且 meta viewport-fit=cover 时由 Chromium 直接提供
      *   var(--safe-area-inset-*)  Capacitor SystemBars（insetsHandling=css）注入的 CSS 变量
@@ -91,33 +91,38 @@
   .tabpanel.active { display: block; animation: panelIn var(--dur-fast) var(--ease-standard); }
   @keyframes panelIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-  /* ── 「选择文档」卡片（替代旧的虚线拖放框；仍复用 #dropzone 这个元素，
-   *    因为 app.js 的点击/拖放接线挂在它上面 —— 卡 056 inScope 不含 app.js） ── */
+  /* ── 「选择文档」卡片（卡 063 · A4/A5）：标题 20–22 / 格式行 13 单行 / 一颗朱砂主按钮 44–48 / 隐私页脚。
+   *    容器仍是 #dropzone（app.js 的点击与拖放接线挂在它上面）；⚠️ 容器由 <button> 改 <div>：
+   *    A5 要求「标题/格式行不可嵌套成按钮」⇒ 键盘入口交给内部真 <button class="pick-btn">。 ── */
   #dropzone {
-    width: 100%; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto;
-    grid-template-rows: auto auto; align-items: center; gap: 8px 12px;
-    padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+    width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+    padding: 16px; border: 1px solid var(--border); border-radius: var(--radius);
     background: var(--panel); color: var(--text); font: inherit; text-align: left;
     cursor: pointer; min-height: 0;
     transition: background .15s, border-color .15s, transform .15s;
   }
   #dropzone:hover, #dropzone.over { border-color: var(--accent); background: var(--panel2); }
   #dropzone:active { transform: scale(.995); }
-  #dropzone .picker-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 10px; background: rgba(79,140,255,.14); color: var(--accent-soft); }
-  #dropzone .picker-icon svg { width: 24px; height: 24px; }
-  #dropzone .picker-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  #dropzone .picker-title { font-size: 16px; font-weight: 600; }
-  #dropzone .picker-sub { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
-  #dropzone .picker-chev { color: var(--muted); font-size: 22px; line-height: 1; padding-right: 2px; }
-  #dropzone .picker-foot { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--border); margin-top: 2px; padding-top: 8px; color: var(--muted); font-size: 12px; }
+  #dropzone .picker-head { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; }
+  #dropzone .picker-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 8px; background: var(--panel2); color: var(--text); flex: none; }
+  #dropzone .picker-icon svg { width: 22px; height: 22px; }
+  #dropzone .picker-title { font-size: 21px; line-height: 1.15; font-weight: 650; letter-spacing: -.01em; }
+  #dropzone .picker-sub { color: var(--muted); font-size: 13px; line-height: 1.3; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #dropzone .pick-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 46px; padding: 0 22px; border: 0; border-radius: 8px;
+    background: var(--accent); color: var(--panel); font: inherit; font-size: 15px; font-weight: 600;
+    cursor: pointer; transition: background .15s;
+  }
+  #dropzone .pick-btn:active { background: var(--accent2); }
+  #dropzone .picker-foot { display: flex; align-items: center; gap: 6px; width: 100%; border-top: 1px solid var(--border); padding-top: 8px; color: var(--muted); font-size: 12px; }
   #dropzone .picker-lock { display: grid; place-items: center; width: 14px; height: 14px; color: var(--ok); }
   #dropzone .picker-lock svg { width: 13px; height: 13px; }
-  /* 已有结果：自动收紧为“继续添加文档”，保留隐私行但去掉格式长句 */
-  body.has-results #dropzone { grid-template-columns: 38px minmax(0, 1fr) auto; padding: 9px 12px; gap: 6px 10px; }
-  body.has-results #dropzone .picker-icon { width: 38px; height: 38px; }
-  body.has-results #dropzone .picker-icon svg { width: 21px; height: 21px; }
+  /* 已有结果：收紧成「继续添加文档」，隐藏格式行，主按钮保留（A5 恒一颗） */
+  body.has-results #dropzone { padding: 10px 12px; gap: 6px; }
+  body.has-results #dropzone .picker-icon { width: 32px; height: 32px; }
+  body.has-results #dropzone .picker-icon svg { width: 18px; height: 18px; }
   body.has-results #dropzone .picker-sub { display: none; }
-  body.has-results #dropzone .picker-foot { padding-top: 6px; }
 
   /* ── 区块 / 行 / 段控 ── */
   .sect { margin-top: 18px; }
@@ -156,14 +161,29 @@
     border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); }
   .seg-btn[aria-pressed="true"] { border-color: var(--accent); background: rgba(79,140,255,.14); color: var(--accent-soft); font-weight: 600; }
 
-  /* ── 空态 ── */
-  .empty-state { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
-    padding: 28px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
-  .empty-state-icon { font-size: 28px; line-height: 1; }
-  .empty-state-title { margin: 0; font-size: 15px; font-weight: 600; }
-  .empty-state-sub { margin: 0; color: var(--muted); font-size: 12.5px; max-width: 34em; }
+  /* ── 空态（卡 063 · A3）：56 虚线圆 + 线稿图标 40 + 标题 18 + 说明 13（≤2 行）+ ghost 入口 ── */
+  .empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+    padding: 24px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+  .empty-state-icon { width: 56px; height: 56px; display: grid; place-items: center;
+    border: 1px dashed var(--border); border-radius: 50%; color: var(--muted); }
+  .empty-state-icon svg { width: 40px; height: 40px; stroke: currentColor; fill: none;
+    stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+  .empty-state-title { margin: 0; font-size: 18px; line-height: 1.3; font-weight: 650; }
+  .empty-state-sub { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; max-width: 24em;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  /* 空态入口：ghost（不是深色实心块；40–44 高） */
+  .btn-ghost { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 16px;
+    border: 1px solid var(--border); border-radius: 999px; background: transparent; color: var(--accent);
+    font: inherit; font-size: 13px; cursor: pointer; }
+  .btn-ghost:hover { border-color: var(--accent); }
+  /* 0 条上次转换：整块 ≤72（头 + 一块空提示），不再叠第二行长句（卡 063 · A6） */
+  .sect-last { margin-top: 10px; }
+  .sect-last .sect-head { margin-bottom: 6px; }
+  .sect-last .sect-empty { padding: 8px 12px; }
+  .empty-hint { display: none; }
 
-  /* ── 底部导航 ── */
+  /* ── 底部「目录页脚」（卡 063 · A1）：01/02/03 + 中文标签；无图标、无胶囊底；
+   *    当前项 = 2×16 朱砂书签 + 朱砂序号 + 墨色标签；列间 1px rule；内容高 54 + safe-bottom。 ── */
   .navbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
     display: flex; height: calc(var(--nav-h) + var(--safe-bottom));
@@ -171,16 +191,24 @@
     background: var(--panel); border-top: 1px solid var(--border);
   }
   .navitem {
-    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-    min-height: 48px; border: 0; background: transparent; color: var(--muted);
-    font: inherit; font-size: 11.5px; cursor: pointer; padding: 6px 0;
+    flex: 1; position: relative;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 44px; border: 0; background: transparent; color: var(--muted);
+    font: inherit; cursor: pointer; padding: 0 6px;
     transition: color var(--dur-fast) var(--ease-standard);
   }
-  .navitem .pill { display: grid; place-items: center; width: 56px; height: 30px; border-radius: 999px; transition: background var(--dur-fast) var(--ease-standard); }
-  .navitem svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .navitem + .navitem { border-left: 1px solid var(--border); }
+  .navitem .nav-col { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+  /* 序号 = 生成内容（装饰）：DOM 文本仍是「转换/文件/设置」，键盘/读屏与既有断言不受影响 */
+  .navitem .nav-col::before { content: attr(data-no); font-size: 11px; line-height: 1.2; letter-spacing: .06em; color: var(--muted); }
+  .navitem .nav-label { font-size: 13px; line-height: 1.25; letter-spacing: .02em; }
   .navitem[aria-selected="true"] { color: var(--text); }
-  .navitem[aria-selected="true"] .pill { background: rgba(79,140,255,.16); }
-  .navitem[aria-selected="true"] svg { stroke-width: 2.1; }
+  .navitem[aria-selected="true"] .nav-col::before { color: var(--accent); font-weight: 600; }
+  .navitem[aria-selected="true"] .nav-label { font-weight: 650; }
+  /* 朱砂书签：只在当前项渲染（::before 是 flex 子项，未选中时 content 为空即不占位） */
+  .navitem[aria-selected="true"]::before {
+    content: ""; flex: none; width: 2px; height: 16px; border-radius: 1px; background: var(--accent);
+  }
   .navitem:focus-visible, .row-link:focus-visible, .seg-btn:focus-visible, #dropzone:focus-visible {
     outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 10px;
   }
@@ -350,9 +378,10 @@
     .appbar { padding-left: 12px; padding-right: 12px; }
     .content { padding-left: 12px; padding-right: 12px; }
     .btn { min-height: 44px; padding: 10px 16px; font-size: 14px; }
-    #dropzone { min-height: 0; padding: 11px 12px; grid-template-columns: 42px minmax(0, 1fr) auto; }
-    #dropzone .picker-title { font-size: 16px; }
-    #dropzone .picker-sub { font-size: 12px; padding: 0; }
+    #dropzone { min-height: 0; padding: 12px; }
+    /* 卡 063 · A4：标题 20–22 / 格式行 13 在 360 仍成立（不受手机媒体块缩小） */
+    #dropzone .picker-title { font-size: 21px; }
+    #dropzone .picker-sub { font-size: 13px; padding: 0; }
     .card-actions .btn { flex: 1 1 auto; justify-content: center; }
     .card-head .meta { margin-left: 0; text-align: left; width: 100%; }
     textarea.md { font-size: 14px; }
@@ -437,16 +466,20 @@
 
   /* ── 底部导航（标签 11px 地板；每项 ≥44 高已在基础规则里）── */
   [data-theme="light"] .navbar { background: var(--bg); border-top-color: var(--border); }
-  [data-theme="light"] .navitem { font-size: 11px; line-height: 1.2; color: var(--muted); }
+  [data-theme="light"] .navitem + .navitem { border-left-color: var(--border); }
+  [data-theme="light"] .navitem { color: var(--muted); }
   [data-theme="light"] .navitem[aria-selected="true"] { color: var(--text); }
-  [data-theme="light"] .navitem[aria-selected="true"] .pill { background: var(--paper-deep); }
 
   /* ── 区块标题 / 行（设置 15px 主文、12px 副文）── */
   [data-theme="light"] .sect { margin-top: 22px; }
+  /* 0 条上次转换：整块 ≤72（A6）—— 浅色那条 .sect 覆盖优先级更高，这里显式压回 */
+  [data-theme="light"] .sect.sect-last { margin-top: 10px; }
   [data-theme="light"] .sect-head h2 { font-size: 14px; line-height: 1.35; color: var(--text); letter-spacing: .01em; }
   [data-theme="light"] .sect-title { font-size: 11px; letter-spacing: .08em; color: var(--muted); }
   [data-theme="light"] .sect-head .sect-meta { font-size: 11px; }
   [data-theme="light"] .sect-empty { padding: 16px 14px; font-size: 13px; line-height: 1.6; background: var(--sheet); border-radius: 10px; }
+  /* 0 条那次：同选择器优先级要压回 8px（A6 整块 ≤72） */
+  [data-theme="light"] .sect-last .sect-empty { padding: 8px 12px; }
   [data-theme="light"] .list { background: var(--sheet); border-radius: 10px; }
   [data-theme="light"] .row { padding: 13px 14px; background: var(--sheet); border-bottom-color: var(--rule-soft); }
   [data-theme="light"] .row-link:hover { background: var(--paper-deep); }
@@ -458,15 +491,13 @@
     border-radius: 10px; background: var(--paper-deep); color: var(--text);
   }
 
-  /* ── 选择文档卡片（纸面卡 + 44 图标 + 16 标题 + 12 说明）── */
-  [data-theme="light"] #dropzone { padding: 13px 14px; background: var(--sheet); border-radius: 10px; }
+  /* ── 选择文档卡片（纸面卡；几何由基础规则给，这里只调色）── */
+  [data-theme="light"] #dropzone { background: var(--sheet); }
   [data-theme="light"] #dropzone:hover, [data-theme="light"] #dropzone.over { background: var(--sheet); border-color: var(--accent); }
-  [data-theme="light"] #dropzone .picker-icon { background: var(--paper-deep); color: var(--text); border-radius: 6px; }
-  [data-theme="light"] #dropzone .picker-title { font-size: 16px; line-height: 1.3; font-weight: 650; }
-  [data-theme="light"] #dropzone .picker-sub { font-size: 12px; line-height: 1.4; }
-  [data-theme="light"] #dropzone .picker-foot { font-size: 11px; border-top-color: var(--rule-soft); }
-  [data-theme="light"] #dropzone .picker-lock { color: var(--ok); }
-  [data-theme="light"] #dropzone .picker-chev { color: var(--faint); }
+  [data-theme="light"] #dropzone .picker-icon { background: var(--paper-deep); color: var(--text); }
+  [data-theme="light"] #dropzone .picker-foot { border-top-color: var(--rule-soft); }
+  [data-theme="light"] #dropzone .pick-btn { background: var(--accent); color: var(--panel); }
+  [data-theme="light"] #dropzone .pick-btn:active { background: var(--accent2); }
 
   /* ── 段控 / 开关 / 按钮（44px 触控；纸面白底 + 墨字主按钮）── */
   [data-theme="light"] .seg-btn {
@@ -501,14 +532,11 @@
   [data-theme="light"] #status { font-size: 13px; line-height: 1.6; }
   [data-theme="light"] #status.error, [data-theme="light"] .file-invalid { color: var(--err); }
 
-  /* ── 空态（56 虚线圆 + 15 标题 + 13 说明）── */
-  [data-theme="light"] .empty-state { padding: 34px 20px 26px; border-radius: 10px; background: var(--sheet); }
-  [data-theme="light"] .empty-state-icon {
-    width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 4px;
-    border: 1px dashed var(--border); border-radius: 50%; font-size: 22px; color: var(--faint);
-  }
-  [data-theme="light"] .empty-state-title { font-size: 15px; line-height: 1.4; font-weight: 650; }
-  [data-theme="light"] .empty-state-sub, [data-theme="light"] .empty-hint { font-size: 13px; line-height: 1.6; }
+  /* ── 空态（几何由基础规则给，这里只调色）── */
+  [data-theme="light"] .empty-state { background: var(--sheet); }
+  [data-theme="light"] .empty-state-icon { color: var(--muted); }
+  [data-theme="light"] .empty-state-sub { color: var(--muted); }
+  [data-theme="light"] .btn-ghost { border-color: var(--border); color: var(--accent); }
 
   /* ── 文件页（060 结构不动：只换纸色与 44px 命中区）── */
   [data-theme="light"] .file-row { padding: 10px 12px; background: var(--sheet); border-color: var(--border); border-radius: 10px; }
@@ -654,21 +682,21 @@
 <main class="content" id="content">
   <!-- ── 转换 ───────────────────────────────────────────────────────────── -->
   <section class="tabpanel active" id="panel-convert" role="tabpanel" aria-labelledby="tab-convert" tabindex="0">
-    <button id="dropzone" type="button" title="点击选择文件（桌面端也可拖入）">
-      <span class="picker-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5h6l2 2h9v9.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 18z"/><path d="M3.5 9h17"/></svg>
-      </span>
-      <span class="picker-main">
+        <div id="dropzone" title="点击选择文件（桌面端也可拖入）">
+      <div class="picker-head">
+        <span class="picker-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5h6l2 2h9v9.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 18z"/><path d="M3.5 9.5h17"/></svg>
+        </span>
         <span class="picker-title" id="pickerTitle">选择文档</span>
-        <span class="picker-sub">PDF · DOCX · XLSX · 图片 OCR · TXT / HTML</span>
-      </span>
-      <span class="picker-chev" aria-hidden="true">›</span>
-      <span class="picker-foot"><span class="picker-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span> 本地处理 · 单文件最大 50 MB</span>
-    </button>
+      </div>
+      <span class="picker-sub">PDF · DOCX · XLSX · 图片 OCR · TXT / HTML</span>
+      <button class="pick-btn" type="button" id="pickBtn">选择文件</button>
+      <span class="picker-foot"><span class="picker-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>本地处理 · 单文件最大 50 MB</span>
+    </div>
     <input type="file" id="fileInput" hidden multiple accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tiff,.txt,.html,.htm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/*,text/plain,text/html">
     <div id="status" role="status" aria-live="polite"></div>
 
-    <section class="sect" aria-labelledby="lastTitle">
+    <section class="sect sect-last" aria-labelledby="lastTitle">
       <div class="sect-head"><h2 id="lastTitle">上次转换</h2></div>
       <p class="sect-empty" id="lastEmpty">还没有转换记录 —— 转换完成后会显示在这里。</p>
     </section>
@@ -710,28 +738,28 @@
     <div class="sect-head"><h2>文件</h2><span class="sect-meta" id="filesMeta">共 0 项</span><button type="button" class="row-action" id="filesRetry" hidden>重试核验</button></div>
     <div class="files-list" id="filesList" role="list"></div>
     <div class="empty-state" id="filesEmpty">
-      <div class="empty-state-icon" aria-hidden="true">🗂️</div>
+      <div class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h6l2 2h9v8.5a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 18z"/><path d="M3.5 10h17"/></svg></div>
       <p class="empty-state-title">还没有转换记录</p>
       <p class="empty-state-sub" id="filesEmptySub">转换并保存后，记录会出现在这里（最多 200 条）；只存记录，不存文件，清除记录不会删除已下载的文件。</p>
-      <button class="btn primary" type="button" id="goConvert">去转换</button>
+      <button class="btn-ghost" type="button" id="goConvert">去转换</button>
     </div>
     <div class="empty-state" id="filesEmptyCleared" hidden>
-      <div class="empty-state-icon" aria-hidden="true">🧹</div>
+      <div class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M14 3.5V8h4"/><path d="M9.2 13.2l2 2 3.6-3.8"/></svg></div>
       <p class="empty-state-title">历史记录已清除</p>
       <p class="empty-state-sub">已经下载的文件还在 <b>Download/WenZhuanMD</b>，可在文件管理器中查看。</p>
-      <button class="btn primary" type="button" id="goConvertCleared">去转换</button>
+      <button class="btn-ghost" type="button" id="goConvertCleared">去转换</button>
     </div>
     <div class="empty-state" id="filesEmptySearch" hidden>
-      <div class="empty-state-icon" aria-hidden="true">🔍</div>
+      <div class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></div>
       <p class="empty-state-title" id="filesEmptySearchTitle">没有匹配的记录</p>
       <p class="empty-state-sub">试试别的关键词，或清除搜索查看全部记录。</p>
-      <button class="btn" type="button" id="filesSearchReset">清除搜索</button>
+      <button class="btn-ghost" type="button" id="filesSearchReset">清除搜索</button>
     </div>
     <div class="empty-state" id="filesError" hidden>
-      <div class="empty-state-icon" aria-hidden="true">⚠️</div>
+      <div class="empty-state-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4.5l8.5 15h-17z"/><path d="M12 10v4"/><path d="M12 17.2v.2"/></svg></div>
       <p class="empty-state-title">历史记录读取失败</p>
       <p class="empty-state-sub" id="filesErrorSub">历史文件可能已损坏；已下载的文件不受影响。</p>
-      <button class="btn primary" type="button" id="historyReset">重置记录</button>
+      <button class="btn-ghost" type="button" id="historyReset">重置记录</button>
     </div>
   </section>
 
@@ -801,13 +829,13 @@
 
 <nav class="navbar" role="tablist" aria-label="主导航">
   <button class="navitem" type="button" role="tab" id="tab-convert" data-tab="convert" aria-controls="panel-convert" aria-selected="true">
-    <span class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h12l-3-3"/><path d="M20 16H8l3 3"/></svg></span><span>转换</span>
+    <span class="nav-col" data-no="01"><span class="nav-label">转换</span></span>
   </button>
   <button class="navitem" type="button" role="tab" id="tab-files" data-tab="files" aria-controls="panel-files" aria-selected="false" tabindex="-1">
-    <span class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2-2h3.6l1.8 2H18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></span><span>文件</span>
+    <span class="nav-col" data-no="02"><span class="nav-label">文件</span></span>
   </button>
   <button class="navitem" type="button" role="tab" id="tab-settings" data-tab="settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1">
-    <span class="pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.2 2.4 2.6-.6.7 2.6 2.6.7-.6 2.6L21 12l-2.4 1.2.6 2.6-2.6.7-.7 2.6-2.6-.6L12 21l-1.2-2.4-2.6.6-.7-2.6-2.6-.7.6-2.6L3 12l2.4-1.2-.6-2.6 2.6-.7.7-2.6 2.6.6z"/><circle cx="12" cy="12" r="3.4"/></svg></span><span>设置</span>
+    <span class="nav-col" data-no="03"><span class="nav-label">设置</span></span>
   </button>
 </nav>
 
