@@ -1616,7 +1616,7 @@ function updateLastConversion(state) {
   }
   const rec = state.records[0];
   if (!rec) {
-    empty.textContent = '还没有转换记录 —— 选择下方的文件开始转换。';
+    empty.textContent = '还没有转换记录 —— 点击上方「选择文件」开始。';
     empty.style.cursor = '';
     empty.onclick = null;
     return;

@@ -698,7 +698,7 @@
 
     <section class="sect sect-last" aria-labelledby="lastTitle">
       <div class="sect-head"><h2 id="lastTitle">上次转换</h2></div>
-      <p class="sect-empty" id="lastEmpty">还没有转换记录 —— 转换完成后会显示在这里。</p>
+      <p class="sect-empty" id="lastEmpty">还没有转换记录 —— 点击上方「选择文件」开始。</p>
     </section>
 
     <section class="results-panel" id="resultsPanel" hidden aria-labelledby="resultsTitle">
@@ -4678,7 +4678,7 @@ ${xlsxRowsToMd(kept)}`);
     }
     const rec = state2.records[0];
     if (!rec) {
-      empty.textContent = "\u8FD8\u6CA1\u6709\u8F6C\u6362\u8BB0\u5F55 \u2014\u2014 \u9009\u62E9\u4E0B\u65B9\u7684\u6587\u4EF6\u5F00\u59CB\u8F6C\u6362\u3002";
+      empty.textContent = "\u8FD8\u6CA1\u6709\u8F6C\u6362\u8BB0\u5F55 \u2014\u2014 \u70B9\u51FB\u4E0A\u65B9\u300C\u9009\u62E9\u6587\u4EF6\u300D\u5F00\u59CB\u3002";
       empty.style.cursor = "";
       empty.onclick = null;
       return;
