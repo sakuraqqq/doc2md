@@ -542,6 +542,13 @@
   [data-theme="light"] .card { background: var(--sheet); border-radius: 10px; }
   [data-theme="light"] .card-head { background: var(--paper-deep); border-bottom-color: var(--border); }
   [data-theme="light"] .result-row .card-head { background: transparent; }
+  /* 卡 062 §15.1 · 拍板 C：文件名允许 **2 行**（44×44 命中区吃掉横向列宽后，用纵向空间换可读性）。
+   * line-height 取规格 §2 的 1.35（2 行 ≈ 37.8 < 44 命中区）⇒ 行高不因换行而增加。
+   * ⛔ 只作用于浅色（深色列宽 128px 本就够，保持现状）。 */
+  [data-theme="light"] .result-row .name {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    white-space: normal; overflow: hidden; overflow-wrap: break-word; line-height: 1.35;
+  }
   /* 类型徽标走中性（规格 §4 的 chip 口径）：纸底 + 墨灰字，不再用第二套红 —— 红只留「可点/要紧」 */
   [data-theme="light"] .chip { background: var(--paper-deep); border-color: var(--border); color: var(--muted); }
   [data-theme="light"] .chip.err { background: rgba(158, 43, 30, .10); border-color: rgba(158, 43, 30, .30); color: var(--err); }
