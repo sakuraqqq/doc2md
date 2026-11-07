@@ -42,7 +42,9 @@
     --bg: rgb(246, 241, 231); --panel: rgb(255, 252, 245); --panel2: rgb(239, 231, 217);
     --border: rgb(222, 213, 198); --text: rgb(33, 29, 24); --muted: rgb(107, 99, 87);
     --accent: rgb(196, 67, 43); --accent2: rgb(158, 47, 29);
-    --accent-soft: rgb(143, 42, 26); /* 朱砂压深：浅色下作「文字」用（链接/chip/按下态），≥4.5:1 */
+    --accent-soft: rgb(196, 67, 43); /* ⚠️ 与 --accent 同一个朱砂（只保留一套红）：
+     *   卡 062 修正「选中色与链接色两套红」——复选框/选中描边用 --accent，链接曾用压深版 ⇒ 并排看色不一致。
+     *   压深只保留在 --accent2（危险按钮等）与 --err（错误）这两类**语义不同**的位置。 */
     --ok: rgb(78, 90, 70); --err: rgb(158, 43, 30); --warn: rgb(140, 92, 20);
     /* 纸墨专属（规格 §1）：--sheet 纸面 / --paper-deep 选中底 / --rule-soft 行线 /
      * --faint 最弱信息（只用于非关键装饰与占位，3.0:1，⛔ 不当正文） / --red-soft 危险底 */
@@ -313,7 +315,10 @@
   .linkbtn { border: 0; background: transparent; color: var(--accent-soft); font: inherit; font-size: 12.5px; cursor: pointer; padding: 6px; }
   .results-list { display: flex; flex-direction: column; gap: 8px; }
   .result-row { position: relative; overflow: visible; }
-  .result-row .card-head { align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 0; background: var(--panel); flex-wrap: nowrap; }
+  /* ⚠️ 底色必须是 transparent：.result-row 为了三点菜单必须 overflow: visible（不能用 .card 的 hidden 裁圆角），
+   *    子层若自带底色，它的**方角**会盖住卡片圆角处的 1px 边框 ⇒ 选中时肉眼可见「上两角缺一块」
+   *    （深色同样存在，只是 panel 与卡片同色时不明显；底色交给 .card 后两套主题一起修好）。 */
+  .result-row .card-head { align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 0; background: transparent; flex-wrap: nowrap; }
   .result-row .name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .result-row .chip { flex: 0 0 auto; }
   .result-row .meta { flex: 0 0 auto; margin-left: 0; white-space: nowrap; }
@@ -490,7 +495,7 @@
   [data-theme="light"] .btn:hover { border-color: var(--accent); }
   [data-theme="light"] .btn.primary { background: var(--text); border-color: var(--text); color: var(--panel); }
   [data-theme="light"] .btn.primary:hover { background: var(--accent); border-color: var(--accent); }
-  [data-theme="light"] .btn.danger { background: rgb(252, 246, 243); border-color: var(--red-soft); color: var(--accent-soft); }
+  [data-theme="light"] .btn.danger { background: rgb(252, 246, 243); border-color: var(--red-soft); color: var(--accent2); }
   [data-theme="light"] .md-more { min-height: 44px; border-radius: 6px; background: var(--sheet); }
   [data-theme="light"] .linkbtn { min-width: 44px; min-height: 44px; padding: 8px 10px; font-size: 12px; }
   [data-theme="light"] #status { font-size: 13px; line-height: 1.6; }
@@ -536,8 +541,9 @@
   [data-theme="light"] .results-selectbar { font-size: 12px; }
   [data-theme="light"] .card { background: var(--sheet); border-radius: 10px; }
   [data-theme="light"] .card-head { background: var(--paper-deep); border-bottom-color: var(--border); }
-  [data-theme="light"] .result-row .card-head { background: var(--sheet); }
-  [data-theme="light"] .chip { background: rgba(196, 67, 43, .12); border-color: rgba(196, 67, 43, .28); color: var(--accent-soft); }
+  [data-theme="light"] .result-row .card-head { background: transparent; }
+  /* 类型徽标走中性（规格 §4 的 chip 口径）：纸底 + 墨灰字，不再用第二套红 —— 红只留「可点/要紧」 */
+  [data-theme="light"] .chip { background: var(--paper-deep); border-color: var(--border); color: var(--muted); }
   [data-theme="light"] .chip.err { background: rgba(158, 43, 30, .10); border-color: rgba(158, 43, 30, .30); color: var(--err); }
   [data-theme="light"] .card-body { padding: 12px 14px 14px; }
   [data-theme="light"] .result-row .card-body { padding: 0 10px 8px; }
@@ -557,10 +563,13 @@
    * ⇒ appearance:none 自绘 20px 方框（纸墨：墨线空框 / 朱砂实心），命中区仍 44 */
   [data-theme="light"] #selectAll, [data-theme="light"] .row-select {
     -webkit-appearance: none; appearance: none;
-    width: 44px; height: 44px; margin: -12px 0; padding: 0; border: 0;
+    /* 44×44 命中区 + 12px 透明边 ⇒ 内绘区正好 20×20；border-radius 16 → 内圆角 4（与深色原生框同形） */
+    width: 44px; height: 44px; margin: -12px 0; padding: 0;
+    border: 12px solid transparent; border-radius: 16px;
     background-color: transparent; background-repeat: no-repeat; background-position: center, center;
+    background-clip: padding-box, padding-box;
     background-size: 18px 18px, 20px 20px;
-    background-image: linear-gradient(var(--sheet), var(--sheet)), linear-gradient(var(--border), var(--border));
+    background-image: linear-gradient(var(--sheet), var(--sheet)), linear-gradient(var(--faint), var(--faint));
     cursor: pointer;
   }
   [data-theme="light"] #selectAll:checked, [data-theme="light"] .row-select:checked {
