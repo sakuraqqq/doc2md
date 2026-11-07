@@ -36,11 +36,20 @@
     --ease-standard: cubic-bezier(.2, 0, 0, 1);
     --ease-spatial: cubic-bezier(.27, 1.06, .18, 1);
   }
+  /* 纸墨（卡 062 · 设计基线 = 061 规格 §1）：纸色底 + 墨字 + 朱砂强调 + 苔绿状态。
+   * ⛔ 深色仍是上面的 :root（逐字节不变）；本块只定义浅色，纸墨专属 token 也只在这里出现。 */
   [data-theme="light"] {
-    --bg: rgb(248, 249, 253); --panel: rgb(255, 255, 255); --panel2: rgb(240, 243, 250);
-    --border: rgb(203, 208, 219); --text: rgb(24, 28, 35); --muted: rgb(84, 92, 106);
-    --accent: rgb(38, 86, 168); --accent2: rgb(28, 68, 138); --accent-soft: rgb(24, 62, 132);
-    --ok: rgb(16, 116, 74); --err: rgb(170, 40, 40); --warn: rgb(134, 88, 8);
+    --bg: rgb(246, 241, 231); --panel: rgb(255, 252, 245); --panel2: rgb(239, 231, 217);
+    --border: rgb(222, 213, 198); --text: rgb(33, 29, 24); --muted: rgb(107, 99, 87);
+    --accent: rgb(196, 67, 43); --accent2: rgb(158, 47, 29);
+    --accent-soft: rgb(143, 42, 26); /* 朱砂压深：浅色下作「文字」用（链接/chip/按下态），≥4.5:1 */
+    --ok: rgb(78, 90, 70); --err: rgb(158, 43, 30); --warn: rgb(140, 92, 20);
+    /* 纸墨专属（规格 §1）：--sheet 纸面 / --paper-deep 选中底 / --rule-soft 行线 /
+     * --faint 最弱信息（只用于非关键装饰与占位，3.0:1，⛔ 不当正文） / --red-soft 危险底 */
+    --sheet: rgb(255, 252, 245); --paper-deep: rgb(239, 231, 217);
+    --rule-soft: rgb(234, 226, 212); --faint: rgb(148, 138, 122);
+    --red-soft: rgb(243, 225, 216);
+    --serif: Georgia, "Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", serif;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   [hidden] { display: none !important; }
@@ -390,6 +399,216 @@
   .file-icon.gone { color: var(--danger, #e55353); }
   .row-action.icon-only { width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
   .row-action.icon-only svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ══ 卡 062 · 纸墨视觉层（2026-11-07）════════════════════════════════════════
+   * 设计基线 = 纸墨-规格 §2（字号/行高）/§3（框架）/§4（组件）/§5（状态）。
+   * ⛔ 范围：只作用于浅色 —— 每条规则都以 [data-theme="light"] 开头，深色（:root）零影响。
+   * ⛔ 不做 §8 拍板点 1/2/3/5：深色纸墨 / 管理多选 / 印章 mark / 纸纹（退纯色，见卡 062 §0.2）。
+   * 触控（卡 062 A2）：应用控件 ≥44×44。结果行密度被 060 契约锁住（Z8-0「行高 ≤100」）⇒
+   *   行内小控件用**负外边距**扩命中区：只放大可点范围，不改行高、不改 DOM、不改事件。
+   * ⚠️ 色值一律 rgb()/rgba()：pwa-audit 按「#加六位十六进制」取令牌并取文件里最后一个 ⇒
+   *   这里若写十六进制，浅色值会被喂进深色对比度口径（卡 062 §0.1-6）。 */
+
+  /* ── 框架：app bar 61px（内容 44 + 上下 8 + 边框 1 = 61；⛔ 不因字号变大而撑高）── */
+  [data-theme="light"] .appbar {
+    padding: calc(8px + var(--safe-top)) 16px 8px;
+    gap: 10px; background: var(--bg); border-bottom: 1px solid var(--border);
+  }
+  [data-theme="light"] .appbar h1 { font-size: 20px; line-height: 1.2; font-weight: 650; letter-spacing: -.01em; }
+  [data-theme="light"] .appbar .tag { font-size: 11px; line-height: 1.3; padding: 3px 9px; color: var(--muted); }
+  [data-theme="light"] .iconbtn { width: 44px; height: 44px; border-radius: 50%; color: var(--text); }
+  [data-theme="light"] .iconbtn[aria-expanded="true"] { background: var(--paper-deep); color: var(--accent-soft); }
+  /* 搜索 pill：外框 46 + 上下 -1 ⇒ 占位仍是 44（app bar 保持 61），内部控件才装得下 44 */
+  [data-theme="light"] .files-search {
+    height: 46px; margin: -1px 0; padding: 0 2px 0 12px;
+    background: var(--paper-deep); border-color: var(--border);
+  }
+  [data-theme="light"] .files-search svg { color: var(--muted); }
+  [data-theme="light"] .files-search input { height: 44px; font-size: 16px; color: var(--text); }
+  [data-theme="light"] .files-search input::placeholder { color: var(--muted); }
+  [data-theme="light"] .files-search-count { font-size: 11px; color: var(--muted); background: var(--sheet); }
+  [data-theme="light"] .files-search-clear { width: 44px; height: 44px; font-size: 15px; color: var(--muted); background: transparent; }
+  [data-theme="light"] .content { padding: 14px 16px calc(var(--nav-h) + var(--safe-bottom) + 22px); }
+
+  /* ── 底部导航（标签 11px 地板；每项 ≥44 高已在基础规则里）── */
+  [data-theme="light"] .navbar { background: var(--bg); border-top-color: var(--border); }
+  [data-theme="light"] .navitem { font-size: 11px; line-height: 1.2; color: var(--muted); }
+  [data-theme="light"] .navitem[aria-selected="true"] { color: var(--text); }
+  [data-theme="light"] .navitem[aria-selected="true"] .pill { background: var(--paper-deep); }
+
+  /* ── 区块标题 / 行（设置 15px 主文、12px 副文）── */
+  [data-theme="light"] .sect { margin-top: 22px; }
+  [data-theme="light"] .sect-head h2 { font-size: 14px; line-height: 1.35; color: var(--text); letter-spacing: .01em; }
+  [data-theme="light"] .sect-title { font-size: 11px; letter-spacing: .08em; color: var(--muted); }
+  [data-theme="light"] .sect-head .sect-meta { font-size: 11px; }
+  [data-theme="light"] .sect-empty { padding: 16px 14px; font-size: 13px; line-height: 1.6; background: var(--sheet); border-radius: 10px; }
+  [data-theme="light"] .list { background: var(--sheet); border-radius: 10px; }
+  [data-theme="light"] .row { padding: 13px 14px; background: var(--sheet); border-bottom-color: var(--rule-soft); }
+  [data-theme="light"] .row-link:hover { background: var(--paper-deep); }
+  [data-theme="light"] .row-name { font-size: 15px; line-height: 1.35; font-weight: 500; }
+  [data-theme="light"] .row-sub, [data-theme="light"] .row-val { font-size: 12px; line-height: 1.4; }
+  [data-theme="light"] .row-chev { color: var(--faint); }
+  [data-theme="light"] .row-action {
+    min-width: 44px; min-height: 44px; padding: 8px 12px; font-size: 13px;
+    border-radius: 10px; background: var(--paper-deep); color: var(--text);
+  }
+
+  /* ── 选择文档卡片（纸面卡 + 44 图标 + 16 标题 + 12 说明）── */
+  [data-theme="light"] #dropzone { padding: 13px 14px; background: var(--sheet); border-radius: 10px; }
+  [data-theme="light"] #dropzone:hover, [data-theme="light"] #dropzone.over { background: var(--sheet); border-color: var(--accent); }
+  [data-theme="light"] #dropzone .picker-icon { background: var(--paper-deep); color: var(--text); border-radius: 6px; }
+  [data-theme="light"] #dropzone .picker-title { font-size: 16px; line-height: 1.3; font-weight: 650; }
+  [data-theme="light"] #dropzone .picker-sub { font-size: 12px; line-height: 1.4; }
+  [data-theme="light"] #dropzone .picker-foot { font-size: 11px; border-top-color: var(--rule-soft); }
+  [data-theme="light"] #dropzone .picker-lock { color: var(--ok); }
+  [data-theme="light"] #dropzone .picker-chev { color: var(--faint); }
+
+  /* ── 段控 / 开关 / 按钮（44px 触控；纸面白底 + 墨字主按钮）── */
+  [data-theme="light"] .seg-btn {
+    min-height: 44px; font-size: 13px; border-radius: 6px;
+    background: var(--sheet); border-color: var(--border); color: var(--muted);
+  }
+  [data-theme="light"] .seg-btn[aria-pressed="true"] { background: var(--paper-deep); border-color: var(--text); color: var(--text); font-weight: 600; }
+  [data-theme="light"] .switch { width: 48px; height: 44px; border: 0; border-radius: 999px; background: transparent; }
+  [data-theme="light"] .switch::before {
+    content: ""; position: absolute; left: 0; top: 8px; width: 48px; height: 28px;
+    border-radius: 999px; background: var(--panel2); box-shadow: inset 0 0 0 1px var(--border);
+    transition: background var(--dur-fast) var(--ease-standard);
+  }
+  [data-theme="light"] .switch::after {
+    top: 11px; left: 3px; width: 22px; height: 22px;
+    background: var(--sheet); box-shadow: 0 1px 2px rgba(33, 29, 24, .22);
+    transition: left var(--dur-fast) var(--ease-standard);
+  }
+  [data-theme="light"] .switch[aria-checked="true"] { background: transparent; }
+  [data-theme="light"] .switch[aria-checked="true"]::before { background: var(--ok); box-shadow: none; }
+  [data-theme="light"] .switch[aria-checked="true"]::after { left: 23px; background: var(--sheet); }
+  [data-theme="light"] .btn {
+    min-height: 44px; font-size: 14px; border-radius: 6px;
+    background: var(--sheet); border-color: var(--border); color: var(--text);
+  }
+  [data-theme="light"] .btn:hover { border-color: var(--accent); }
+  [data-theme="light"] .btn.primary { background: var(--text); border-color: var(--text); color: var(--panel); }
+  [data-theme="light"] .btn.primary:hover { background: var(--accent); border-color: var(--accent); }
+  [data-theme="light"] .btn.danger { background: rgb(252, 246, 243); border-color: var(--red-soft); color: var(--accent-soft); }
+  [data-theme="light"] .md-more { min-height: 44px; border-radius: 6px; background: var(--sheet); }
+  [data-theme="light"] .linkbtn { min-width: 44px; min-height: 44px; padding: 8px 10px; font-size: 12px; }
+  [data-theme="light"] #status { font-size: 13px; line-height: 1.6; }
+  [data-theme="light"] #status.error, [data-theme="light"] .file-invalid { color: var(--err); }
+
+  /* ── 空态（56 虚线圆 + 15 标题 + 13 说明）── */
+  [data-theme="light"] .empty-state { padding: 34px 20px 26px; border-radius: 10px; background: var(--sheet); }
+  [data-theme="light"] .empty-state-icon {
+    width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 4px;
+    border: 1px dashed var(--border); border-radius: 50%; font-size: 22px; color: var(--faint);
+  }
+  [data-theme="light"] .empty-state-title { font-size: 15px; line-height: 1.4; font-weight: 650; }
+  [data-theme="light"] .empty-state-sub, [data-theme="light"] .empty-hint { font-size: 13px; line-height: 1.6; }
+
+  /* ── 文件页（060 结构不动：只换纸色与 44px 命中区）── */
+  [data-theme="light"] .file-row { padding: 10px 12px; background: var(--sheet); border-color: var(--border); border-radius: 10px; }
+  [data-theme="light"] .file-row:active { background: var(--paper-deep); }
+  [data-theme="light"] .file-row.highlight { outline-color: var(--accent); background: var(--paper-deep); }
+  [data-theme="light"] .file-icon { background: var(--paper-deep); color: var(--text); border-radius: 6px; }
+  [data-theme="light"] .file-icon.gone { color: var(--accent); }
+  [data-theme="light"] .file-main { min-height: 44px; }
+  [data-theme="light"] .file-name { font-size: 14px; font-weight: 550; }
+  [data-theme="light"] .file-meta { font-size: 12px; }
+  [data-theme="light"] .file-share {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: transparent; border-color: transparent; color: var(--muted);
+  }
+  [data-theme="light"] .file-share:active { background: var(--paper-deep); }
+  [data-theme="light"] .row-action.icon-only { width: 44px; height: 44px; }
+
+  /* ── 本次结果（A10）：朱砂 = 未记入 / 苔绿 = 已记入 —— 视觉由既有 .muted 类决定，⛔ 不改接线 ── */
+  [data-theme="light"] .results-panel { margin-top: 22px; }
+  [data-theme="light"] .results-head h2 { font-size: 17px; }
+  [data-theme="light"] .results-count { font-size: 12px; }
+  [data-theme="light"] .session-result {
+    min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--ok);
+    border-radius: 6px; background: var(--sheet); color: var(--text); font-size: 13px; line-height: 1.45;
+  }
+  [data-theme="light"] .session-result.muted { border-left-color: var(--accent); color: var(--muted); }
+  [data-theme="light"] .session-result:active { background: var(--paper-deep); }
+  [data-theme="light"] #resultsSearch { min-height: 44px; font-size: 14px; background: var(--sheet); border-color: var(--border); }
+  [data-theme="light"] .results-search svg { stroke: var(--muted); }
+  [data-theme="light"] .results-selectbar { font-size: 12px; }
+  [data-theme="light"] .card { background: var(--sheet); border-radius: 10px; }
+  [data-theme="light"] .card-head { background: var(--paper-deep); border-bottom-color: var(--border); }
+  [data-theme="light"] .result-row .card-head { background: var(--sheet); }
+  [data-theme="light"] .chip { background: rgba(196, 67, 43, .12); border-color: rgba(196, 67, 43, .28); color: var(--accent-soft); }
+  [data-theme="light"] .chip.err { background: rgba(158, 43, 30, .10); border-color: rgba(158, 43, 30, .30); color: var(--err); }
+  [data-theme="light"] .card-body { padding: 12px 14px 14px; }
+  [data-theme="light"] .result-row .card-body { padding: 0 10px 8px; }
+  [data-theme="light"] .result-row.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  [data-theme="light"] .warnings { font-size: 12px; color: var(--warn); }
+  [data-theme="light"] .row-menu { background: var(--sheet); border-color: var(--border); box-shadow: 0 8px 24px rgba(60, 45, 30, .16); }
+  [data-theme="light"] .row-menu button { min-height: 44px; font-size: 14px; }
+  [data-theme="light"] .row-menu button:hover { background: var(--paper-deep); }
+  [data-theme="light"] .batch-bar { background: var(--sheet); border-color: var(--border); box-shadow: 0 8px 24px rgba(60, 45, 30, .16); }
+  [data-theme="light"] .batch-info { font-size: 13px; }
+  [data-theme="light"] .batch-sub { font-size: 11px; }
+  [data-theme="light"] .batch-close { width: 44px; height: 44px; font-size: 20px; color: var(--muted); }
+  /* 结果行内三件小控件：44 命中区 + 负外边距（060 的紧凑行高逐像素不变：Z8-0 行高 ≤100） */
+  [data-theme="light"] .row-menu-btn { width: 44px; height: 44px; margin: -6px 0; }
+  [data-theme="light"] .row-preview { min-height: 44px; margin: -6px 0; padding: 0 6px; font-size: 12px; color: var(--accent-soft); }
+  /* 选择框：110 行距里塞 44×44 命中区会顶死行高（且原生框会画成 44px 大块）
+   * ⇒ appearance:none 自绘 20px 方框（纸墨：墨线空框 / 朱砂实心），命中区仍 44 */
+  [data-theme="light"] #selectAll, [data-theme="light"] .row-select {
+    -webkit-appearance: none; appearance: none;
+    width: 44px; height: 44px; margin: -12px 0; padding: 0; border: 0;
+    background-color: transparent; background-repeat: no-repeat; background-position: center, center;
+    background-size: 18px 18px, 20px 20px;
+    background-image: linear-gradient(var(--sheet), var(--sheet)), linear-gradient(var(--border), var(--border));
+    cursor: pointer;
+  }
+  [data-theme="light"] #selectAll:checked, [data-theme="light"] .row-select:checked {
+    background-image: linear-gradient(var(--accent), var(--accent));
+    background-size: 20px 20px; background-position: center;
+  }
+  [data-theme="light"] #selectAll:indeterminate {
+    background-image: linear-gradient(var(--sheet), var(--sheet)), linear-gradient(var(--accent), var(--accent));
+    background-size: 10px 2px, 20px 20px; background-position: center, center;
+  }
+  /* 结果行内的复选框：左右各 -8 只吃掉 8px 布局（其余命中区落在内边距/间隙里）⇒ 文件名列不被 44 挤干 */
+  [data-theme="light"] .row-select { margin: -12px -8px; }
+  [data-theme="light"] #selectAll:disabled, [data-theme="light"] .row-select:disabled { opacity: .45; cursor: default; }
+
+  /* ── 弹层 ── */
+  [data-theme="light"] .dialog-box { background: var(--sheet); border-color: var(--border); border-radius: 14px; }
+  [data-theme="light"] .dialog-box h2 { font-size: 17px; }
+  [data-theme="light"] .dialog-box p { font-size: 13px; line-height: 1.65; }
+
+  /* ── 查看器 = 纸面阅读（规格 §2 正文 16 serif / 1.85；§4 纸面卡片）── */
+  [data-theme="light"] .md-viewer { background: var(--bg); color: var(--text); }
+  [data-theme="light"] .md-viewer-bar { min-height: 60px; padding: 8px 12px; background: var(--bg); border-bottom-color: var(--border); }
+  [data-theme="light"] .md-viewer-close { width: 44px; height: 44px; padding: 0; font-size: 20px; color: var(--text); }
+  [data-theme="light"] .md-viewer-name { font-size: 14px; line-height: 1.35; font-weight: 600; }
+  [data-theme="light"] .md-viewer-status { font-size: 12px; line-height: 1.5; }
+  [data-theme="light"] .md-viewer-body { padding: 14px 16px 22px; }
+  [data-theme="light"] .md-viewer-foot { background: var(--bg); border-top-color: var(--border); }
+  [data-theme="light"] .md-viewer .md-preview {
+    padding: 20px 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--sheet);
+    color: var(--text); font-family: var(--serif); font-size: 16px; line-height: 1.85;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 8px 20px rgba(70, 50, 30, .05);
+  }
+  [data-theme="light"] .md-viewer .md-preview h1 { font-size: 22px; line-height: 1.4; margin: 0 0 10px; padding-bottom: 0; border-bottom: 0; }
+  [data-theme="light"] .md-viewer .md-preview h2 { font-size: 17px; line-height: 1.5; margin: 20px 0 8px; }
+  [data-theme="light"] .md-viewer .md-preview h3 { font-size: 15px; margin: 16px 0 6px; }
+  [data-theme="light"] .md-viewer .md-preview p,
+  [data-theme="light"] .md-viewer .md-preview ul,
+  [data-theme="light"] .md-viewer .md-preview ol,
+  [data-theme="light"] .md-viewer .md-preview blockquote { margin: 0 0 12px; }
+  [data-theme="light"] .md-viewer .md-preview blockquote { padding: 2px 0 2px 12px; border-left: 2px solid var(--red-soft); }
+  [data-theme="light"] .md-viewer .md-preview code { background: var(--paper-deep); border-radius: 3px; font-size: 13px; }
+  [data-theme="light"] .md-viewer .md-preview pre { background: var(--paper-deep); border-radius: 6px; padding: 12px; }
+  [data-theme="light"] .md-viewer .md-preview th { background: var(--paper-deep); }
+  [data-theme="light"] .md-viewer .md-preview a { color: var(--accent-soft); }
+  [data-theme="light"] .md-viewer-raw {
+    padding: 14px; background: var(--sheet); border: 1px solid var(--border); border-radius: 10px;
+    font-size: 13px; line-height: 1.7; color: var(--text);
+  }
 </style>
 </head>
 
