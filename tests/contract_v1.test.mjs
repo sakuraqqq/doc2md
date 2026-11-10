@@ -7290,7 +7290,8 @@ test('契约组 Z8：转换结果列表（紧凑 / 多选 / 菜单 / 批量 / 10
       });
 
       await t.test('Z8-5 搜索：按文件名过滤；全选只作用于可见成功行', async () => {
-        await page.fill('#resultsSearch', 'z8-9');
+        await page.click('#filesSearchBtn');
+        await page.fill('#filesSearch', 'z8-9');
         await page.waitForTimeout(100);
         const filtered = await page.evaluate(() => ({
           visible: [...document.querySelectorAll('#results .result-row')].filter((r) => !r.hidden).length,
@@ -7300,7 +7301,8 @@ test('契约组 Z8：转换结果列表（紧凑 / 多选 / 菜单 / 批量 / 10
         await page.locator('#selectAllBtn').click();
         const selected = await page.evaluate(() => Number(document.getElementById('selectedCount').textContent));
         assert.ok(selected > 0 && selected < 100, '搜索态全选选中数=' + selected + '（应只选可见行，不是 100）');
-        await page.fill('#resultsSearch', '');
+        await page.fill('#filesSearch', '');
+        await page.click('#filesSearchClose');
         await page.locator('#batchClose').click();
       });
 

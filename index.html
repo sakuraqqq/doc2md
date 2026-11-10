@@ -116,8 +116,10 @@
   /* 选择卡：定位规则见下方 hero 块之后（必须晚于 .#dropzone 基础块，否则被覆盖） */
   .results-panel, .sect-last { order: 0; }
   #status, #hint { order: 1; }
-  body.few-results .results-search, body.few-results .results-selectbar { display: none; }
   body.has-results #status:not(.error) { display: none; }
+  /* 极简：可见结果 <2 且不在搜索态时收起搜索框与「已选择/全选」 */
+  body.few-results .results-selectbar { display: none; }
+
   /* 入场只做淡入：⛔ 不要加 transform —— 有 transform 的元素会成为 fixed/absolute 后代的包含块，
    * 该元素内的星图层与固定选择卡会在动画期间跳到面板坐标系再弹回（同一个坑踩过三次）。 */
   @keyframes panelIn { from { opacity: 0; } to { opacity: 1; } }
@@ -761,10 +763,6 @@
         <span class="results-count" id="resultsCount">已完成 0 个文件</span>
       </div>
       <button type="button" class="session-result" id="sessionResult" hidden></button>
-      <div class="results-search">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
-        <input id="resultsSearch" type="search" placeholder="搜索文件名……" aria-label="搜索文件名" autocomplete="off">
-      </div>
       <div class="results-selectbar">
         <label class="results-selectall"><input type="checkbox" id="selectAll"><span>已选择 <b id="selectedCount">0</b> 个</span></label>
         <button type="button" class="linkbtn" id="selectAllBtn">全选</button>
@@ -3373,8 +3371,8 @@ ${xlsxRowsToMd(kept)}`);
   var pickerTitle = $("#pickerTitle");
   var resultsPanel = $("#resultsPanel");
   var resultsCount = $("#resultsCount");
-  var resultsSearch = $("#resultsSearch");
   var resultsNoMatch = $("#resultsNoMatch");
+  var resultsQuery = "";
   var selectAllEl = $("#selectAll");
   var selectAllBtn = $("#selectAllBtn");
   var selectedCountEl = $("#selectedCount");
@@ -3636,13 +3634,14 @@ ${xlsxRowsToMd(kept)}`);
   }
   function paintSearchChrome() {
     const visibleCount = resultRows.filter((r) => r.success && !r.el.hidden).length;
-    const searching = !!String(resultsSearch.value || "").trim() || document.activeElement === resultsSearch;
+    const searching = !!resultsQuery.trim() || document.activeElement === filesEls().searchInput;
     document.body.classList.toggle("few-results", visibleCount < 2 && !searching);
     if (resultsNoMatch) resultsNoMatch.hidden = !(searching && visibleCount === 0);
     const listEl = document.getElementById("results");
     if (listEl) listEl.hidden = visibleCount === 0;
   }
   function updateResultsChrome() {
+    paintSearchButton(filesEls());
     const hasResults = resultRows.length > 0;
     resultsPanel.hidden = !hasResults;
     paintSessionResult();
@@ -3669,8 +3668,12 @@ ${xlsxRowsToMd(kept)}`);
     }
     updateResultsChrome();
   }
+  function setResultsQuery(v) {
+    resultsQuery = String(v || "");
+    applySearch();
+  }
   function applySearch() {
-    const q = String(resultsSearch.value || "").trim().toLowerCase();
+    const q = String(resultsQuery || "").trim().toLowerCase();
     for (const row of resultRows) {
       row.el.hidden = q !== "" && !row.file.name.toLowerCase().includes(q);
     }
@@ -3726,7 +3729,6 @@ ${xlsxRowsToMd(kept)}`);
       const all = visible.length > 0 && visible.every((r) => r.selected);
       toggleAllVisible(!all);
     });
-    resultsSearch.addEventListener("input", applySearch);
     batchCopy.addEventListener("click", () => {
       copySelected().catch(() => {
       });
@@ -4278,6 +4280,7 @@ ${xlsxRowsToMd(kept)}`);
     if (active === "files") refreshFilesPanel().catch(() => {
     });
     else toggleFilesSearch(false);
+    paintSearchButton(filesEls());
   }
   function activateTab(name) {
     const tabs = tabButtons();
@@ -4541,7 +4544,7 @@ ${xlsxRowsToMd(kept)}`);
   }
   function paintSearchButton(el) {
     if (!el.searchBtn) return;
-    el.searchBtn.hidden = activeTabName !== "files";
+    el.searchBtn.hidden = !(activeTabName === "files" || activeTabName === "convert" && resultRows.length > 0);
     if (el.searchBar) el.searchBtn.setAttribute("aria-expanded", String(!el.searchBar.hidden));
   }
   function paintRetry(el, supported) {
@@ -4803,8 +4806,10 @@ ${xlsxRowsToMd(kept)}`);
     el.searchBar.hidden = !open;
     if (el.appbar) el.appbar.classList.toggle("searching", open);
     if (el.searchBtn) el.searchBtn.setAttribute("aria-expanded", String(open));
-    if (!open) setFilesQuery("");
-    else if (el.searchInput) el.searchInput.focus();
+    if (!open) {
+      setFilesQuery("");
+      setResultsQuery("");
+    } else if (el.searchInput) el.searchInput.focus();
   }
   function shareFailMessage(res) {
     if (!res) return "\u5206\u4EAB\u5931\u8D25\uFF1A\u672A\u77E5\u9519\u8BEF";
@@ -5013,7 +5018,10 @@ ${xlsxRowsToMd(kept)}`);
   function wireFilesSearch(el) {
     if (el.searchBtn) el.searchBtn.addEventListener("click", () => toggleFilesSearch());
     if (el.searchInput) {
-      el.searchInput.addEventListener("input", () => setFilesQuery(el.searchInput.value));
+      el.searchInput.addEventListener("input", () => {
+        if (activeTabName === "convert") setResultsQuery(el.searchInput.value);
+        else setFilesQuery(el.searchInput.value);
+      });
       el.searchInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
