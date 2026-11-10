@@ -398,6 +398,9 @@ function updateResultsChrome() {
    *（元素保留：app.js 仍 import hintEl 并在启动时置 none） */
   hintEl.style.display = 'none';
   document.body.classList.toggle('has-results', hasResults);
+  /* 极简（2026-11-11 用户拍板）：少于 2 条时，搜索框与「已选择/全选」纯属噪音 ⇒ 收起 */
+  const visibleCount = resultRows.filter((r) => r.success && !r.el.hidden).length;
+  document.body.classList.toggle('few-results', visibleCount < 2);
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
   const lastSect = document.getElementById('lastTitle');
   if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = hasResults;
@@ -1081,6 +1084,8 @@ export function activateTab(name) {
   }
   const active = target.dataset.tab || null;
   activeTabName = active;
+  /* 星图（fixed 背景层）只在「转换」显示：body[data-tab] 供 CSS 判断（卡 065 真机反馈） */
+  document.body.dataset.tab = active || 'convert';
   // 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。
   if (active === 'files') refreshFilesPanel().catch(() => {});
   else toggleFilesSearch(false);
