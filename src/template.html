@@ -621,32 +621,23 @@
   /* 结果行内三件小控件：44 命中区 + 负外边距（060 的紧凑行高逐像素不变：Z8-0 行高 ≤100） */
   [data-theme="light"] .row-menu-btn { width: 44px; height: 44px; margin: -6px 0; }
   [data-theme="light"] .row-preview { min-height: 44px; margin: -6px 0; padding: 0 6px; font-size: 12px; color: var(--primary); }
-  /* 选择框（两主题同几何、各自主题色）：44×44 命中区 + 12px 透明边 ⇒ 内绘 20×20、圆角 6；
-   * 未选 = surface 底 + muted 空心框；选中 = **实心 primary + on-primary 勾**（圆角 6）；半选 = 实心 + 横线。 */
+  /* 选择框（两主题同几何、各自主题色）：44×44 命中区，视觉统一由一张 20×20 的 SVG 圆角矩形给出
+   * （rx=6，三态共用同一矩形 ⇒ 圆角与描边在三种状态下完全一致；⛔ 不要再用「两层渐变叠框」，
+   *  两层半径相同而尺寸差 1px，四角会把描边吃掉，看起来像方框）。 */
   #selectAll, .row-select {
     -webkit-appearance: none; appearance: none;
     width: 44px; height: 44px; margin: -12px 0; padding: 0;
-    border: 12px solid transparent; border-radius: 18px;
-    background-color: transparent; background-repeat: no-repeat; background-position: center, center;
-    background-clip: padding-box, padding-box; background-size: 18px 18px, 20px 20px;
-    background-image: linear-gradient(var(--surface), var(--surface)), linear-gradient(var(--muted), var(--muted));
+    border: 0; border-radius: 0; background-color: transparent;
+    background-repeat: no-repeat; background-position: center; background-size: 20px 20px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='0.8' y='0.8' width='18.4' height='18.4' rx='6' fill='%23161b25' stroke='%239ca7bb' stroke-width='1.2'/%3E%3C/svg%3E");
     cursor: pointer;
   }
-  #selectAll:checked, .row-select:checked {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%270.8%27 y=%270.8%27 width=%2718.4%27 height=%2718.4%27 rx=%276%27 fill=%27%23b5caff%27/%3E%3Cpath d=%27M5.6 10.4l3 3 5.8-6.4%27 fill=%27none%27 stroke=%27%2312254b%27 stroke-width=%272.2%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E");
-    background-size: 20px 20px; background-position: center;
-  }
-  #selectAll:indeterminate {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%270.8%27 y=%270.8%27 width=%2718.4%27 height=%2718.4%27 rx=%276%27 fill=%27%23b5caff%27/%3E%3Cpath d=%27M6 10h8%27 fill=%27none%27 stroke=%27%2312254b%27 stroke-width=%272.2%27 stroke-linecap=%27round%27/%3E%3C/svg%3E");
-    background-size: 20px 20px; background-position: center;
-  }
-  [data-theme="light"] #selectAll:checked, [data-theme="light"] .row-select:checked {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%270.8%27 y=%270.8%27 width=%2718.4%27 height=%2718.4%27 rx=%276%27 fill=%27%23345ebe%27/%3E%3Cpath d=%27M5.6 10.4l3 3 5.8-6.4%27 fill=%27none%27 stroke=%27%23ffffff%27 stroke-width=%272.2%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E");
-  }
-  [data-theme="light"] #selectAll:indeterminate {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%270.8%27 y=%270.8%27 width=%2718.4%27 height=%2718.4%27 rx=%276%27 fill=%27%23345ebe%27/%3E%3Cpath d=%27M6 10h8%27 fill=%27none%27 stroke=%27%23ffffff%27 stroke-width=%272.2%27 stroke-linecap=%27round%27/%3E%3C/svg%3E");
-  }
-  /* 结果行内：左右各 -8 只吃掉 8px 布局 ⇒ 文件名列不被 44 挤干（两主题同） */
+  #selectAll:checked, .row-select:checked { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='0.8' y='0.8' width='18.4' height='18.4' rx='6' fill='%23b5caff' stroke='%23b5caff' stroke-width='1.2'/%3E%3Cpath d='M5.6 10.4l3 3 5.8-6.4' fill='none' stroke='%2312254b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+  #selectAll:indeterminate { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='0.8' y='0.8' width='18.4' height='18.4' rx='6' fill='%23b5caff' stroke='%23b5caff' stroke-width='1.2'/%3E%3Cpath d='M6 10h8' fill='none' stroke='%2312254b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+  [data-theme="light"] #selectAll, [data-theme="light"] .row-select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='0.8' y='0.8' width='18.4' height='18.4' rx='6' fill='%23ffffff' stroke='%2365728a' stroke-width='1.2'/%3E%3C/svg%3E"); }
+  [data-theme="light"] #selectAll:checked, [data-theme="light"] .row-select:checked { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='0.8' y='0.8' width='18.4' height='18.4' rx='6' fill='%23345ebe' stroke='%23345ebe' stroke-width='1.2'/%3E%3Cpath d='M5.6 10.4l3 3 5.8-6.4' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+  [data-theme="light"] #selectAll:indeterminate { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='0.8' y='0.8' width='18.4' height='18.4' rx='6' fill='%23345ebe' stroke='%23345ebe' stroke-width='1.2'/%3E%3Cpath d='M6 10h8' fill='none' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+  /* 结果行内：左右各 -8 只吃掉 8px 布局 ⇒ 文件名列不被 44 挤干 */
   .row-select { margin: -12px -8px; }
   #selectAll:disabled, .row-select:disabled { opacity: .45; cursor: default; }
 
