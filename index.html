@@ -99,9 +99,7 @@
   /* 星图容器：absolute + height 0 ⇒ 不占布局（规格 §1.2 关键手法）*/
   .art { position: absolute; top: 184px; right: -4px; width: 240px; height: 0; z-index: 0; pointer-events: none; }
   .art .orion { position: absolute; top: 0; right: 0; width: 220px; height: 282px; overflow: visible; }
-  .art .sky-glow { position: absolute; top: 40px; right: 0; width: 240px; height: 240px; border-radius: 50%;
     background: radial-gradient(ellipse at center, #99b7ee1c, transparent 70%); }
-  [data-theme="light"] .art .sky-glow { background: radial-gradient(ellipse at center, #658bd616, transparent 70%); }
   /* ── 内容区与三个面板 ── */
   .content {
     position: relative;
@@ -576,10 +574,10 @@
   [data-theme="light"] .results-head h2 { font-size: 17px; }
   [data-theme="light"] .results-count { font-size: 12px; }
   [data-theme="light"] .session-result {
-    min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--primary);
+    min-height: 44px; padding: 10px 12px; border: 1px solid var(--border);
     border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 13px; line-height: 1.45;
   }
-  [data-theme="light"] .session-result.muted { border-left-color: var(--primary); color: var(--muted); }
+  [data-theme="light"] .session-result.muted { color: var(--muted); }
   [data-theme="light"] .session-result:active { background: var(--icon-bg); }
   [data-theme="light"] #resultsSearch { min-height: 44px; font-size: 14px; background: var(--surface); border-color: var(--border); }
   [data-theme="light"] .results-search svg { stroke: var(--muted); }
@@ -611,35 +609,34 @@
   /* 结果行内三件小控件：44 命中区 + 负外边距（060 的紧凑行高逐像素不变：Z8-0 行高 ≤100） */
   [data-theme="light"] .row-menu-btn { width: 44px; height: 44px; margin: -6px 0; }
   [data-theme="light"] .row-preview { min-height: 44px; margin: -6px 0; padding: 0 6px; font-size: 12px; color: var(--primary); }
-  /* 选择框：110 行距里塞 44×44 命中区会顶死行高（且原生框会画成 44px 大块）
-   * ⇒ appearance:none 自绘 20px 方框（纸墨：墨线空框 / 朱砂实心），命中区仍 44 */
-  [data-theme="light"] #selectAll, [data-theme="light"] .row-select {
+  /* 选择框（两主题同一套几何）：44×44 命中区 + 12px 透明边 ⇒ 内绘 20×20；
+   * 选中 = 纸/夜底方框 + primary 勾（SVG 里不能用 var()，所以两主题各写一份色值）。 */
+  #selectAll, .row-select {
     -webkit-appearance: none; appearance: none;
-    /* 44×44 命中区 + 12px 透明边 ⇒ 内绘区正好 20×20；border-radius 16 → 内圆角 4（与深色原生框同形） */
     width: 44px; height: 44px; margin: -12px 0; padding: 0;
     border: 12px solid transparent; border-radius: 16px;
     background-color: transparent; background-repeat: no-repeat; background-position: center, center;
-    background-clip: padding-box, padding-box;
-    background-size: 18px 18px, 20px 20px;
+    background-clip: padding-box, padding-box; background-size: 18px 18px, 20px 20px;
     background-image: linear-gradient(var(--surface), var(--surface)), linear-gradient(var(--muted), var(--muted));
     cursor: pointer;
   }
-  /* 选中态（用户 2026-11-07 拍板 = 方案 H）：纸底方框 + **朱砂勾**，红只留 1.6px 边与勾这一条细线。
-   * ⚠️ 为什么不是实心块：20px 实心正红在通用 UI 里会被读成「告警」，也是朱砂最重的用法；
-   *    纸墨里朱砂是印章色 ⇒ 打勾更像盖章。图形用内联 SVG（零外链；xmlns 域名在契约 H2 白名单内），
-   *    颜色写死 = --accent 的 #C4432B 与纸面 #FFFCF5（改令牌时这里要同步）。 */
+  #selectAll:checked, .row-select:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%271%27 y=%271%27 width=%2718%27 height=%2718%27 rx=%274%27 fill=%27%23161b25%27 stroke=%27%23b5caff%27 stroke-width=%271.6%27/%3E%3Cpath d=%27M5.4 10.6l3.2 3.2 6-6.8%27 fill=%27none%27 stroke=%27%23b5caff%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E");
+    background-size: 20px 20px; background-position: center;
+  }
+  #selectAll:indeterminate {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%271%27 y=%271%27 width=%2718%27 height=%2718%27 rx=%274%27 fill=%27%23161b25%27 stroke=%27%23b5caff%27 stroke-width=%271.6%27/%3E%3Cpath d=%27M6 10h8%27 fill=%27none%27 stroke=%27%23b5caff%27 stroke-width=%272%27 stroke-linecap=%27round%27/%3E%3C/svg%3E");
+    background-size: 20px 20px; background-position: center;
+  }
   [data-theme="light"] #selectAll:checked, [data-theme="light"] .row-select:checked {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' rx='4' fill='%23FFFCF5' stroke='%23C4432B' stroke-width='1.6'/%3E%3Cpath d='M5.4 10.6l3.2 3.2 6-6.8' fill='none' stroke='%23C4432B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-size: 20px 20px; background-position: center;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%271%27 y=%271%27 width=%2718%27 height=%2718%27 rx=%274%27 fill=%27%23ffffff%27 stroke=%27%23345ebe%27 stroke-width=%271.6%27/%3E%3Cpath d=%27M5.4 10.6l3.2 3.2 6-6.8%27 fill=%27none%27 stroke=%27%23345ebe%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E");
   }
-  /* 半选（全选未满）同形，只把勾换成横线 */
   [data-theme="light"] #selectAll:indeterminate {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1' y='1' width='18' height='18' rx='4' fill='%23FFFCF5' stroke='%23C4432B' stroke-width='1.6'/%3E%3Cpath d='M6 10h8' fill='none' stroke='%23C4432B' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-size: 20px 20px; background-position: center;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%271%27 y=%271%27 width=%2718%27 height=%2718%27 rx=%274%27 fill=%27%23ffffff%27 stroke=%27%23345ebe%27 stroke-width=%271.6%27/%3E%3Cpath d=%27M6 10h8%27 fill=%27none%27 stroke=%27%23345ebe%27 stroke-width=%272%27 stroke-linecap=%27round%27/%3E%3C/svg%3E");
   }
-  /* 结果行内的复选框：左右各 -8 只吃掉 8px 布局（其余命中区落在内边距/间隙里）⇒ 文件名列不被 44 挤干 */
-  [data-theme="light"] .row-select { margin: -12px -8px; }
-  [data-theme="light"] #selectAll:disabled, [data-theme="light"] .row-select:disabled { opacity: .45; cursor: default; }
+  /* 结果行内：左右各 -8 只吃掉 8px 布局 ⇒ 文件名列不被 44 挤干（两主题同） */
+  .row-select { margin: -12px -8px; }
+  #selectAll:disabled, .row-select:disabled { opacity: .45; cursor: default; }
 
   /* ── 弹层 ── */
   [data-theme="light"] .dialog-box { background: var(--surface); border-color: var(--border); border-radius: 14px; }
@@ -710,7 +707,6 @@
       <span class="picker-foot"><span class="picker-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>本地处理 · 单文件最大 50 MB</span>
     </div>
     <div class="art" aria-hidden="true">
-      <div class="sky-glow"></div>
       <svg class="orion" viewBox="0 0 200 300" fill="none">
         <g stroke="var(--star-line)" stroke-opacity="var(--line-opacity)" stroke-width=".6">
           <path d="M58 50 L84 158 L70 250"/>
