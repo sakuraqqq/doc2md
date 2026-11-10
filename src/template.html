@@ -97,7 +97,7 @@
   :root:not([data-theme="light"]) .sky-day { opacity: 0; }
   [data-theme="light"] .sky-night { opacity: 0; }
   /* 星图容器：absolute + height 0 ⇒ 不占布局（规格 §1.2 关键手法）*/
-  .art { position: absolute; top: 198px; right: 12px; width: 240px; height: 0; z-index: 0; pointer-events: none; }
+  .art { position: absolute; top: 184px; right: -4px; width: 240px; height: 0; z-index: 0; pointer-events: none; }
   .art .orion { position: absolute; top: 0; right: 0; width: 220px; height: 282px; overflow: visible; }
   .art .sky-glow { position: absolute; top: 40px; right: 0; width: 240px; height: 240px; border-radius: 50%;
     background: radial-gradient(ellipse at center, #99b7ee1c, transparent 70%); }
@@ -110,6 +110,9 @@
   }
   .tabpanel { display: none; }
   .tabpanel.active { display: block; animation: panelIn var(--dur-fast) var(--ease-standard); }
+  /* ⚠️ panelIn 动画会临时给面板加 transform ⇒ 动画期间该面板成为绝对定位后代的包含块。
+   *    星图层 .art 必须始终以同一盒子为参照，否则切 Tab 时会平移（真机 bug 2026-11-10）。 */
+  #panel-convert { position: relative; }
   @keyframes panelIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
   /* ── 「选择文档」卡片（卡 063 · A4/A5）：标题 20–22 / 格式行 13 单行 / 一颗朱砂主按钮 44–48 / 隐私页脚。

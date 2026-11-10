@@ -152,3 +152,4 @@
   - **层叠上下文陷阱**：给 `.content` 加 `z-index:1` 会让行菜单（z-index 20，在 content 内）**再也盖不过 fixed 的 tabbar** ⇒ 靠近底部的菜单项被遮住、点不到（Q4 30s 超时暴露）。正解 = 天空层沉到 `z-index:-1`，`.content` **不建层叠上下文**。
   - **safe-area 两路来源**：token 重写时误把 `--safe-top: max(env(...), var(--safe-area-inset-*))` 退化成只认 `env()` ⇒ 老 WebView 上 insets 恒 0（Z6-6 负例当场抓到）。已恢复四向 `max()` 形式。
 - **回声**：`pwa-audit` 48 → **47**（删 .chip 1 条）；`node --test` 仍 **413/411/0/2**（A16 新增 68 绝对值断言写在既有用例内，条数不变）；`tests/CONTRACT.md` Z10-11 记变更留痕。
+- **真机反馈修复（同日）**：切回「转换」时猎户座平移 —— 根因是 `panelIn` 动画的 `transform` 让面板在动画期间成为绝对定位后代的包含块，`.art` 的参照系从 `.content` 临时变成面板。修法 = `#panel-convert { position: relative }` 钉死包含块 + 偏移换算；`measure-065` 增一条「三态 x 一致」回归锁。
