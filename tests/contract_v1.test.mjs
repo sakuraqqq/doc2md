@@ -8153,6 +8153,8 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
           out.searchClosed = bar.getBoundingClientRect().height;
           return out;
         });
+        /* 卡 065（星空）：A16 栏高值 61 → 68（spec §1.2 / design.html .appbar height:68px） */
+        assert.ok(Math.abs(h.convert - 68) <= 0.5, '顶栏高不是 68±0.5：实测 ' + h.convert.toFixed(2) + 'px');
         assert.ok(Math.abs(h.convert - h.files) <= 0.5, '文件页顶栏比转换页高 ' + (h.files - h.convert).toFixed(2) + 'px');
         assert.ok(Math.abs(h.convert - h.settings) <= 0.5, '设置页顶栏高度不一致：' + (h.settings - h.convert).toFixed(2) + 'px');
         assert.ok(Math.abs(h.searchOpen - h.convert) <= 0.5, '搜索展开改变了顶栏高度：' + (h.searchOpen - h.convert).toFixed(2) + 'px');

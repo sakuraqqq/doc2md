@@ -138,3 +138,17 @@
 - **回声**：`tests/` **一字未改**（413/411/0/2 全绿）；`docs/BASELINE.json` 无需改动（契约数与交付面不变）；真机 debug 包（`applicationIdSuffix .debug`，与 release 并存）实测三组件生效。
 - **后续拍板（用户 2026-11-07 23:59）**：**去掉底部 Tab 的 01/02/03 序号** ⇒ 原「目录页脚带序号」的口径作废，只留中文标签 + 当前项 2×16 朱砂书签 + 列间 1px rule；nav 54 高与 ≥44 命中区不变（已真机复验）。
 - **A6a / A6b 补齐（同日）**：首页「上次转换」1 条 —— 有效文件点击 ⇒ 切「文件」Tab 并高亮对应行；记录指向的文件已删 ⇒ 该条红字「文件已不存在，无法打开」，点击仍定位到失效行（`invalidByUri` 驱动，`refreshFilesPanel` 先核验再重绘）。
+
+## DD-19 · 视觉方向换代：纸墨 → 星空 05.1（卡 065）— 2026-11-10
+
+- **背景**：2026-11-09 用户拍板方向改为「星空 05.1（选 A，全量替换）」，纸墨线（062 已合并 / 063 已合并 / 064 冻结）止步。星空是**新骨架**（appbar 68 / tabbar 78 / 20 圆角 / 双主题星图），不是纸墨换皮。
+- **拍板（用户 2026-11-10，四条）**：① `pwa-audit` 的 token 名改成星空新名（= 改门禁，显式授权）；② 设置页仍用 `.list` 容器裁圆角（`Z6-10` 原样）；③ 弃用 063 分支；④ 迁移**一批**（M1–M4 一次 PR）。另：`.chip` 产品 0 处使用 ⇒ **删 CSS + 删 3 条断言**；`.list` 保留。
+- **落地**：
+  - `:root` / `[data-theme="light"]` 换成星空 16 token（bg / sky / surface / surface-solid / ink / muted / primary / on-primary / border / star / star-line / warm / warm-ink / nav / icon-bg / hero-shadow）；星图层参数 `--line-opacity` / `--star-opacity` / `--node-size` 单列（不属 16 token 契约）。
+  - 旧 token 名按映射整体替换（`--panel→--surface` / `--text→--ink` / `--accent*→--primary` / `--ok→--primary` / `--err/--warn→--warm-ink` / `--sheet→--surface` / `--paper-deep→--icon-bg` / `--faint→--muted` / `--red-soft→--warm`），共 337 处 `var(--…)`。
+  - appbar **68**（内容 44 + 12/11 + 1 线）、tabbar **78**（3 等分，52×28 图标胶囊 + 11px 文字，命中 ≥44）、hero 圆角 26 + 浅色 `@supports` 玻璃、结果卡 18、文件卡 20、设置卡 18、CTA 52/28。
+  - **星图层**：`.sky` 双曝光（fixed，`z-index:-1`，html 兜底色）+ `.art`（猎户座 7 星 + 腰带/肩线，`position:absolute; height:0` **不占布局**）。
+- **两处真 bug（本轮同时修）**：
+  - **层叠上下文陷阱**：给 `.content` 加 `z-index:1` 会让行菜单（z-index 20，在 content 内）**再也盖不过 fixed 的 tabbar** ⇒ 靠近底部的菜单项被遮住、点不到（Q4 30s 超时暴露）。正解 = 天空层沉到 `z-index:-1`，`.content` **不建层叠上下文**。
+  - **safe-area 两路来源**：token 重写时误把 `--safe-top: max(env(...), var(--safe-area-inset-*))` 退化成只认 `env()` ⇒ 老 WebView 上 insets 恒 0（Z6-6 负例当场抓到）。已恢复四向 `max()` 形式。
+- **回声**：`pwa-audit` 48 → **47**（删 .chip 1 条）；`node --test` 仍 **413/411/0/2**（A16 新增 68 绝对值断言写在既有用例内，条数不变）；`tests/CONTRACT.md` Z10-11 记变更留痕。
