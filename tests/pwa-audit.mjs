@@ -98,33 +98,58 @@ if (mediaM) {
   ok(/\.card-actions \.btn \{ flex: 1 1 auto/.test(block), '卡片按钮 flex 撑满（触控宽度）');
   ok(/textarea\.md \{ font-size: 14px/.test(block), '输出区字号 14px');
 }
-const roots = Object.fromEntries([...html.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2]]));
-ok(!!roots['primary'], ':root 含 --primary（星空主色）');
+/* 主题 token 必须**分块**取值：`:root`（深色）与 `[data-theme="light"]`（浅色）各取各的。
+ * ⚠️ 卡 066 · F4：原实现全文正则 + Object.fromEntries 后值覆盖前值 ⇒ 浅色 hex 静默顶掉深色，
+ *    深色正文/背景对比度根本没被量过（把 --ink 改成 --bg 仍 47/0）。改前浅色是 rgb() 才侥幸只量深色。
+ * 块尾用花括号配平，⛔ 不靠「下一个 \n  }」（块内嵌套/缩进变化会切错）。 */
+function cssBlock(css, selector) {
+  const at = css.indexOf(selector + ' {');
+  if (at < 0) return null;
+  const open = css.indexOf('{', at);
+  let depth = 1;
+  let i = open + 1;
+  while (i < css.length && depth > 0) {
+    if (css[i] === '{') depth += 1;
+    else if (css[i] === '}') depth -= 1;
+    i += 1;
+  }
+  return css.slice(open + 1, i - 1);
+}
+const tokenTable = (block) =>
+  Object.fromEntries([...block.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2]]));
+const DARK_TOKENS = tokenTable(cssBlock(html, ':root') || '');
+const LIGHT_TOKENS = tokenTable(cssBlock(html, '[data-theme="light"]') || '');
+ok(!!DARK_TOKENS['primary'], ':root 含 --primary（星空主色）');
+ok(!!LIGHT_TOKENS['primary'], '[data-theme="light"] 含 --primary');
 
-/* ---------- 5. 对比度（WCAG AA ≥4.5:1 普通文本） ---------- */
-console.log('\n[5] 对比度（文字 on 实际合成背景，≥4.5:1）');
-/* token 名 = 星空 05.1（规格 §1.1）。⚠️ V 取到的是**浅色**值：data-theme="light" 块在 :root 之后，
- *  Object.fromEntries 后写覆盖前写 —— 与旧版同口径（旧版量的也是浅色那套）。 */
-const V = roots;
-const bg1 = parseHex(V.bg);
-const bgSurface = parseHex(V.surface);
-  const bgIcon = parseHex(V['icon-bg']);
-const checks = [
-  ['正文 ink on bg', parseHex(V.ink), bg1],
-  ['正文 ink on surface', parseHex(V.ink), bgSurface],
-  ['正文 ink on icon-bg', parseHex(V.ink), bgIcon],
-  ['次要 muted on bg', parseHex(V.muted), bg1],
-  ['次要 muted on surface', parseHex(V.muted), bgSurface],
-  ['主色 primary on bg', parseHex(V.primary), bg1],
-  ['主色 primary on surface', parseHex(V.primary), bgSurface],
-  ['主色 primary on icon-bg', parseHex(V.primary), bgIcon],
-  ['主按钮字 on-primary on primary', parseHex(V['on-primary']), parseHex(V.primary)],
-  ['失效 warm-ink on surface', parseHex(V['warm-ink']), bgSurface],
-  ['失效 warm-ink on bg', parseHex(V['warm-ink']), bg1],
+/* ---------- 5. 对比度（WCAG AA ≥4.5:1 普通文本；深/浅两主题分别量） ---------- */
+console.log('\n[5] 对比度（文字 on 实际合成背景，≥4.5:1；深/浅两主题分块取值）');
+const REQUIRED = ['bg', 'surface', 'ink', 'muted', 'primary', 'on-primary', 'warm-ink', 'icon-bg'];
+const CONTRAST_SPECS = [
+  ['正文 ink on bg', 'ink', 'bg'],
+  ['正文 ink on surface', 'ink', 'surface'],
+  ['正文 ink on icon-bg', 'ink', 'icon-bg'],
+  ['次要 muted on bg', 'muted', 'bg'],
+  ['次要 muted on surface', 'muted', 'surface'],
+  ['主色 primary on bg', 'primary', 'bg'],
+  ['主色 primary on surface', 'primary', 'surface'],
+  ['主色 primary on icon-bg', 'primary', 'icon-bg'],
+  ['主按钮字 on-primary on primary', 'on-primary', 'primary'],
+  ['失效 warm-ink on surface', 'warm-ink', 'surface'],
+  ['失效 warm-ink on bg', 'warm-ink', 'bg'],
 ];
-for (const [label, fg, bg] of checks) {
-  const r = contrast(fg, bg).toFixed(2);
-  ok(parseFloat(r) >= 4.5, `${label} = ${r}:1`);
+ok(DARK_TOKENS['ink'] !== LIGHT_TOKENS['ink'] && DARK_TOKENS['bg'] !== LIGHT_TOKENS['bg'], '浅色 token 未覆盖深色（分块解析，ink/bg 取值不同）');
+for (const [theme, V] of [['dark', DARK_TOKENS], ['light', LIGHT_TOKENS]]) {
+  const missing = REQUIRED.filter((k) => !V[k]);
+  ok(missing.length === 0, `[${theme}] token 齐全（${REQUIRED.length} 项）`, missing.join(','));
+  for (const [label, fk, bk] of CONTRAST_SPECS) {
+    if (!V[fk] || !V[bk]) {
+      ok(false, `[${theme}] ${label} = 无法解析（缺 ${fk}/${bk}）`);
+      continue;
+    }
+    const r = contrast(parseHex(V[fk]), parseHex(V[bk])).toFixed(2);
+    ok(parseFloat(r) >= 4.5, `[${theme}] ${label} = ${r}:1`);
+  }
 }
 
 /* ---------- 汇总 ---------- */
