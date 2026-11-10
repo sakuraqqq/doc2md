@@ -89,7 +89,6 @@ ok(html.includes('rel="manifest" href="manifest.json"'), 'link manifest');
 ok(html.includes('name="theme-color" content="#0f1115"'), 'meta theme-color');
 ok(html.includes('rel="apple-touch-icon" href="icons/icon-180.png"'), 'apple-touch-icon');
 ok(/navigator\.serviceWorker\.register\(["']\.\/sw\.js["']\)/.test(html), 'SW 注册代码（单双引号兼容——t8 后构建产物为双引号）');
-ok(/\.chip \{[^}]*font-size: 12px/.test(html), '.chip 字号 12px（原先 11px 不达标）');
 const mediaM = /@media \(max-width: 600px\) \{([\s\S]*?)\n  \}/.exec(html);
 ok(!!mediaM, '@media (max-width:600px) 块存在');
 if (mediaM) {
@@ -100,24 +99,28 @@ if (mediaM) {
   ok(/textarea\.md \{ font-size: 14px/.test(block), '输出区字号 14px');
 }
 const roots = Object.fromEntries([...html.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})/gi)].map((m) => [m[1], m[2]]));
-ok(!!roots['accent-soft'], ':root 含 --accent-soft');
+ok(!!roots['primary'], ':root 含 --primary（星空主色）');
 
 /* ---------- 5. 对比度（WCAG AA ≥4.5:1 普通文本） ---------- */
 console.log('\n[5] 对比度（文字 on 实际合成背景，≥4.5:1）');
+/* token 名 = 星空 05.1（规格 §1.1）。⚠️ V 取到的是**浅色**值：data-theme="light" 块在 :root 之后，
+ *  Object.fromEntries 后写覆盖前写 —— 与旧版同口径（旧版量的也是浅色那套）。 */
 const V = roots;
-const bg1 = parseHex(V.bg), bgPanel = parseHex(V.panel), bgPanel2 = parseHex(V.panel2);
+const bg1 = parseHex(V.bg);
+const bgSurface = parseHex(V.surface);
+  const bgIcon = parseHex(V['icon-bg']);
 const checks = [
-  ['正文 text on bg', parseHex(V.text), bg1],
+  ['正文 ink on bg', parseHex(V.ink), bg1],
+  ['正文 ink on surface', parseHex(V.ink), bgSurface],
+  ['正文 ink on icon-bg', parseHex(V.ink), bgIcon],
   ['次要 muted on bg', parseHex(V.muted), bg1],
-  ['次要 muted on panel', parseHex(V.muted), bgPanel],
-  ['meta muted on panel2', parseHex(V.muted), bgPanel2],
-  ['badge 绿 on 绿底', parseHex(V.ok), blend(parseHex(V.ok), bg1, 0.12)],
-  ['chip 蓝 on 蓝底(panel2)', parseHex(V['accent-soft']), blend(parseHex(V.accent), bgPanel2, 0.15)],
-  ['badge.blue 蓝 on 蓝底', parseHex(V.accent), blend(parseHex(V.accent), bg1, 0.12)],
-  ['warn on panel', parseHex(V.warn), bgPanel],
-  ['err on panel', parseHex(V.err), bgPanel],
-  ['chip.err 红 on 红底(panel2)', parseHex(V.err), blend(parseHex(V.err), bgPanel2, 0.12)],
-  ['primary 白字 on accent2', [255, 255, 255], parseHex(V.accent2)],
+  ['次要 muted on surface', parseHex(V.muted), bgSurface],
+  ['主色 primary on bg', parseHex(V.primary), bg1],
+  ['主色 primary on surface', parseHex(V.primary), bgSurface],
+  ['主色 primary on icon-bg', parseHex(V.primary), bgIcon],
+  ['主按钮字 on-primary on primary', parseHex(V['on-primary']), parseHex(V.primary)],
+  ['失效 warm-ink on surface', parseHex(V['warm-ink']), bgSurface],
+  ['失效 warm-ink on bg', parseHex(V['warm-ink']), bg1],
 ];
 for (const [label, fg, bg] of checks) {
   const r = contrast(fg, bg).toFixed(2);

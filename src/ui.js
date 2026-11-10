@@ -37,7 +37,9 @@ const mdViewerDownload = $('#mdViewerDownload');
 const pickerTitle = $('#pickerTitle');
 const resultsPanel = $('#resultsPanel');
 const resultsCount = $('#resultsCount');
-const resultsSearch = $('#resultsSearch');
+const resultsNoMatch = $('#resultsNoMatch');
+/* 结果区搜索词：由 app bar 展开式搜索框驱动（与「文件」页同一套交互，卡 065 真机反馈） */
+let resultsQuery = '';
 const selectAllEl = $('#selectAll');
 const selectAllBtn = $('#selectAllBtn');
 const selectedCountEl = $('#selectedCount');
@@ -390,7 +392,20 @@ function syncSelectAll() {
   selectAllEl.indeterminate = selected > 0 && selected < visible.length;
   selectAllBtn.textContent = all ? '取消全选' : '全选';
 }
+/** 搜索态与「极简」收起规则集中在这里：可见结果数、是否正在搜索、空提示与列表容器的显隐。 */
+function paintSearchChrome() {
+  const visibleCount = resultRows.filter((r) => r.success && !r.el.hidden).length;
+  const searching = !!resultsQuery.trim() || document.activeElement === filesEls().searchInput;
+  /* 用户正在搜索时不能收起搜索框 —— 否则输入第一个字符就把它自己隐藏掉（界面突变）。 */
+  document.body.classList.toggle('few-results', visibleCount < 2 && !searching);
+  if (resultsNoMatch) resultsNoMatch.hidden = !(searching && visibleCount === 0);
+  const listEl = document.getElementById('results');
+  if (listEl) listEl.hidden = visibleCount === 0;
+}
+
 function updateResultsChrome() {
+  /* 结果数量决定「转换页搜索图标」是否出现 */
+  paintSearchButton(filesEls());
   const hasResults = resultRows.length > 0;
   resultsPanel.hidden = !hasResults;
   paintSessionResult();
@@ -398,6 +413,7 @@ function updateResultsChrome() {
    *（元素保留：app.js 仍 import hintEl 并在启动时置 none） */
   hintEl.style.display = 'none';
   document.body.classList.toggle('has-results', hasResults);
+  paintSearchChrome();
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
   const lastSect = document.getElementById('lastTitle');
   if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = hasResults;
@@ -418,8 +434,12 @@ function toggleAllVisible(on) {
   }
   updateResultsChrome();
 }
+function setResultsQuery(v) {
+  resultsQuery = String(v || '');
+  applySearch();
+}
 function applySearch() {
-  const q = String(resultsSearch.value || '').trim().toLowerCase();
+  const q = String(resultsQuery || '').trim().toLowerCase();
   for (const row of resultRows) {
     row.el.hidden = q !== '' && !row.file.name.toLowerCase().includes(q);
   }
@@ -479,7 +499,7 @@ function initResultsControls() {
     const all = visible.length > 0 && visible.every((r) => r.selected);
     toggleAllVisible(!all);
   });
-  resultsSearch.addEventListener('input', applySearch);
+
   batchCopy.addEventListener('click', () => { copySelected().catch(() => {}); });
   batchSave.addEventListener('click', () => { saveSelected().catch(() => {}); });
   batchClose.addEventListener('click', clearSelection);
@@ -1063,27 +1083,39 @@ function panelOf(tab) {
   const id = tab.getAttribute('aria-controls');
   return id ? document.getElementById(id) : null;
 }
-/** 切到某个 Tab：aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面） */
-export function activateTab(name) {
-  const tabs = tabButtons();
-  if (!tabs.length) return null;
-  const target = tabs.find((t) => t.dataset.tab === name) || tabs[0];
-  for (const t of tabs) {
+/** aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面） */
+function syncTabButtons(target) {
+  for (const t of tabButtons()) {
     const on = t === target;
     t.setAttribute('aria-selected', on ? 'true' : 'false');
     t.tabIndex = on ? 0 : -1;
     const panel = panelOf(t);
-    if (panel) {
-      panel.classList.toggle('active', on);
-      if (on) panel.removeAttribute('hidden');
-      else panel.setAttribute('hidden', '');
-    }
+    if (!panel) continue;
+    panel.classList.toggle('active', on);
+    if (on) panel.removeAttribute('hidden');
+    else panel.setAttribute('hidden', '');
   }
-  const active = target.dataset.tab || null;
-  activeTabName = active;
-  // 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。
+}
+
+/** 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。 */
+function afterTabChange(active) {
   if (active === 'files') refreshFilesPanel().catch(() => {});
   else toggleFilesSearch(false);
+  /* 搜索入口的显隐跟着 Tab 走（文件页常显 / 转换页有结果才给） */
+  paintSearchButton(filesEls());
+}
+
+/** 切到某个 Tab */
+export function activateTab(name) {
+  const tabs = tabButtons();
+  if (!tabs.length) return null;
+  const target = tabs.find((t) => t.dataset.tab === name) || tabs[0];
+  syncTabButtons(target);
+  const active = target.dataset.tab || null;
+  activeTabName = active;
+  /* 星图（fixed 背景层）只在「转换」显示：body[data-tab] 供 CSS 判断（卡 065 真机反馈） */
+  document.body.dataset.tab = active || 'convert';
+  afterTabChange(active);
   return active;
 }
 function focusTab(step) {
@@ -1371,7 +1403,7 @@ function paintSearchCount(el, shownCount) {
 // SDK 28 上列表/搜索仍可用（A11 支持矩阵），图标不能因为「不支持写入」而消失。
 function paintSearchButton(el) {
   if (!el.searchBtn) return;
-  el.searchBtn.hidden = activeTabName !== 'files';
+  el.searchBtn.hidden = !(activeTabName === 'files' || (activeTabName === 'convert' && resultRows.length > 0));
   if (el.searchBar) el.searchBtn.setAttribute('aria-expanded', String(!el.searchBar.hidden));
 }
 
@@ -1680,7 +1712,7 @@ function toggleFilesSearch(on) {
   el.searchBar.hidden = !open;
   if (el.appbar) el.appbar.classList.toggle('searching', open);
   if (el.searchBtn) el.searchBtn.setAttribute('aria-expanded', String(open));
-  if (!open) setFilesQuery('');
+  if (!open) { setFilesQuery(''); setResultsQuery(''); }
   else if (el.searchInput) el.searchInput.focus();
 }
 
@@ -1926,7 +1958,11 @@ export function recordHistory(res, kind) {
 function wireFilesSearch(el) {
   if (el.searchBtn) el.searchBtn.addEventListener('click', () => toggleFilesSearch());
   if (el.searchInput) {
-    el.searchInput.addEventListener('input', () => setFilesQuery(el.searchInput.value));
+    el.searchInput.addEventListener('input', () => {
+      // 当前 Tab 决定过滤目标：文件页过滤历史，转换页过滤结果（同一套 app bar 展开式搜索）
+      if (activeTabName === 'convert') setResultsQuery(el.searchInput.value);
+      else setFilesQuery(el.searchInput.value);
+    });
     el.searchInput.addEventListener('keydown', (e) => {
       // A8：Esc 关闭搜索；Enter（键盘「搜索」键）跳到首条匹配并闪高亮（用户 2026-10-22 口头要求）。
       if (e.key === 'Enter') {

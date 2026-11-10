@@ -6102,7 +6102,7 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
       });
 
-      await t.test('Z6-2 A3 首屏无 hero：无居中大标题 / 无徽章胶囊 / 无虚线框；主操作是选择文档卡片，后接上次转换', async () => {
+      await t.test('Z6-2 A3 首屏无 hero：无居中大标题 / 无徽章胶囊 / 无虚线框；主操作是选择文档卡片（2026-11-11 起沉底在上次转换之下）', async () => {
         await page.click('#tab-convert');
         const hero = await page.evaluate(() => {
           const conv = document.getElementById('panel-convert');
@@ -6128,7 +6128,10 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.ok(hero.pickerText.includes('50 MB'), '选择卡片缺文件大小限制，实测 ' + hero.pickerText);
         assert.ok(hero.dzHeight < 200, '选择卡片高度=' + hero.dzHeight + 'px（应 <200，不能占满首屏）');
         assert.ok(hero.lastTitle.includes('上次转换'), '缺「上次转换」区块');
-        assert.ok(hero.lastTop > hero.dzTop, '顺序不符：上次转换应在选择文档卡片之下');
+        /* 2026-11-11 用户拍板（真机反馈「选择文档应该在最底部，单手好操控」）：
+         * 首屏顺序由「选择卡 → 上次转换」改为「上次转换 → 选择卡（沉底）」；判据随之改为选择卡在下方，
+         * 其余（无 hero / 无徽章 / 非虚线 / 文案 / 高度 <200）全部不变。 */
+        assert.ok(hero.dzTop > hero.lastTop, '顺序不符：选择文档卡片应沉在底部（上次转换之下），实测 dzTop=' + hero.dzTop.toFixed(1) + ' lastTop=' + hero.lastTop.toFixed(1));
       });
 
       await t.test('Z6-3 A4 页脚信息从首页移除、只在「设置 › 关于」：无 footer；转换面板不含版本/许可；关于含版本', async () => {
@@ -7287,7 +7290,8 @@ test('契约组 Z8：转换结果列表（紧凑 / 多选 / 菜单 / 批量 / 10
       });
 
       await t.test('Z8-5 搜索：按文件名过滤；全选只作用于可见成功行', async () => {
-        await page.fill('#resultsSearch', 'z8-9');
+        await page.click('#filesSearchBtn');
+        await page.fill('#filesSearch', 'z8-9');
         await page.waitForTimeout(100);
         const filtered = await page.evaluate(() => ({
           visible: [...document.querySelectorAll('#results .result-row')].filter((r) => !r.hidden).length,
@@ -7297,7 +7301,8 @@ test('契约组 Z8：转换结果列表（紧凑 / 多选 / 菜单 / 批量 / 10
         await page.locator('#selectAllBtn').click();
         const selected = await page.evaluate(() => Number(document.getElementById('selectedCount').textContent));
         assert.ok(selected > 0 && selected < 100, '搜索态全选选中数=' + selected + '（应只选可见行，不是 100）');
-        await page.fill('#resultsSearch', '');
+        await page.fill('#filesSearch', '');
+        await page.click('#filesSearchClose');
         await page.locator('#batchClose').click();
       });
 
@@ -8153,6 +8158,8 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
           out.searchClosed = bar.getBoundingClientRect().height;
           return out;
         });
+        /* 卡 065（星空）：A16 栏高值 61 → 68 → 60（2026-11-11 用户要求再压缩一档） */
+        assert.ok(Math.abs(h.convert - 60) <= 0.5, '顶栏高不是 60±0.5：实测 ' + h.convert.toFixed(2) + 'px');
         assert.ok(Math.abs(h.convert - h.files) <= 0.5, '文件页顶栏比转换页高 ' + (h.files - h.convert).toFixed(2) + 'px');
         assert.ok(Math.abs(h.convert - h.settings) <= 0.5, '设置页顶栏高度不一致：' + (h.settings - h.convert).toFixed(2) + 'px');
         assert.ok(Math.abs(h.searchOpen - h.convert) <= 0.5, '搜索展开改变了顶栏高度：' + (h.searchOpen - h.convert).toFixed(2) + 'px');
