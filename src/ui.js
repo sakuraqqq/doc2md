@@ -391,6 +391,17 @@ function syncSelectAll() {
   selectAllEl.indeterminate = selected > 0 && selected < visible.length;
   selectAllBtn.textContent = all ? '取消全选' : '全选';
 }
+/** 搜索态与「极简」收起规则集中在这里：可见结果数、是否正在搜索、空提示与列表容器的显隐。 */
+function paintSearchChrome() {
+  const visibleCount = resultRows.filter((r) => r.success && !r.el.hidden).length;
+  const searching = !!String(resultsSearch.value || '').trim() || document.activeElement === resultsSearch;
+  /* 用户正在搜索时不能收起搜索框 —— 否则输入第一个字符就把它自己隐藏掉（界面突变）。 */
+  document.body.classList.toggle('few-results', visibleCount < 2 && !searching);
+  if (resultsNoMatch) resultsNoMatch.hidden = !(searching && visibleCount === 0);
+  const listEl = document.getElementById('results');
+  if (listEl) listEl.hidden = visibleCount === 0;
+}
+
 function updateResultsChrome() {
   const hasResults = resultRows.length > 0;
   resultsPanel.hidden = !hasResults;
@@ -399,15 +410,7 @@ function updateResultsChrome() {
    *（元素保留：app.js 仍 import hintEl 并在启动时置 none） */
   hintEl.style.display = 'none';
   document.body.classList.toggle('has-results', hasResults);
-  /* 极简：少于 2 条时收起搜索框与「已选择/全选」。
-   * 用户正在搜索时不能收 —— 否则输入第一个字符就把搜索框自己隐藏掉（界面突变）。 */
-  const visibleCount = resultRows.filter((r) => r.success && !r.el.hidden).length;
-  const searching = !!String(resultsSearch.value || '').trim() || document.activeElement === resultsSearch;
-  document.body.classList.toggle('few-results', visibleCount < 2 && !searching);
-  if (resultsNoMatch) resultsNoMatch.hidden = !(searching && visibleCount === 0);
-  /* 列表空时把容器本身也收起来 —— 否则半透明底的圆角空盒会留在页面上 */
-  const resultsListEl = document.getElementById('results');
-  if (resultsListEl) resultsListEl.hidden = visibleCount === 0;
+  paintSearchChrome();
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
   const lastSect = document.getElementById('lastTitle');
   if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = hasResults;
@@ -1073,29 +1076,37 @@ function panelOf(tab) {
   const id = tab.getAttribute('aria-controls');
   return id ? document.getElementById(id) : null;
 }
-/** 切到某个 Tab：aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面） */
-export function activateTab(name) {
-  const tabs = tabButtons();
-  if (!tabs.length) return null;
-  const target = tabs.find((t) => t.dataset.tab === name) || tabs[0];
-  for (const t of tabs) {
+/** aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面） */
+function syncTabButtons(target) {
+  for (const t of tabButtons()) {
     const on = t === target;
     t.setAttribute('aria-selected', on ? 'true' : 'false');
     t.tabIndex = on ? 0 : -1;
     const panel = panelOf(t);
-    if (panel) {
-      panel.classList.toggle('active', on);
-      if (on) panel.removeAttribute('hidden');
-      else panel.setAttribute('hidden', '');
-    }
+    if (!panel) continue;
+    panel.classList.toggle('active', on);
+    if (on) panel.removeAttribute('hidden');
+    else panel.setAttribute('hidden', '');
   }
+}
+
+/** 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。 */
+function afterTabChange(active) {
+  if (active === 'files') refreshFilesPanel().catch(() => {});
+  else toggleFilesSearch(false);
+}
+
+/** 切到某个 Tab */
+export function activateTab(name) {
+  const tabs = tabButtons();
+  if (!tabs.length) return null;
+  const target = tabs.find((t) => t.dataset.tab === name) || tabs[0];
+  syncTabButtons(target);
   const active = target.dataset.tab || null;
   activeTabName = active;
   /* 星图（fixed 背景层）只在「转换」显示：body[data-tab] 供 CSS 判断（卡 065 真机反馈） */
   document.body.dataset.tab = active || 'convert';
-  // 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。
-  if (active === 'files') refreshFilesPanel().catch(() => {});
-  else toggleFilesSearch(false);
+  afterTabChange(active);
   return active;
 }
 function focusTab(step) {

@@ -395,6 +395,9 @@
     /* ⛔ 不要加 backdrop-filter：它会创建包含块/层叠上下文，把行菜单关在里面（见 065 回执 §10 坑） */
     background: color-mix(in srgb, var(--surface) 86%, transparent);
   }
+  /* 结果行头部在浅色要与基础层一致（浅色 .card-head 有 --icon-bg 底，必须在这里压回透明） */
+  [data-theme="light"] .result-row .card-head { background: transparent; }
+  [data-theme="light"] .result-row .card-body { padding: 0 10px 8px; }
   .results-list .result-row { background: transparent; box-shadow: none;
     border-color: color-mix(in srgb, var(--border) 70%, transparent); }
   .result-row { position: relative; overflow: visible; border-radius: 18px; box-shadow: var(--hero-shadow); }
@@ -469,7 +472,7 @@
   .file-main:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 8px; }
   .file-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .file-meta { font-size: 12px; color: var(--muted); }
-  .file-invalid { color: var(--danger, #e55353); }
+  .file-invalid { color: var(--warm-ink); }
   .file-share { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border); background: var(--icon-bg); color: var(--ink); font-size: 15px; }
   .file-share[disabled] { opacity: .45; }
   .file-share:active { background: var(--surface); }
@@ -482,10 +485,10 @@
   .dialog-box h2 { margin: 0 0 8px; font-size: 16px; }
   .dialog-box p { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
   .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
-  .btn.danger { border-color: var(--danger, #e55353); color: var(--danger, #e55353); }
+  .btn.danger { border-color: var(--warm-ink); color: var(--warm-ink); }
   /* 卡 060 / A16：文件行线性图标（取 v8 原型：文档 / 压缩包 / 丢失 / 分享 / 删除） */
   .file-icon svg, .file-share svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .file-icon.gone { color: var(--danger, #e55353); }
+  .file-icon.gone { color: var(--warm-ink); }
   .row-action.icon-only { width: 38px; height: 38px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
   .row-action.icon-only svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -499,13 +502,11 @@
    *   这里若写十六进制，浅色值会被喂进深色对比度口径（卡 062 §0.1-6）。 */
 
   [data-theme="light"] .iconbtn { width: 44px; height: 44px; border-radius: 50%; color: var(--ink); }
-  [data-theme="light"] .iconbtn[aria-expanded="true"] { background: var(--icon-bg); color: var(--primary); }
   /* 搜索 pill：外框 46 + 上下 -1 ⇒ 占位仍是 44（app bar 保持 61），内部控件才装得下 44 */
   [data-theme="light"] .files-search {
     height: 46px; margin: -1px 0; padding: 0 2px 0 12px;
     background: var(--icon-bg); border-color: var(--border);
   }
-  [data-theme="light"] .files-search svg { color: var(--muted); }
   [data-theme="light"] .files-search input { height: 44px; font-size: 16px; color: var(--ink); }
   [data-theme="light"] .files-search input::placeholder { color: var(--muted); }
   [data-theme="light"] .files-search-count { font-size: 11px; color: var(--muted); background: var(--surface); }
@@ -514,7 +515,6 @@
   /* ── 底部导航（标签 11px 地板；每项 ≥44 高已在基础规则里）── */
   [data-theme="light"] .navbar { background: var(--bg); border-top-color: var(--border); }
   [data-theme="light"] .navitem + .navitem { border-left-color: var(--border); }
-  [data-theme="light"] .navitem { color: var(--muted); }
   [data-theme="light"] .navitem[aria-selected="true"] { color: var(--ink); }
 
   /* ── 区块标题 / 行（设置 15px 主文、12px 副文）── */
@@ -526,13 +526,10 @@
   [data-theme="light"] .sect-head .sect-meta { font-size: 11px; }
   [data-theme="light"] .sect-empty { padding: 16px 14px; font-size: 13px; line-height: 1.6; background: var(--surface); border-radius: 10px; }
   /* 0 条那次：同选择器优先级要压回 8px（A6 整块 ≤72） */
-  [data-theme="light"] .sect-last .sect-empty { padding: 8px 12px; }
   [data-theme="light"] .list { background: var(--surface); border-radius: 10px; }
   [data-theme="light"] .row { padding: 13px 14px; background: var(--surface); border-bottom-color: var(--border); }
-  [data-theme="light"] .row-link:hover { background: var(--icon-bg); }
   [data-theme="light"] .row-name { font-size: 15px; line-height: 1.35; font-weight: 500; }
   [data-theme="light"] .row-sub, [data-theme="light"] .row-val { font-size: 12px; line-height: 1.4; }
-  [data-theme="light"] .row-chev { color: var(--muted); }
   [data-theme="light"] .row-action {
     min-width: 44px; min-height: 44px; padding: 8px 12px; font-size: 13px;
     border-radius: 10px; background: var(--icon-bg); color: var(--ink);
@@ -565,7 +562,6 @@
     min-height: 44px; font-size: 14px; border-radius: 6px;
     background: var(--surface); border-color: var(--border); color: var(--ink);
   }
-  [data-theme="light"] .btn:hover { border-color: var(--primary); }
   [data-theme="light"] .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--surface); }
   [data-theme="light"] .btn.primary:hover { background: var(--primary); border-color: var(--primary); }
   [data-theme="light"] .btn.danger { background: rgb(252, 246, 243); border-color: var(--warm); color: var(--primary); }
@@ -575,18 +571,15 @@
   [data-theme="light"] #status.error, [data-theme="light"] .file-invalid { color: var(--warm-ink); }
 
   /* ── 空态（几何由基础规则给，这里只调色）── */
-  [data-theme="light"] .empty-state-sub { color: var(--muted); }
   [data-theme="light"] .btn-ghost { border-color: var(--border); color: var(--primary); }
 
   /* ── 文件页（060 结构不动：只换纸色与 44px 命中区）── */
   [data-theme="light"] .file-row { padding: 10px 12px; background: var(--surface); border-color: var(--border); border-radius: 10px; }
-  [data-theme="light"] .file-row:active { background: var(--icon-bg); }
   [data-theme="light"] .file-row.highlight { outline-color: var(--primary); background: var(--icon-bg); }
   [data-theme="light"] .file-icon { background: var(--icon-bg); color: var(--ink); border-radius: 6px; }
   [data-theme="light"] .file-icon.gone { color: var(--primary); }
   [data-theme="light"] .file-main { min-height: 44px; }
   [data-theme="light"] .file-name { font-size: 14px; font-weight: 550; }
-  [data-theme="light"] .file-meta { font-size: 12px; }
   [data-theme="light"] .file-share {
     width: 44px; height: 44px; border-radius: 50%;
     background: transparent; border-color: transparent; color: var(--muted);
@@ -596,22 +589,17 @@
 
   /* ── 本次结果（A10）：朱砂 = 未记入 / 苔绿 = 已记入 —— 视觉由既有 .muted 类决定，⛔ 不改接线 ── */
   [data-theme="light"] .results-panel { margin-top: 22px; }
-  [data-theme="light"] .results-head h2 { font-size: 17px; }
   [data-theme="light"] .results-count { font-size: 12px; }
   [data-theme="light"] .session-result {
     min-height: 44px; padding: 10px 12px; border: 1px solid var(--border);
     border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 13px; line-height: 1.45;
   }
-  [data-theme="light"] .session-result.muted { color: var(--muted); }
   [data-theme="light"] .session-result:active { background: var(--icon-bg); }
   [data-theme="light"] #resultsSearch { min-height: 44px; font-size: 14px; background: var(--surface); border-color: var(--border); }
-  [data-theme="light"] .results-search svg { stroke: var(--muted); }
   [data-theme="light"] .results-selectbar { font-size: 12px; }
   [data-theme="light"] .card { background: var(--surface); border-radius: 10px; }
   /* 结果列表容器铺了半透明底 ⇒ 行自身必须透明，卡片与 gap 才是同一层遮罩 */
-  [data-theme="light"] .results-list .result-row, .results-list .result-row { background: transparent; box-shadow: none; border-color: color-mix(in srgb, var(--border) 70%, transparent); }
   [data-theme="light"] .card-head { background: var(--icon-bg); border-bottom-color: var(--border); }
-  [data-theme="light"] .result-row .card-head { background: transparent; }
   /* 卡 062 §15.1 · 拍板 C：文件名允许 **2 行**（44×44 命中区吃掉横向列宽后，用纵向空间换可读性）。
    * line-height 取规格 §2 的 1.35（2 行 ≈ 37.8 < 44 命中区）⇒ 行高不因换行而增加。
    * ⛔ 只作用于浅色（深色列宽 128px 本就够，保持现状）。 */
@@ -621,16 +609,13 @@
   }
   /* 类型徽标走中性（规格 §4 的 chip 口径）：纸底 + 墨灰字，不再用第二套红 —— 红只留「可点/要紧」 */
   [data-theme="light"] .card-body { padding: 12px 14px 14px; }
-  [data-theme="light"] .result-row .card-body { padding: 0 10px 8px; }
   /* 方案 H 的另一半：选中行的描边保持中性（红只在「勾」那一处细线；
    * 选中提示由勾 + 「已选择 N 个」+ 批量条承担，避免整行 2px 朱砂框与勾抢同一块红） */
   [data-theme="light"] .result-row.selected { border-color: var(--border); box-shadow: none; }
-  [data-theme="light"] .warnings { font-size: 12px; color: var(--warm-ink); }
   [data-theme="light"] .row-menu { background: var(--surface); border-color: var(--border); box-shadow: 0 8px 24px rgba(60, 45, 30, .16); }
   [data-theme="light"] .row-menu button { min-height: 44px; font-size: 14px; }
   [data-theme="light"] .row-menu button:hover { background: var(--icon-bg); }
   [data-theme="light"] .batch-bar { background: var(--surface); border-color: var(--border); box-shadow: 0 8px 24px rgba(60, 45, 30, .16); }
-  [data-theme="light"] .batch-info { font-size: 13px; }
   [data-theme="light"] .batch-sub { font-size: 11px; }
   [data-theme="light"] .batch-close { width: 44px; height: 44px; font-size: 20px; color: var(--muted); }
   /* 结果行内三件小控件：44 命中区 + 负外边距（060 的紧凑行高逐像素不变：Z8-0 行高 ≤100） */
@@ -671,7 +656,6 @@
   [data-theme="light"] .dialog-box p { font-size: 13px; line-height: 1.65; }
 
   /* ── 查看器 = 纸面阅读（规格 §2 正文 16 serif / 1.85；§4 纸面卡片）── */
-  [data-theme="light"] .md-viewer { background: var(--bg); color: var(--ink); }
   [data-theme="light"] .md-viewer-bar { min-height: 60px; padding: 8px 12px; background: var(--bg); border-bottom-color: var(--border); }
   [data-theme="light"] .md-viewer-close { width: 44px; height: 44px; padding: 0; font-size: 20px; color: var(--ink); }
   [data-theme="light"] .md-viewer-name { font-size: 14px; line-height: 1.35; font-weight: 600; }
@@ -699,6 +683,29 @@
     padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     font-size: 13px; line-height: 1.7; color: var(--ink);
   }
+
+  /* ══ 浅色增量（承重，勿按「与基础等价」删除）══════════════════════════════
+   * 这些规则与基础层的**特异性相同**，靠「更靠后」生效；删掉不会报错，但会让更早的
+   * 通用浅色规则（.card / .card-head / .card-body / .sect-empty …）接手，观感当场变样。
+   * 判据：改动后必须跑「计算样式快照」比对（.私档/卡/065/snap-styles.mjs），不是跑截图。
+   * ═══════════════════════════════════════════════════════════════════════ */
+  [data-theme="light"] .iconbtn[aria-expanded="true"] { background: var(--icon-bg); color: var(--primary); }
+  [data-theme="light"] .files-search svg { color: var(--muted); }
+  [data-theme="light"] .navitem { color: var(--muted); }
+  [data-theme="light"] .sect-last .sect-empty { padding: 8px 12px; }
+  [data-theme="light"] .row-link:hover { background: var(--icon-bg); }
+  [data-theme="light"] .row-chev { color: var(--muted); }
+  [data-theme="light"] .btn:hover { border-color: var(--primary); }
+  [data-theme="light"] .empty-state-sub { color: var(--muted); }
+  [data-theme="light"] .file-row:active { background: var(--icon-bg); }
+  [data-theme="light"] .file-meta { font-size: 12px; }
+  [data-theme="light"] .results-head h2 { font-size: 17px; }
+  [data-theme="light"] .session-result.muted { color: var(--muted); }
+  [data-theme="light"] .results-search svg { stroke: var(--muted); }
+  [data-theme="light"] .results-list .result-row, .results-list .result-row { background: transparent; box-shadow: none; border-color: color-mix(in srgb, var(--border) 70%, transparent); }
+  [data-theme="light"] .warnings { font-size: 12px; color: var(--warm-ink); }
+  [data-theme="light"] .batch-info { font-size: 13px; }
+  [data-theme="light"] .md-viewer { background: var(--bg); color: var(--ink); }
 </style>
 </head>
 

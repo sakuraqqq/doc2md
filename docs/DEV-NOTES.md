@@ -2449,3 +2449,29 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 
 
 
+
+---
+
+## 2026-11-11 · 卡 065 收尾：跳动根治 + CSS 守卫 + 「静态等价 ≠ 可删」
+
+### 做了什么
+- **根治跳动**：`.tabpanel.active` 的入场动画 `panelIn` 原来跑 `transform: translateY(6px)`。有 transform 的元素会成为 **fixed/absolute 后代的包含块** —— 星图层（absolute 时期）两次平移、固定选择卡一次跳动，全是这一个机制。现在动画只跑 `opacity`。
+- **状态切换回归**（`measure-065`）：切 Tab 后星图层 `x` 三态一致、选择卡 `top` 四态一致、滚动后星图层 `y` 不变、转换页搜索框打字后仍可见。
+- **新守卫** `tools/css-guard.mjs`（`npm run guard:css`）：
+  - C1 禁止「同一规则里 `animation` + `transform`/`filter`」（跳动的机械判据）；
+  - C2 只允许一个 `@media (max-width: 600px)` 块（多块会让「按正则取第一块」的检查量错对象）；
+  - C3 与其基础规则静态等价的浅色覆盖 **只提示不报错**（理由见下）；
+  - C4 未声明 CSS 变量（放行 Capacitor 运行时注入的 `--safe-area-inset-*`，扫描前先剥注释）；
+  - C5 `backdrop-filter` 清单（它会创建包含块/层叠上下文，需人确认）。
+- **样式表结构**：17 条承重浅色规则集中到末尾「浅色增量（承重，勿删）」段。
+- **顺手修真 bug**：`var(--danger, #e55353)` 4 处（未声明变量 + 纸墨旧色）→ `var(--warm-ink)`。
+- **metrics 超限清 2 条**：`updateResultsChrome` 抽 `paintSearchChrome()`、`activateTab` 抽 `syncTabButtons()` / `afterTabChange()`。
+
+### 坑（现象 → 根因 → 防再犯）
+1. **删「与基础等价」的规则 ⇒ 浅色回退两处**。现象：结果卡片头变蓝、行高 108px（门禁 Z8-0 要求 ≤100 当场红）。根因：浅色 `.card-head{background:var(--icon-bg)}`、`.card-body{padding:12px 14px 14px}` 与基础规则 **特异性相同**，原本靠被删的那条（`[data-theme="light"] .result-row .card-head/body`）压回，删掉后它们就接手了。**防再犯**：C3 降级为提示；承重规则集中到独立段并写明判据；等价性必须用计算样式快照比对。
+2. **截图像素不能当等价性判据**。现象：同一构建连拍两次就有 2/12 张不一致（输入光标闪烁、结果行耗时文案、相对时间）。**防再犯**：等价性比对改用 `getComputedStyle` 快照（12 状态 × 37 选择器 × 全部计算属性），实测重构前后 **0 差异**。
+3. **`backdrop-filter` 会造包含块/层叠上下文**。给结果列表加 `blur` 后，行菜单（`z-index:20`，在行内）被关进列表的上下文中，再也盖不过 `fixed` 的 tabbar ⇒ 靠近底部的菜单项点不到（契约 Q4 30 秒超时）。**防再犯**：列表容器只用半透明底，不加模糊；C5 输出清单供人工确认。
+
+### 结论
+- 门禁：`node --test` 413/411/0/2 · `pwa-audit` 47/0 · `npm run lint` 0/0 · `npm run metrics` 超限 0 / 重复率 0.5% · `guard:css` 错误 0。
+- 重构等价性：计算样式快照 **0 差异**（重构建前后各 12 状态）。

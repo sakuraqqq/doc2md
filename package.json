@@ -18,7 +18,8 @@
     "test:direct": "node tests/contract_v1.test.mjs",
     "test:contract": "node --test tests/contract_v1.test.mjs",
     "verify:ocr": "node tools/verify-ocr.mjs",
-    "format": "prettier --write \"src/**/*.js\" \"tools/**/*.mjs\""
+    "format": "prettier --write \"src/**/*.js\" \"tools/**/*.mjs\"",
+    "guard:css": "node tools/css-guard.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
