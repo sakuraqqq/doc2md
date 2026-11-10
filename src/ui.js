@@ -394,7 +394,11 @@ function syncSelectAll() {
 }
 /** 搜索态与「极简」收起规则集中在这里：可见结果数、是否正在搜索、空提示与列表容器的显隐。 */
 function paintSearchChrome() {
-  const visibleCount = resultRows.filter((r) => r.success && !r.el.hidden).length;
+  /* 可见行 = **所有未隐藏的结果行（含失败行）**。
+   * ⚠️ 不能只数 `r.success`：全部转换失败时成功数为 0 ⇒ `#results` 被整块隐藏，
+   *    用户看不到文件名与失败原因（卡 065 对抗验收 F1 blocker；改前 89fbd54 为 1 行可见）。
+   *    成功数只服务选择/批量语义（见 syncSelectAll / syncBatchBar），与「列表是否显示」无关。 */
+  const visibleCount = resultRows.filter((r) => !r.el.hidden).length;
   const searching = !!resultsQuery.trim() || document.activeElement === filesEls().searchInput;
   /* 用户正在搜索时不能收起搜索框 —— 否则输入第一个字符就把它自己隐藏掉（界面突变）。 */
   document.body.classList.toggle('few-results', visibleCount < 2 && !searching);

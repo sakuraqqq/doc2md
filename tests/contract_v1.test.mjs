@@ -7255,7 +7255,7 @@ test('契约组 Z8：转换结果列表（紧凑 / 多选 / 菜单 / 批量 / 10
         await page.locator('#batchClose').click();
       });
 
-      await t.test('Z8-4 失败行：无菜单/选择框禁用；批量保存只处理成功行', async () => {
+      await t.test('Z8-4 失败行：无菜单/选择框禁用；批量保存只处理成功行；全失败时列表可见（F1）', async () => {
         await page.setInputFiles('input[type=file]', {
           name: 'z8-broken.docx',
           mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -7287,6 +7287,42 @@ test('契约组 Z8：转换结果列表（紧凑 / 多选 / 菜单 / 批量 / 10
         assert.equal(saved.length, 100, '批量保存文件数=' + saved.length + '（应只保存 100 个成功行）');
         assert.ok(!saved.includes('z8-broken.docx'), '批量保存包含失败文件');
         await page.locator('#batchClose').click();
+
+        /* 卡 066 · R1（F1 回归）：**只有失败文件**时结果列表不得整体隐藏 ——
+         * 报告样本：内容 `%PDF-1.7\nbroken\n%%EOF` 的 broken.pdf ⇒ PDF.js 报 `Invalid PDF structure`。
+         * 病（改前 `paintSearchChrome` 只数 `r.success`）：visibleCount=0 ⇒ `#results` 整块 display:none，
+         * 用户只看到「完成：0 成功 / 1 失败」，看不到文件名与原因（blocker）。
+         * 断言只**新增**：上面 Z8-4 原有判据一字未改。 */
+        const ctxFail = await browser.newContext({ acceptDownloads: true });
+        const pFail = await ctxFail.newPage();
+        try {
+          await pFail.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded', timeout: 15000 });
+          await pFail.setInputFiles('input[type=file]', {
+            name: 'broken.pdf',
+            mimeType: 'application/pdf',
+            buffer: Buffer.from('%PDF-1.7\nbroken\n%%EOF\n', 'utf8'),
+          });
+          await pFail.waitForFunction(() => document.querySelectorAll('#results .result-row.failed').length >= 1, null, { timeout: 30000 });
+          await pFail.waitForTimeout(200); // paintSearchChrome 已落 DOM
+          const allFail = await pFail.evaluate(() => {
+            const rows = [...document.querySelectorAll('#results .result-row')];
+            const failed = document.querySelector('#results .result-row.failed');
+            return {
+              listHidden: document.getElementById('results').hidden,
+              visible: rows.filter((x) => x.getClientRects().length > 0).length,
+              successRows: rows.filter((x) => !x.classList.contains('failed')).length,
+              name: failed ? (failed.querySelector('.name') || {}).textContent || '' : '',
+              text: failed ? failed.innerText : '',
+            };
+          });
+          assert.equal(allFail.successRows, 0, '样本应只有失败行（成功行=' + allFail.successRows + '）');
+          assert.equal(allFail.listHidden, false, '全部失败时结果列表被隐藏（F1 回归）：用户看不到文件名与原因');
+          assert.ok(allFail.visible >= 1, '全部失败时可见结果行=' + allFail.visible + '（应为 1）');
+          assert.equal(allFail.name, 'broken.pdf', '失败行缺文件名：' + JSON.stringify(allFail.name));
+          assert.ok(/Invalid PDF structure/.test(allFail.text), '失败行缺失败原因：' + JSON.stringify(allFail.text.slice(0, 160)));
+        } finally {
+          await ctxFail.close();
+        }
       });
 
       await t.test('Z8-5 搜索：按文件名过滤；全选只作用于可见成功行', async () => {

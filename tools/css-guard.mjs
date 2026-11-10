@@ -27,7 +27,7 @@ function readStyle() {
   return html.slice(a + 7, b);
 }
 
-/** 切出规则：顶层 + @media/@supports 内一层；@keyframes 跳过 */
+/** 切出「选择器 + 块体」：只做花括号配平（@keyframes 的内层同样交给它） */
 function topRules(text) {
   const out = [];
   let i = 0;
@@ -48,20 +48,27 @@ function topRules(text) {
   return out;
 }
 
-function collect(css) {
-  const rules = [];
+/** 切出规则：顶层 + @media/@supports 内一层；关键帧展开成逐 step 规则（卡 066 · F3） */
+function collect(css, ctx = 'top', out = []) {
   for (const r of topRules(css)) {
     const sel = r.sel.replace(/^\/\*[\s\S]*?\*\//, '').trim();
     if (!sel) continue;
     if (sel.startsWith('@media') || sel.startsWith('@supports')) {
-      for (const inner of topRules(r.body)) rules.push({ sel: inner.sel.trim(), body: inner.body, ctx: sel });
-    } else if (sel.startsWith('@keyframes') || sel.startsWith('@font-face')) {
+      collect(r.body, sel, out);
+    } else if (sel.startsWith('@keyframes')) {
+      /* 卡 066 · F3：原实现整块跳过 @keyframes ⇒ 把 panelIn 改回 translateY(6px) 仍全绿，
+       * 而「动画里的 transform」和「规则里的 transform」是同一种包含块陷阱（065 踩过三次）。 */
+      const name = sel.replace(/^@keyframes\s+/, '').trim();
+      for (const step of topRules(r.body)) {
+        out.push({ sel: name + ' ' + step.sel.trim(), body: step.body, ctx: 'keyframes' });
+      }
+    } else if (sel.startsWith('@font-face')) {
       continue;
     } else {
-      rules.push({ sel, body: r.body, ctx: 'top' });
+      out.push({ sel, body: r.body, ctx });
     }
   }
-  return rules;
+  return out;
 }
 
 const decls = (body) =>
@@ -83,10 +90,14 @@ const rules = collect(cssForScan);
 const errors = [];
 const notes = [];
 
-/* C1 动画 + transform */
+/* C1 动画 + transform（规则内组合 OR 关键帧内部） */
 for (const r of rules) {
   const d = decls(r.body);
-  if (d.animation && (d.transform || d.translate || d.filter || d['backdrop-filter'])) {
+  const hazard = d.transform || d.translate || d.filter || d['backdrop-filter'];
+  if (!hazard) continue;
+  if (r.ctx === 'keyframes') {
+    errors.push('C1 @keyframes ' + r.sel + ' 含 transform/filter —— 动画期间元素会成为 fixed/absolute 后代的包含块');
+  } else if (d.animation) {
     errors.push('C1 ' + r.sel + ' 同时有 animation 与 transform/filter —— 会成为 fixed/absolute 后代的包含块');
   }
 }
@@ -98,7 +109,7 @@ if (medias.length > 1) errors.push('C2 @media (max-width: 600px) 出现 ' + medi
 /* C3 浅色冗余 */
 const lastBase = new Map();
 for (const r of rules) {
-  if (r.sel.startsWith('[data-theme="light"]')) continue;
+  if (r.ctx === 'keyframes' || r.sel.startsWith('[data-theme="light"]')) continue;
   for (const one of r.sel.split(',').map((s) => s.trim())) lastBase.set(one, decls(r.body));
 }
 for (const r of rules) {
@@ -122,9 +133,9 @@ const used = new Set([...cssForScan.matchAll(/var\(\s*--([a-z0-9-]+)/gi)].map((m
 const RUNTIME_INJECTED = new Set(['safe-area-inset-top', 'safe-area-inset-bottom', 'safe-area-inset-left', 'safe-area-inset-right']);
 for (const v of used) if (!declared.has(v) && !RUNTIME_INJECTED.has(v)) errors.push('C4 引用了未声明的变量 --' + v);
 
-/* C5 backdrop-filter 清单（信息） */
+/* C5 backdrop-filter 清单（信息；关键帧内由 C1 报错，不再重复提示） */
 for (const r of rules) {
-  if (decls(r.body)['backdrop-filter']) notes.push('C5 backdrop-filter: ' + r.sel + '（创建包含块/层叠上下文，确认没有 fixed/absolute 后代依赖它）');
+  if (r.ctx !== 'keyframes' && decls(r.body)['backdrop-filter']) notes.push('C5 backdrop-filter: ' + r.sel + '（创建包含块/层叠上下文，确认没有 fixed/absolute 后代依赖它）');
 }
 
 if (process.argv.includes('--json')) {

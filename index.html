@@ -3633,7 +3633,7 @@ ${xlsxRowsToMd(kept)}`);
     selectAllBtn.textContent = all ? "\u53D6\u6D88\u5168\u9009" : "\u5168\u9009";
   }
   function paintSearchChrome() {
-    const visibleCount = resultRows.filter((r) => r.success && !r.el.hidden).length;
+    const visibleCount = resultRows.filter((r) => !r.el.hidden).length;
     const searching = !!resultsQuery.trim() || document.activeElement === filesEls().searchInput;
     document.body.classList.toggle("few-results", visibleCount < 2 && !searching);
     if (resultsNoMatch) resultsNoMatch.hidden = !(searching && visibleCount === 0);
