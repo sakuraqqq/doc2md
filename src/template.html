@@ -107,6 +107,7 @@
     padding: 12px 22px calc(var(--nav-h) + var(--safe-bottom) + 176px);
   }
   .tabpanel { display: none; }
+  .tabpanel:focus, .tabpanel:focus-visible { outline: none; }
   .tabpanel.active { display: block; animation: panelIn var(--dur-fast) var(--ease-standard); }
   /* ⚠️ panelIn 动画会临时给面板加 transform ⇒ 动画期间该面板成为绝对定位后代的包含块。
    *    星图层 .art 必须始终以同一盒子为参照，否则切 Tab 时会平移（真机 bug 2026-11-10）。 */
@@ -384,6 +385,7 @@
   .results-selectall input, .row-select { width: 20px; height: 20px; accent-color: var(--primary); flex: 0 0 auto; }
   .linkbtn { border: 0; background: transparent; color: var(--primary); font: inherit; font-size: 12.5px; cursor: pointer; padding: 6px; }
   /* 结果列表：整块半透明底 → 卡片与 gap 落在同一层遮罩上，滚动时星图不再一闪一闪 */
+  .results-nomatch { margin: 10px 2px 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
   .results-list {
     display: flex; flex-direction: column; gap: 8px;
     padding: 8px; border: 1px solid var(--border); border-radius: 22px;
@@ -768,6 +770,7 @@
         <button type="button" class="linkbtn" id="selectAllBtn">全选</button>
       </div>
       <div id="results" class="results-list"></div>
+      <p class="results-nomatch" id="resultsNoMatch" hidden>没有匹配的结果，换个关键词或清空搜索。</p>
       <div class="batch-spacer" id="batchSpacer"></div>
     </section>
     <div class="empty-hint" id="hint">选择上方的文档，转换结果会出现在这里 —— 预览 / 复制 / 下载 .md</div>

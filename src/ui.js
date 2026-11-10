@@ -38,6 +38,7 @@ const pickerTitle = $('#pickerTitle');
 const resultsPanel = $('#resultsPanel');
 const resultsCount = $('#resultsCount');
 const resultsSearch = $('#resultsSearch');
+const resultsNoMatch = $('#resultsNoMatch');
 const selectAllEl = $('#selectAll');
 const selectAllBtn = $('#selectAllBtn');
 const selectedCountEl = $('#selectedCount');
@@ -398,9 +399,15 @@ function updateResultsChrome() {
    *（元素保留：app.js 仍 import hintEl 并在启动时置 none） */
   hintEl.style.display = 'none';
   document.body.classList.toggle('has-results', hasResults);
-  /* 极简（2026-11-11 用户拍板）：少于 2 条时，搜索框与「已选择/全选」纯属噪音 ⇒ 收起 */
+  /* 极简：少于 2 条时收起搜索框与「已选择/全选」。
+   * 用户正在搜索时不能收 —— 否则输入第一个字符就把搜索框自己隐藏掉（界面突变）。 */
   const visibleCount = resultRows.filter((r) => r.success && !r.el.hidden).length;
-  document.body.classList.toggle('few-results', visibleCount < 2);
+  const searching = !!String(resultsSearch.value || '').trim() || document.activeElement === resultsSearch;
+  document.body.classList.toggle('few-results', visibleCount < 2 && !searching);
+  if (resultsNoMatch) resultsNoMatch.hidden = !(searching && visibleCount === 0);
+  /* 列表空时把容器本身也收起来 —— 否则半透明底的圆角空盒会留在页面上 */
+  const resultsListEl = document.getElementById('results');
+  if (resultsListEl) resultsListEl.hidden = visibleCount === 0;
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
   const lastSect = document.getElementById('lastTitle');
   if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = hasResults;
