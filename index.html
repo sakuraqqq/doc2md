@@ -104,7 +104,7 @@
   .content {
     position: relative;
     flex: 1; width: 100%; max-width: 960px; margin: 0 auto;
-    padding: 12px 22px calc(var(--nav-h) + var(--safe-bottom) + 20px);
+    padding: 12px 22px calc(var(--nav-h) + var(--safe-bottom) + 176px);
   }
   .tabpanel { display: none; }
   .tabpanel.active { display: block; animation: panelIn var(--dur-fast) var(--ease-standard); }
@@ -112,8 +112,7 @@
    *    星图层 .art 必须始终以同一盒子为参照，否则切 Tab 时会平移（真机 bug 2026-11-10）。 */
   #panel-convert { position: relative; display: flex; flex-direction: column; }
   #panel-convert.active { min-height: 100%; }
-  /* 选择卡沉底：单手可及（用户 2026-11-11）；结果与上次转换在上 */
-  #dropzone { order: 2; margin-top: auto; }
+  /* 选择卡：定位规则见下方 hero 块之后（必须晚于 .#dropzone 基础块，否则被覆盖） */
   .results-panel, .sect-last { order: 0; }
   #status, #hint { order: 1; }
   body.few-results .results-search, body.few-results .results-selectbar { display: none; }
@@ -165,6 +164,15 @@
   body.has-results #dropzone .picker-icon { width: 32px; height: 32px; }
   body.has-results #dropzone .picker-icon svg { width: 18px; height: 18px; }
   body.has-results #dropzone .picker-sub { display: none; }
+  /* 选择卡固定悬浮在 tabbar 之上（2026-11-11 用户：滚动时不能跟着走）*/
+  #dropzone {
+    position: fixed; left: 22px; right: 22px; width: auto;
+    bottom: calc(var(--nav-h) + var(--safe-bottom) + 12px);
+    z-index: 9; max-width: 916px; margin: 0 auto;
+  }
+  body.has-batch #dropzone { display: none; }   /* 批量条打开时让位（ui.js 已维护 has-batch）*/
+  body.few-results .results-search, body.few-results .results-selectbar { display: none; }
+  body.has-results #status:not(.error) { display: none; }
 
   /* ── 区块 / 行 / 段控 ── */
   .sect { margin-top: 18px; }
@@ -370,7 +378,16 @@
   .results-selectall { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .results-selectall input, .row-select { width: 20px; height: 20px; accent-color: var(--primary); flex: 0 0 auto; }
   .linkbtn { border: 0; background: transparent; color: var(--primary); font: inherit; font-size: 12.5px; cursor: pointer; padding: 6px; }
-  .results-list { display: flex; flex-direction: column; gap: 8px; }
+  /* 结果列表：整块半透明底 → 卡片与 gap 落在同一层遮罩上，滚动时星图不再一闪一闪 */
+  .results-list {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 8px; border: 1px solid var(--border); border-radius: 22px;
+    background: var(--surface);
+    /* ⛔ 不要加 backdrop-filter：它会创建包含块/层叠上下文，把行菜单关在里面（见 065 回执 §10 坑） */
+    background: color-mix(in srgb, var(--surface) 86%, transparent);
+  }
+  .results-list .result-row { background: transparent; box-shadow: none;
+    border-color: color-mix(in srgb, var(--border) 70%, transparent); }
   .result-row { position: relative; overflow: visible; border-radius: 18px; box-shadow: var(--hero-shadow); }
   /* ⚠️ 底色必须是 transparent：.result-row 为了三点菜单必须 overflow: visible（不能用 .card 的 hidden 裁圆角），
    *    子层若自带底色，它的**方角**会盖住卡片圆角处的 1px 边框 ⇒ 选中时肉眼可见「上两角缺一块」
@@ -407,7 +424,7 @@
     .appbar { padding-left: 20px; padding-right: 20px; }
     .content { padding-left: 20px; padding-right: 20px; }
     .btn { min-height: 44px; padding: 10px 16px; font-size: 14px; }
-    #dropzone { min-height: 0; padding: 12px; }
+    #dropzone { min-height: 0; padding: 12px; left: 20px; right: 20px; }
     /* 星空 §1.2：hero 标题 20 / 格式行 11 */
     #dropzone .picker-title { font-size: 20px; }
     #dropzone .picker-sub { font-size: 11px; padding: 0; }
@@ -582,6 +599,8 @@
   [data-theme="light"] .results-search svg { stroke: var(--muted); }
   [data-theme="light"] .results-selectbar { font-size: 12px; }
   [data-theme="light"] .card { background: var(--surface); border-radius: 10px; }
+  /* 结果列表容器铺了半透明底 ⇒ 行自身必须透明，卡片与 gap 才是同一层遮罩 */
+  [data-theme="light"] .results-list .result-row, .results-list .result-row { background: transparent; box-shadow: none; border-color: color-mix(in srgb, var(--border) 70%, transparent); }
   [data-theme="light"] .card-head { background: var(--icon-bg); border-bottom-color: var(--border); }
   [data-theme="light"] .result-row .card-head { background: transparent; }
   /* 卡 062 §15.1 · 拍板 C：文件名允许 **2 行**（44×44 命中区吃掉横向列宽后，用纵向空间换可读性）。
@@ -608,30 +627,30 @@
   /* 结果行内三件小控件：44 命中区 + 负外边距（060 的紧凑行高逐像素不变：Z8-0 行高 ≤100） */
   [data-theme="light"] .row-menu-btn { width: 44px; height: 44px; margin: -6px 0; }
   [data-theme="light"] .row-preview { min-height: 44px; margin: -6px 0; padding: 0 6px; font-size: 12px; color: var(--primary); }
-  /* 选择框（两主题同一套几何）：44×44 命中区 + 12px 透明边 ⇒ 内绘 20×20；
-   * 选中 = 纸/夜底方框 + primary 勾（SVG 里不能用 var()，所以两主题各写一份色值）。 */
+  /* 选择框（两主题同几何、各自主题色）：44×44 命中区 + 12px 透明边 ⇒ 内绘 20×20、圆角 6；
+   * 未选 = surface 底 + muted 空心框；选中 = **实心 primary + on-primary 勾**（圆角 6）；半选 = 实心 + 横线。 */
   #selectAll, .row-select {
     -webkit-appearance: none; appearance: none;
     width: 44px; height: 44px; margin: -12px 0; padding: 0;
-    border: 12px solid transparent; border-radius: 16px;
+    border: 12px solid transparent; border-radius: 18px;
     background-color: transparent; background-repeat: no-repeat; background-position: center, center;
     background-clip: padding-box, padding-box; background-size: 18px 18px, 20px 20px;
     background-image: linear-gradient(var(--surface), var(--surface)), linear-gradient(var(--muted), var(--muted));
     cursor: pointer;
   }
   #selectAll:checked, .row-select:checked {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%271%27 y=%271%27 width=%2718%27 height=%2718%27 rx=%274%27 fill=%27%23161b25%27 stroke=%27%23b5caff%27 stroke-width=%271.6%27/%3E%3Cpath d=%27M5.4 10.6l3.2 3.2 6-6.8%27 fill=%27none%27 stroke=%27%23b5caff%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%270.8%27 y=%270.8%27 width=%2718.4%27 height=%2718.4%27 rx=%276%27 fill=%27%23b5caff%27/%3E%3Cpath d=%27M5.6 10.4l3 3 5.8-6.4%27 fill=%27none%27 stroke=%27%2312254b%27 stroke-width=%272.2%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E");
     background-size: 20px 20px; background-position: center;
   }
   #selectAll:indeterminate {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%271%27 y=%271%27 width=%2718%27 height=%2718%27 rx=%274%27 fill=%27%23161b25%27 stroke=%27%23b5caff%27 stroke-width=%271.6%27/%3E%3Cpath d=%27M6 10h8%27 fill=%27none%27 stroke=%27%23b5caff%27 stroke-width=%272%27 stroke-linecap=%27round%27/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%270.8%27 y=%270.8%27 width=%2718.4%27 height=%2718.4%27 rx=%276%27 fill=%27%23b5caff%27/%3E%3Cpath d=%27M6 10h8%27 fill=%27none%27 stroke=%27%2312254b%27 stroke-width=%272.2%27 stroke-linecap=%27round%27/%3E%3C/svg%3E");
     background-size: 20px 20px; background-position: center;
   }
   [data-theme="light"] #selectAll:checked, [data-theme="light"] .row-select:checked {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%271%27 y=%271%27 width=%2718%27 height=%2718%27 rx=%274%27 fill=%27%23ffffff%27 stroke=%27%23345ebe%27 stroke-width=%271.6%27/%3E%3Cpath d=%27M5.4 10.6l3.2 3.2 6-6.8%27 fill=%27none%27 stroke=%27%23345ebe%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%270.8%27 y=%270.8%27 width=%2718.4%27 height=%2718.4%27 rx=%276%27 fill=%27%23345ebe%27/%3E%3Cpath d=%27M5.6 10.4l3 3 5.8-6.4%27 fill=%27none%27 stroke=%27%23ffffff%27 stroke-width=%272.2%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E");
   }
   [data-theme="light"] #selectAll:indeterminate {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%271%27 y=%271%27 width=%2718%27 height=%2718%27 rx=%274%27 fill=%27%23ffffff%27 stroke=%27%23345ebe%27 stroke-width=%271.6%27/%3E%3Cpath d=%27M6 10h8%27 fill=%27none%27 stroke=%27%23345ebe%27 stroke-width=%272%27 stroke-linecap=%27round%27/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 20 20%27%3E%3Crect x=%270.8%27 y=%270.8%27 width=%2718.4%27 height=%2718.4%27 rx=%276%27 fill=%27%23345ebe%27/%3E%3Cpath d=%27M6 10h8%27 fill=%27none%27 stroke=%27%23ffffff%27 stroke-width=%272.2%27 stroke-linecap=%27round%27/%3E%3C/svg%3E");
   }
   /* 结果行内：左右各 -8 只吃掉 8px 布局 ⇒ 文件名列不被 44 挤干（两主题同） */
   .row-select { margin: -12px -8px; }
