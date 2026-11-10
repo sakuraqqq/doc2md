@@ -118,7 +118,9 @@
   #status, #hint { order: 1; }
   body.few-results .results-search, body.few-results .results-selectbar { display: none; }
   body.has-results #status:not(.error) { display: none; }
-  @keyframes panelIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  /* 入场只做淡入：⛔ 不要加 transform —— 有 transform 的元素会成为 fixed/absolute 后代的包含块，
+   * 该元素内的星图层与固定选择卡会在动画期间跳到面板坐标系再弹回（同一个坑踩过三次）。 */
+  @keyframes panelIn { from { opacity: 0; } to { opacity: 1; } }
 
   /* ── 「选择文档」卡片（卡 063 · A4/A5）：标题 20–22 / 格式行 13 单行 / 一颗朱砂主按钮 44–48 / 隐私页脚。
    *    容器仍是 #dropzone（app.js 的点击与拖放接线挂在它上面）；⚠️ 容器由 <button> 改 <div>：
