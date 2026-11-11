@@ -2485,6 +2485,7 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 2. **守卫假绿同族三次**：`measure-065` 不检查星图可见性、内容不足时把「页面不可滚动」记 good；`css-guard` 整块跳过 `@keyframes`；`pwa-audit` 全文取 token 后值覆盖前值，深色被浅色顶掉 ⇒ 三条都「存在但不会响」。
    - **根因**：判定只在**正例**上跑过；负例从来没造，或者负例只覆盖「改坏一处能被抓到」的形态。**「检查项存在」被当成了「守卫有效」。**
    - **防再犯**：**改/加守卫必须同批交红绿证据**——每条判据至少一个「改坏 ⇒ 必红」的隔离负例 + 一个正例仍绿；负例断言要匹配**预期错误文本**（只断言「有错」会把脚本自身崩溃当成守卫生效）；守卫的「前置不成立」（不可滚动、取不到 token、规则数为 0）一律记红，⛔ 不得记 good 跳过。
+   - **同族第二次（2026-11-12，回执对抗验收 F066-1）**：修完星图判据后 `.art{opacity:0}` 仍假绿——**只查 `.orion` 自身 `opacity` 不够**：父层 `opacity:0` 时子元素 computed `opacity` 仍是 `1`（opacity 不继承为计算值，只在合成时相乘）。⇒ **有效可见性必须沿祖先链把 `opacity` 乘起来**，并同时看 `display` / `visibility`；`display:none` 与 `opacity:0` **两个负例都要必红**。
 3. **重装 APK ≠ WebView 会打开新产物**：装完新 debug 包后页面仍是旧构建（`documentElement.outerHTML` 与仓库差 5 KB），先清 Service Worker 缓存仍拿旧文件。
    - **根因**：`https://localhost` 这一层同时受 **WebView HTTP 缓存**与 **SW 缓存**影响；只清 SW 不够，而「安装成功」「APK 包内 index.html 同源」都不能证明页面实际加载的是哪一份。
    - **防再犯**：任何真机测性能/行为之前，**先在页面里 `fetch('./index.html', {cache:'no-store'})` 现算 SHA256**，与仓库产物逐字节对上再开始；驱动侧用 CDP `Network.clearBrowserCache` + `Page.reload({ignoreCache:true})`，⛔ 不以「刚装完」当新鲜度证据。

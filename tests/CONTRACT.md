@@ -762,7 +762,7 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 > **卡 066 · F1 回归断言（2026-11-11 · 卡 065 对抗验收 blocker）**：病根 = `paintSearchChrome()` 只数 `r.success`，全部转换失败时 `visibleCount=0` ⇒ `#results` 整块 `display:none`，用户只看到「完成：0 成功 / N 失败」，看不到文件名与原因。修法 = **列表显隐按全部可见结果行统计**（成功数只服务选择/批量语义）。
 > **断言并入 Z8-4**（不新增测试节点 ⇒ 契约数保持 **413 / 411 / 0 / 2**，`docs/BASELINE.json` 无需改口径）。红绿：改前 HEAD `4c62764` ⇒ `#results.listHidden=true`、可见行 **0**；`89fbd54` 基线 ⇒ 可见行 **1**（卡片 R1 的「改前 1 行可见」）；修复后 ⇒ 可见行 **1** 且 `listHidden=false`。断言可独立变红（把 `paintSearchChrome` 回退成只数 `r.success` ⇒ Z8-4 红在「全部失败时结果列表被隐藏」）。
 >
-> **卡 066 · 三条守卫负例（不是 `node --test` 用例；私有脚本在 `.私档/卡/066/`）**：① `measure-065.mjs` —— 星图必须**可见且有尺寸**（`.art .orion` 220×282）+ 100 文件**真滚动**（`scrollY` 必须变化，不可滚动不再记 good）；② `tools/css-guard.mjs` —— `@keyframes` 内 `transform/translate` 必须红（原事故形态），同规则直接 `transform` 仍红；③ `tests/pwa-audit.mjs` —— 深/浅 token **分块取值**，深色 `--ink=--bg` 必须红，浅色 hex 不得覆盖深色。三条负例均「改前绿 → 改后红」，正例仍绿（日志见 `.私档/卡/066/logs/`）。
+> **卡 066 · 三条守卫负例（不是 `node --test` 用例；私有脚本在 `.私档/卡/066/`）**：① `measure-065.mjs` —— 星图必须**可见且有尺寸**（`.art .orion` 220×282；**2026-11-12 起「可见」= 祖先链有效可见性：display / visibility / opacity 逐层相乘**，`.art{opacity:0}` 与 `.art{display:none}` 两个负例都必红）+ 100 文件**真滚动**（`scrollY` 必须变化，不可滚动不再记 good）；② `tools/css-guard.mjs` —— `@keyframes` 内 `transform/translate` 必须红（原事故形态），同规则直接 `transform` 仍红；③ `tests/pwa-audit.mjs` —— 深/浅 token **分块取值**，深色 `--ink=--bg` 必须红，浅色 hex 不得覆盖深色。三条负例均「改前绿 → 改后红」，正例仍绿（日志见 `.私档/卡/066/logs/`）。
 
 ### 组 Z9 · 用本 App 打开 .md（卡 059 · B018 / A7.6-A7）
 

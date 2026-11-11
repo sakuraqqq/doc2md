@@ -161,6 +161,6 @@
 - **拍板 2（F7，CSP）—— 选「② 记录既有边界 + 登记 backlog」，不新增 CSP `meta`**：
   - 事实：改前 `89fbd54` 与目标 `4c62764` **都没有** CSP `meta`，本地测试服务也无 CSP 响应头 ⇒ 这是**既有缺口**，不是 065 删除的防线；「CSP `connect-src 'none'` 保留」这个任务书前提**不成立**（同理 `?theme=dark` 亦非既有能力）。
   - 理由：本产物需要 `worker-src blob:`（pdf/OCR worker）、`script-src 'wasm-unsafe-eval'`（pdf.js WASM）、`style-src 'unsafe-inline'`（内联样式）、`img-src data:` 才能保持离线全功能。半正确的 CSP 比没有更危险——它会制造「有防线」的错觉，同时可能在某个分支静默废掉 OCR/PDF。完整资源策略审计属**安全姿态变更**，不该塞进一张返修卡。
-  - 处置：本仓 `HANDOFF-主开发线.md` §11 注明边界；待调度线登记 backlog（条目建议：「F7 · CSP 资源策略审计，`connect-src 'none'` 为硬约束」）。⚠️ 只有 `meta` 能覆盖 `file://` 与本地产物；部署侧响应头覆盖不到双击打开的 `index.html`。
+  - 处置：本仓 `HANDOFF-主开发线.md` §11 注明边界；**backlog 已登记在 `.私档/卡/066/回执-066.md` §R7**（id `066-R7-CSP`，用户 2026-11-12 口径：写回执即可），待调度线收编。⚠️ 只有 `meta` 能覆盖 `file://` 与本地产物；部署侧响应头覆盖不到双击打开的 `index.html`。
 - **拍板 3（守卫假绿，F2/F3/F4）**：守卫「存在」不等于「会响」。同批给三条守卫各造**必红负例**并跑：`measure-065`（星图 `display:none`）、`css-guard`（`@keyframes` 内 `translateY(6px)`）、`pwa-audit`（深色 `--ink = --bg`）。今后**改守卫 = 交红绿证据**，不接受「加了检查」这种说法。
 - **回声**：契约数保持 **413/411/0/2**（F1 断言并入既有 Z8-4，不新增测试节点 ⇒ `BASELINE.json` 不因本卡改口径）；`pwa-audit` **47 → 62**（深/浅分块后新增 15 条）；`index.html` **297,321 B → 297,308 B / `B2DB4009…`**（±13 B 来自源码注释与判据改动，以 SHA256 为准）。
