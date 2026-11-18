@@ -6127,12 +6127,17 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
           const leaving = await page.evaluate(([f, t]) => {
             const old = document.getElementById('panel-' + f);
             const b = old.getBoundingClientRect();
+            const first = old.firstElementChild;
+            const cb = first && first.getBoundingClientRect();
             document.getElementById('tab-' + t).click();
             const cs = getComputedStyle(old);
             const a = old.getBoundingClientRect();
+            const ca = first && first.getBoundingClientRect();
             return {
               before: [b.x, b.y, b.width, b.height].map((n) => +n.toFixed(1)),
               after: [a.x, a.y, a.width, a.height].map((n) => +n.toFixed(1)),
+              childBefore: cb ? [cb.x, cb.y, cb.width, cb.height].map((n) => +n.toFixed(1)) : null,
+              childAfter: ca ? [ca.x, ca.y, ca.width, ca.height].map((n) => +n.toFixed(1)) : null,
               display: cs.display,
               position: cs.position,
               pointerEvents: cs.pointerEvents,
@@ -6146,6 +6151,15 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
           assert.equal(leaving.pointerEvents, 'none', dir + '：退场层会拦截点击');
           for (let i = 0; i < 4; i++) {
             assert.ok(Math.abs(leaving.before[i] - leaving.after[i]) <= 1.5, dir + '：退场层 rect 变了（布局塌陷/位移）：' + JSON.stringify(leaving));
+          }
+          /* 子内容也必须原地：fixed 会建 BFC，若子边距原本塌陷到面板外，内容会突然下移（设置页 22px）。 */
+          if (leaving.childBefore) {
+            for (let i = 0; i < 4; i++) {
+              assert.ok(
+                Math.abs(leaving.childBefore[i] - leaving.childAfter[i]) <= 1.5,
+                dir + '：退场层子内容位移了（margin 塌陷变化）：' + JSON.stringify(leaving)
+              );
+            }
           }
           await settle();
         }

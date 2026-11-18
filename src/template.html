@@ -124,7 +124,7 @@
   }
   .tabpanel { display: none; }
   .tabpanel:focus, .tabpanel:focus-visible { outline: none; }
-  .tabpanel.active { display: block; animation: panelIn var(--dur-fast) var(--ease-standard); }
+  .tabpanel.active { display: flow-root; animation: panelIn var(--dur-fast) var(--ease-standard); }
   /* ⚠️ panelIn 动画会临时给面板加 transform ⇒ 动画期间该面板成为绝对定位后代的包含块。
    *    星图层 .art 必须始终以同一盒子为参照，否则切 Tab 时会平移（真机 bug 2026-11-10）。 */
   #panel-convert { position: relative; display: flex; flex-direction: column; }
