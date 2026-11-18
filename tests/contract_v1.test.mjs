@@ -6081,12 +6081,17 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
               labelled: p.map((x) => x.getAttribute('aria-labelledby')),
             };
           });
-        /* 卡 068 · A5：切页有 160ms 入场 / 120ms 退场交叉；等退场层收掉再断言终态（不放宽：仍是唯一面板可见）。 */
+        /* 卡 068 · A5：Material fade-through（旧 90ms 出 → 新 210ms 进）；等面板动画全部结束再断言终态。 */
         const settle = () =>
           page.waitForFunction(
-            () =>
-              !document.querySelector('.tabpanel.leaving') &&
-              [...document.querySelectorAll('[role="tabpanel"]')].filter((p) => !p.hidden && getComputedStyle(p).display !== 'none').length === 1,
+            () => {
+              const panels = [...document.querySelectorAll('[role="tabpanel"]')];
+              return (
+                !document.querySelector('.tabpanel.leaving') &&
+                panels.every((p) => p.getAnimations().length === 0) &&
+                panels.filter((p) => !p.hidden && getComputedStyle(p).display !== 'none').length === 1
+              );
+            },
             null,
             { timeout: 3000 }
           );
@@ -6101,6 +6106,12 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         const s1 = await state();
         assert.deepEqual(s1.sel, ['false', 'true', 'false'], '点「文件」后 aria-selected 未同步');
         assert.deepEqual(s1.shown, [false, true, false], '点「文件」后面板 visible 未同步');
+        /* 卡 068 · A5：入场动画结束后不得留下内联 opacity:0（否则新页“消失”） */
+        assert.equal(
+          await page.evaluate(() => +getComputedStyle(document.querySelector('.tabpanel.active')).opacity),
+          1,
+          '落定后当前面板 opacity ≠ 1（残留内联 opacity:0）'
+        );
 
         /* 卡 068 闪烁回归（2026-11-19）：退场层必须保持**原 rect + display**。
          * 两个病根：① 去掉 .active 先重排（转换页 520→106 高、x 20→40）；

@@ -2506,6 +2506,7 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 5. **历史测试缝顺序**：`h.__setBackend('memory')` 后再 `h.__reset()` 会把后端重置回 web ⇒ `append` 返回 `{ok:false, skipped:'unsupported'}`。**防再犯**：测试/取证统一 `__reset()` → `__setBackend(...)` → `load()` → `append()`；证据脚本里这一顺序要写死。
 6. **A2 的「背景变暗」不能在加类当帧量**：`.sky` 有 280ms opacity 过渡，`is-busy` 加上后立即读仍是 1。**防再犯**：忙态取证等 ≥300ms 且用**真慢输入**（OCR 4 张）拉长窗口；⛔ 用 100 个 1ms 的 TXT 会在采样前就结束。
 7. **退场层不能只靠 `.leaving` 改定位（2026-11-19 用户两次报「切页闪一下别的样式」）**：`.tabpanel` 基础 `display:none`，显隐靠 `hidden`；`#panel-convert` 又有 `display:flex`。① 切页去掉 `.active` 会**先触发重排**（转换页 520→106 高；绝对定位的 `left` 再叠 content padding ⇒ x 20→40），随后 `hidden` ⇒ 旧页以**错误布局**闪一下，新页才淡到一半；② 原 `syncTabButtons` **先入场、后抓旧面板 rect**，新页在旧页上方时把旧 rect 推下（files→convert +520、settings→files +357），fixed 反而钉错位置。修法：**先快照全部退场面板（rect + computed display）→ 统一 fixed 退场 → 最后入场**；`onfinish`/入场清内联。**防再犯**：任何「把旧层留在原地淡出」的实现，先假设它会被布局变化带动；断言锁「退场层 rect 与点击前一致」，覆盖**全部 6 个方向**，并用**同一任务内 click+read** 避开 120ms 窗口。
+8. **交叉淡入的叠影不是 bug，是透明面板的物理结果（2026-11-19 第三轮）**：两页面板都没有不透明底，50/50 时两页文字互相透出，用户仍判「闪」。按上游 **Material fade-through** 改：旧 90ms 出 → 新 210ms 进，**两页不重叠**（代价是中间一瞬背景，Material 的 “through”）。实现时另一个坑：`clearPanelOverride` 的清理清单漏了 `opacity`，`fill:'both'` 动画结束后内联 `opacity:0` 把新页**留在不可见**（t240 截图空白）——补 `opacity` 并加「落定 opacity=1」断言。**防再犯**：动画结束后的清理字段与开始时设置的字段必须同一份清单；透明度类过渡必须在主面板上断言终态，不只断言 `hidden/display`。
 
 ### 结论
 - 视觉/动效只动 `src/template.html`、`src/ui.js`（结果行/切页/胶囊）、`src/app.js`（忙态类）；业务路径与 DOM 契约类名保留。

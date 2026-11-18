@@ -164,3 +164,10 @@
   - 处置：本仓 `HANDOFF-主开发线.md` §11 注明边界；**backlog 已登记在 `.私档/卡/066/回执-066.md` §R7**（id `066-R7-CSP`，用户 2026-11-12 口径：写回执即可），待调度线收编。⚠️ 只有 `meta` 能覆盖 `file://` 与本地产物；部署侧响应头覆盖不到双击打开的 `index.html`。
 - **拍板 3（守卫假绿，F2/F3/F4）**：守卫「存在」不等于「会响」。同批给三条守卫各造**必红负例**并跑：`measure-065`（星图 `display:none`）、`css-guard`（`@keyframes` 内 `translateY(6px)`）、`pwa-audit`（深色 `--ink = --bg`）。今后**改守卫 = 交红绿证据**，不接受「加了检查」这种说法。
 - **回声**：契约数保持 **413/411/0/2**（F1 断言并入既有 Z8-4，不新增测试节点 ⇒ `BASELINE.json` 不因本卡改口径）；`pwa-audit` **47 → 62**（深/浅分块后新增 15 条）；`index.html` **297,321 B → 297,308 B / `B2DB4009…`**（±13 B 来自源码注释与判据改动，以 SHA256 为准）。
+
+## DD-21 · 卡 068 切页过渡：交叉淡入 → Material fade-through（90/210，不叠影）— 2026-11-19
+
+- **背景**：A5 原定「旧 120ms 出 / 新 160ms 进」交叉淡入淡出。实测两页面板透明，交叉时两页文字同时半透明（叠影），用户连续判「闪烁」；布局跳动修完后仍剩叠影。
+- **上游依据**：Material Motion 的 **fade through** 就是为「弱关联页面（底部导航）」定的——旧页先淡出 **90ms**，新页再淡入 **210ms**（Material 另带 92%→100% 缩放；本仓 `#dropzone` 是 `fixed`，缩放会改变其定位，故只保留透明度），两页**不重叠**。[Material Motion 文档](https://raw.githubusercontent.com/material-components/material-components-android/474f912c22c3980af858c25bd43180cfa8692249/docs/theming/Motion.md#2) · [Flutter FadeThrough](https://pub.dev/documentation/transition_lab/latest/transition_lab/FadeThroughPageTransitionsBuilder-class.html#1) · [交叉淡入半透明叠影分析](https://stackoverflow.com/feeds/question/63972141#1)
+- **拍板**：采用 fade-through；这是对卡 068 A5「交叉淡入淡出」的**口径修订**，由用户 2026-11-19「看看业界上游…直接抄成熟做法，不要自己造轮子」触发。代价是中间一瞬背景（Material 的 “through”），比叠影可接受；减少动态效果仍即时切换。
+- **回声**：Z6-1 的 settle 改为等**动画全结束**（90+210=300ms）+ 新增「落定 opacity=1」断言（实现中 `clearPanelOverride` 漏了 `opacity`，动画结束后内联 `opacity:0` 会让新页消失）；契约数不变。

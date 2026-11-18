@@ -1104,7 +1104,7 @@ function updateNavMarker(target) {
   marker.style.transform = 'translateX(' + (tab.left - bar.left + 2) + 'px)';
 }
 /** 退场层的内联锁定字段（切回时要清干净，避免污染下一次布局） */
-const PANEL_LEAVE_KEYS = ['position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'display', 'overflow', 'margin', 'zIndex'];
+const PANEL_LEAVE_KEYS = ['position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'display', 'overflow', 'margin', 'zIndex', 'transform', 'opacity'];
 function clearPanelOverride(panel) {
   for (const k of PANEL_LEAVE_KEYS) panel.style[k] = '';
 }
@@ -1113,18 +1113,30 @@ function snapshotPanel(panel) {
   const r = panel.getBoundingClientRect();
   return { top: r.top, left: r.left, width: r.width, height: r.height, display: getComputedStyle(panel).display };
 }
-/** 卡 068 · A5：新面板入场（160ms 透明度；减少动态效果时即时） */
-function enterPanel(panel, reduce) {
+/** 卡 068 · A5（2026-11-19 按 Material fade-through 改）：
+ *  旧页淡出 90ms → 新页淡入 210ms，**两页不重叠**（Material 对底部导航的标准做法）。
+ *  起因：交叉淡入会让两页文字同时半透明（叠影被用户判成闪烁）；fade through 用一瞬背景换掉叠影。
+ *  ⚠️ 不缩放整块面板：面板里 `#dropzone` 是 fixed，transform 会把它变成相对面板定位而跳位。 */
+const ENTER_MS = 210;
+const LEAVE_MS = 90;
+function enterPanel(panel, reduce, delay = 0) {
   panel.getAnimations().forEach((a) => a.cancel());
   clearPanelOverride(panel);
   panel.classList.remove('leaving');
   panel.classList.add('active');
   panel.removeAttribute('hidden');
   panel.inert = false;
-  panel.style.opacity = '';
-  if (!reduce) panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: 'ease-out' });
+  if (reduce || typeof panel.animate !== 'function') return;
+  panel.style.opacity = '0';
+  const anim = panel.animate([{ opacity: 0 }, { opacity: 1 }], {
+    duration: ENTER_MS, delay, easing: 'cubic-bezier(.2,0,0,1)', fill: 'both',
+  });
+  anim.onfinish = () => {
+    anim.cancel(); // 清掉 fill:both，避免 finished 动画常驻 getAnimations
+    clearPanelOverride(panel);
+  };
 }
-/** 卡 068 · A5：旧面板退场（120ms 透明度）
+/** 卡 068 · A5：旧面板退场（90ms 透明度）
  *  ⚠️ 不能只加 `.leaving`：去掉 `.active` 会先触发重排，旧面板以新布局闪一下。
  *  ⚠️ rect 必须由调用方在**新面板入场之前**快照 —— 否则新面板在上方时会把旧面板推下去。
  *  做法：退场期 `position:fixed` + 快照 rect 钉在视口原位，结束再清。 */
@@ -1150,8 +1162,9 @@ function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
   panel.style.display = snap.display;
   panel.style.overflow = 'hidden';
   panel.style.margin = '0';
+  panel.style.transform = 'none';
   panel.style.zIndex = '1';
-  const anim = panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: 'ease-out' });
+  const anim = panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: LEAVE_MS, easing: 'cubic-bezier(.4,0,1,1)' });
   anim.onfinish = () => {
     if (panel.classList.contains('active')) return;
     panel.classList.remove('leaving');
@@ -1160,13 +1173,8 @@ function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
     panel.style.opacity = '';
   };
 }
-/** aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面）
- * 卡 068 · A5：切换改成「旧面板 120ms 退场（fixed 锁原位）+ 新面板 160ms 入场」；
- *   减少动态效果时即时切换。DOM 状态（active/hidden/aria）在切换当帧就是终态，
- *   退场层只是视觉副本 —— 不拦截点击（pointer-events:none）。
- *   ⚠️ 2026-11-19：必须**先快照/退场、后入场**，否则新面板插入上方会推动旧面板的 rect。 */
-function syncTabButtons(target) {
-  const reduce = prefersReducedMotion();
+/** 同步 aria/tabindex，并把「要入场的面板 / 要退场的面板（含退场前快照）」分桶。 */
+function collectTabPanels(target) {
   const toEnter = [];
   const toLeave = [];
   for (const t of tabButtons()) {
@@ -1178,8 +1186,19 @@ function syncTabButtons(target) {
     if (on) toEnter.push(panel);
     else if (panel.classList.contains('active') || !panel.hidden) toLeave.push({ panel, snap: snapshotPanel(panel) });
   }
+  return { toEnter, toLeave };
+}
+/** aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面）
+ * 卡 068 · A5：Material fade-through —— 旧面板 90ms 退场（fixed 锁原位），
+ *   结束后新面板 210ms 入场；减少动态效果时即时切换。
+ *   退场层只是视觉副本 —— 不拦截点击（pointer-events:none）。
+ *   ⚠️ 必须**先快照/退场、后入场**，否则新面板插入上方会推动旧面板的 rect。 */
+function syncTabButtons(target) {
+  const reduce = prefersReducedMotion();
+  const { toEnter, toLeave } = collectTabPanels(target);
   for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
-  for (const panel of toEnter) enterPanel(panel, reduce);
+  const delay = toLeave.length && !reduce ? LEAVE_MS : 0;
+  for (const panel of toEnter) enterPanel(panel, reduce, delay);
   updateNavMarker(target);
 }
 

@@ -4510,7 +4510,7 @@ ${xlsxRowsToMd(kept)}`);
     marker.style.width = tab.width - 4 + "px";
     marker.style.transform = "translateX(" + (tab.left - bar.left + 2) + "px)";
   }
-  var PANEL_LEAVE_KEYS = ["position", "top", "right", "bottom", "left", "width", "height", "display", "overflow", "margin", "zIndex"];
+  var PANEL_LEAVE_KEYS = ["position", "top", "right", "bottom", "left", "width", "height", "display", "overflow", "margin", "zIndex", "transform", "opacity"];
   function clearPanelOverride(panel) {
     for (const k of PANEL_LEAVE_KEYS) panel.style[k] = "";
   }
@@ -4518,15 +4518,27 @@ ${xlsxRowsToMd(kept)}`);
     const r = panel.getBoundingClientRect();
     return { top: r.top, left: r.left, width: r.width, height: r.height, display: getComputedStyle(panel).display };
   }
-  function enterPanel(panel, reduce) {
+  var ENTER_MS = 210;
+  var LEAVE_MS = 90;
+  function enterPanel(panel, reduce, delay = 0) {
     panel.getAnimations().forEach((a) => a.cancel());
     clearPanelOverride(panel);
     panel.classList.remove("leaving");
     panel.classList.add("active");
     panel.removeAttribute("hidden");
     panel.inert = false;
-    panel.style.opacity = "";
-    if (!reduce) panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: "ease-out" });
+    if (reduce || typeof panel.animate !== "function") return;
+    panel.style.opacity = "0";
+    const anim = panel.animate([{ opacity: 0 }, { opacity: 1 }], {
+      duration: ENTER_MS,
+      delay,
+      easing: "cubic-bezier(.2,0,0,1)",
+      fill: "both"
+    });
+    anim.onfinish = () => {
+      anim.cancel();
+      clearPanelOverride(panel);
+    };
   }
   function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
     panel.classList.remove("active");
@@ -4550,8 +4562,9 @@ ${xlsxRowsToMd(kept)}`);
     panel.style.display = snap.display;
     panel.style.overflow = "hidden";
     panel.style.margin = "0";
+    panel.style.transform = "none";
     panel.style.zIndex = "1";
-    const anim = panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: "ease-out" });
+    const anim = panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: LEAVE_MS, easing: "cubic-bezier(.4,0,1,1)" });
     anim.onfinish = () => {
       if (panel.classList.contains("active")) return;
       panel.classList.remove("leaving");
@@ -4560,8 +4573,7 @@ ${xlsxRowsToMd(kept)}`);
       panel.style.opacity = "";
     };
   }
-  function syncTabButtons(target) {
-    const reduce = prefersReducedMotion();
+  function collectTabPanels(target) {
     const toEnter = [];
     const toLeave = [];
     for (const t of tabButtons()) {
@@ -4573,8 +4585,14 @@ ${xlsxRowsToMd(kept)}`);
       if (on) toEnter.push(panel);
       else if (panel.classList.contains("active") || !panel.hidden) toLeave.push({ panel, snap: snapshotPanel(panel) });
     }
+    return { toEnter, toLeave };
+  }
+  function syncTabButtons(target) {
+    const reduce = prefersReducedMotion();
+    const { toEnter, toLeave } = collectTabPanels(target);
     for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
-    for (const panel of toEnter) enterPanel(panel, reduce);
+    const delay = toLeave.length && !reduce ? LEAVE_MS : 0;
+    for (const panel of toEnter) enterPanel(panel, reduce, delay);
     updateNavMarker(target);
   }
   function afterTabChange(active) {
