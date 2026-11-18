@@ -1103,9 +1103,15 @@ function updateNavMarker(target) {
   marker.style.width = (tab.width - 4) + 'px';
   marker.style.transform = 'translateX(' + (tab.left - bar.left + 2) + 'px)';
 }
+/** 退场层的内联锁定字段（切回时要清干净，避免污染下一次布局） */
+const PANEL_LEAVE_KEYS = ['position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'display', 'overflow', 'margin', 'zIndex'];
+function clearPanelOverride(panel) {
+  for (const k of PANEL_LEAVE_KEYS) panel.style[k] = '';
+}
 /** 卡 068 · A5：新面板入场（160ms 透明度；减少动态效果时即时） */
 function enterPanel(panel, reduce) {
   panel.getAnimations().forEach((a) => a.cancel());
+  clearPanelOverride(panel);
   panel.classList.remove('leaving');
   panel.classList.add('active');
   panel.removeAttribute('hidden');
@@ -1113,22 +1119,40 @@ function enterPanel(panel, reduce) {
   panel.style.opacity = '';
   if (!reduce) panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: 'ease-out' });
 }
-/** 卡 068 · A5：旧面板退场（120ms 透明度 + 绝对定位，不挤占新面板；pointer-events:none） */
+/** 卡 068 · A5：旧面板退场（120ms 透明度）
+ *  ⚠️ 2026-11-19 修复：不能只加 `.leaving` —— 去掉 `.active` 会先触发一次重排
+ *  （转换页高度 520→106、x 20→40），旧面板以自己的新布局闪一下，新面板才淡入一半。
+ *  做法：**改类之前**抓原 rect + display，退场期间用 fixed 原样钉在视口原位，结束再清。 */
 function leavePanel(panel, reduce) {
+  const rect = panel.getBoundingClientRect();
+  const display = getComputedStyle(panel).display;
   panel.classList.remove('active');
   panel.inert = true;
   panel.getAnimations().forEach((a) => a.cancel());
   if (reduce || typeof panel.animate !== 'function') {
+    clearPanelOverride(panel);
     panel.classList.remove('leaving');
     panel.setAttribute('hidden', '');
     panel.style.opacity = '';
     return;
   }
   panel.classList.add('leaving');
+  panel.style.position = 'fixed';
+  panel.style.top = rect.top + 'px';
+  panel.style.right = 'auto';
+  panel.style.bottom = 'auto';
+  panel.style.left = rect.left + 'px';
+  panel.style.width = rect.width + 'px';
+  panel.style.height = rect.height + 'px';
+  panel.style.display = display;
+  panel.style.overflow = 'hidden';
+  panel.style.margin = '0';
+  panel.style.zIndex = '1';
   const anim = panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: 'ease-out' });
   anim.onfinish = () => {
     if (panel.classList.contains('active')) return;
     panel.classList.remove('leaving');
+    clearPanelOverride(panel);
     panel.setAttribute('hidden', '');
     panel.style.opacity = '';
   };

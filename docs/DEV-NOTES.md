@@ -2505,9 +2505,10 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 4. **WSL 换环境不能复用 Windows 的 node_modules + 浏览器缓存**：Playwright 1.63 在 WSL 找 `chromium_headless_shell-1243`，缓存里只有 `chromium-1234` ⇒ 用系统 Chromium（`executablePath: /usr/local/bin/chromium`，实测 151）即可跑 A5/A6，⛔ 不必重下整套浏览器。**防再犯**：跨环境脚本用 `PW_EXEC` 参数，不写死 `channel: msedge`。
 5. **历史测试缝顺序**：`h.__setBackend('memory')` 后再 `h.__reset()` 会把后端重置回 web ⇒ `append` 返回 `{ok:false, skipped:'unsupported'}`。**防再犯**：测试/取证统一 `__reset()` → `__setBackend(...)` → `load()` → `append()`；证据脚本里这一顺序要写死。
 6. **A2 的「背景变暗」不能在加类当帧量**：`.sky` 有 280ms opacity 过渡，`is-busy` 加上后立即读仍是 1。**防再犯**：忙态取证等 ≥300ms 且用**真慢输入**（OCR 4 张）拉长窗口；⛔ 用 100 个 1ms 的 TXT 会在采样前就结束。
+7. **退场层不能只靠 `.leaving` 改定位（2026-11-19 用户报「切页闪一下别的样式」）**：`.tabpanel` 基础 `display:none`，显隐靠 `hidden`；`#panel-convert` 又有 `display:flex`。切页去掉 `.active` 会**先触发重排**（转换页 520→106 高；绝对定位的 `left` 再叠 content padding ⇒ x 20→40），随后 `hidden` ⇒ 旧页以**错误布局**闪一下，新页才淡到一半。修法：**改类前**抓 `getBoundingClientRect()` + computed `display`，退场期 `position:fixed` + 原 top/left/width/height 钉住，`onfinish` 清内联；入场也要清。**防再犯**：任何「把旧层留在原地淡出」的实现，先假设它会被布局变化带动；断言锁「退场层 rect 与点击前一致」，并用**同一任务内 click+read** 避开 120ms 窗口。
 
 ### 结论
 - 视觉/动效只动 `src/template.html`、`src/ui.js`（结果行/切页/胶囊）、`src/app.js`（忙态类）；业务路径与 DOM 契约类名保留。
-- 门禁：`node --test` **413/411/0/2** · `pwa-audit` **62/0** · `lint` 0/0 · `metrics` **37/1157/超限 0/0.5%**（before 37/1149）· `guard:css` **0 错** · `baseline-check` 5/5。
-- 产物：`index.html` **315,786 B / `1A2DD999…`**；debug APK **22,962,109 B / `5F00F967…`**（包内 index 同源）；真机 **V2573A / Android 16 / WebView 157.0.8103.38**（安全区 38/18，appbar 98）。
+- 门禁：`node --test` **413/411/0/2** · `pwa-audit` **62/0** · `lint` 0/0 · `metrics` **37/1158/超限 0/0.5%**（before 37/1149）· `guard:css` **0 错** · `baseline-check` 5/5。
+- 产物：`index.html` **316,622 B / `3DE214FE…`**；debug APK **22,962,421 B / `BEF71C78…`**（包内 index 同源）；真机 **V2573A / Android 16 / WebView 157.0.8103.38**（安全区 38/18，appbar 98）。
 

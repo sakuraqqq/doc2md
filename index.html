@@ -4510,8 +4510,13 @@ ${xlsxRowsToMd(kept)}`);
     marker.style.width = tab.width - 4 + "px";
     marker.style.transform = "translateX(" + (tab.left - bar.left + 2) + "px)";
   }
+  var PANEL_LEAVE_KEYS = ["position", "top", "right", "bottom", "left", "width", "height", "display", "overflow", "margin", "zIndex"];
+  function clearPanelOverride(panel) {
+    for (const k of PANEL_LEAVE_KEYS) panel.style[k] = "";
+  }
   function enterPanel(panel, reduce) {
     panel.getAnimations().forEach((a) => a.cancel());
+    clearPanelOverride(panel);
     panel.classList.remove("leaving");
     panel.classList.add("active");
     panel.removeAttribute("hidden");
@@ -4520,20 +4525,35 @@ ${xlsxRowsToMd(kept)}`);
     if (!reduce) panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: "ease-out" });
   }
   function leavePanel(panel, reduce) {
+    const rect = panel.getBoundingClientRect();
+    const display = getComputedStyle(panel).display;
     panel.classList.remove("active");
     panel.inert = true;
     panel.getAnimations().forEach((a) => a.cancel());
     if (reduce || typeof panel.animate !== "function") {
+      clearPanelOverride(panel);
       panel.classList.remove("leaving");
       panel.setAttribute("hidden", "");
       panel.style.opacity = "";
       return;
     }
     panel.classList.add("leaving");
+    panel.style.position = "fixed";
+    panel.style.top = rect.top + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.left = rect.left + "px";
+    panel.style.width = rect.width + "px";
+    panel.style.height = rect.height + "px";
+    panel.style.display = display;
+    panel.style.overflow = "hidden";
+    panel.style.margin = "0";
+    panel.style.zIndex = "1";
     const anim = panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: "ease-out" });
     anim.onfinish = () => {
       if (panel.classList.contains("active")) return;
       panel.classList.remove("leaving");
+      clearPanelOverride(panel);
       panel.setAttribute("hidden", "");
       panel.style.opacity = "";
     };

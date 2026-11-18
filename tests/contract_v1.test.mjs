@@ -6102,6 +6102,35 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.deepEqual(s1.sel, ['false', 'true', 'false'], '点「文件」后 aria-selected 未同步');
         assert.deepEqual(s1.shown, [false, true, false], '点「文件」后面板 visible 未同步');
 
+        /* 卡 068 闪烁回归（2026-11-19）：退场层必须保持**原 rect + display**。
+         * 病根：去掉 .active 先触发重排（转换页 520→106 高、x 20→40），旧面板以新布局闪一下。
+         * 修法：改类前抓 rect/display，退场期 fixed 钉在原位。这里同一任务内点击+读，避开 120ms 窗口。 */
+        await page.click('#tab-convert');
+        await settle();
+        const leaving = await page.evaluate(() => {
+          const old = document.getElementById('panel-convert');
+          const b = old.getBoundingClientRect();
+          document.getElementById('tab-files').click();
+          const cs = getComputedStyle(old);
+          const a = old.getBoundingClientRect();
+          return {
+            before: [b.x, b.y, b.width, b.height].map((n) => +n.toFixed(1)),
+            after: [a.x, a.y, a.width, a.height].map((n) => +n.toFixed(1)),
+            display: cs.display,
+            position: cs.position,
+            pointerEvents: cs.pointerEvents,
+            leaving: old.classList.contains('leaving'),
+          };
+        });
+        assert.ok(leaving.leaving, '切换当帧旧面板未进入 .leaving');
+        assert.notEqual(leaving.display, 'none', '退场层被 display:none 吃掉（旧面板瞬间消失 ⇒ 空档闪烁）');
+        assert.equal(leaving.position, 'fixed', '退场层未钉在视口原位（会被重排带动）');
+        assert.equal(leaving.pointerEvents, 'none', '退场层会拦截点击');
+        for (let i = 0; i < 4; i++) {
+          assert.ok(Math.abs(leaving.before[i] - leaving.after[i]) <= 1.5, '退场层 rect 变了（布局塌陷/位移）：' + JSON.stringify(leaving));
+        }
+        await settle();
+
         await page.focus('#tab-files');
         await page.keyboard.press('ArrowRight');
         await settle();
