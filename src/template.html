@@ -25,10 +25,19 @@
     --ink: #e5e9f2; --muted: #9ca7bb; --primary: #b5caff; --on-primary: #12254b;
     --border: #343d50; --star: #cad9f8; --star-line: #7083a9; --warm: #d3ae91;
     --warm-ink: #d3ae91; --nav: #0c1221; --icon-bg: #273755;
+    /* 卡 068 · 留白版（refined-ui）：新增语义层令牌；旧 16 token 名保持不变 */
+    --surface-soft: #101722; --soft-border: #273042; --success: #aad8c6;
+    --glow: #1e438e; --nebula: #5c5791;
+    --card-border: rgb(139 163 205 / .28);
+    --result-surface: rgb(14 24 40 / .64);
+    --file-surface: rgb(22 31 47 / .64);
+    --settings-surface: rgb(22 29 42 / .80);
     --hero-shadow: 0 12px 28px #0002;
     /* 星图层参数（SVG 内用，不进 16 token 契约）*/
     --line-opacity: .11; --star-opacity: .53; --node-size: 1.9px;
-    --radius: 20px; --bar-h: 60px; --nav-h: 66px;
+    /* 留白版：三页背景强度（激活页由 body[data-tab] / .has-results / .is-busy 驱动） */
+    --glow-opacity: 1; --ambient-opacity: 1; --orion-opacity: 1;
+    --radius: 20px; --bar-h: 60px; --nav-h: 64px;
     /* 卡 057 / A5（edge-to-edge）：两路来源取大者 ——
      *   env(safe-area-inset-*)     WebView ≥140 且 meta viewport-fit=cover 时由 Chromium 直接提供
      *   var(--safe-area-inset-*)  Capacitor SystemBars（insetsHandling=css）注入的 CSS 变量
@@ -40,13 +49,20 @@
     --dur-fast: 150ms; --dur-base: 280ms; --ease-standard: cubic-bezier(.2, .7, .2, 1);
   }
   /* 纸墨（卡 062 · 设计基线 = 061 规格 §1）：纸色底 + 墨字 + 朱砂强调 + 苔绿状态。
-   * ⛔ 深色仍是上面的 :root（逐字节不变）；本块只定义浅色，纸墨专属 token 也只在这里出现。 */
+   * ⛔ 深色仍是上面的 :root（逐字节不变）；本块只定义浅色，纸墨专属 token 也只在这里出现。
+   * 卡 068：底色/主色/星线按留白版冷白调；`--warm-ink` 保持足够对比度。 */
   [data-theme="light"] {
     color-scheme: light;
-    --bg: #fafbfe; --sky: #dce7fd; --surface: #ffffff; --surface-solid: #ffffff;
-    --ink: #253044; --muted: #65728a; --primary: #345ebe; --on-primary: #ffffff;
-    --border: #dae1ed; --star: #627ca7; --star-line: #8094b4; --warm: #ad8b72;
-    --warm-ink: #8a5a3d; --nav: #f1f5fd; --icon-bg: #dfe9ff;
+    --bg: #f7f9fc; --sky: #dce7fd; --surface: #ffffff; --surface-solid: #ffffff;
+    --ink: #24374f; --muted: #596d85; --primary: #355e9f; --on-primary: #ffffff;
+    --border: #cdd9e7; --star: #3f648d; --star-line: #607d9e; --warm: #996f4d;
+    --warm-ink: #8a5a3d; --nav: #f8fbff; --icon-bg: #e0eaf7;
+    --surface-soft: #eef3f8; --soft-border: #dfe7f0; --success: #326955;
+    --glow: #d6e3f1; --nebula: #c8d7e8;
+    --card-border: rgb(159 181 207 / .55);
+    --result-surface: rgb(255 255 255 / .84);
+    --file-surface: rgb(255 255 255 / .82);
+    --settings-surface: rgb(255 255 255 / .94);
     --hero-shadow: 0 8px 28px #5c80bf14;
     --line-opacity: .15; --star-opacity: .32; --node-size: 1.9px;
   }
@@ -699,6 +715,199 @@
   [data-theme="light"] .warnings { font-size: 12px; color: var(--warm-ink); }
   [data-theme="light"] .batch-info { font-size: 13px; }
   [data-theme="light"] .md-viewer { background: var(--bg); color: var(--ink); }
+
+  /* ══ 卡 068 · 星空留白版（refined-ui 20261118）══════════════════════════════
+   * 设计参照：`界面/20261017-批次2-门面/design/gpt-20261118/index-refined.html`
+   * 原则：只换视觉/动效层；DOM id、交互入口、真实数据路径全部沿用。
+   * 结果行/文件行/设置行保留既有类名（契约测试依赖），仅重排与换肤。 */
+
+  html { background: var(--bg); }
+  body { background: transparent; }
+
+  /* ── 背景：晕光（.sky 双曝光）+ 环境星点 + 猎户座；强度由 body 状态变量驱动 ── */
+  .sky { z-index: -2; opacity: var(--glow-opacity); transition: opacity 280ms ease-out; }
+  .sky-night {
+    background:
+      radial-gradient(ellipse 85% 35% at 105% 34%, color-mix(in srgb, var(--nebula) 25%, transparent), transparent 78%),
+      radial-gradient(ellipse 95% 28% at -10% 62%, color-mix(in srgb, var(--glow) 32%, transparent), transparent 80%),
+      radial-gradient(ellipse 115% 43% at 20% 103%, var(--glow), transparent 82%),
+      linear-gradient(transparent 20%, color-mix(in srgb, var(--glow) 13%, transparent));
+  }
+  .sky-day {
+    background:
+      radial-gradient(ellipse 100% 52% at 110% 40%, #dce6f2b0, transparent 76%),
+      radial-gradient(ellipse 120% 45% at -5% 105%, #d8e5f2, transparent 82%),
+      linear-gradient(#fbfcfe 12%, #f4f7fb 58%, #edf3f9);
+  }
+  .ambient { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none;
+    color: var(--star); opacity: var(--ambient-opacity); transition: opacity 280ms ease-out; }
+  .ambient .distant { fill: currentColor; opacity: .28; }
+  .ambient .near { fill: currentColor; opacity: .52; }
+  .ambient .trace { fill: none; stroke: var(--star-line); stroke-width: .6; opacity: .16; }
+  .ambient .glint { fill: none; stroke: currentColor; stroke-width: .7; opacity: .48;
+    animation: ambient-breathe 11s ease-in-out infinite alternate; animation-play-state: var(--sky-breathe, running); }
+  [data-theme="light"] .ambient .distant { opacity: .15; }
+  [data-theme="light"] .ambient .near { opacity: .38; }
+  [data-theme="light"] .ambient .trace { opacity: .24; }
+  @keyframes ambient-breathe { from { opacity: .24; } to { opacity: .52; } }
+  body[data-tab="files"], body[data-tab="settings"], body.has-results, body.is-busy { --sky-breathe: paused; }
+  .art { top: 110px; bottom: auto; right: 22px; width: 225px; height: 300px; z-index: -1;
+    opacity: var(--orion-opacity); transition: opacity 280ms ease-out; }
+  .art .orion { position: static; width: 100%; height: 100%; }
+  body[data-tab="files"] .art, body[data-tab="settings"] .art { display: block; }
+  body[data-tab="files"] { --glow-opacity: .48; --ambient-opacity: .16; --orion-opacity: 0; }
+  body[data-tab="settings"] { --glow-opacity: .34; --ambient-opacity: .08; --orion-opacity: 0; }
+  body[data-tab="convert"].has-results { --glow-opacity: .68; --ambient-opacity: .40; --orion-opacity: .27; }
+  body[data-tab="convert"].is-busy { --glow-opacity: .56; --ambient-opacity: .25; --orion-opacity: .14; }
+
+  /* ── 顶栏：品牌 20 / 本地标签带状态点 ── */
+  .appbar { min-height: calc(var(--safe-top) + 60px); padding: calc(8px + var(--safe-top)) 20px 7px;
+    border-bottom: 1px solid var(--soft-border);
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(120%); backdrop-filter: blur(14px) saturate(120%); }
+  .appbar h1 { font-size: 20px; font-weight: 600; letter-spacing: -.6px; }
+  .appbar .tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--border);
+    border-radius: 20px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .appbar .tag::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--success); }
+
+  /* ── 内容与切页：旧面板 120ms 退场（绝对定位，不挤新面板），新面板 160ms 入场 ── */
+  .content { position: relative; padding: 14px var(--content-pad-x) calc(var(--nav-h) + var(--safe-bottom) + 186px);
+    --content-pad-x: 22px; }
+  .tabpanel.active { animation: none; }
+  .tabpanel.leaving { position: absolute; top: 0; left: var(--content-pad-x); right: var(--content-pad-x); pointer-events: none; }
+  @media (max-width: 619px) { .content { --content-pad-x: 20px; } }
+
+  /* ── 底部主按钮（#dropzone 保留为容器：点击/拖放接线仍挂在它上面）── */
+  #dropzone { position: fixed; left: 20px; right: 20px; max-width: 920px; margin: 0 auto;
+    bottom: calc(var(--nav-h) + var(--safe-bottom) + 18px); z-index: 9;
+    padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; gap: 4px;
+    overflow: visible; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  [data-theme="light"] #dropzone { background: transparent; border: 0; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none; }
+  #dropzone .picker-head { display: none; }
+  #dropzone .pick-btn { order: 1; min-height: 50px; width: 100%; border-radius: 27px; background: var(--primary);
+    color: var(--on-primary); font-size: 15px; font-weight: 600; box-shadow: 0 10px 26px #0003; }
+  #dropzone .pick-btn:active { filter: brightness(.95); }
+  #dropzone .picker-sub { order: 2; display: block; width: 100%; padding: 0; text-align: center; color: var(--muted);
+    font-size: 11px; line-height: 1.5; }
+  #dropzone .picker-foot { order: 3; display: flex; width: 100%; justify-content: center; color: var(--muted);
+    font-size: 11px; line-height: 1.5; }
+  body.has-results #dropzone .picker-sub { display: none; }
+
+  /* ── 「上次转换」：留白版的轻行（不是第二张卡）── */
+  .sect-last { margin-top: 14px; }
+  .sect-last .sect-head { margin-bottom: 2px; }
+  .sect-last .sect-empty { padding: 10px 0 13px; border: 0; border-bottom: 1px solid var(--soft-border);
+    border-radius: 0; background: transparent; color: var(--ink); font-size: 13px; line-height: 1.5; }
+  [data-theme="light"] .sect-last .sect-empty { padding: 10px 0 13px; border: 0; border-bottom: 1px solid var(--soft-border);
+    border-radius: 0; background: transparent; color: var(--ink); }
+
+  /* ── 结果区 ── */
+  .results-panel { margin-top: 18px; }
+  .results-head h2 { font-size: 14px; font-weight: 600; }
+  .results-count { font-size: 11px; color: var(--muted); }
+  .session-result { margin: 8px 0 10px; padding: 10px 13px; border-radius: 13px;
+    border: 1px solid var(--card-border); background: var(--settings-surface); font-size: 12px; }
+  .results-selectbar { padding: 2px 2px 8px; font-size: 12px; }
+  .results-selectall input { width: 19px; height: 19px; }
+  .linkbtn { color: var(--primary); font-size: 12px; padding: 6px 2px; }
+  .results-list { padding: 0; border: 0; background: transparent; gap: 8px; }
+  .results-list .result-row { background: var(--result-surface); border: 1px solid var(--card-border); box-shadow: none; }
+  .result-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; padding: 8px;
+    border-radius: 18px; overflow: visible; }
+  .result-row .card-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px;
+    grid-template-areas: "check name menu" "check meta menu"; grid-column: 1 / -1; align-items: start;
+    gap: 1px 4px; padding: 0; border: 0; background: transparent; }
+  .result-row .row-select { grid-area: check; align-self: center; justify-self: center; width: 20px; height: 20px; margin: 0; }
+  .result-row .name { grid-area: name; font-size: 14px; font-weight: 550; line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    white-space: normal; overflow-wrap: anywhere; }
+  .result-row .meta { grid-area: meta; margin: 0; font-size: 11px; line-height: 1.45; color: var(--muted);
+    text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .result-row .row-menu-btn { grid-area: menu; align-self: start; width: 44px; height: 44px; margin: -4px -4px 0 0;
+    font-size: 20px; }
+  .result-row .card-body { grid-column: 1 / -1; padding: 0 0 2px 48px; }
+  .result-row-sub { min-height: 24px; gap: 8px; font-size: 12px; }
+  .result-row-sub .ok { color: var(--success); }
+  .result-row-sub .err { color: var(--warm-ink); white-space: nowrap; }
+  .row-preview { color: var(--primary); font-size: 12px; padding: 4px 2px; min-height: 28px; }
+  .result-row .warnings { margin: 2px 0; }
+  .result-row.failed .row-error { color: var(--warm-ink); }
+  .result-row.failed { background: color-mix(in srgb, var(--result-surface) 72%, transparent); }
+  .row-menu { top: 56px; right: 8px; border-color: var(--card-border); background: var(--settings-surface); }
+
+  /* ── 文件列表（390 下普通行 ~62；长名/失效可撑高）── */
+  .files-list { gap: 8px; }
+  .file-row { min-height: 62px; padding: 8px; gap: 4px; border: 1px solid var(--card-border);
+    border-radius: 14px; background: var(--file-surface); box-shadow: none; }
+  .file-row:active { background: color-mix(in srgb, var(--file-surface) 80%, var(--icon-bg)); }
+  .file-row.invalid { opacity: 1; background: color-mix(in srgb, var(--file-surface) 70%, transparent); }
+  .file-row.invalid .file-name { color: var(--muted); }
+  .file-row.invalid .file-icon, .file-row.invalid .file-meta { color: var(--warm); }
+  .file-row.highlight { outline: 0; border-color: var(--primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
+    animation: locate-file 1.3s ease-out; }
+  @keyframes locate-file { 0%, 30% { border-color: var(--primary); } to { border-color: var(--card-border); } }
+  .file-icon { width: 34px; height: 36px; margin: 0 4px; border-radius: 9px;
+    background: color-mix(in srgb, var(--icon-bg) 60%, transparent); color: var(--primary); }
+  .file-main { min-height: 44px; gap: 4px; }
+  .file-name { font-size: 14px; font-weight: 550; line-height: 1.45; white-space: normal;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    overflow-wrap: anywhere; }
+  .file-meta { margin-top: 4px; font-size: 11px; line-height: 1.45; }
+  .file-share, .row-action.icon-only { width: 44px; height: 44px; border: 0; background: transparent;
+    color: var(--muted); border-radius: 10px; }
+
+  /* ── 设置页 ── */
+  .sect { margin-top: 22px; }
+  .sect-head h2, .sect-title { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .list { border: 1px solid var(--card-border); border-radius: 18px; background: var(--settings-surface); box-shadow: none; }
+  .row { min-height: 73px; padding: 14px 16px; background: transparent; }
+  .row + .row { border-top-color: var(--soft-border); }
+  .row-name { font-size: 14px; font-weight: 500; }
+  .row-sub { margin-top: 3px; font-size: 11px; line-height: 1.7; }
+  .seg { gap: 6px; padding: 4px; border: 1px solid var(--card-border); border-radius: 14px; background: var(--settings-surface); }
+  .seg-btn { border: 0; border-radius: 10px; background: transparent; color: var(--muted); font-size: 13px; }
+  .seg-btn[aria-pressed="true"] { background: var(--icon-bg); color: var(--primary); font-weight: 600; }
+
+  /* ── 底部导航：单枚胶囊横移（marker 由 syncTabButtons 计算宽度/位移）── */
+  .navbar { left: 20px; right: 20px; bottom: calc(10px + var(--safe-bottom)); height: 64px; padding: 8px;
+    border: 1px solid color-mix(in srgb, var(--border) 85%, transparent); border-radius: 999px;
+    background: color-mix(in srgb, var(--nav) 84%, transparent);
+    box-shadow: 0 8px 24px #0002, inset 0 1px 0 #ffffff04;
+    -webkit-backdrop-filter: blur(12px) saturate(115%); backdrop-filter: blur(12px) saturate(115%); }
+  [data-theme="light"] .navbar { background: #ffffffe0; border-color: #c8d6e5;
+    box-shadow: 0 3px 10px #223d6210, inset 0 1px 0 #ffffff; }
+  .nav-marker { position: absolute; z-index: 0; top: 9px; left: 0; width: 0; height: 44px; border-radius: 999px;
+    background: var(--icon-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent);
+    transition: transform 280ms cubic-bezier(.2, .9, .2, 1), width 180ms; pointer-events: none; }
+  [data-theme="light"] .nav-marker { background: #e0eaf7; box-shadow: inset 0 0 0 1px #adc4e34d; }
+  .navitem { z-index: 1; flex-direction: row; gap: 7px; height: 44px; min-height: 44px; padding: 0 6px; font-size: 12px; }
+  .navitem .nav-pill { width: 22px; height: 24px; border-radius: 0; background: transparent; }
+  .navitem[aria-selected="true"] .nav-pill { background: transparent; }
+  .navitem .nav-label { font-size: 12px; letter-spacing: 0; }
+
+  /* ── 预览覆盖层：轻微上滑（位移用 margin，避免 keyframes transform 触发 css-guard C1）── */
+  .md-viewer { animation: viewer-in 260ms cubic-bezier(.2, .7, .2, 1); }
+  @keyframes viewer-in { from { opacity: 0; margin-top: 18px; } to { opacity: 1; margin-top: 0; } }
+
+  /* ── 批量条：与结果卡同一层玻璃，主按钮统一 primary/on-primary ── */
+  .batch-bar { left: 20px; right: 20px; border-radius: 18px; background: var(--settings-surface);
+    border-color: var(--card-border); box-shadow: 0 12px 32px #0003; }
+  .batch-actions .btn { min-height: 46px; border-radius: 12px; }
+  .batch-actions .btn.primary, #batchSave { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+  @media (max-width: 370px) {
+    .appbar { padding-left: 17px; padding-right: 17px; }
+    .content { --content-pad-x: 17px; }
+    .navitem .nav-label { font-size: 11px; }
+    .file-row { padding: 7px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  }
 </style>
 </head>
 
@@ -719,6 +928,30 @@
 </header>
 
 <div class="sky" aria-hidden="true"><div class="sky-day"></div><div class="sky-night"></div></div>
+<!-- 卡 068 · 环境星点层（留白版）：文件/设置页降到更淡，转换/结果页更明显；呼吸在结果/处理中暂停 -->
+<svg class="ambient" viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <g class="distant">
+    <circle cx="31" cy="122" r=".7"/><circle cx="175" cy="132" r=".6"/>
+    <circle cx="345" cy="164" r=".7"/><circle cx="91" cy="225" r=".65"/>
+    <circle cx="22" cy="278" r=".8"/><circle cx="161" cy="254" r=".6"/>
+    <circle cx="366" cy="294" r=".65"/><circle cx="129" cy="330" r=".7"/>
+    <circle cx="49" cy="374" r=".6"/><circle cx="306" cy="401" r=".7"/>
+    <circle cx="20" cy="459" r=".65"/><circle cx="110" cy="440" r=".65"/>
+    <circle cx="354" cy="483" r=".75"/><circle cx="185" cy="510" r=".6"/>
+    <circle cx="76" cy="548" r=".7"/><circle cx="312" cy="561" r=".7"/>
+    <circle cx="28" cy="606" r=".65"/><circle cx="145" cy="632" r=".75"/>
+    <circle cx="368" cy="651" r=".7"/><circle cx="240" cy="703" r=".6"/>
+    <circle cx="17" cy="746" r=".75"/><circle cx="376" cy="784" r=".65"/>
+  </g>
+  <g class="near">
+    <circle cx="323" cy="216" r="1.05"/><circle cx="59" cy="304" r="1"/>
+    <circle cx="167" cy="368" r=".9"/><circle cx="336" cy="439" r="1.05"/>
+    <circle cx="43" cy="503" r=".95"/><circle cx="276" cy="603" r="1"/>
+    <circle cx="91" cy="680" r=".9"/>
+  </g>
+  <path class="trace" d="m23 397 36 29 28-12 32 36"/>
+  <path class="glint" d="M351 245v6m-3-3h6M135 557v5m-2.5-2.5h5"/>
+</svg>
   <div class="art" aria-hidden="true">
       <svg class="orion" viewBox="0 0 200 300" fill="none">
         <g stroke="var(--star-line)" stroke-opacity="var(--line-opacity)" stroke-width=".6">
@@ -881,6 +1114,7 @@
 </main>
 
 <nav class="navbar" role="tablist" aria-label="主导航">
+  <span class="nav-marker" id="navMarker" aria-hidden="true"></span>
   <button class="navitem" type="button" role="tab" id="tab-convert" data-tab="convert" aria-controls="panel-convert" aria-selected="true">
     <span class="nav-pill"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h12l-3-3"/><path d="M20 16H8l3 3"/></svg></span><span class="nav-label">转换</span>
   </button>

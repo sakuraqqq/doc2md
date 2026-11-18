@@ -35,6 +35,7 @@ const mdViewerExt = $('#mdViewerExt');
 const mdViewerCopy = $('#mdViewerCopy');
 const mdViewerDownload = $('#mdViewerDownload');
 const pickerTitle = $('#pickerTitle');
+const pickBtn = $('#pickBtn');
 const resultsPanel = $('#resultsPanel');
 const resultsCount = $('#resultsCount');
 const resultsNoMatch = $('#resultsNoMatch');
@@ -419,6 +420,8 @@ function updateResultsChrome() {
   document.body.classList.toggle('has-results', hasResults);
   paintSearchChrome();
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
+  /* 卡 068 · A3：有结果后主按钮文案与「继续添加」一致（同一颗 primary） */
+  if (pickBtn) pickBtn.textContent = hasResults ? '继续添加文档' : '选择文件';
   const lastSect = document.getElementById('lastTitle');
   if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = hasResults;
   resultsCount.textContent = '已完成 ' + resultRows.length + ' 个文件';
@@ -932,13 +935,20 @@ function toggleRowMenu(row) {
   const first = row.menu.querySelector('button');
   if (first) first.focus();
 }
-function typeLabel(result, success) {
-  if (!success) return '失败';
-  return (result.meta.type || '?').toUpperCase();
+function durationText(ms) {
+  const n = Number(ms) || 0;
+  if (n <= 0) return '';
+  if (n < 100) return n + ' ms';
+  return (n / 1000).toFixed(1) + ' s';
 }
+/* 卡 068 · A3：结果行第二行 = 类型 · 大小 · 真实耗时（≥100ms 用秒；<100ms 保留毫秒更可读） */
 function metaText(file, result) {
-  const ms = result.meta.elapsedMs ? ' · ' + result.meta.elapsedMs + ' ms' : '';
-  return fmtSize(file.size) + ms;
+  const meta = (result && result.meta) || {};
+  const type = meta.type ? String(meta.type).toUpperCase() : '未知';
+  const parts = [type, fmtSize(file.size)];
+  const dur = durationText(meta.elapsedMs);
+  if (dur) parts.push(dur);
+  return parts.join(' · ');
 }
 function makeRowHead(row) {
   const head = document.createElement('div');
@@ -953,16 +963,11 @@ function makeRowHead(row) {
   name.className = 'name';
   name.textContent = row.file.name;
   name.title = row.file.name;
-  const chip = document.createElement('span');
-  chip.className = 'chip';
-  if (!row.success) chip.classList.add('err');
-  chip.textContent = typeLabel(row.result, row.success);
   const meta = document.createElement('span');
   meta.className = 'meta';
   meta.textContent = metaText(row.file, row.result);
   head.appendChild(checkbox);
   head.appendChild(name);
-  head.appendChild(chip);
   head.appendChild(meta);
   return head;
 }
@@ -975,13 +980,7 @@ function makeRowBody(row) {
   status.className = row.success ? 'ok' : 'err';
   status.textContent = row.success ? 'Markdown 已就绪' : '转换失败';
   sub.appendChild(status);
-  if (!row.success) {
-    const err = document.createElement('div');
-    err.className = 'warnings';
-    err.style.color = 'var(--err)';
-    err.textContent = '❌ ' + row.result.error;
-    sub.appendChild(err);
-  } else {
+  if (row.success) {
     const preview = document.createElement('button');
     preview.type = 'button';
     preview.className = 'row-preview';
@@ -1000,6 +999,13 @@ function makeRowBody(row) {
     body.appendChild(ta);
   }
   body.insertBefore(sub, body.firstChild);
+  /* 卡 068 · A3：失败原因单独一行（不挤在状态行里，状态不竖排）；颜色走 .warnings，⛔ 不再写未声明变量 --err */
+  if (!row.success) {
+    const err = document.createElement('div');
+    err.className = 'warnings row-error';
+    err.textContent = '❌ ' + row.result.error;
+    body.appendChild(err);
+  }
   if (row.result.meta.warnings && row.result.meta.warnings.length) {
     const w = document.createElement('div');
     w.className = 'warnings';
@@ -1087,18 +1093,62 @@ function panelOf(tab) {
   const id = tab.getAttribute('aria-controls');
   return id ? document.getElementById(id) : null;
 }
-/** aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面） */
+/** 卡 068 · A5：单枚胶囊横移 —— 宽度与位移按当前 Tab 实测（不依赖固定等分） */
+function updateNavMarker(target) {
+  const marker = document.getElementById('navMarker');
+  if (!navEl || !marker || !target) return;
+  const bar = navEl.getBoundingClientRect();
+  const tab = target.getBoundingClientRect();
+  if (!bar.width || !tab.width) return;
+  marker.style.width = (tab.width - 4) + 'px';
+  marker.style.transform = 'translateX(' + (tab.left - bar.left + 2) + 'px)';
+}
+/** 卡 068 · A5：新面板入场（160ms 透明度；减少动态效果时即时） */
+function enterPanel(panel, reduce) {
+  panel.getAnimations().forEach((a) => a.cancel());
+  panel.classList.remove('leaving');
+  panel.classList.add('active');
+  panel.removeAttribute('hidden');
+  panel.inert = false;
+  panel.style.opacity = '';
+  if (!reduce) panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: 'ease-out' });
+}
+/** 卡 068 · A5：旧面板退场（120ms 透明度 + 绝对定位，不挤占新面板；pointer-events:none） */
+function leavePanel(panel, reduce) {
+  panel.classList.remove('active');
+  panel.inert = true;
+  panel.getAnimations().forEach((a) => a.cancel());
+  if (reduce || typeof panel.animate !== 'function') {
+    panel.classList.remove('leaving');
+    panel.setAttribute('hidden', '');
+    panel.style.opacity = '';
+    return;
+  }
+  panel.classList.add('leaving');
+  const anim = panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: 'ease-out' });
+  anim.onfinish = () => {
+    if (panel.classList.contains('active')) return;
+    panel.classList.remove('leaving');
+    panel.setAttribute('hidden', '');
+    panel.style.opacity = '';
+  };
+}
+/** aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面）
+ * 卡 068 · A5：切换改成「旧面板 120ms 退场（绝对定位不挤新面板）+ 新面板 160ms 入场」；
+ *   减少动态效果时即时切换。DOM 状态（active/hidden/aria）在切换当帧就是终态，
+ *   退场层只是视觉副本 —— 不拦截点击（pointer-events:none）。 */
 function syncTabButtons(target) {
+  const reduce = prefersReducedMotion();
   for (const t of tabButtons()) {
     const on = t === target;
     t.setAttribute('aria-selected', on ? 'true' : 'false');
     t.tabIndex = on ? 0 : -1;
     const panel = panelOf(t);
     if (!panel) continue;
-    panel.classList.toggle('active', on);
-    if (on) panel.removeAttribute('hidden');
-    else panel.setAttribute('hidden', '');
+    if (on) enterPanel(panel, reduce);
+    else if (panel.classList.contains('active') || !panel.hidden) leavePanel(panel, reduce);
   }
+  updateNavMarker(target);
 }
 
 /** 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。 */
@@ -1180,6 +1230,12 @@ function initTabs() {
     t.addEventListener('click', () => activateTab(t.dataset.tab));
   }
   if (navEl) navEl.addEventListener('keydown', onNavKey);
+  /* 卡 068 · A5：首帧与视口变化时重算胶囊（字体/安全区/横竖屏都会改变 Tab 宽度） */
+  const syncMarker = () => updateNavMarker(tabButtons().find((t) => t.getAttribute('aria-selected') === 'true'));
+  if (typeof window !== 'undefined') {
+    requestAnimationFrame(syncMarker);
+    window.addEventListener('resize', syncMarker);
+  }
 }
 function initTheme() {
   for (const b of document.querySelectorAll('[data-theme-set]')) {

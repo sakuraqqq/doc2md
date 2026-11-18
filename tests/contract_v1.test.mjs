@@ -6081,6 +6081,15 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
               labelled: p.map((x) => x.getAttribute('aria-labelledby')),
             };
           });
+        /* 卡 068 · A5：切页有 160ms 入场 / 120ms 退场交叉；等退场层收掉再断言终态（不放宽：仍是唯一面板可见）。 */
+        const settle = () =>
+          page.waitForFunction(
+            () =>
+              !document.querySelector('.tabpanel.leaving') &&
+              [...document.querySelectorAll('[role="tabpanel"]')].filter((p) => !p.hidden && getComputedStyle(p).display !== 'none').length === 1,
+            null,
+            { timeout: 3000 }
+          );
         const s0 = await state();
         assert.deepEqual(s0.sel, ['true', 'false', 'false'], '初始应停在「转换」');
         assert.deepEqual(s0.shown, [true, false, false], '初始只应显示转换面板');
@@ -6088,17 +6097,32 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.deepEqual(s0.labelled, ['tab-convert', 'tab-files', 'tab-settings'], '面板缺 aria-labelledby 或指向不对');
 
         await page.click('#tab-files');
+        await settle();
         const s1 = await state();
         assert.deepEqual(s1.sel, ['false', 'true', 'false'], '点「文件」后 aria-selected 未同步');
         assert.deepEqual(s1.shown, [false, true, false], '点「文件」后面板 visible 未同步');
 
         await page.focus('#tab-files');
         await page.keyboard.press('ArrowRight');
+        await settle();
         const s2 = await state();
         assert.deepEqual(s2.sel, ['false', 'false', 'true'], '方向键 → 未切到「设置」');
         await page.keyboard.press('ArrowLeft');
+        await settle();
         const s3 = await state();
         assert.deepEqual(s3.sel, ['false', 'true', 'false'], '方向键 ← 未切回「文件」');
+
+        /* 卡 068 · A5：单枚胶囊覆盖「图标 + 标签」，几何对齐当前 Tab（不是三等分硬编码）。
+         * 胶囊本身 280ms 横移（卡面要求），等它落定再量几何。 */
+        await page.waitForTimeout(320);
+        const marker = await page.evaluate(() => {
+          const m = document.getElementById('navMarker').getBoundingClientRect();
+          const t = document.querySelector('#tab-files').getBoundingClientRect();
+          return { mw: m.width, mx: m.left, tw: t.width, tx: t.left, count: document.querySelectorAll('#navMarker').length };
+        });
+        assert.equal(marker.count, 1, '导航胶囊不是单枚（#navMarker 数量=' + marker.count + '）');
+        assert.ok(Math.abs(marker.mw - (marker.tw - 4)) <= 1.5, '胶囊宽度未覆盖当前 Tab：' + JSON.stringify(marker));
+        assert.ok(Math.abs(marker.mx - (marker.tx + 2)) <= 1.5, '胶囊左缘未对齐当前 Tab：' + JSON.stringify(marker));
         assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
       });
 

@@ -18,26 +18,32 @@ export async function handleFiles(files) {
   const list = Array.from(files || []);
   if (list.length === 0) return;
   hintEl.style.display = 'none';
+  /* 卡 068 · A2：真实转换期间降低背景强度并暂停星点呼吸；成功/失败收尾都退出处理态。 */
+  document.body.classList.add('is-busy');
   setStatus('正在处理 ' + list.length + ' 个文件…');
   let ok = 0;
   /* 卡 044（A5）：收集【成功项】供「全部保存」用 —— ⚠️ 逐文件隔离语义不变：
    * 仍在同一个 for 里逐个 await；单件异常仍由 processOne 兜住，绝不打断整批。 */
   const saved = [];
-  for (const file of list) {
-    const r = await processOne(file);
-    if (r && !r.error) {
-      ok++;
-      saved.push({ fileName: file.name, text: r.markdown });
+  try {
+    for (const file of list) {
+      const r = await processOne(file);
+      if (r && !r.error) {
+        ok++;
+        saved.push({ fileName: file.name, text: r.markdown });
+      }
     }
+    const failed = list.length - ok;
+    renderBatchSave(saved); // 卡 044：≥2 个成功结果时出现「全部保存」入口（实现在 ui.js）
+    setStatus(
+      failed === 0
+        ? '完成：共 ' + list.length + ' 个文件。'
+        : '完成：' + ok + ' 成功 / ' + failed + ' 失败（共 ' + list.length + ' 个文件）。',
+      failed > 0
+    );
+  } finally {
+    document.body.classList.remove('is-busy');
   }
-  const failed = list.length - ok;
-  renderBatchSave(saved); // 卡 044：≥2 个成功结果时出现「全部保存」入口（实现在 ui.js）
-  setStatus(
-    failed === 0
-      ? '完成：共 ' + list.length + ' 个文件。'
-      : '完成：' + ok + ' 成功 / ' + failed + ' 失败（共 ' + list.length + ' 个文件）。',
-    failed > 0
-  );
 }
 
 /* 单文件处理（R9-1，2026-09-18）：失败就地隔离 —— 不许打断整批、不许让状态栏停在「正在处理」。
