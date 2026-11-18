@@ -4514,6 +4514,10 @@ ${xlsxRowsToMd(kept)}`);
   function clearPanelOverride(panel) {
     for (const k of PANEL_LEAVE_KEYS) panel.style[k] = "";
   }
+  function snapshotPanel(panel) {
+    const r = panel.getBoundingClientRect();
+    return { top: r.top, left: r.left, width: r.width, height: r.height, display: getComputedStyle(panel).display };
+  }
   function enterPanel(panel, reduce) {
     panel.getAnimations().forEach((a) => a.cancel());
     clearPanelOverride(panel);
@@ -4524,9 +4528,7 @@ ${xlsxRowsToMd(kept)}`);
     panel.style.opacity = "";
     if (!reduce) panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: "ease-out" });
   }
-  function leavePanel(panel, reduce) {
-    const rect = panel.getBoundingClientRect();
-    const display = getComputedStyle(panel).display;
+  function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
     panel.classList.remove("active");
     panel.inert = true;
     panel.getAnimations().forEach((a) => a.cancel());
@@ -4539,13 +4541,13 @@ ${xlsxRowsToMd(kept)}`);
     }
     panel.classList.add("leaving");
     panel.style.position = "fixed";
-    panel.style.top = rect.top + "px";
+    panel.style.top = snap.top + "px";
     panel.style.right = "auto";
     panel.style.bottom = "auto";
-    panel.style.left = rect.left + "px";
-    panel.style.width = rect.width + "px";
-    panel.style.height = rect.height + "px";
-    panel.style.display = display;
+    panel.style.left = snap.left + "px";
+    panel.style.width = snap.width + "px";
+    panel.style.height = snap.height + "px";
+    panel.style.display = snap.display;
     panel.style.overflow = "hidden";
     panel.style.margin = "0";
     panel.style.zIndex = "1";
@@ -4560,15 +4562,19 @@ ${xlsxRowsToMd(kept)}`);
   }
   function syncTabButtons(target) {
     const reduce = prefersReducedMotion();
+    const toEnter = [];
+    const toLeave = [];
     for (const t of tabButtons()) {
       const on = t === target;
       t.setAttribute("aria-selected", on ? "true" : "false");
       t.tabIndex = on ? 0 : -1;
       const panel = panelOf(t);
       if (!panel) continue;
-      if (on) enterPanel(panel, reduce);
-      else if (panel.classList.contains("active") || !panel.hidden) leavePanel(panel, reduce);
+      if (on) toEnter.push(panel);
+      else if (panel.classList.contains("active") || !panel.hidden) toLeave.push({ panel, snap: snapshotPanel(panel) });
     }
+    for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
+    for (const panel of toEnter) enterPanel(panel, reduce);
     updateNavMarker(target);
   }
   function afterTabChange(active) {

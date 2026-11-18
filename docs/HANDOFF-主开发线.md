@@ -333,7 +333,7 @@
 - 依据：调度卡 068；小样 `index-refined.html` **75,602 B / `F7F30E66…`**、对照 PNG **425,104 B / `322E1E2B…`**（开工回读一致）。067 暂停，无 067 分支。
 - 落地：三页留白版（首页星图/底部蓝晕/偏右猎户座；文件/设置降背景；结果卡名/元数据/状态三层；文件行 62px；单枚 `#navMarker` 280ms 横移；面板 160/120ms 交叉；主题圆形揭示沿用；预览轻微上滑；忙态 `is-busy` 暂停呼吸）。
 - 证据：A1–A7 截图/录像/状态 JSON 在 `.私档/卡/068/evidence/`（含 WSL Chromium 151 换环境 A5/A6 一致）；真机 **V2573A / Android 16 / WebView 157.0.8103.38**，安全区 38/18，六张截图双端 SHA 一致。
-- **时点值（仅对账）**：`index.html` **316,622 B / `3DE214FE978182E009D1BBE2D264BD5F90D435C1AF36F576B36F9A8B52217576`**；debug APK **22,962,421 B / `BEF71C78777C83A5D88CA8EF41C4DF3FB71C7328A781AA1094D03DBB917FC141`**；契约 **413/411/0/2**；`pwa-audit` **62/0**；metrics **37/1158/0/0.5%**。
-- **2026-11-19 切页闪烁修复**：退场层去掉 `.active` 后先被重排（转换页 520→106 高、x 20→40），随后 `hidden` ⇒ 旧页以错误布局闪一下、新页才淡入。修法 = 改类前抓 rect/display，退场期 `position:fixed` 钉在原位，结束清内联；Z6-1 增「退场层 rect/display 不变」断言（pre-fix `74c04c4` 必红：`[40,74,350,106.4]` / relative）。红绿证据 `evidence/red-green-flash.json`。
+- **时点值（仅对账）**：`index.html` **316,959 B / `913B9866E341EED7F294424EB174BA49C549ADB9C9BD8FDC6E06C3E32FAFCA32`**；debug APK **22,962,540 B / `FC8703CDCB28760A4CF461143C3E1CE453AA334045BB8AB8172E322360A925F9`**；契约 **413/411/0/2**；`pwa-audit` **62/0**；metrics **37/1159/0/0.5%**。
+- **2026-11-19 切页闪烁修复（两类）**：① 退场层去掉 `.active` 后先被重排（转换页 520→106 高、x 20→40），随后 `hidden` ⇒ 旧页以错误布局闪一下；② 原循环先入场后抓旧面板 rect，新页在旧页上方时把旧 rect 推下（files→convert +520 / settings→files +357）⇒ fixed 钉错位置。修法 = **先快照全部退场面板（rect+display）→ 统一 fixed 退场 → 再入场**，结束清内联；Z6-1 扩到**全部 6 个方向**的「退场层 rect/display 不变」断言（pre-fix `74c04c4` / `c17e04f` 分别必红）。红绿证据 `evidence/red-green-flash.json` / `red-green-flash2.json`。
 - 断言过户：只迁移 **Z6-1**（过渡落定后唯一可见 + `#navMarker` 几何），契约数不变；`docs/BASELINE.json` 无当前产物字段 ⇒ 计数/交付面未变，本卡不改。
 - ⛔ 未 push / tag / 发布（分支 `ui/068-starry-refinement` 仅本地）。

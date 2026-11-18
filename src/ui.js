@@ -1108,6 +1108,11 @@ const PANEL_LEAVE_KEYS = ['position', 'top', 'right', 'bottom', 'left', 'width',
 function clearPanelOverride(panel) {
   for (const k of PANEL_LEAVE_KEYS) panel.style[k] = '';
 }
+/** 在**任何布局改动之前**快照：rect + display。 */
+function snapshotPanel(panel) {
+  const r = panel.getBoundingClientRect();
+  return { top: r.top, left: r.left, width: r.width, height: r.height, display: getComputedStyle(panel).display };
+}
 /** 卡 068 · A5：新面板入场（160ms 透明度；减少动态效果时即时） */
 function enterPanel(panel, reduce) {
   panel.getAnimations().forEach((a) => a.cancel());
@@ -1120,12 +1125,10 @@ function enterPanel(panel, reduce) {
   if (!reduce) panel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160, easing: 'ease-out' });
 }
 /** 卡 068 · A5：旧面板退场（120ms 透明度）
- *  ⚠️ 2026-11-19 修复：不能只加 `.leaving` —— 去掉 `.active` 会先触发一次重排
- *  （转换页高度 520→106、x 20→40），旧面板以自己的新布局闪一下，新面板才淡入一半。
- *  做法：**改类之前**抓原 rect + display，退场期间用 fixed 原样钉在视口原位，结束再清。 */
-function leavePanel(panel, reduce) {
-  const rect = panel.getBoundingClientRect();
-  const display = getComputedStyle(panel).display;
+ *  ⚠️ 不能只加 `.leaving`：去掉 `.active` 会先触发重排，旧面板以新布局闪一下。
+ *  ⚠️ rect 必须由调用方在**新面板入场之前**快照 —— 否则新面板在上方时会把旧面板推下去。
+ *  做法：退场期 `position:fixed` + 快照 rect 钉在视口原位，结束再清。 */
+function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
   panel.classList.remove('active');
   panel.inert = true;
   panel.getAnimations().forEach((a) => a.cancel());
@@ -1138,13 +1141,13 @@ function leavePanel(panel, reduce) {
   }
   panel.classList.add('leaving');
   panel.style.position = 'fixed';
-  panel.style.top = rect.top + 'px';
+  panel.style.top = snap.top + 'px';
   panel.style.right = 'auto';
   panel.style.bottom = 'auto';
-  panel.style.left = rect.left + 'px';
-  panel.style.width = rect.width + 'px';
-  panel.style.height = rect.height + 'px';
-  panel.style.display = display;
+  panel.style.left = snap.left + 'px';
+  panel.style.width = snap.width + 'px';
+  panel.style.height = snap.height + 'px';
+  panel.style.display = snap.display;
   panel.style.overflow = 'hidden';
   panel.style.margin = '0';
   panel.style.zIndex = '1';
@@ -1158,20 +1161,25 @@ function leavePanel(panel, reduce) {
   };
 }
 /** aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面）
- * 卡 068 · A5：切换改成「旧面板 120ms 退场（绝对定位不挤新面板）+ 新面板 160ms 入场」；
+ * 卡 068 · A5：切换改成「旧面板 120ms 退场（fixed 锁原位）+ 新面板 160ms 入场」；
  *   减少动态效果时即时切换。DOM 状态（active/hidden/aria）在切换当帧就是终态，
- *   退场层只是视觉副本 —— 不拦截点击（pointer-events:none）。 */
+ *   退场层只是视觉副本 —— 不拦截点击（pointer-events:none）。
+ *   ⚠️ 2026-11-19：必须**先快照/退场、后入场**，否则新面板插入上方会推动旧面板的 rect。 */
 function syncTabButtons(target) {
   const reduce = prefersReducedMotion();
+  const toEnter = [];
+  const toLeave = [];
   for (const t of tabButtons()) {
     const on = t === target;
     t.setAttribute('aria-selected', on ? 'true' : 'false');
     t.tabIndex = on ? 0 : -1;
     const panel = panelOf(t);
     if (!panel) continue;
-    if (on) enterPanel(panel, reduce);
-    else if (panel.classList.contains('active') || !panel.hidden) leavePanel(panel, reduce);
+    if (on) toEnter.push(panel);
+    else if (panel.classList.contains('active') || !panel.hidden) toLeave.push({ panel, snap: snapshotPanel(panel) });
   }
+  for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
+  for (const panel of toEnter) enterPanel(panel, reduce);
   updateNavMarker(target);
 }
 

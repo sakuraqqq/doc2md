@@ -707,7 +707,7 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
 | Z6-0 | 底部导航 `role="tablist"` + 恰 3 个 `role="tab"` + 每个 tab 有 `aria-controls` | 源码静态 | ✅ 绿（**先红**：`源码没有 role="tablist" —— 三 Tab 骨架未落地（改前实测 0 命中）`） |
-| Z6-1 | 三 Tab 可切换：`aria-selected` 与面板 visible 同步；左右方向键可切；面板有 `role=tabpanel` + `aria-labelledby`；**卡 068 起**：切页有 160ms 入场 / 120ms 退场交叉（退场层 `pointer-events:none`、`inert`），断言在过渡落定后仍须**唯一面板可见**；`#navMarker` 单枚胶囊宽度 = 当前 Tab 宽 − 4、左缘 = Tab 左缘 + 2（280ms 横移后量）；**退场层必须保持原 rect + display**（去掉 `.active` 先重排会闪旧布局） | 运行时 DOM | ✅ 绿（068 扩判据） |
+| Z6-1 | 三 Tab 可切换：`aria-selected` 与面板 visible 同步；左右方向键可切；面板有 `role=tabpanel` + `aria-labelledby`；**卡 068 起**：切页有 160ms 入场 / 120ms 退场交叉（退场层 `pointer-events:none`、`inert`），断言在过渡落定后仍须**唯一面板可见**；`#navMarker` 单枚胶囊宽度 = 当前 Tab 宽 − 4、左缘 = Tab 左缘 + 2（280ms 横移后量）；**退场层必须保持原 rect + display**（去掉 `.active` 先重排会闪旧布局；且必须**先快照后退场**，新页在旧页上方时会把旧 rect 推下）；断言覆盖**全部 6 个方向** | 运行时 DOM | ✅ 绿（068 扩判据） |
 | Z6-2 | 首屏无 hero：无面板内 `header h1` / 无 `.badges`·`.badge` / `#dropzone` 非虚线；app bar 标题 = 「文转MD助手」；选择卡片含「选择文档」+ 格式 + 50 MB + 本地处理；高度 <200px（紧凑卡，不占首屏）；**2026-11-11 起首屏顺序反转：选择卡沉底（在上次转换之下）**，原「上次转换在其下」句作废（用户拍板：单手可及） | 运行时 DOM | ✅ 绿（R3 紧凑卡） |
 | Z6-3 | 页脚信息只在「设置 › 关于」：全页无 `<footer>`；`#panel-convert` 不含版本/许可；`#panel-settings` 含版本与许可 | 运行时 DOM | ✅ 绿 |
 | Z6-4 | 文件页空态：`#filesEmpty` 可见 + 含「还没有转换记录」+ `#panel-files` **无** `.card`（⛔ 假数据）；`#goConvert` 跳回转换 Tab（卡 060 更新：空态三分——`filesEmptyCleared` / `filesEmptySearch` / `filesError` 默认全隐藏；搜索框默认收起） | 运行时 DOM | ✅ 绿 |
