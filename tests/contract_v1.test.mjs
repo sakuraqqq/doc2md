@@ -6246,6 +6246,57 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         });
         assert.ok(reclickMin >= 0.99, '重复点当前 Tab 时面板被淡出（最低 opacity=' + reclickMin + '）');
 
+        /* 卡 068 返修 R8：跟随系统以原生 uiMode 为准（真机 WebView 的 mq 恒暗） */
+        const themeWithNative = async (mq, nativeTheme) => {
+          await page.emulateMedia({ colorScheme: mq });
+          await page.waitForTimeout(120);
+          return page.evaluate(async (theme) => {
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            const prev = window.Capacitor;
+            window.Capacitor = {
+              Plugins: {
+                Doc2mdNative: {
+                  getSystemTheme: async () => ({ theme, uiMode: theme === 'dark' ? 33 : 17, isLightTheme: false }),
+                },
+              },
+            };
+            document.querySelector('[data-theme-set="system"]').click();
+            await sleep(650);
+            const out = { theme: document.documentElement.dataset.theme, mqLight: matchMedia('(prefers-color-scheme: light)').matches };
+            window.Capacitor = prev;
+            return out;
+          }, nativeTheme);
+        };
+        const nativeLight = await themeWithNative('dark', 'light');
+        assert.equal(nativeLight.theme, 'light', '原生 uiMode=light + mq=dark 时「跟随系统」未落浅色：' + JSON.stringify(nativeLight));
+        const nativeDark = await themeWithNative('light', 'dark');
+        assert.equal(nativeDark.theme, 'dark', '原生 uiMode=dark + mq=light 时「跟随系统」未落深色：' + JSON.stringify(nativeDark));
+        /* 桥不可用（老 APK / mq 缺失）⇒ 回落 matchMedia */
+        await page.emulateMedia({ colorScheme: 'light' });
+        await page.waitForTimeout(120);
+        const fallbackLight = await page.evaluate(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          const prev = window.Capacitor;
+          delete window.Capacitor;
+          document.querySelector('[data-theme-set="system"]').click();
+          await sleep(650);
+          const out = { theme: document.documentElement.dataset.theme, mqLight: matchMedia('(prefers-color-scheme: light)').matches, prev };
+          window.Capacitor = prev;
+          return out;
+        });
+        assert.equal(fallbackLight.theme, 'light', '无原生桥且 mq=light 时「跟随系统」未回落浅色：' + JSON.stringify(fallbackLight));
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.waitForTimeout(120);
+        const fallbackDark = await page.evaluate(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          delete window.Capacitor;
+          document.querySelector('[data-theme-set="system"]').click();
+          await sleep(650);
+          return { theme: document.documentElement.dataset.theme, mqLight: matchMedia('(prefers-color-scheme: light)').matches };
+        });
+        assert.equal(fallbackDark.theme, 'dark', '无原生桥且 mq=dark 时「跟随系统」未回落深色：' + JSON.stringify(fallbackDark));
+        await page.emulateMedia({ colorScheme: null });
+
         await page.focus('#tab-files');
         await page.keyboard.press('ArrowRight');
         await settle();

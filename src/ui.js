@@ -1260,8 +1260,30 @@ const themeMq = typeof window !== 'undefined' && window.matchMedia
   ? window.matchMedia('(prefers-color-scheme: light)')
   : null;
 let themeChoice = 'system';
+/* WebView 的 prefers-color-scheme 可能滞后于系统（真机实测：系统浅色时 mqDark=true），
+ * 所以原生壳里以 Doc2mdNative.getSystemTheme() 读 Activity 配置为准；桥不可用时才回落 mq。 */
+let nativeTheme = null;
+function nativeThemePlugin() {
+  const p = nativePluginObject();
+  return p && typeof p.getSystemTheme === 'function' ? p : null;
+}
+async function refreshNativeTheme() {
+  const p = nativeThemePlugin();
+  if (!p) {
+    nativeTheme = null;
+    return null;
+  }
+  try {
+    const r = await p.getSystemTheme();
+    if (r && (r.theme === 'light' || r.theme === 'dark')) nativeTheme = r.theme;
+  } catch {
+    nativeTheme = null;
+  }
+  return nativeTheme;
+}
 function resolveTheme(choice) {
   if (choice === 'light' || choice === 'dark') return choice;
+  if (nativeTheme === 'light' || nativeTheme === 'dark') return nativeTheme;
   return themeMq && themeMq.matches ? 'light' : 'dark';
 }
 function paintThemeButtons() {
@@ -1315,14 +1337,28 @@ function initTabs() {
     window.addEventListener('resize', syncMarker);
   }
 }
+function reapplySystemTheme() {
+  if (themeChoice !== 'system') return;
+  refreshNativeTheme().then(() => { if (themeChoice === 'system') applyTheme('system', false); });
+}
+function onNativeThemeChanged(data) {
+  if (data && (data.theme === 'light' || data.theme === 'dark')) nativeTheme = data.theme;
+  if (themeChoice === 'system') applyTheme('system', false);
+}
 function initTheme() {
   for (const b of document.querySelectorAll('[data-theme-set]')) {
-    b.addEventListener('click', () => switchTheme(b.dataset.themeSet, b));
+    b.addEventListener('click', () => switchTheme(b.dataset.themeSet, b).catch(() => applyTheme(b.dataset.themeSet, true)));
   }
-  if (!themeMq) return;
-  const onChange = () => { if (themeChoice === 'system') applyTheme('system', false); };
-  if (typeof themeMq.addEventListener === 'function') themeMq.addEventListener('change', onChange);
-  else if (typeof themeMq.addListener === 'function') themeMq.addListener(onChange);
+  if (themeMq) {
+    if (typeof themeMq.addEventListener === 'function') themeMq.addEventListener('change', reapplySystemTheme);
+    else if (typeof themeMq.addListener === 'function') themeMq.addListener(reapplySystemTheme);
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reapplySystemTheme(); });
+  }
+  const plugin = nativeThemePlugin();
+  if (plugin && typeof plugin.addListener === 'function') plugin.addListener('systemThemeChanged', onNativeThemeChanged);
+  reapplySystemTheme();
 }
 /** 主题切换的「圆形揭幕」（原型 v8 的艺术样式）：从被点的按钮位置绽开，380ms。
  * 不支持 View Transitions（或用户开了"减少动态效果"）时直接切 —— ⛔ 不因为动效把功能做挂。 */
@@ -1348,7 +1384,9 @@ function playReveal(vt, o) {
     );
   }).catch(() => { /* 过渡被取消不影响已生效的主题 */ });
 }
-export function switchTheme(choice, btn) {
+export async function switchTheme(choice, btn) {
+  /* 「跟随系统」先问原生：WebView 的 mq 在部分真机上恒暗，不能作为系统外观的唯一真相 */
+  if (choice === 'system') await refreshNativeTheme();
   if (typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
     applyTheme(choice, true);
     return null;

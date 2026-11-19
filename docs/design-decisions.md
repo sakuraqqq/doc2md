@@ -171,3 +171,10 @@
 - **上游依据**：Material Motion 的 **fade through** 就是为「弱关联页面（底部导航）」定的——旧页先淡出 **90ms**，新页再淡入 **210ms**（Material 另带 92%→100% 缩放；本仓 `#dropzone` 是 `fixed`，缩放会改变其定位，故只保留透明度），两页**不重叠**。[Material Motion 文档](https://raw.githubusercontent.com/material-components/material-components-android/474f912c22c3980af858c25bd43180cfa8692249/docs/theming/Motion.md#2) · [Flutter FadeThrough](https://pub.dev/documentation/transition_lab/latest/transition_lab/FadeThroughPageTransitionsBuilder-class.html#1) · [交叉淡入半透明叠影分析](https://stackoverflow.com/feeds/question/63972141#1)
 - **拍板**：采用 fade-through；这是对卡 068 A5「交叉淡入淡出」的**口径修订**，由用户 2026-11-19「看看业界上游…直接抄成熟做法，不要自己造轮子」触发。代价是中间一瞬背景（Material 的 “through”），比叠影可接受；减少动态效果仍即时切换。
 - **回声**：Z6-1 的 settle 改为等**动画全结束**（90+210=300ms）+ 新增「落定 opacity=1」断言（实现中 `clearPanelOverride` 漏了 `opacity`，动画结束后内联 `opacity:0` 会让新页消失）；契约数不变。
+
+## DD-22 · 跟随系统以原生 `uiMode` 为准（WebView 的 `prefers-color-scheme` 不可信）— 2026-11-19
+
+- **现象**：真机 V2573A / Android 16 / WebView 157 上，系统切浅色后 WebView 仍报 `matchMedia('(prefers-color-scheme: dark)').matches === true`；冷启动、清应用数据、页面 reload 都不恢复。点「跟随系统」因此恒落深色（卡 068 R8）。
+- **取证**：系统 `cmd uimode night` = `no`、`ui_night_mode=1`；Activity `CurrentConfiguration` 无 night；`Doc2mdNative.getSystemTheme()` 读到 `uiMode=17`（NIGHT_NO）而 `isLightTheme=false` ⇒ 归因 **WebView 运行时未同步 uiMode**（媒体查询来自启动主题/渲染器），不是 JS 分支错误。
+- **拍板**：原生壳的「跟随系统」以 **`Doc2mdNative.getSystemTheme()` 的 Activity `uiMode`** 为准；`MainActivity.onConfigurationChanged` → `notifyListeners('systemThemeChanged')` 推送。浏览器 / 老 APK（无该方法）才回落 matchMedia。⛔ 不改系统设置、不依赖 mq 的 change 事件。
+- **回声**：Z6-1 新增三态断言（原生 light + mq dark、原生 dark + mq light、无桥回落），不新增测试节点；真机 light/dark 自动跟随 + 点击跟随均实测；APK `22,964,094 B / E1A36F5B…`，包内 `assets/public/index.html` = 仓库 `323,128 B / 6982A78A…`。

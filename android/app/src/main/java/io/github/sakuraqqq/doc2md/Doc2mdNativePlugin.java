@@ -71,6 +71,7 @@ import java.util.List;
 public class Doc2mdNativePlugin extends Plugin {
 
     private static final String TAG = "Doc2mdNative";
+    private static Doc2mdNativePlugin themeInstance = null;
     private static final String PREFS = "doc2md";
     private static final String PREF_SELFTEST_DONE = "native_selftest_done";
     // 卡 044：保存落点 = Download/WenZhuanMD/（新建子目录，不再平铺在 Download 根）。
@@ -91,6 +92,7 @@ public class Doc2mdNativePlugin extends Plugin {
     // 阶段 0 临时验证钩子（阶段 1 拆）：插件加载即自测一次"写 Downloads"，把结果打进 logcat。
     @Override
     public void load() {
+        themeInstance = this;
         runSelftestOnce();
         // 卡 059 退回（F6）：冷启动的 launch intent 在这里**只发起一次后台读取**；紧接着 BridgeActivity.load()
         // 会把它再交给 handleOnNewIntent（8.5.2 L51）—— startOpenRead 按「action+uri」去重，保证只读一次。
@@ -127,6 +129,52 @@ public class Doc2mdNativePlugin extends Plugin {
         ret.put("pkg", getContext().getPackageName());
         ret.put("plugin", "Doc2mdNative");
         ret.put("impl", "stage0-skeleton");
+        call.resolve(ret);
+    }
+
+    // 卡 068 / R8：WebView 的 prefers-color-scheme 在部分真机上滞后（系统浅色仍报 dark）；
+    // 「跟随系统」以 Activity 的 uiMode 为准。返回 theme=light|dark + 诊断字段。
+    private JSObject readSystemTheme() {
+        JSObject ret = new JSObject();
+        Activity activity = getActivity();
+        Context ctx = getContext();
+        android.content.res.Configuration cfg =
+                (activity != null ? activity.getResources() : ctx.getResources()).getConfiguration();
+        boolean night = (cfg.uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        boolean isLightTheme = true;
+        try {
+            android.util.TypedValue tv = new android.util.TypedValue();
+            if (activity != null && activity.getTheme().resolveAttribute(android.R.attr.isLightTheme, tv, true)) {
+                isLightTheme = tv.data != 0;
+            }
+        } catch (Exception ignored) {
+            // 主题属性不可解析时以 uiMode 为准
+        }
+        ret.put("theme", night ? "dark" : "light");
+        ret.put("uiMode", cfg.uiMode);
+        ret.put("isLightTheme", isLightTheme);
+        ret.put("source", activity != null ? "activity" : "context");
+        return ret;
+    }
+
+    // MainActivity.onConfigurationChanged -> 通知已订阅的 Web 侧（系统外观实时跟随）
+    public static void publishSystemTheme() {
+        Doc2mdNativePlugin p = themeInstance;
+        if (p == null) return;
+        try {
+            JSObject data = p.readSystemTheme();
+            Log.i("Doc2mdTheme", "publishSystemTheme " + data.toString());
+            p.notifyListeners("systemThemeChanged", data, true);
+        } catch (Exception e) {
+            Log.w("Doc2mdTheme", "publishSystemTheme failed " + e);
+        }
+    }
+
+    @PluginMethod
+    public void getSystemTheme(PluginCall call) {
+        JSObject ret = readSystemTheme();
+        Log.i("Doc2mdTheme", "getSystemTheme " + ret.toString());
         call.resolve(ret);
     }
 
