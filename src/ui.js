@@ -1119,6 +1119,7 @@ function panelOpacity(panel) {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
 }
 function finishLeave(panel) {
+  leaveDeadline.delete(panel);
   panel.classList.remove('leaving');
   /* 先隐藏再清内联：WAAPI 结束后底层 opacity 会回弹到 1，清样式前必须已经不可见 */
   panel.setAttribute('hidden', '');
@@ -1131,9 +1132,12 @@ function finishLeave(panel) {
  *  ⚠️ 不缩放整块面板：面板里 `#dropzone` 是 fixed，transform 会把它变成相对面板定位而跳位。 */
 const ENTER_MS = 210;
 const LEAVE_MS = 90;
+/** 每次退场的结束时刻；中断时新面板按剩余退场时间入场，避免多等一个完整 90ms 出现空档。 */
+const leaveDeadline = new WeakMap();
 function enterPanel(panel, reduce, delay = 0) {
   const wasVisible = !panel.hidden && !panel.classList.contains('leaving');
   const from = wasVisible ? panelOpacity(panel) : 0;
+  leaveDeadline.delete(panel);
   panel.getAnimations().forEach((a) => a.cancel());
   clearPanelOverride(panel);
   panel.classList.remove('leaving');
@@ -1186,6 +1190,7 @@ function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
     finishLeave(panel);
     return;
   }
+  leaveDeadline.set(panel, performance.now() + LEAVE_MS);
   const anim = panel.animate([{ opacity: from }, { opacity: 0 }], { duration: LEAVE_MS, easing: 'cubic-bezier(.4,0,1,1)', fill: 'both' });
   anim.onfinish = () => {
     if (panel.classList.contains('active')) return;
@@ -1195,6 +1200,17 @@ function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
   };
 }
 /** 同步 aria/tabindex，并把「要入场的面板 / 要退场的面板（含退场前快照）」分桶。 */
+/** 中断 = 新的退场调度：入场只等还在退场的面板剩余时间，不再固定等满 90ms。 */
+function remainingLeaveDelay(reduce) {
+  if (reduce) return 0;
+  const now = performance.now();
+  let delay = 0;
+  for (const panel of document.querySelectorAll('.tabpanel')) {
+    const end = leaveDeadline.get(panel);
+    if (end) delay = Math.max(delay, end - now);
+  }
+  return Math.max(0, Math.min(LEAVE_MS, delay));
+}
 function collectTabPanels(target) {
   const toEnter = [];
   const toLeave = [];
@@ -1224,8 +1240,7 @@ function syncTabButtons(target) {
   const home = targetPanel && targetPanel.classList.contains('active') && !targetPanel.hidden &&
     !targetPanel.classList.contains('leaving') && toLeave.length === 0;
   for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
-  const delay = toLeave.length && !reduce ? LEAVE_MS : 0;
-  if (!home) for (const panel of toEnter) enterPanel(panel, reduce, delay);
+  if (!home) for (const panel of toEnter) enterPanel(panel, reduce, remainingLeaveDelay(reduce));
   updateNavMarker(target);
 }
 
@@ -1263,11 +1278,14 @@ let themeChoice = 'system';
 /* WebView 的 prefers-color-scheme 可能滞后于系统（真机实测：系统浅色时 mqDark=true），
  * 所以原生壳里以 Doc2mdNative.getSystemTheme() 读 Activity 配置为准；桥不可用时才回落 mq。 */
 let nativeTheme = null;
+let nativeThemeSeq = 0;
+let themeSeq = 0;
 function nativeThemePlugin() {
   const p = nativePluginObject();
   return p && typeof p.getSystemTheme === 'function' ? p : null;
 }
 async function refreshNativeTheme() {
+  const my = ++nativeThemeSeq;
   const p = nativeThemePlugin();
   if (!p) {
     nativeTheme = null;
@@ -1275,9 +1293,10 @@ async function refreshNativeTheme() {
   }
   try {
     const r = await p.getSystemTheme();
-    if (r && (r.theme === 'light' || r.theme === 'dark')) nativeTheme = r.theme;
+    /* 只接受最后一次请求：延迟返回的旧请求不得覆盖最新选择 */
+    if (my === nativeThemeSeq && r && (r.theme === 'light' || r.theme === 'dark')) nativeTheme = r.theme;
   } catch {
-    nativeTheme = null;
+    if (my === nativeThemeSeq) nativeTheme = null;
   }
   return nativeTheme;
 }
@@ -1339,11 +1358,17 @@ function initTabs() {
 }
 function reapplySystemTheme() {
   if (themeChoice !== 'system') return;
-  refreshNativeTheme().then(() => { if (themeChoice === 'system') applyTheme('system', false); });
+  const my = ++themeSeq;
+  refreshNativeTheme().then(() => {
+    if (my !== themeSeq || themeChoice !== 'system') return;
+    applyTheme('system', false);
+  });
 }
 function onNativeThemeChanged(data) {
   if (data && (data.theme === 'light' || data.theme === 'dark')) nativeTheme = data.theme;
-  if (themeChoice === 'system') applyTheme('system', false);
+  if (themeChoice !== 'system') return;
+  themeSeq += 1; // 原生推送是最新的事实，作废尚未返回的旧请求
+  applyTheme('system', false);
 }
 function initTheme() {
   for (const b of document.querySelectorAll('[data-theme-set]')) {
@@ -1385,8 +1410,10 @@ function playReveal(vt, o) {
   }).catch(() => { /* 过渡被取消不影响已生效的主题 */ });
 }
 export async function switchTheme(choice, btn) {
+  const my = ++themeSeq; // 最后一次点击胜出：显式选择会立即作废尚未返回的 system 请求
   /* 「跟随系统」先问原生：WebView 的 mq 在部分真机上恒暗，不能作为系统外观的唯一真相 */
   if (choice === 'system') await refreshNativeTheme();
+  if (my !== themeSeq) return null;
   if (typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
     applyTheme(choice, true);
     return null;

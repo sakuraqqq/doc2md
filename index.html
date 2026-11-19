@@ -132,7 +132,7 @@
   /* 选择卡：定位规则见下方 hero 块之后（必须晚于 .#dropzone 基础块，否则被覆盖） */
   .results-panel, .sect-last { order: 0; }
   #status, #hint { order: 1; }
-  body.has-results #status:not(.error) { display: none; }
+  body.has-results:not(.is-busy) #status:not(.error) { display: none; }
   /* 极简：可见结果 <2 且不在搜索态时收起搜索框与「已选择/全选」 */
   body.few-results .results-selectbar { display: none; }
 
@@ -193,7 +193,7 @@
   }
   body.has-batch #dropzone { display: none; }   /* 批量条打开时让位（ui.js 已维护 has-batch）*/
   body.few-results .results-search, body.few-results .results-selectbar { display: none; }
-  body.has-results #status:not(.error) { display: none; }
+  body.has-results:not(.is-busy) #status:not(.error) { display: none; }
 
   /* ── 区块 / 行 / 段控 ── */
   .sect { margin-top: 18px; }
@@ -4551,6 +4551,7 @@ ${xlsxRowsToMd(kept)}`);
     return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
   }
   function finishLeave(panel) {
+    leaveDeadline.delete(panel);
     panel.classList.remove("leaving");
     panel.setAttribute("hidden", "");
     clearPanelOverride(panel);
@@ -4558,9 +4559,11 @@ ${xlsxRowsToMd(kept)}`);
   }
   var ENTER_MS = 210;
   var LEAVE_MS = 90;
+  var leaveDeadline = /* @__PURE__ */ new WeakMap();
   function enterPanel(panel, reduce, delay = 0) {
     const wasVisible = !panel.hidden && !panel.classList.contains("leaving");
     const from = wasVisible ? panelOpacity(panel) : 0;
+    leaveDeadline.delete(panel);
     panel.getAnimations().forEach((a) => a.cancel());
     clearPanelOverride(panel);
     panel.classList.remove("leaving");
@@ -4609,6 +4612,7 @@ ${xlsxRowsToMd(kept)}`);
       finishLeave(panel);
       return;
     }
+    leaveDeadline.set(panel, performance.now() + LEAVE_MS);
     const anim = panel.animate([{ opacity: from }, { opacity: 0 }], { duration: LEAVE_MS, easing: "cubic-bezier(.4,0,1,1)", fill: "both" });
     anim.onfinish = () => {
       if (panel.classList.contains("active")) return;
@@ -4616,6 +4620,16 @@ ${xlsxRowsToMd(kept)}`);
       anim.cancel();
       finishLeave(panel);
     };
+  }
+  function remainingLeaveDelay(reduce) {
+    if (reduce) return 0;
+    const now = performance.now();
+    let delay = 0;
+    for (const panel of document.querySelectorAll(".tabpanel")) {
+      const end = leaveDeadline.get(panel);
+      if (end) delay = Math.max(delay, end - now);
+    }
+    return Math.max(0, Math.min(LEAVE_MS, delay));
   }
   function collectTabPanels(target) {
     const toEnter = [];
@@ -4639,8 +4653,7 @@ ${xlsxRowsToMd(kept)}`);
     const { toEnter, toLeave } = collectTabPanels(target);
     const home = targetPanel && targetPanel.classList.contains("active") && !targetPanel.hidden && !targetPanel.classList.contains("leaving") && toLeave.length === 0;
     for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
-    const delay = toLeave.length && !reduce ? LEAVE_MS : 0;
-    if (!home) for (const panel of toEnter) enterPanel(panel, reduce, delay);
+    if (!home) for (const panel of toEnter) enterPanel(panel, reduce, remainingLeaveDelay(reduce));
     updateNavMarker(target);
   }
   function afterTabChange(active) {
@@ -4672,11 +4685,14 @@ ${xlsxRowsToMd(kept)}`);
   var themeMq = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
   var themeChoice = "system";
   var nativeTheme = null;
+  var nativeThemeSeq = 0;
+  var themeSeq = 0;
   function nativeThemePlugin() {
     const p = nativePluginObject();
     return p && typeof p.getSystemTheme === "function" ? p : null;
   }
   async function refreshNativeTheme() {
+    const my = ++nativeThemeSeq;
     const p = nativeThemePlugin();
     if (!p) {
       nativeTheme = null;
@@ -4684,9 +4700,9 @@ ${xlsxRowsToMd(kept)}`);
     }
     try {
       const r = await p.getSystemTheme();
-      if (r && (r.theme === "light" || r.theme === "dark")) nativeTheme = r.theme;
+      if (my === nativeThemeSeq && r && (r.theme === "light" || r.theme === "dark")) nativeTheme = r.theme;
     } catch {
-      nativeTheme = null;
+      if (my === nativeThemeSeq) nativeTheme = null;
     }
     return nativeTheme;
   }
@@ -4750,13 +4766,17 @@ ${xlsxRowsToMd(kept)}`);
   }
   function reapplySystemTheme() {
     if (themeChoice !== "system") return;
+    const my = ++themeSeq;
     refreshNativeTheme().then(() => {
-      if (themeChoice === "system") applyTheme("system", false);
+      if (my !== themeSeq || themeChoice !== "system") return;
+      applyTheme("system", false);
     });
   }
   function onNativeThemeChanged(data) {
     if (data && (data.theme === "light" || data.theme === "dark")) nativeTheme = data.theme;
-    if (themeChoice === "system") applyTheme("system", false);
+    if (themeChoice !== "system") return;
+    themeSeq += 1;
+    applyTheme("system", false);
   }
   function initTheme() {
     for (const b of document.querySelectorAll("[data-theme-set]")) {
@@ -4797,7 +4817,9 @@ ${xlsxRowsToMd(kept)}`);
     });
   }
   async function switchTheme(choice, btn) {
+    const my = ++themeSeq;
     if (choice === "system") await refreshNativeTheme();
+    if (my !== themeSeq) return null;
     if (typeof document.startViewTransition !== "function" || prefersReducedMotion()) {
       applyTheme(choice, true);
       return null;

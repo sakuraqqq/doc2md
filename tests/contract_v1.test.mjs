@@ -6179,6 +6179,7 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
               const tick = () => {
                 const t = performance.now() - t0;
                 frames.push({
+                  t: Math.round(t),
                   o: panels.map((p) => +getComputedStyle(p).opacity),
                   cls: panels.map((p) => p.className),
                   hidden: panels.map((p) => p.hidden),
@@ -6194,6 +6195,8 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
           const analyze = (frames) => {
             let maxVisible = 0;
             let leaveRises = 0;
+            let blankMs = 0;
+            let blankStart = null;
             for (let i = 1; i < frames.length; i++) {
               const cur = frames[i];
               const prev = frames[i - 1];
@@ -6204,11 +6207,20 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
               for (let k = 0; k < cur.o.length; k++) {
                 if (/leaving/.test(cur.cls[k]) && cur.o[k] - prev.o[k] > 0.05) leaveRises++;
               }
+              const visMax = Math.max(0, ...cur.o.filter((o, k) => !cur.hidden[k] && cur.disp[k] !== 'none'));
+              if (visMax <= 0.001) {
+                if (blankStart === null) blankStart = cur.t;
+              } else {
+                if (blankStart !== null) blankMs = Math.max(blankMs, cur.t - blankStart);
+                blankStart = null;
+              }
             }
+            if (blankStart !== null) blankMs = Math.max(blankMs, frames[frames.length - 1].t - blankStart);
             const last = frames[frames.length - 1];
             return {
               maxVisible,
               leaveRises,
+              blankMs,
               visibleEnd: last.o.filter((o, k) => !last.hidden[k] && last.disp[k] !== 'none').length,
             };
           };
@@ -6224,6 +6236,7 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         for (const r of fastSwitch) {
           assert.equal(r.leaveRises, 0, '快切 ' + r.gap + 'ms：退场面板 opacity 反升（闪白/重影）—— ' + JSON.stringify(r));
           assert.ok(r.maxVisible <= 1, '快切 ' + r.gap + 'ms：两页同时不透明 —— ' + JSON.stringify(r));
+          assert.ok(r.blankMs <= 34, '快切 ' + r.gap + 'ms：内容区全透明窗口 ' + r.blankMs + 'ms（>2 帧）—— ' + JSON.stringify(r));
           assert.equal(r.visibleEnd, 1, '快切 ' + r.gap + 'ms 落定后不是唯一目标面板 —— ' + JSON.stringify(r));
         }
         /* D6：重复点当前 Tab 不得整页淡出再淡入 */
@@ -6295,6 +6308,41 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
           return { theme: document.documentElement.dataset.theme, mqLight: matchMedia('(prefers-color-scheme: light)').matches };
         });
         assert.equal(fallbackDark.theme, 'dark', '无原生桥且 mq=dark 时「跟随系统」未回落深色：' + JSON.stringify(fallbackDark));
+        /* R8 竞态：system 请求未返回时点「浅色」，旧请求不得覆盖最新选择 */
+        const themeRace = await page.evaluate(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          const prev = window.Capacitor;
+          let reply = null;
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                getSystemTheme: () => new Promise((resolve) => { reply = () => resolve({ theme: 'dark' }); }),
+                addListener: () => Promise.resolve({ remove: () => {} }),
+              },
+            },
+          };
+          const click = (choice) => document.querySelector('[data-theme-set="' + choice + '"]').click();
+          const read = () => ({
+            theme: document.documentElement.dataset.theme,
+            selected: document.querySelector('[data-theme-set][aria-pressed="true"]')?.dataset.themeSet,
+            stored: localStorage.getItem('doc2md-theme'),
+          });
+          click('system');
+          await sleep(80);
+          const pending = typeof reply === 'function';
+          click('light');
+          await sleep(40);
+          const before = read();
+          if (reply) reply();
+          await sleep(120);
+          const after = read();
+          window.Capacitor = prev;
+          return { pending, before, after };
+        });
+        assert.ok(themeRace.pending, '主题竞态探针前提不成立（原生请求未挂起）');
+        assert.equal(themeRace.after.theme, 'light', '延迟的 system 请求覆盖了最新浅色：' + JSON.stringify(themeRace));
+        assert.equal(themeRace.after.selected, 'light', '主题按钮选择被延迟请求改回 system：' + JSON.stringify(themeRace));
+        assert.equal(themeRace.after.stored, 'light', 'localStorage 被延迟请求覆盖：' + JSON.stringify(themeRace));
         await page.emulateMedia({ colorScheme: null });
 
         await page.focus('#tab-files');
@@ -7049,6 +7097,23 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.ok(first.html.includes('<h1'), '全屏预览未渲染标题');
         assert.equal(first.previewPressed, 'true', '默认「预览」未按下');
         assert.equal(first.rawPressed, 'false', '默认「原文」不应按下');
+        /* 卡 068 返修 R9：有结果时「正在处理」状态必须可见（旧规则 body.has-results #status 整条 display:none） */
+        const busyStatus = await page.evaluate(() => {
+          const s = document.getElementById('status');
+          const previous = s.textContent;
+          const hadBusy = document.body.classList.contains('is-busy');
+          const hadResults = document.body.classList.contains('has-results');
+          document.body.classList.add('has-results', 'is-busy');
+          s.textContent = '正在处理 1 个文件…';
+          const cs = getComputedStyle(s);
+          const out = { display: cs.display, height: s.getBoundingClientRect().height };
+          s.textContent = previous;
+          if (!hadBusy) document.body.classList.remove('is-busy');
+          if (!hadResults) document.body.classList.remove('has-results');
+          return out;
+        });
+        assert.notEqual(busyStatus.display, 'none', '有结果时「正在处理」状态被 display:none 隐藏：' + JSON.stringify(busyStatus));
+        assert.ok(busyStatus.height > 0, '有结果时「正在处理」状态高度为 0：' + JSON.stringify(busyStatus));
         /* 卡 068 返修 R6：浅色结果行不得被旧纸墨规则覆盖 */
         const lightRow = await page.evaluate(async () => {
           document.querySelector('[data-theme-set="light"]').click();

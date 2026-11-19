@@ -178,3 +178,4 @@
 - **取证**：系统 `cmd uimode night` = `no`、`ui_night_mode=1`；Activity `CurrentConfiguration` 无 night；`Doc2mdNative.getSystemTheme()` 读到 `uiMode=17`（NIGHT_NO）而 `isLightTheme=false` ⇒ 归因 **WebView 运行时未同步 uiMode**（媒体查询来自启动主题/渲染器），不是 JS 分支错误。
 - **拍板**：原生壳的「跟随系统」以 **`Doc2mdNative.getSystemTheme()` 的 Activity `uiMode`** 为准；`MainActivity.onConfigurationChanged` → `notifyListeners('systemThemeChanged')` 推送。浏览器 / 老 APK（无该方法）才回落 matchMedia。⛔ 不改系统设置、不依赖 mq 的 change 事件。
 - **回声**：Z6-1 新增三态断言（原生 light + mq dark、原生 dark + mq light、无桥回落），不新增测试节点；真机 light/dark 自动跟随 + 点击跟随均实测；APK `22,964,094 B / E1A36F5B…`，包内 `assets/public/index.html` = 仓库 `323,128 B / 6982A78A…`。
+- **第三轮补充（竞态）**：任何异步取系统外观都必须让「最后一次点击胜出」——`themeSeq` 作废旧 `switchTheme`，`nativeThemeSeq` 作废旧 `getSystemTheme` 回包；`systemThemeChanged` 推送视为最新事实并作废未返回请求。负例 = 去掉两层序号 ⇒ 延迟 `dark` 回包把 `light/system` 覆盖，探针必红。

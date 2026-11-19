@@ -132,7 +132,7 @@
   /* 选择卡：定位规则见下方 hero 块之后（必须晚于 .#dropzone 基础块，否则被覆盖） */
   .results-panel, .sect-last { order: 0; }
   #status, #hint { order: 1; }
-  body.has-results #status:not(.error) { display: none; }
+  body.has-results:not(.is-busy) #status:not(.error) { display: none; }
   /* 极简：可见结果 <2 且不在搜索态时收起搜索框与「已选择/全选」 */
   body.few-results .results-selectbar { display: none; }
 
@@ -193,7 +193,7 @@
   }
   body.has-batch #dropzone { display: none; }   /* 批量条打开时让位（ui.js 已维护 has-batch）*/
   body.few-results .results-search, body.few-results .results-selectbar { display: none; }
-  body.has-results #status:not(.error) { display: none; }
+  body.has-results:not(.is-busy) #status:not(.error) { display: none; }
 
   /* ── 区块 / 行 / 段控 ── */
   .sect { margin-top: 18px; }
