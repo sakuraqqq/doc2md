@@ -1113,6 +1113,18 @@ function snapshotPanel(panel) {
   const r = panel.getBoundingClientRect();
   return { top: r.top, left: r.left, width: r.width, height: r.height, display: getComputedStyle(panel).display };
 }
+/** 当前实际不透明度（退场从这一帧起播，不能再恒从 1 起 —— 快切会跳亮）。 */
+function panelOpacity(panel) {
+  const v = parseFloat(getComputedStyle(panel).opacity);
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+}
+function finishLeave(panel) {
+  panel.classList.remove('leaving');
+  /* 先隐藏再清内联：WAAPI 结束后底层 opacity 会回弹到 1，清样式前必须已经不可见 */
+  panel.setAttribute('hidden', '');
+  clearPanelOverride(panel);
+  panel.style.opacity = '';
+}
 /** 卡 068 · A5（2026-11-19 按 Material fade-through 改）：
  *  旧页淡出 90ms → 新页淡入 210ms，**两页不重叠**（Material 对底部导航的标准做法）。
  *  起因：交叉淡入会让两页文字同时半透明（叠影被用户判成闪烁）；fade through 用一瞬背景换掉叠影。
@@ -1120,6 +1132,8 @@ function snapshotPanel(panel) {
 const ENTER_MS = 210;
 const LEAVE_MS = 90;
 function enterPanel(panel, reduce, delay = 0) {
+  const wasVisible = !panel.hidden && !panel.classList.contains('leaving');
+  const from = wasVisible ? panelOpacity(panel) : 0;
   panel.getAnimations().forEach((a) => a.cancel());
   clearPanelOverride(panel);
   panel.classList.remove('leaving');
@@ -1127,8 +1141,10 @@ function enterPanel(panel, reduce, delay = 0) {
   panel.removeAttribute('hidden');
   panel.inert = false;
   if (reduce || typeof panel.animate !== 'function') return;
-  panel.style.opacity = '0';
-  const anim = panel.animate([{ opacity: 0 }, { opacity: 1 }], {
+  /* 已完整在场（重复点当前 Tab）⇒ 不重播淡入，避免整页闪一下 */
+  if (from >= 0.999) return;
+  panel.style.opacity = String(from);
+  const anim = panel.animate([{ opacity: from }, { opacity: 1 }], {
     duration: ENTER_MS, delay, easing: 'cubic-bezier(.2,0,0,1)', fill: 'both',
   });
   anim.onfinish = () => {
@@ -1141,14 +1157,14 @@ function enterPanel(panel, reduce, delay = 0) {
  *  ⚠️ rect 必须由调用方在**新面板入场之前**快照 —— 否则新面板在上方时会把旧面板推下去。
  *  做法：退场期 `position:fixed` + 快照 rect 钉在视口原位，结束再清。 */
 function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
+  /* 已在退场的面板不重启：二次起播会从 1 跳亮（快切实测 0.19→1.00） */
+  if (panel.classList.contains('leaving')) return;
+  const from = panelOpacity(panel);
   panel.classList.remove('active');
   panel.inert = true;
   panel.getAnimations().forEach((a) => a.cancel());
   if (reduce || typeof panel.animate !== 'function') {
-    clearPanelOverride(panel);
-    panel.classList.remove('leaving');
-    panel.setAttribute('hidden', '');
-    panel.style.opacity = '';
+    finishLeave(panel);
     return;
   }
   panel.classList.add('leaving');
@@ -1164,13 +1180,18 @@ function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
   panel.style.margin = '0';
   panel.style.transform = 'none';
   panel.style.zIndex = '1';
-  const anim = panel.animate([{ opacity: 1 }, { opacity: 0 }], { duration: LEAVE_MS, easing: 'cubic-bezier(.4,0,1,1)' });
+  panel.style.opacity = String(from);
+  /* 还没显出来的面板（等待入场的 90ms 窗口）直接收起，避免 0→1 闪亮 */
+  if (from <= 0.001) {
+    finishLeave(panel);
+    return;
+  }
+  const anim = panel.animate([{ opacity: from }, { opacity: 0 }], { duration: LEAVE_MS, easing: 'cubic-bezier(.4,0,1,1)', fill: 'both' });
   anim.onfinish = () => {
     if (panel.classList.contains('active')) return;
-    panel.classList.remove('leaving');
-    clearPanelOverride(panel);
     panel.setAttribute('hidden', '');
-    panel.style.opacity = '';
+    anim.cancel();
+    finishLeave(panel);
   };
 }
 /** 同步 aria/tabindex，并把「要入场的面板 / 要退场的面板（含退场前快照）」分桶。 */
@@ -1184,7 +1205,9 @@ function collectTabPanels(target) {
     const panel = panelOf(t);
     if (!panel) continue;
     if (on) toEnter.push(panel);
-    else if (panel.classList.contains('active') || !panel.hidden) toLeave.push({ panel, snap: snapshotPanel(panel) });
+    else if (!panel.classList.contains('leaving') && (panel.classList.contains('active') || !panel.hidden)) {
+      toLeave.push({ panel, snap: snapshotPanel(panel) });
+    }
   }
   return { toEnter, toLeave };
 }
@@ -1195,10 +1218,14 @@ function collectTabPanels(target) {
  *   ⚠️ 必须**先快照/退场、后入场**，否则新面板插入上方会推动旧面板的 rect。 */
 function syncTabButtons(target) {
   const reduce = prefersReducedMotion();
+  const targetPanel = panelOf(target);
   const { toEnter, toLeave } = collectTabPanels(target);
+  /* 目标已在场且没有要退场的面板 ⇒ 只同步 aria，不再重播过渡（重复点当前 Tab） */
+  const home = targetPanel && targetPanel.classList.contains('active') && !targetPanel.hidden &&
+    !targetPanel.classList.contains('leaving') && toLeave.length === 0;
   for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
   const delay = toLeave.length && !reduce ? LEAVE_MS : 0;
-  for (const panel of toEnter) enterPanel(panel, reduce, delay);
+  if (!home) for (const panel of toEnter) enterPanel(panel, reduce, delay);
   updateNavMarker(target);
 }
 

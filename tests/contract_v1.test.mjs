@@ -6166,6 +6166,86 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         await page.click('#tab-files');
         await settle();
 
+        /* 卡 068 返修 R1：80–150ms 快切/打断不得闪白或两页同显。
+         * 判据：退场面板 opacity 不得反升；可见且 >50% 不透明的面板 ≤1；落定后唯一目标。 */
+        const fastSwitch = await page.evaluate(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          const panels = [...document.querySelectorAll('[role="tabpanel"]')];
+          const click = (id) => document.getElementById(id).click();
+          const sample = (gap) =>
+            new Promise((resolve) => {
+              const frames = [];
+              const t0 = performance.now();
+              const tick = () => {
+                const t = performance.now() - t0;
+                frames.push({
+                  o: panels.map((p) => +getComputedStyle(p).opacity),
+                  cls: panels.map((p) => p.className),
+                  hidden: panels.map((p) => p.hidden),
+                  disp: panels.map((p) => getComputedStyle(p).display),
+                });
+                if (t < 900) requestAnimationFrame(tick);
+                else resolve(frames);
+              };
+              requestAnimationFrame(tick);
+              click('tab-files');
+              setTimeout(() => click('tab-settings'), gap);
+            });
+          const analyze = (frames) => {
+            let maxVisible = 0;
+            let leaveRises = 0;
+            for (let i = 1; i < frames.length; i++) {
+              const cur = frames[i];
+              const prev = frames[i - 1];
+              maxVisible = Math.max(
+                maxVisible,
+                cur.o.filter((o, k) => !cur.hidden[k] && cur.disp[k] !== 'none' && o > 0.5).length,
+              );
+              for (let k = 0; k < cur.o.length; k++) {
+                if (/leaving/.test(cur.cls[k]) && cur.o[k] - prev.o[k] > 0.05) leaveRises++;
+              }
+            }
+            const last = frames[frames.length - 1];
+            return {
+              maxVisible,
+              leaveRises,
+              visibleEnd: last.o.filter((o, k) => !last.hidden[k] && last.disp[k] !== 'none').length,
+            };
+          };
+          const out = [];
+          for (const gap of [80, 120, 150]) {
+            click('tab-convert');
+            await sleep(700);
+            out.push({ gap, ...analyze(await sample(gap)) });
+            await sleep(500);
+          }
+          return out;
+        });
+        for (const r of fastSwitch) {
+          assert.equal(r.leaveRises, 0, '快切 ' + r.gap + 'ms：退场面板 opacity 反升（闪白/重影）—— ' + JSON.stringify(r));
+          assert.ok(r.maxVisible <= 1, '快切 ' + r.gap + 'ms：两页同时不透明 —— ' + JSON.stringify(r));
+          assert.equal(r.visibleEnd, 1, '快切 ' + r.gap + 'ms 落定后不是唯一目标面板 —— ' + JSON.stringify(r));
+        }
+        /* D6：重复点当前 Tab 不得整页淡出再淡入 */
+        const reclickMin = await page.evaluate(async () => {
+          const panel = document.getElementById('panel-files');
+          document.getElementById('tab-files').click();
+          await new Promise((r) => setTimeout(r, 700));
+          const samples = [];
+          const t0 = performance.now();
+          await new Promise((resolve) => {
+            const tick = () => {
+              samples.push(+getComputedStyle(panel).opacity);
+              if (performance.now() - t0 < 400) requestAnimationFrame(tick);
+              else resolve();
+            };
+            document.getElementById('tab-files').click();
+            requestAnimationFrame(tick);
+          });
+          return Math.min(...samples);
+        });
+        assert.ok(reclickMin >= 0.99, '重复点当前 Tab 时面板被淡出（最低 opacity=' + reclickMin + '）');
+
         await page.focus('#tab-files');
         await page.keyboard.press('ArrowRight');
         await settle();
@@ -6874,8 +6954,38 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.equal(card.hasOpen, true, '文件卡缺「查看」入口');
         assert.equal(card.hiddenValue, md, '卡片隐藏 textarea 与源文本不一致（Q 组口径）');
         assert.equal(card.taHidden, true, 'Q 组 textarea 未隐藏');
-        await page.locator('.card .row-preview').first().click();
+        /* 卡 068 返修 R3：预览遮罩从第一帧起就要覆盖整个视口（旧的 margin 动画会让 fixed 盒矮 18px） */
+        const openMask = await page.evaluate(async () => {
+          const v = document.getElementById('mdViewer');
+          const frames = [];
+          const t0 = performance.now();
+          await new Promise((resolve) => {
+            const tick = () => {
+              if (!v.hidden) {
+                const r = v.getBoundingClientRect();
+                frames.push({ w: r.width, h: r.height });
+              }
+              if (performance.now() - t0 < 500) requestAnimationFrame(tick);
+              else resolve();
+            };
+            requestAnimationFrame(tick);
+            document.querySelector('.card .row-preview').click();
+          });
+          const r = v.getBoundingClientRect();
+          return { frames, w: r.width, h: r.height, vw: innerWidth, vh: innerHeight };
+        });
         await page.waitForSelector('#mdViewer:not([hidden])', { timeout: 5000 });
+        assert.ok(openMask.frames.length > 0, '预览打开后没有采到帧（遮罩测量失效）');
+        const minMaskW = Math.min(...openMask.frames.map((f) => f.w));
+        const minMaskH = Math.min(...openMask.frames.map((f) => f.h));
+        assert.ok(
+          Math.abs(minMaskW - openMask.vw) <= 1 && Math.abs(minMaskH - openMask.vh) <= 1,
+          '预览遮罩未从第一帧起覆盖视口：' + JSON.stringify({ minMaskW, minMaskH, vw: openMask.vw, vh: openMask.vh }),
+        );
+        assert.ok(
+          Math.abs(openMask.w - openMask.vw) <= 0.5 && Math.abs(openMask.h - openMask.vh) <= 0.5,
+          '预览落定后遮罩不足视口：' + JSON.stringify(openMask),
+        );
         const first = await page.evaluate(() => ({
           name: document.getElementById('mdViewerName').textContent,
           preview: !!document.querySelector('#mdViewerBody .md-preview'),
@@ -6888,6 +6998,27 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.ok(first.html.includes('<h1'), '全屏预览未渲染标题');
         assert.equal(first.previewPressed, 'true', '默认「预览」未按下');
         assert.equal(first.rawPressed, 'false', '默认「原文」不应按下');
+        /* 卡 068 返修 R6：浅色结果行不得被旧纸墨规则覆盖 */
+        const lightRow = await page.evaluate(async () => {
+          document.querySelector('[data-theme-set="light"]').click();
+          await new Promise((r) => setTimeout(r, 500));
+          const row = document.querySelector('.result-row');
+          const cs = getComputedStyle(row);
+          const name = getComputedStyle(row.querySelector('.name'));
+          const body = getComputedStyle(row.querySelector('.card-body'));
+          return {
+            bg: cs.backgroundColor,
+            radius: cs.borderRadius,
+            nameLine: name.lineHeight,
+            bodyPad: body.padding,
+            theme: document.documentElement.dataset.theme,
+          };
+        });
+        assert.equal(lightRow.theme, 'light', '主题未切到浅色');
+        assert.ok(!/rgba\(0, 0, 0, 0\)/.test(lightRow.bg), '浅色结果行底色仍是 transparent（旧规则覆盖）：' + lightRow.bg);
+        assert.equal(lightRow.radius, '18px', '浅色结果行圆角不是 18px：' + lightRow.radius);
+        assert.ok(Math.abs(parseFloat(lightRow.nameLine) - 20.3) <= 0.3, '浅色结果行文件名行高不是 1.45×14：' + lightRow.nameLine);
+        assert.equal(lightRow.bodyPad, '0px 0px 2px 48px', '浅色结果行正文内边距不是留白版：' + lightRow.bodyPad);
         await page.click('#mdViewerRaw');
         const raw = await page.evaluate(() => {
           const ta = document.querySelector('#mdViewerBody textarea.md-viewer-raw');
@@ -8183,6 +8314,74 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(gone.btn, true, '离开「文件」页后搜索图标应隐藏');
         assert.equal(gone.bar, true, '离开「文件」页后搜索框应收起（A8：切走 Tab 退出搜索）');
         assert.equal(gone.q, '', '切走 Tab 后关键词应清空');
+
+        /* 卡 068 返修 R5/R6：320px 失效行移除键 44×44；浅色文件行用留白版几何 */
+        await page.setViewportSize({ width: 320, height: 640 });
+        const narrow = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          const prevCap = window.Capacitor;
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                historySupport: async () => ({ supported: true, sdkInt: 34 }),
+                historyLoad: async () => ({
+                  ok: true,
+                  json: JSON.stringify({
+                    schemaVersion: 1,
+                    keepHistory: true,
+                    records: [
+                      {
+                        id: '11111111-1111-4111-8111-111111111111',
+                        name: 'gone.md',
+                        uri: 'content://x/gone',
+                        bytes: 512,
+                        mime: 'text/markdown',
+                        kind: 'md',
+                        createdAt: Date.now(),
+                      },
+                    ],
+                  }),
+                }),
+                historySave: async () => ({ ok: true }),
+                historyCheck: async ({ uris }) => ({ ok: true, results: uris.map((uri) => ({ uri, exists: false })) }),
+              },
+            },
+          };
+          h.__setBackend('native');
+          await h.load();
+          await h.refresh();
+          document.getElementById('tab-files').click();
+          await new Promise((r) => setTimeout(r, 200));
+          const row = document.querySelector('#filesList .file-row.invalid');
+          const remove = row && row.querySelector('.row-action.icon-only');
+          const rr = remove ? remove.getBoundingClientRect() : null;
+          document.querySelector('[data-theme-set="light"]').click();
+          await new Promise((r) => setTimeout(r, 500));
+          const cs = getComputedStyle(row);
+          const meta = getComputedStyle(row.querySelector('.file-meta'));
+          const out = {
+            remove: rr ? [rr.width, rr.height] : null,
+            innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            light: { padding: cs.padding, radius: cs.borderRadius, meta: meta.fontSize },
+          };
+          window.Capacitor = prevCap;
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.refresh();
+          document.querySelector('[data-theme-set="dark"]').click();
+          return out;
+        });
+        assert.ok(
+          narrow.remove && narrow.remove[0] >= 43.5 && narrow.remove[1] >= 43.5,
+          '320px 失效行移除键小于 44×44：' + JSON.stringify(narrow),
+        );
+        assert.equal(narrow.scrollWidth, narrow.innerWidth, '320px 文件列表出现横向溢出：' + JSON.stringify(narrow));
+        /* ≤370px 的窄屏内边距按 068 的 7px（非 390px 的 8px） */
+        assert.equal(narrow.light.padding, '7px', '320px 浅色文件行内边距不是窄屏 7px：' + narrow.light.padding);
+        assert.equal(narrow.light.radius, '14px', '浅色文件行圆角不是 14px：' + narrow.light.radius);
+        assert.equal(narrow.light.meta, '11px', '浅色文件行元信息字号不是 11px：' + narrow.light.meta);
+        await page.setViewportSize({ width: 412, height: 892 });
       });
 
       await t.test('Z10-7b A7 分享 MIME（拍板 A 兼容例外）：md ⇒ octet-stream；zip ⇒ application/zip', async () => {

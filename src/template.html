@@ -855,7 +855,7 @@
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     overflow-wrap: anywhere; }
   .file-meta { margin-top: 4px; font-size: 11px; line-height: 1.45; }
-  .file-share, .row-action.icon-only { width: 44px; height: 44px; border: 0; background: transparent;
+  .file-share, .row-action.icon-only { width: 44px; height: 44px; flex: 0 0 44px; border: 0; background: transparent;
     color: var(--muted); border-radius: 10px; }
 
   /* ── 设置页 ── */
@@ -887,9 +887,12 @@
   .navitem[aria-selected="true"] .nav-pill { background: transparent; }
   .navitem .nav-label { font-size: 12px; letter-spacing: 0; }
 
-  /* ── 预览覆盖层：轻微上滑（位移用 margin，避免 keyframes transform 触发 css-guard C1）── */
+  /* ── 预览覆盖层：轻微上滑（内边距位移：外层 inset:0 的盒子尺寸不变，遮罩始终满视口）── */
   .md-viewer { animation: viewer-in 260ms cubic-bezier(.2, .7, .2, 1); }
-  @keyframes viewer-in { from { opacity: 0; margin-top: 18px; } to { opacity: 1; margin-top: 0; } }
+  @keyframes viewer-in {
+    from { opacity: 0; padding-top: calc(var(--safe-top) + 18px); }
+    to { opacity: 1; padding-top: var(--safe-top); }
+  }
 
   /* ── 批量条：与结果卡同一层玻璃，主按钮统一 primary/on-primary ── */
   .batch-bar { left: 20px; right: 20px; border-radius: 18px; background: var(--settings-surface);
@@ -897,11 +900,36 @@
   .batch-actions .btn { min-height: 46px; border-radius: 12px; }
   .batch-actions .btn.primary, #batchSave { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 
+  /* ── 浅色对齐：旧纸墨浅色规则（[data-theme="light"] X，0-2-0）特异性高于 068 基础规则，
+   * 这里用同等特异性并靠后覆盖；只列与留白版冲突的组（不改交互与 44px 命中区）。 ── */
+  [data-theme="light"] .file-row { padding: 8px; gap: 4px; border-radius: 14px; background: var(--file-surface); border-color: var(--card-border); min-height: 62px; }
+  [data-theme="light"] .file-row:active { background: color-mix(in srgb, var(--file-surface) 80%, var(--icon-bg)); }
+  [data-theme="light"] .file-row.invalid { opacity: 1; background: color-mix(in srgb, var(--file-surface) 70%, transparent); }
+  [data-theme="light"] .file-row.highlight { outline: 0; border-color: var(--primary); background: var(--file-surface);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent); animation: locate-file 1.3s ease-out; }
+  [data-theme="light"] .file-icon { width: 34px; height: 36px; margin: 0 4px; border-radius: 9px;
+    background: color-mix(in srgb, var(--icon-bg) 60%, transparent); color: var(--primary); }
+  [data-theme="light"] .file-meta { margin-top: 4px; font-size: 11px; line-height: 1.45; }
+  [data-theme="light"] .file-share { width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); }
+  [data-theme="light"] .row-action.icon-only { width: 44px; height: 44px; flex: 0 0 44px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); }
+  [data-theme="light"] .results-panel { margin-top: 18px; }
+  [data-theme="light"] .results-head h2 { font-size: 14px; font-weight: 600; }
+  [data-theme="light"] .results-count { font-size: 11px; }
+  [data-theme="light"] .session-result { margin: 8px 0 10px; padding: 10px 13px; border: 1px solid var(--card-border);
+    border-radius: 13px; background: var(--settings-surface); color: var(--ink); font-size: 12px; line-height: 1.45; }
+  [data-theme="light"] .results-list .result-row { background: var(--result-surface); border: 1px solid var(--card-border); box-shadow: none; }
+  [data-theme="light"] .result-row { border-radius: 18px; border-color: var(--card-border); }
+  [data-theme="light"] .result-row .card-head { background: transparent; border-bottom: 0; }
+  [data-theme="light"] .result-row .card-body { padding: 0 0 2px 48px; }
+  [data-theme="light"] .result-row .name { font-size: 14px; font-weight: 550; line-height: 1.45; }
+  [data-theme="light"] .result-row .meta { font-size: 11px; line-height: 1.45; }
+  [data-theme="light"] .result-row.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+
   @media (max-width: 370px) {
     .appbar { padding-left: 17px; padding-right: 17px; }
     .content { --content-pad-x: 17px; }
     .navitem .nav-label { font-size: 11px; }
-    .file-row { padding: 7px; }
+    html[data-theme] .file-row { padding: 7px; }
   }
 
   @media (prefers-reduced-motion: reduce) {

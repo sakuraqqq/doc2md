@@ -764,7 +764,7 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 >
 > **卡 066 · 三条守卫负例（不是 `node --test` 用例；私有脚本在 `.私档/卡/066/`）**：① `measure-065.mjs` —— 星图必须**可见且有尺寸**（`.art .orion` 220×282；**2026-11-12 起「可见」= 祖先链有效可见性：display / visibility / opacity 逐层相乘**，`.art{opacity:0}` 与 `.art{display:none}` 两个负例都必红）+ 100 文件**真滚动**（`scrollY` 必须变化，不可滚动不再记 good）；② `tools/css-guard.mjs` —— `@keyframes` 内 `transform/translate` 必须红（原事故形态），同规则直接 `transform` 仍红；③ `tests/pwa-audit.mjs` —— 深/浅 token **分块取值**，深色 `--ink=--bg` 必须红，浅色 hex 不得覆盖深色。三条负例均「改前绿 → 改后红」，正例仍绿（日志见 `.私档/卡/066/logs/`）。
 >
-> **卡 068 · 星空留白版（2026-11-19）**：视觉/动效层重做，**DOM 契约类名与 id 全部保留**（`.result-row` / `.name` / `.meta` / `.row-select` / `.row-menu-btn` / `.row-preview` / `.file-row` / `.file-main` / `.file-share` / `.navitem`），Z8/Z10 未改断言。唯一迁移 = **Z6-1**：切页加入 160ms 入场 / 120ms 退场交叉过渡 ⇒ 断言改为「过渡落定后仍**唯一面板可见**」并新增 `#navMarker` 胶囊几何判据；⛔ 没放宽（aria、visible、inert 三项仍查）。**契约数仍 413 / 411 / 0 / 2**（无新增测试节点）；视觉效果/录像/真机证据见 `.私档/卡/068/evidence/`。
+> **卡 068 · 星空留白版（2026-11-19）**：视觉/动效层重做，**DOM 契约类名与 id 全部保留**（`.result-row` / `.name` / `.meta` / `.row-select` / `.row-menu-btn` / `.row-preview` / `.file-row` / `.file-main` / `.file-share` / `.navitem`），Z8/Z10 未改断言。唯一迁移 = **Z6-1**：切页为 **90ms 退场 / 210ms 入场（Material fade-through；DD-21 经用户 2026-11-19 批准，原 160/120 交叉淡化作废）** ⇒ 断言「过渡落定后**唯一面板可见**」+ `#navMarker` 胶囊几何；⛔ 没放宽（aria、visible、inert 三项仍查）。**2026-11-19 返修**把 80–150ms 快切/打断、同 Tab 重不重播、预览遮罩满视口、320 失效行 44×44、浅色留白版几何分别并入 **Z6-1 / Z7-5 / Z10-7**（无新增测试节点）。**契约数仍 413 / 411 / 0 / 2**；视觉效果/录像/真机证据见 `.私档/卡/068/evidence/`。
 
 ### 组 Z9 · 用本 App 打开 .md（卡 059 · B018 / A7.6-A7）
 
