@@ -707,7 +707,7 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
 | Z6-0 | 底部导航 `role="tablist"` + 恰 3 个 `role="tab"` + 每个 tab 有 `aria-controls` | 源码静态 | ✅ 绿（**先红**：`源码没有 role="tablist" —— 三 Tab 骨架未落地（改前实测 0 命中）`） |
-| Z6-1 | 三 Tab 可切换：`aria-selected` 与面板 visible 同步；左右方向键可切；面板有 `role=tabpanel` + `aria-labelledby` | 运行时 DOM | ✅ 绿 |
+| Z6-1 | 三 Tab 可切换：`aria-selected` 与面板 visible 同步；左右方向键可切；面板有 `role=tabpanel` + `aria-labelledby`；**卡 068 起**：切页按 Material **fade-through**（旧 90ms 出 → 新 210ms 进，两页不重叠；退场层 `pointer-events:none`、`inert`），断言在过渡落定（含动画全结束）后仍须**唯一面板可见且 active 面板 opacity=1**；`#navMarker` 单枚胶囊宽度 = 当前 Tab 宽 − 4、左缘 = Tab 左缘 + 2（280ms 横移后量）；**退场层必须保持原 rect + display**（去掉 `.active` 先重排会闪旧布局；且必须**先快照后退场**，新页在旧页上方时会把旧 rect 推下；**首个子元素也不得位移**——`fixed` 建 BFC 会让原本塌陷的子 margin 突然生效）；断言覆盖**全部 6 个方向** | 运行时 DOM | ✅ 绿（068 扩判据） |
 | Z6-2 | 首屏无 hero：无面板内 `header h1` / 无 `.badges`·`.badge` / `#dropzone` 非虚线；app bar 标题 = 「文转MD助手」；选择卡片含「选择文档」+ 格式 + 50 MB + 本地处理；高度 <200px（紧凑卡，不占首屏）；**2026-11-11 起首屏顺序反转：选择卡沉底（在上次转换之下）**，原「上次转换在其下」句作废（用户拍板：单手可及） | 运行时 DOM | ✅ 绿（R3 紧凑卡） |
 | Z6-3 | 页脚信息只在「设置 › 关于」：全页无 `<footer>`；`#panel-convert` 不含版本/许可；`#panel-settings` 含版本与许可 | 运行时 DOM | ✅ 绿 |
 | Z6-4 | 文件页空态：`#filesEmpty` 可见 + 含「还没有转换记录」+ `#panel-files` **无** `.card`（⛔ 假数据）；`#goConvert` 跳回转换 Tab（卡 060 更新：空态三分——`filesEmptyCleared` / `filesEmptySearch` / `filesError` 默认全隐藏；搜索框默认收起） | 运行时 DOM | ✅ 绿 |
@@ -752,7 +752,7 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 | Z7-17 | A17 冷启单次：四类真实结构（结构化 1MB / 表格密集 1MB / 34 万小段落 1MB / 960KB 单行 + 16 万 `**b**`）首屏均 **<500ms**，输出单次原始值（⛔ 禁止预热+取最小） | 运行时 | ✅ 绿（v0.2.1 新增） |
 | Z7-18 | A18 引用式链接等价：定义在 256KB 之后，首段 `[链接][a]` 仍解析为同一 href（全量预扫注入各段） | 运行时 DOM | ✅ 绿（v0.2.1 新增） |
 | Z7-19 | A19 单行大文档（960KB，无换行）：出现「继续渲染」且首屏 **<500ms**、首屏文本未吞全文 | 运行时 | ✅ 绿（v0.2.1 新增） |
-| Z8-0 | 100 个文件：紧凑行（最大行高 90px）、无每行 `.card-actions`、三点菜单 100 个、面板计数 100、页面高度 10,295px | 运行时 DOM | ✅ 绿（R2 新增） |
+| Z8-0 | 100 个文件：紧凑行（最大行高 **88px**（卡 068 实测；判据 ≤100））、无每行 `.card-actions`、三点菜单 100 个、面板计数 100、页面高度 ≤20,000px | 运行时 DOM | ✅ 绿（R2 新增） |
 | Z8-1 | 单选 → indeterminate；全选 100 / 取消全选；批量条显示/隐藏 | 运行时 DOM | ✅ 绿（R2 新增） |
 | Z8-2 | 点选择框/三点菜单不打开预览；菜单「查看 Markdown」打开全屏查看器；`aria-expanded` 同步 | 运行时 DOM | ✅ 绿（R2 新增） |
 | Z8-3 | 批量复制多文件按 `===== 文件名 =====` 分段，内容不混段；剪贴板失败不报成功 | 运行时 DOM | ✅ 绿（R2 新增） |
@@ -763,6 +763,8 @@ V6-2 / V6-3 按实测真值收敛为**现状锁 + 规范偏差登记**（见 §7
 > **断言并入 Z8-4**（不新增测试节点 ⇒ 契约数保持 **413 / 411 / 0 / 2**，`docs/BASELINE.json` 无需改口径）。红绿：改前 HEAD `4c62764` ⇒ `#results.listHidden=true`、可见行 **0**；`89fbd54` 基线 ⇒ 可见行 **1**（卡片 R1 的「改前 1 行可见」）；修复后 ⇒ 可见行 **1** 且 `listHidden=false`。断言可独立变红（把 `paintSearchChrome` 回退成只数 `r.success` ⇒ Z8-4 红在「全部失败时结果列表被隐藏」）。
 >
 > **卡 066 · 三条守卫负例（不是 `node --test` 用例；私有脚本在 `.私档/卡/066/`）**：① `measure-065.mjs` —— 星图必须**可见且有尺寸**（`.art .orion` 220×282；**2026-11-12 起「可见」= 祖先链有效可见性：display / visibility / opacity 逐层相乘**，`.art{opacity:0}` 与 `.art{display:none}` 两个负例都必红）+ 100 文件**真滚动**（`scrollY` 必须变化，不可滚动不再记 good）；② `tools/css-guard.mjs` —— `@keyframes` 内 `transform/translate` 必须红（原事故形态），同规则直接 `transform` 仍红；③ `tests/pwa-audit.mjs` —— 深/浅 token **分块取值**，深色 `--ink=--bg` 必须红，浅色 hex 不得覆盖深色。三条负例均「改前绿 → 改后红」，正例仍绿（日志见 `.私档/卡/066/logs/`）。
+>
+> **卡 068 · 星空留白版（2026-11-19）**：视觉/动效层重做，**DOM 契约类名与 id 全部保留**（`.result-row` / `.name` / `.meta` / `.row-select` / `.row-menu-btn` / `.row-preview` / `.file-row` / `.file-main` / `.file-share` / `.navitem`），Z8/Z10 未改断言。唯一迁移 = **Z6-1**：切页为 **90ms 退场 / 210ms 入场（Material fade-through；DD-21 经用户 2026-11-19 批准，原 160/120 交叉淡化作废）** ⇒ 断言「过渡落定后**唯一面板可见**」+ `#navMarker` 胶囊几何；⛔ 没放宽（aria、visible、inert 三项仍查）。**2026-11-19 返修**把 80–150ms 快切/打断、同 Tab 重不重播、预览遮罩满视口、320 失效行 44×44、浅色留白版几何分别并入 **Z6-1 / Z7-5 / Z10-7**（无新增测试节点）。**R8（同日真机）**：V2573A / WebView 157 的 `prefers-color-scheme` 恒暗（系统浅色仍 dark，冷启动/清数据/reload 均复现）⇒ 「跟随系统」改以 **`Doc2mdNative.getSystemTheme()` 的 Activity `uiMode` 为准**，`onConfigurationChanged` 通过 `systemThemeChanged` 推送；桥不可用才回落 mq。Z6-1 新增**三态断言**（原生 light + mq dark / 原生 dark + mq light / 无桥回落），仍不新增节点。**契约数仍 413 / 411 / 0 / 2**；视觉效果/录像/真机证据见 `.私档/卡/068/evidence/`（口径 DD-22）。**2026-11-19 第三轮复验（Codex）**：R1 中断空档 ⇒ 入场只等**剩余退场**（`remainingLeaveDelay`），Z6-1 加 `blankMs ≤ 34`；R8 延迟返回竞态 ⇒ `themeSeq/nativeThemeSeq` 作废旧请求、最后一次点击胜出，Z6-1 加延迟桥断言；R9 有结果时处理态 ⇒ `body.has-results:not(.is-busy) #status`，Z7-5 加可见性断言。**R8 推送乱序补修**：`onNativeThemeChanged` 在「手选主题」分支也先 `nativeThemeSeq++`，先到的 `systemThemeChanged(light)` 不得被旧 `getSystemTheme` 回包 `dark` 覆盖；Z6-1 加「手选深色 → 点跟随系统挂起 → 推送 light → 旧查询回 dark」断言（`after = light/system`）。仍不新增测试节点。
 
 ### 组 Z9 · 用本 App 打开 .md（卡 059 · B018 / A7.6-A7）
 

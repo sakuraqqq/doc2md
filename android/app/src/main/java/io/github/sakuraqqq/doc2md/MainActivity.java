@@ -35,5 +35,6 @@ public class MainActivity extends BridgeActivity {
         super.onConfigurationChanged(newConfig);
         boolean night = (newConfig.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         Log.i("Doc2mdShell", "onConfigurationChanged night=" + night);
+        Doc2mdNativePlugin.publishSystemTheme();
     }
 }

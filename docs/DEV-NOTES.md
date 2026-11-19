@@ -2496,3 +2496,21 @@ README §0.2 称同一份 47.4 MB 文件曾「**43 秒转完**」，而 §1 备�
 - **F7 CSP**：按卡面 R7 **选项②**——不新增 CSP，记录「无 CSP 为既有边界」并等调度线登记 backlog；理由与资源策略代价见 `docs/design-decisions.md` **DD-20**。
 - **F6 口径**：appbar **60** 为最终值（用户 2026-11-11 要求），68 为 065 中间值；⛔ 不把 60 表述成「满足 68」。
 
+## 2026-11-19 · 卡 068：星空留白版（视觉/动效层重做）
+
+### 坑（现象 → 根因 → 防再犯）
+1. **交叉过渡让「只有一个面板可见」在 120ms 内是双真值**：旧断言点击后当帧读 `shown`，新实现旧面板还在退场 ⇒ `[true,true,false]`。根因是「终态同步」与「视觉过渡」被当成同一时刻。**防再犯**：断言「过渡落定后唯一可见」而不是删判据；同时把过渡期的 `pointer-events:none` + `inert` 单独锁住（A5 的「旧面板不拦截点击」）。⛔ 不用「加一个 waitForTimeout 就完事」——等的是**状态谓词**（无 `.leaving` 且可见数=1），不是固定时长。
+2. **换肤时旧主题作用域的规则特异性会反杀新基础规则**：老浅色 `[data-theme="light"] #dropzone { background: …; backdrop-filter: … }`（在 `@supports` 里）比新的 `#dropzone { background: transparent }` 更具体 ⇒ 新皮肤仍透出旧玻璃底/圆角。**防再犯**：覆盖旧主题样式时用**同名作用域**（`[data-theme="light"] #dropzone`）并显式清 `backdrop-filter`；`css-guard` 的 C3「浅色候选冗余」正好会把这些旧规则列出来，改皮肤前先看这份清单。
+3. **Playwright 录视频缺 ffmpeg 会直接抛在 newPage**（不是录完才失败）：`npx playwright install ffmpeg`（约 1.3 MB，只进浏览器缓存）后恢复。**防再犯**：先跑 `node -e "…chromium.launch()"` 探针不如直接看错误里的 "Video rendering requires ffmpeg"；CI 不录视频，不进门禁。
+4. **WSL 换环境不能复用 Windows 的 node_modules + 浏览器缓存**：Playwright 1.63 在 WSL 找 `chromium_headless_shell-1243`，缓存里只有 `chromium-1234` ⇒ 用系统 Chromium（`executablePath: /usr/local/bin/chromium`，实测 151）即可跑 A5/A6，⛔ 不必重下整套浏览器。**防再犯**：跨环境脚本用 `PW_EXEC` 参数，不写死 `channel: msedge`。
+5. **历史测试缝顺序**：`h.__setBackend('memory')` 后再 `h.__reset()` 会把后端重置回 web ⇒ `append` 返回 `{ok:false, skipped:'unsupported'}`。**防再犯**：测试/取证统一 `__reset()` → `__setBackend(...)` → `load()` → `append()`；证据脚本里这一顺序要写死。
+6. **A2 的「背景变暗」不能在加类当帧量**：`.sky` 有 280ms opacity 过渡，`is-busy` 加上后立即读仍是 1。**防再犯**：忙态取证等 ≥300ms 且用**真慢输入**（OCR 4 张）拉长窗口；⛔ 用 100 个 1ms 的 TXT 会在采样前就结束。
+7. **退场层不能只靠 `.leaving` 改定位（2026-11-19 用户两次报「切页闪一下别的样式」）**：`.tabpanel` 基础 `display:none`，显隐靠 `hidden`；`#panel-convert` 又有 `display:flex`。① 切页去掉 `.active` 会**先触发重排**（转换页 520→106 高；绝对定位的 `left` 再叠 content padding ⇒ x 20→40），随后 `hidden` ⇒ 旧页以**错误布局**闪一下，新页才淡到一半；② 原 `syncTabButtons` **先入场、后抓旧面板 rect**，新页在旧页上方时把旧 rect 推下（files→convert +520、settings→files +357），fixed 反而钉错位置。修法：**先快照全部退场面板（rect + computed display）→ 统一 fixed 退场 → 最后入场**；`onfinish`/入场清内联。**防再犯**：任何「把旧层留在原地淡出」的实现，先假设它会被布局变化带动；断言锁「退场层 rect 与点击前一致」，覆盖**全部 6 个方向**，并用**同一任务内 click+read** 避开 120ms 窗口。
+8. **交叉淡入的叠影不是 bug，是透明面板的物理结果（2026-11-19 第三轮）**：两页面板都没有不透明底，50/50 时两页文字互相透出，用户仍判「闪」。按上游 **Material fade-through** 改：旧 90ms 出 → 新 210ms 进，**两页不重叠**（代价是中间一瞬背景，Material 的 “through”）。实现时另一个坑：`clearPanelOverride` 的清理清单漏了 `opacity`，`fill:'both'` 动画结束后内联 `opacity:0` 把新页**留在不可见**（t240 截图空白）——补 `opacity` 并加「落定 opacity=1」断言。**防再犯**：动画结束后的清理字段与开始时设置的字段必须同一份清单；透明度类过渡必须在主面板上断言终态，不只断言 `hidden/display`。
+9. **设置页退场“往下挪 22px” = margin 塌陷态切换（2026-11-19 用户报）**：静态时 `.tabpanel` 里的 `.sect { margin-top:22px }` **塌陷到面板外**（面板 top 96、首个子元素 top 也 96）；退场改成 `position:fixed` 后，fixed 建立 BFC，22px 不再塌陷 ⇒ 子内容 96→**118**，看起来是设置页整体下移一小段。修法：`.tabpanel.active { display: flow-root }`，让 margin 始终在面板内部（面板 top 74、内容 96，视觉不变）。**防再犯**：把静态块改成 fixed 副本时，必须检查子元素 margin 是否原本塌陷到父外；断言不能只锁面板 rect，要**同时锁首个子元素的 rect**（Z6-1 已加）。
+
+### 结论
+- 视觉/动效只动 `src/template.html`、`src/ui.js`（结果行/切页/胶囊）、`src/app.js`（忙态类）；业务路径与 DOM 契约类名保留。
+- 门禁：`node --test` **413/411/0/2** · `pwa-audit` **62/0** · `lint` 0/0 · `metrics` **37/1159/超限 0/0.5%**（before 37/1149）· `guard:css` **0 错** · `baseline-check` 5/5。
+- 产物：`index.html` **316,959 B / `913B9866…`**；debug APK **22,962,540 B / `FC8703CD…`**（包内 index 同源）；真机 **V2573A / Android 16 / WebView 157.0.8103.38**（安全区 38/18，appbar 98）。
+

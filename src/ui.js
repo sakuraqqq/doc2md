@@ -35,6 +35,7 @@ const mdViewerExt = $('#mdViewerExt');
 const mdViewerCopy = $('#mdViewerCopy');
 const mdViewerDownload = $('#mdViewerDownload');
 const pickerTitle = $('#pickerTitle');
+const pickBtn = $('#pickBtn');
 const resultsPanel = $('#resultsPanel');
 const resultsCount = $('#resultsCount');
 const resultsNoMatch = $('#resultsNoMatch');
@@ -419,6 +420,8 @@ function updateResultsChrome() {
   document.body.classList.toggle('has-results', hasResults);
   paintSearchChrome();
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
+  /* 卡 068 · A3：有结果后主按钮文案与「继续添加」一致（同一颗 primary） */
+  if (pickBtn) pickBtn.textContent = hasResults ? '继续添加文档' : '选择文件';
   const lastSect = document.getElementById('lastTitle');
   if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = hasResults;
   resultsCount.textContent = '已完成 ' + resultRows.length + ' 个文件';
@@ -932,13 +935,20 @@ function toggleRowMenu(row) {
   const first = row.menu.querySelector('button');
   if (first) first.focus();
 }
-function typeLabel(result, success) {
-  if (!success) return '失败';
-  return (result.meta.type || '?').toUpperCase();
+function durationText(ms) {
+  const n = Number(ms) || 0;
+  if (n <= 0) return '';
+  if (n < 100) return n + ' ms';
+  return (n / 1000).toFixed(1) + ' s';
 }
+/* 卡 068 · A3：结果行第二行 = 类型 · 大小 · 真实耗时（≥100ms 用秒；<100ms 保留毫秒更可读） */
 function metaText(file, result) {
-  const ms = result.meta.elapsedMs ? ' · ' + result.meta.elapsedMs + ' ms' : '';
-  return fmtSize(file.size) + ms;
+  const meta = (result && result.meta) || {};
+  const type = meta.type ? String(meta.type).toUpperCase() : '未知';
+  const parts = [type, fmtSize(file.size)];
+  const dur = durationText(meta.elapsedMs);
+  if (dur) parts.push(dur);
+  return parts.join(' · ');
 }
 function makeRowHead(row) {
   const head = document.createElement('div');
@@ -953,16 +963,11 @@ function makeRowHead(row) {
   name.className = 'name';
   name.textContent = row.file.name;
   name.title = row.file.name;
-  const chip = document.createElement('span');
-  chip.className = 'chip';
-  if (!row.success) chip.classList.add('err');
-  chip.textContent = typeLabel(row.result, row.success);
   const meta = document.createElement('span');
   meta.className = 'meta';
   meta.textContent = metaText(row.file, row.result);
   head.appendChild(checkbox);
   head.appendChild(name);
-  head.appendChild(chip);
   head.appendChild(meta);
   return head;
 }
@@ -975,13 +980,7 @@ function makeRowBody(row) {
   status.className = row.success ? 'ok' : 'err';
   status.textContent = row.success ? 'Markdown 已就绪' : '转换失败';
   sub.appendChild(status);
-  if (!row.success) {
-    const err = document.createElement('div');
-    err.className = 'warnings';
-    err.style.color = 'var(--err)';
-    err.textContent = '❌ ' + row.result.error;
-    sub.appendChild(err);
-  } else {
+  if (row.success) {
     const preview = document.createElement('button');
     preview.type = 'button';
     preview.className = 'row-preview';
@@ -1000,6 +999,13 @@ function makeRowBody(row) {
     body.appendChild(ta);
   }
   body.insertBefore(sub, body.firstChild);
+  /* 卡 068 · A3：失败原因单独一行（不挤在状态行里，状态不竖排）；颜色走 .warnings，⛔ 不再写未声明变量 --err */
+  if (!row.success) {
+    const err = document.createElement('div');
+    err.className = 'warnings row-error';
+    err.textContent = '❌ ' + row.result.error;
+    body.appendChild(err);
+  }
   if (row.result.meta.warnings && row.result.meta.warnings.length) {
     const w = document.createElement('div');
     w.className = 'warnings';
@@ -1087,18 +1093,155 @@ function panelOf(tab) {
   const id = tab.getAttribute('aria-controls');
   return id ? document.getElementById(id) : null;
 }
-/** aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面） */
-function syncTabButtons(target) {
+/** 卡 068 · A5：单枚胶囊横移 —— 宽度与位移按当前 Tab 实测（不依赖固定等分） */
+function updateNavMarker(target) {
+  const marker = document.getElementById('navMarker');
+  if (!navEl || !marker || !target) return;
+  const bar = navEl.getBoundingClientRect();
+  const tab = target.getBoundingClientRect();
+  if (!bar.width || !tab.width) return;
+  marker.style.width = (tab.width - 4) + 'px';
+  marker.style.transform = 'translateX(' + (tab.left - bar.left + 2) + 'px)';
+}
+/** 退场层的内联锁定字段（切回时要清干净，避免污染下一次布局） */
+const PANEL_LEAVE_KEYS = ['position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'display', 'overflow', 'margin', 'zIndex', 'transform', 'opacity'];
+function clearPanelOverride(panel) {
+  for (const k of PANEL_LEAVE_KEYS) panel.style[k] = '';
+}
+/** 在**任何布局改动之前**快照：rect + display。 */
+function snapshotPanel(panel) {
+  const r = panel.getBoundingClientRect();
+  return { top: r.top, left: r.left, width: r.width, height: r.height, display: getComputedStyle(panel).display };
+}
+/** 当前实际不透明度（退场从这一帧起播，不能再恒从 1 起 —— 快切会跳亮）。 */
+function panelOpacity(panel) {
+  const v = parseFloat(getComputedStyle(panel).opacity);
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+}
+function finishLeave(panel) {
+  leaveDeadline.delete(panel);
+  panel.classList.remove('leaving');
+  /* 先隐藏再清内联：WAAPI 结束后底层 opacity 会回弹到 1，清样式前必须已经不可见 */
+  panel.setAttribute('hidden', '');
+  clearPanelOverride(panel);
+  panel.style.opacity = '';
+}
+/** 卡 068 · A5（2026-11-19 按 Material fade-through 改）：
+ *  旧页淡出 90ms → 新页淡入 210ms，**两页不重叠**（Material 对底部导航的标准做法）。
+ *  起因：交叉淡入会让两页文字同时半透明（叠影被用户判成闪烁）；fade through 用一瞬背景换掉叠影。
+ *  ⚠️ 不缩放整块面板：面板里 `#dropzone` 是 fixed，transform 会把它变成相对面板定位而跳位。 */
+const ENTER_MS = 210;
+const LEAVE_MS = 90;
+/** 每次退场的结束时刻；中断时新面板按剩余退场时间入场，避免多等一个完整 90ms 出现空档。 */
+const leaveDeadline = new WeakMap();
+function enterPanel(panel, reduce, delay = 0) {
+  const wasVisible = !panel.hidden && !panel.classList.contains('leaving');
+  const from = wasVisible ? panelOpacity(panel) : 0;
+  leaveDeadline.delete(panel);
+  panel.getAnimations().forEach((a) => a.cancel());
+  clearPanelOverride(panel);
+  panel.classList.remove('leaving');
+  panel.classList.add('active');
+  panel.removeAttribute('hidden');
+  panel.inert = false;
+  if (reduce || typeof panel.animate !== 'function') return;
+  /* 已完整在场（重复点当前 Tab）⇒ 不重播淡入，避免整页闪一下 */
+  if (from >= 0.999) return;
+  panel.style.opacity = String(from);
+  const anim = panel.animate([{ opacity: from }, { opacity: 1 }], {
+    duration: ENTER_MS, delay, easing: 'cubic-bezier(.2,0,0,1)', fill: 'both',
+  });
+  anim.onfinish = () => {
+    anim.cancel(); // 清掉 fill:both，避免 finished 动画常驻 getAnimations
+    clearPanelOverride(panel);
+  };
+}
+/** 卡 068 · A5：旧面板退场（90ms 透明度）
+ *  ⚠️ 不能只加 `.leaving`：去掉 `.active` 会先触发重排，旧面板以新布局闪一下。
+ *  ⚠️ rect 必须由调用方在**新面板入场之前**快照 —— 否则新面板在上方时会把旧面板推下去。
+ *  做法：退场期 `position:fixed` + 快照 rect 钉在视口原位，结束再清。 */
+function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
+  /* 已在退场的面板不重启：二次起播会从 1 跳亮（快切实测 0.19→1.00） */
+  if (panel.classList.contains('leaving')) return;
+  const from = panelOpacity(panel);
+  panel.classList.remove('active');
+  panel.inert = true;
+  panel.getAnimations().forEach((a) => a.cancel());
+  if (reduce || typeof panel.animate !== 'function') {
+    finishLeave(panel);
+    return;
+  }
+  panel.classList.add('leaving');
+  panel.style.position = 'fixed';
+  panel.style.top = snap.top + 'px';
+  panel.style.right = 'auto';
+  panel.style.bottom = 'auto';
+  panel.style.left = snap.left + 'px';
+  panel.style.width = snap.width + 'px';
+  panel.style.height = snap.height + 'px';
+  panel.style.display = snap.display;
+  panel.style.overflow = 'hidden';
+  panel.style.margin = '0';
+  panel.style.transform = 'none';
+  panel.style.zIndex = '1';
+  panel.style.opacity = String(from);
+  /* 还没显出来的面板（等待入场的 90ms 窗口）直接收起，避免 0→1 闪亮 */
+  if (from <= 0.001) {
+    finishLeave(panel);
+    return;
+  }
+  leaveDeadline.set(panel, performance.now() + LEAVE_MS);
+  const anim = panel.animate([{ opacity: from }, { opacity: 0 }], { duration: LEAVE_MS, easing: 'cubic-bezier(.4,0,1,1)', fill: 'both' });
+  anim.onfinish = () => {
+    if (panel.classList.contains('active')) return;
+    panel.setAttribute('hidden', '');
+    anim.cancel();
+    finishLeave(panel);
+  };
+}
+/** 同步 aria/tabindex，并把「要入场的面板 / 要退场的面板（含退场前快照）」分桶。 */
+/** 中断 = 新的退场调度：入场只等还在退场的面板剩余时间，不再固定等满 90ms。 */
+function remainingLeaveDelay(reduce) {
+  if (reduce) return 0;
+  const now = performance.now();
+  let delay = 0;
+  for (const panel of document.querySelectorAll('.tabpanel')) {
+    const end = leaveDeadline.get(panel);
+    if (end) delay = Math.max(delay, end - now);
+  }
+  return Math.max(0, Math.min(LEAVE_MS, delay));
+}
+function collectTabPanels(target) {
+  const toEnter = [];
+  const toLeave = [];
   for (const t of tabButtons()) {
     const on = t === target;
     t.setAttribute('aria-selected', on ? 'true' : 'false');
     t.tabIndex = on ? 0 : -1;
     const panel = panelOf(t);
     if (!panel) continue;
-    panel.classList.toggle('active', on);
-    if (on) panel.removeAttribute('hidden');
-    else panel.setAttribute('hidden', '');
+    if (on) toEnter.push(panel);
+    else if (!panel.classList.contains('leaving') && (panel.classList.contains('active') || !panel.hidden)) {
+      toLeave.push({ panel, snap: snapshotPanel(panel) });
+    }
   }
+  return { toEnter, toLeave };
+}
+/** aria-selected / tabindex / 面板 active+hidden 三处同步（A2 的可判面）
+ * 卡 068 · A5：Material fade-through —— 旧面板 90ms 退场（fixed 锁原位），
+ *   结束后新面板 210ms 入场；减少动态效果时即时切换。
+ *   退场层只是视觉副本 —— 不拦截点击（pointer-events:none）。
+ *   ⚠️ 必须**先快照/退场、后入场**，否则新面板插入上方会推动旧面板的 rect。 */
+function syncTabButtons(target) {
+  const reduce = prefersReducedMotion();
+  const targetPanel = panelOf(target);
+  const { toEnter, toLeave } = collectTabPanels(target);
+  /* 目标已在场且没有要退场的面板 ⇒ 只同步 aria，不再重播过渡（重复点当前 Tab） */
+  const home = targetPanel && targetPanel.classList.contains('active') && !targetPanel.hidden &&
+    !targetPanel.classList.contains('leaving') && toLeave.length === 0;
+  for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
+  if (!home) for (const panel of toEnter) enterPanel(panel, reduce, remainingLeaveDelay(reduce));
+  updateNavMarker(target);
 }
 
 /** 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。 */
@@ -1132,8 +1275,34 @@ const themeMq = typeof window !== 'undefined' && window.matchMedia
   ? window.matchMedia('(prefers-color-scheme: light)')
   : null;
 let themeChoice = 'system';
+/* WebView 的 prefers-color-scheme 可能滞后于系统（真机实测：系统浅色时 mqDark=true），
+ * 所以原生壳里以 Doc2mdNative.getSystemTheme() 读 Activity 配置为准；桥不可用时才回落 mq。 */
+let nativeTheme = null;
+let nativeThemeSeq = 0;
+let themeSeq = 0;
+function nativeThemePlugin() {
+  const p = nativePluginObject();
+  return p && typeof p.getSystemTheme === 'function' ? p : null;
+}
+async function refreshNativeTheme() {
+  const my = ++nativeThemeSeq;
+  const p = nativeThemePlugin();
+  if (!p) {
+    nativeTheme = null;
+    return null;
+  }
+  try {
+    const r = await p.getSystemTheme();
+    /* 只接受最后一次请求：延迟返回的旧请求不得覆盖最新选择 */
+    if (my === nativeThemeSeq && r && (r.theme === 'light' || r.theme === 'dark')) nativeTheme = r.theme;
+  } catch {
+    if (my === nativeThemeSeq) nativeTheme = null;
+  }
+  return nativeTheme;
+}
 function resolveTheme(choice) {
   if (choice === 'light' || choice === 'dark') return choice;
+  if (nativeTheme === 'light' || nativeTheme === 'dark') return nativeTheme;
   return themeMq && themeMq.matches ? 'light' : 'dark';
 }
 function paintThemeButtons() {
@@ -1180,15 +1349,44 @@ function initTabs() {
     t.addEventListener('click', () => activateTab(t.dataset.tab));
   }
   if (navEl) navEl.addEventListener('keydown', onNavKey);
+  /* 卡 068 · A5：首帧与视口变化时重算胶囊（字体/安全区/横竖屏都会改变 Tab 宽度） */
+  const syncMarker = () => updateNavMarker(tabButtons().find((t) => t.getAttribute('aria-selected') === 'true'));
+  if (typeof window !== 'undefined') {
+    requestAnimationFrame(syncMarker);
+    window.addEventListener('resize', syncMarker);
+  }
+}
+function reapplySystemTheme() {
+  if (themeChoice !== 'system') return;
+  const my = ++themeSeq;
+  refreshNativeTheme().then(() => {
+    if (my !== themeSeq || themeChoice !== 'system') return;
+    applyTheme('system', false);
+  });
+}
+function onNativeThemeChanged(data) {
+  if (!data || (data.theme !== 'light' && data.theme !== 'dark')) return;
+  nativeTheme = data.theme;
+  /* 推送是更新的事实：无论当前是手选还是跟随系统，都作废在途的原生查询 */
+  nativeThemeSeq += 1;
+  if (themeChoice !== 'system') return;
+  themeSeq += 1; // 同时作废尚未返回的 system 切换
+  applyTheme('system', false);
 }
 function initTheme() {
   for (const b of document.querySelectorAll('[data-theme-set]')) {
-    b.addEventListener('click', () => switchTheme(b.dataset.themeSet, b));
+    b.addEventListener('click', () => switchTheme(b.dataset.themeSet, b).catch(() => applyTheme(b.dataset.themeSet, true)));
   }
-  if (!themeMq) return;
-  const onChange = () => { if (themeChoice === 'system') applyTheme('system', false); };
-  if (typeof themeMq.addEventListener === 'function') themeMq.addEventListener('change', onChange);
-  else if (typeof themeMq.addListener === 'function') themeMq.addListener(onChange);
+  if (themeMq) {
+    if (typeof themeMq.addEventListener === 'function') themeMq.addEventListener('change', reapplySystemTheme);
+    else if (typeof themeMq.addListener === 'function') themeMq.addListener(reapplySystemTheme);
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reapplySystemTheme(); });
+  }
+  const plugin = nativeThemePlugin();
+  if (plugin && typeof plugin.addListener === 'function') plugin.addListener('systemThemeChanged', onNativeThemeChanged);
+  reapplySystemTheme();
 }
 /** 主题切换的「圆形揭幕」（原型 v8 的艺术样式）：从被点的按钮位置绽开，380ms。
  * 不支持 View Transitions（或用户开了"减少动态效果"）时直接切 —— ⛔ 不因为动效把功能做挂。 */
@@ -1214,7 +1412,11 @@ function playReveal(vt, o) {
     );
   }).catch(() => { /* 过渡被取消不影响已生效的主题 */ });
 }
-export function switchTheme(choice, btn) {
+export async function switchTheme(choice, btn) {
+  const my = ++themeSeq; // 最后一次点击胜出：显式选择会立即作废尚未返回的 system 请求
+  /* 「跟随系统」先问原生：WebView 的 mq 在部分真机上恒暗，不能作为系统外观的唯一真相 */
+  if (choice === 'system') await refreshNativeTheme();
+  if (my !== themeSeq) return null;
   if (typeof document.startViewTransition !== 'function' || prefersReducedMotion()) {
     applyTheme(choice, true);
     return null;

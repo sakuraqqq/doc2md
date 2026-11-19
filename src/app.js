@@ -14,30 +14,69 @@ import { setStatus, renderResult, renderBatchSave, dropzone, fileInput, hintEl, 
 import { mountPreview, renderMarkdown } from './markdown-preview.js';
 import * as historyStore from './history-store.js';
 
+/* 卡 068 · A2：并发批次 —— 忙碌态按**在跑批次**计数，最后一批结束才摘 is-busy / 写完成态。
+ * 单一计数在「快批先完成、慢 OCR 仍在跑」时会提前退出处理态（外部验收 D11）。 */
+let busyDepth = 0;
+let busyTotal = 0;
+let busyDone = 0;
+let busyOk = 0;
+let busyFailed = 0;
+
+function beginBusy(list) {
+  busyDepth += 1;
+  busyTotal += list.length;
+  document.body.classList.add('is-busy');
+  setStatus('正在处理 ' + Math.max(1, busyTotal - busyDone) + ' 个文件…');
+}
+
+function noteBusyResult(error) {
+  busyDone += 1;
+  if (error) busyFailed += 1;
+  else busyOk += 1;
+}
+
+function endBusy() {
+  busyDepth = Math.max(0, busyDepth - 1);
+  if (busyDepth > 0) {
+    setStatus('正在处理 ' + Math.max(1, busyTotal - busyDone) + ' 个文件…');
+    return;
+  }
+  document.body.classList.remove('is-busy');
+  const failed = busyFailed;
+  const total = busyTotal;
+  setStatus(
+    failed === 0
+      ? '完成：共 ' + total + ' 个文件。'
+      : '完成：' + busyOk + ' 成功 / ' + failed + ' 失败（共 ' + total + ' 个文件）。',
+    failed > 0
+  );
+  busyTotal = 0;
+  busyDone = 0;
+  busyOk = 0;
+  busyFailed = 0;
+}
+
 export async function handleFiles(files) {
   const list = Array.from(files || []);
   if (list.length === 0) return;
   hintEl.style.display = 'none';
-  setStatus('正在处理 ' + list.length + ' 个文件…');
-  let ok = 0;
+  /* 卡 068 · A2：真实转换期间降低背景强度并暂停星点呼吸；成功/失败收尾都退出处理态。 */
+  beginBusy(list);
   /* 卡 044（A5）：收集【成功项】供「全部保存」用 —— ⚠️ 逐文件隔离语义不变：
    * 仍在同一个 for 里逐个 await；单件异常仍由 processOne 兜住，绝不打断整批。 */
   const saved = [];
-  for (const file of list) {
-    const r = await processOne(file);
-    if (r && !r.error) {
-      ok++;
-      saved.push({ fileName: file.name, text: r.markdown });
+  try {
+    for (const file of list) {
+      const r = await processOne(file);
+      noteBusyResult(r && r.error);
+      if (r && !r.error) {
+        saved.push({ fileName: file.name, text: r.markdown });
+      }
     }
+    renderBatchSave(saved); // 卡 044：≥2 个成功结果时出现「全部保存」入口（实现在 ui.js）
+  } finally {
+    endBusy();
   }
-  const failed = list.length - ok;
-  renderBatchSave(saved); // 卡 044：≥2 个成功结果时出现「全部保存」入口（实现在 ui.js）
-  setStatus(
-    failed === 0
-      ? '完成：共 ' + list.length + ' 个文件。'
-      : '完成：' + ok + ' 成功 / ' + failed + ' 失败（共 ' + list.length + ' 个文件）。',
-    failed > 0
-  );
 }
 
 /* 单文件处理（R9-1，2026-09-18）：失败就地隔离 —— 不许打断整批、不许让状态栏停在「正在处理」。

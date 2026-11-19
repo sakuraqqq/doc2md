@@ -6081,6 +6081,20 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
               labelled: p.map((x) => x.getAttribute('aria-labelledby')),
             };
           });
+        /* 卡 068 · A5：Material fade-through（旧 90ms 出 → 新 210ms 进）；等面板动画全部结束再断言终态。 */
+        const settle = () =>
+          page.waitForFunction(
+            () => {
+              const panels = [...document.querySelectorAll('[role="tabpanel"]')];
+              return (
+                !document.querySelector('.tabpanel.leaving') &&
+                panels.every((p) => p.getAnimations().length === 0) &&
+                panels.filter((p) => !p.hidden && getComputedStyle(p).display !== 'none').length === 1
+              );
+            },
+            null,
+            { timeout: 3000 }
+          );
         const s0 = await state();
         assert.deepEqual(s0.sel, ['true', 'false', 'false'], '初始应停在「转换」');
         assert.deepEqual(s0.shown, [true, false, false], '初始只应显示转换面板');
@@ -6088,17 +6102,309 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.deepEqual(s0.labelled, ['tab-convert', 'tab-files', 'tab-settings'], '面板缺 aria-labelledby 或指向不对');
 
         await page.click('#tab-files');
+        await settle();
         const s1 = await state();
         assert.deepEqual(s1.sel, ['false', 'true', 'false'], '点「文件」后 aria-selected 未同步');
         assert.deepEqual(s1.shown, [false, true, false], '点「文件」后面板 visible 未同步');
+        /* 卡 068 · A5：入场动画结束后不得留下内联 opacity:0（否则新页“消失”） */
+        assert.equal(
+          await page.evaluate(() => +getComputedStyle(document.querySelector('.tabpanel.active')).opacity),
+          1,
+          '落定后当前面板 opacity ≠ 1（残留内联 opacity:0）'
+        );
+
+        /* 卡 068 闪烁回归（2026-11-19）：退场层必须保持**原 rect + display**。
+         * 两个病根：① 去掉 .active 先重排（转换页 520→106 高、x 20→40）；
+         * ② 先让新面板入场、再抓旧面板 rect —— 新面板在旧面板上方时会把旧 rect 推下去 520/357px。
+         * 修法：先快照全部退场面板，再统一 fixed 退场，最后入场。这里同一任务内点击+读，避开 120ms 窗口。 */
+        const pairs = [
+          ['convert', 'files'], ['files', 'convert'], ['settings', 'files'],
+          ['files', 'settings'], ['convert', 'settings'], ['settings', 'convert'],
+        ];
+        for (const [from, to] of pairs) {
+          await page.click('#tab-' + from);
+          await settle();
+          const leaving = await page.evaluate(([f, t]) => {
+            const old = document.getElementById('panel-' + f);
+            const b = old.getBoundingClientRect();
+            const first = old.firstElementChild;
+            const cb = first && first.getBoundingClientRect();
+            document.getElementById('tab-' + t).click();
+            const cs = getComputedStyle(old);
+            const a = old.getBoundingClientRect();
+            const ca = first && first.getBoundingClientRect();
+            return {
+              before: [b.x, b.y, b.width, b.height].map((n) => +n.toFixed(1)),
+              after: [a.x, a.y, a.width, a.height].map((n) => +n.toFixed(1)),
+              childBefore: cb ? [cb.x, cb.y, cb.width, cb.height].map((n) => +n.toFixed(1)) : null,
+              childAfter: ca ? [ca.x, ca.y, ca.width, ca.height].map((n) => +n.toFixed(1)) : null,
+              display: cs.display,
+              position: cs.position,
+              pointerEvents: cs.pointerEvents,
+              leaving: old.classList.contains('leaving'),
+            };
+          }, [from, to]);
+          const dir = from + '→' + to;
+          assert.ok(leaving.leaving, dir + '：切换当帧旧面板未进入 .leaving');
+          assert.notEqual(leaving.display, 'none', dir + '：退场层被 display:none 吃掉（旧面板瞬间消失 ⇒ 空档闪烁）');
+          assert.equal(leaving.position, 'fixed', dir + '：退场层未钉在视口原位（会被重排带动）');
+          assert.equal(leaving.pointerEvents, 'none', dir + '：退场层会拦截点击');
+          for (let i = 0; i < 4; i++) {
+            assert.ok(Math.abs(leaving.before[i] - leaving.after[i]) <= 1.5, dir + '：退场层 rect 变了（布局塌陷/位移）：' + JSON.stringify(leaving));
+          }
+          /* 子内容也必须原地：fixed 会建 BFC，若子边距原本塌陷到面板外，内容会突然下移（设置页 22px）。 */
+          if (leaving.childBefore) {
+            for (let i = 0; i < 4; i++) {
+              assert.ok(
+                Math.abs(leaving.childBefore[i] - leaving.childAfter[i]) <= 1.5,
+                dir + '：退场层子内容位移了（margin 塌陷变化）：' + JSON.stringify(leaving)
+              );
+            }
+          }
+          await settle();
+        }
+        await page.click('#tab-files');
+        await settle();
+
+        /* 卡 068 返修 R1：80–150ms 快切/打断不得闪白或两页同显。
+         * 判据：退场面板 opacity 不得反升；可见且 >50% 不透明的面板 ≤1；落定后唯一目标。 */
+        const fastSwitch = await page.evaluate(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          const panels = [...document.querySelectorAll('[role="tabpanel"]')];
+          const click = (id) => document.getElementById(id).click();
+          const sample = (gap) =>
+            new Promise((resolve) => {
+              const frames = [];
+              const t0 = performance.now();
+              const tick = () => {
+                const t = performance.now() - t0;
+                frames.push({
+                  t: Math.round(t),
+                  o: panels.map((p) => +getComputedStyle(p).opacity),
+                  cls: panels.map((p) => p.className),
+                  hidden: panels.map((p) => p.hidden),
+                  disp: panels.map((p) => getComputedStyle(p).display),
+                });
+                if (t < 900) requestAnimationFrame(tick);
+                else resolve(frames);
+              };
+              requestAnimationFrame(tick);
+              click('tab-files');
+              setTimeout(() => click('tab-settings'), gap);
+            });
+          const analyze = (frames) => {
+            let maxVisible = 0;
+            let leaveRises = 0;
+            let blankMs = 0;
+            let blankStart = null;
+            for (let i = 1; i < frames.length; i++) {
+              const cur = frames[i];
+              const prev = frames[i - 1];
+              maxVisible = Math.max(
+                maxVisible,
+                cur.o.filter((o, k) => !cur.hidden[k] && cur.disp[k] !== 'none' && o > 0.5).length,
+              );
+              for (let k = 0; k < cur.o.length; k++) {
+                if (/leaving/.test(cur.cls[k]) && cur.o[k] - prev.o[k] > 0.05) leaveRises++;
+              }
+              const visMax = Math.max(0, ...cur.o.filter((o, k) => !cur.hidden[k] && cur.disp[k] !== 'none'));
+              if (visMax <= 0.001) {
+                if (blankStart === null) blankStart = cur.t;
+              } else {
+                if (blankStart !== null) blankMs = Math.max(blankMs, cur.t - blankStart);
+                blankStart = null;
+              }
+            }
+            if (blankStart !== null) blankMs = Math.max(blankMs, frames[frames.length - 1].t - blankStart);
+            const last = frames[frames.length - 1];
+            return {
+              maxVisible,
+              leaveRises,
+              blankMs,
+              visibleEnd: last.o.filter((o, k) => !last.hidden[k] && last.disp[k] !== 'none').length,
+            };
+          };
+          const out = [];
+          for (const gap of [80, 120, 150]) {
+            click('tab-convert');
+            await sleep(700);
+            out.push({ gap, ...analyze(await sample(gap)) });
+            await sleep(500);
+          }
+          return out;
+        });
+        for (const r of fastSwitch) {
+          assert.equal(r.leaveRises, 0, '快切 ' + r.gap + 'ms：退场面板 opacity 反升（闪白/重影）—— ' + JSON.stringify(r));
+          assert.ok(r.maxVisible <= 1, '快切 ' + r.gap + 'ms：两页同时不透明 —— ' + JSON.stringify(r));
+          assert.ok(r.blankMs <= 34, '快切 ' + r.gap + 'ms：内容区全透明窗口 ' + r.blankMs + 'ms（>2 帧）—— ' + JSON.stringify(r));
+          assert.equal(r.visibleEnd, 1, '快切 ' + r.gap + 'ms 落定后不是唯一目标面板 —— ' + JSON.stringify(r));
+        }
+        /* D6：重复点当前 Tab 不得整页淡出再淡入 */
+        const reclickMin = await page.evaluate(async () => {
+          const panel = document.getElementById('panel-files');
+          document.getElementById('tab-files').click();
+          await new Promise((r) => setTimeout(r, 700));
+          const samples = [];
+          const t0 = performance.now();
+          await new Promise((resolve) => {
+            const tick = () => {
+              samples.push(+getComputedStyle(panel).opacity);
+              if (performance.now() - t0 < 400) requestAnimationFrame(tick);
+              else resolve();
+            };
+            document.getElementById('tab-files').click();
+            requestAnimationFrame(tick);
+          });
+          return Math.min(...samples);
+        });
+        assert.ok(reclickMin >= 0.99, '重复点当前 Tab 时面板被淡出（最低 opacity=' + reclickMin + '）');
+
+        /* 卡 068 返修 R8：跟随系统以原生 uiMode 为准（真机 WebView 的 mq 恒暗） */
+        const themeWithNative = async (mq, nativeTheme) => {
+          await page.emulateMedia({ colorScheme: mq });
+          await page.waitForTimeout(120);
+          return page.evaluate(async (theme) => {
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            const prev = window.Capacitor;
+            window.Capacitor = {
+              Plugins: {
+                Doc2mdNative: {
+                  getSystemTheme: async () => ({ theme, uiMode: theme === 'dark' ? 33 : 17, isLightTheme: false }),
+                },
+              },
+            };
+            document.querySelector('[data-theme-set="system"]').click();
+            await sleep(650);
+            const out = { theme: document.documentElement.dataset.theme, mqLight: matchMedia('(prefers-color-scheme: light)').matches };
+            window.Capacitor = prev;
+            return out;
+          }, nativeTheme);
+        };
+        const nativeLight = await themeWithNative('dark', 'light');
+        assert.equal(nativeLight.theme, 'light', '原生 uiMode=light + mq=dark 时「跟随系统」未落浅色：' + JSON.stringify(nativeLight));
+        const nativeDark = await themeWithNative('light', 'dark');
+        assert.equal(nativeDark.theme, 'dark', '原生 uiMode=dark + mq=light 时「跟随系统」未落深色：' + JSON.stringify(nativeDark));
+        /* 桥不可用（老 APK / mq 缺失）⇒ 回落 matchMedia */
+        await page.emulateMedia({ colorScheme: 'light' });
+        await page.waitForTimeout(120);
+        const fallbackLight = await page.evaluate(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          const prev = window.Capacitor;
+          delete window.Capacitor;
+          document.querySelector('[data-theme-set="system"]').click();
+          await sleep(650);
+          const out = { theme: document.documentElement.dataset.theme, mqLight: matchMedia('(prefers-color-scheme: light)').matches, prev };
+          window.Capacitor = prev;
+          return out;
+        });
+        assert.equal(fallbackLight.theme, 'light', '无原生桥且 mq=light 时「跟随系统」未回落浅色：' + JSON.stringify(fallbackLight));
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await page.waitForTimeout(120);
+        const fallbackDark = await page.evaluate(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          delete window.Capacitor;
+          document.querySelector('[data-theme-set="system"]').click();
+          await sleep(650);
+          return { theme: document.documentElement.dataset.theme, mqLight: matchMedia('(prefers-color-scheme: light)').matches };
+        });
+        assert.equal(fallbackDark.theme, 'dark', '无原生桥且 mq=dark 时「跟随系统」未回落深色：' + JSON.stringify(fallbackDark));
+        /* R8 竞态：system 请求未返回时点「浅色」，旧请求不得覆盖最新选择 */
+        const themeRace = await page.evaluate(async () => {
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          const prev = window.Capacitor;
+          let reply = null;
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                getSystemTheme: () => new Promise((resolve) => { reply = () => resolve({ theme: 'dark' }); }),
+                addListener: () => Promise.resolve({ remove: () => {} }),
+              },
+            },
+          };
+          const click = (choice) => document.querySelector('[data-theme-set="' + choice + '"]').click();
+          const read = () => ({
+            theme: document.documentElement.dataset.theme,
+            selected: document.querySelector('[data-theme-set][aria-pressed="true"]')?.dataset.themeSet,
+            stored: localStorage.getItem('doc2md-theme'),
+          });
+          click('system');
+          await sleep(80);
+          const pending = typeof reply === 'function';
+          click('light');
+          await sleep(40);
+          const before = read();
+          if (reply) reply();
+          await sleep(120);
+          const after = read();
+          window.Capacitor = prev;
+          return { pending, before, after };
+        });
+        assert.ok(themeRace.pending, '主题竞态探针前提不成立（原生请求未挂起）');
+        assert.equal(themeRace.after.theme, 'light', '延迟的 system 请求覆盖了最新浅色：' + JSON.stringify(themeRace));
+        assert.equal(themeRace.after.selected, 'light', '主题按钮选择被延迟请求改回 system：' + JSON.stringify(themeRace));
+        assert.equal(themeRace.after.stored, 'light', 'localStorage 被延迟请求覆盖：' + JSON.stringify(themeRace));
+        /* R8 推送乱序：手选深色时点跟随系统，旧查询回包不得覆盖先到的 light 推送 */
+        await page.context().addInitScript(() => {
+          localStorage.setItem('doc2md-theme', 'dark');
+          window.auditNative = { current: 'dark' };
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                addListener: (event, handler) => {
+                  if (event === 'systemThemeChanged') window.auditNative.notify = handler;
+                  return Promise.resolve({ remove() {} });
+                },
+                getSystemTheme: () => {
+                  const snapshot = window.auditNative.current;
+                  return new Promise((resolve) => { window.auditNative.finish = () => resolve({ theme: snapshot }); });
+                },
+              },
+            },
+          };
+        });
+        const pushPage = await page.context().newPage();
+        await pushPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+        await pushPage.waitForTimeout(300);
+        await pushPage.emulateMedia({ reducedMotion: 'reduce' });
+        await pushPage.click('#tab-settings');
+        const pushRace = await pushPage.evaluate(async () => {
+          const read = () => ({ theme: document.documentElement.dataset.theme, selection: localStorage.getItem('doc2md-theme') });
+          document.querySelector('[data-theme-set="system"]').click();
+          const pending = typeof window.auditNative.finish === 'function';
+          window.auditNative.current = 'light';
+          window.auditNative.notify({ theme: 'light' });
+          const afterPush = read();
+          window.auditNative.finish();
+          await new Promise((r) => setTimeout(r, 80));
+          return { pending, afterPush, afterReply: read() };
+        });
+        await pushPage.close();
+        assert.ok(pushRace.pending, '推送乱序探针前提不成立（查询未挂起）');
+        assert.equal(pushRace.afterReply.theme, 'light', '先到的 light 推送被旧查询 dark 覆盖：' + JSON.stringify(pushRace));
+        assert.equal(pushRace.afterReply.selection, 'system', '推送乱序后选择不是 system：' + JSON.stringify(pushRace));
+        await page.emulateMedia({ colorScheme: null });
 
         await page.focus('#tab-files');
         await page.keyboard.press('ArrowRight');
+        await settle();
         const s2 = await state();
         assert.deepEqual(s2.sel, ['false', 'false', 'true'], '方向键 → 未切到「设置」');
         await page.keyboard.press('ArrowLeft');
+        await settle();
         const s3 = await state();
         assert.deepEqual(s3.sel, ['false', 'true', 'false'], '方向键 ← 未切回「文件」');
+
+        /* 卡 068 · A5：单枚胶囊覆盖「图标 + 标签」，几何对齐当前 Tab（不是三等分硬编码）。
+         * 胶囊本身 280ms 横移（卡面要求），等它落定再量几何。 */
+        await page.waitForTimeout(320);
+        const marker = await page.evaluate(() => {
+          const m = document.getElementById('navMarker').getBoundingClientRect();
+          const t = document.querySelector('#tab-files').getBoundingClientRect();
+          return { mw: m.width, mx: m.left, tw: t.width, tx: t.left, count: document.querySelectorAll('#navMarker').length };
+        });
+        assert.equal(marker.count, 1, '导航胶囊不是单枚（#navMarker 数量=' + marker.count + '）');
+        assert.ok(Math.abs(marker.mw - (marker.tw - 4)) <= 1.5, '胶囊宽度未覆盖当前 Tab：' + JSON.stringify(marker));
+        assert.ok(Math.abs(marker.mx - (marker.tx + 2)) <= 1.5, '胶囊左缘未对齐当前 Tab：' + JSON.stringify(marker));
         assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
       });
 
@@ -6786,8 +7092,38 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.equal(card.hasOpen, true, '文件卡缺「查看」入口');
         assert.equal(card.hiddenValue, md, '卡片隐藏 textarea 与源文本不一致（Q 组口径）');
         assert.equal(card.taHidden, true, 'Q 组 textarea 未隐藏');
-        await page.locator('.card .row-preview').first().click();
+        /* 卡 068 返修 R3：预览遮罩从第一帧起就要覆盖整个视口（旧的 margin 动画会让 fixed 盒矮 18px） */
+        const openMask = await page.evaluate(async () => {
+          const v = document.getElementById('mdViewer');
+          const frames = [];
+          const t0 = performance.now();
+          await new Promise((resolve) => {
+            const tick = () => {
+              if (!v.hidden) {
+                const r = v.getBoundingClientRect();
+                frames.push({ w: r.width, h: r.height });
+              }
+              if (performance.now() - t0 < 500) requestAnimationFrame(tick);
+              else resolve();
+            };
+            requestAnimationFrame(tick);
+            document.querySelector('.card .row-preview').click();
+          });
+          const r = v.getBoundingClientRect();
+          return { frames, w: r.width, h: r.height, vw: innerWidth, vh: innerHeight };
+        });
         await page.waitForSelector('#mdViewer:not([hidden])', { timeout: 5000 });
+        assert.ok(openMask.frames.length > 0, '预览打开后没有采到帧（遮罩测量失效）');
+        const minMaskW = Math.min(...openMask.frames.map((f) => f.w));
+        const minMaskH = Math.min(...openMask.frames.map((f) => f.h));
+        assert.ok(
+          Math.abs(minMaskW - openMask.vw) <= 1 && Math.abs(minMaskH - openMask.vh) <= 1,
+          '预览遮罩未从第一帧起覆盖视口：' + JSON.stringify({ minMaskW, minMaskH, vw: openMask.vw, vh: openMask.vh }),
+        );
+        assert.ok(
+          Math.abs(openMask.w - openMask.vw) <= 0.5 && Math.abs(openMask.h - openMask.vh) <= 0.5,
+          '预览落定后遮罩不足视口：' + JSON.stringify(openMask),
+        );
         const first = await page.evaluate(() => ({
           name: document.getElementById('mdViewerName').textContent,
           preview: !!document.querySelector('#mdViewerBody .md-preview'),
@@ -6800,6 +7136,44 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.ok(first.html.includes('<h1'), '全屏预览未渲染标题');
         assert.equal(first.previewPressed, 'true', '默认「预览」未按下');
         assert.equal(first.rawPressed, 'false', '默认「原文」不应按下');
+        /* 卡 068 返修 R9：有结果时「正在处理」状态必须可见（旧规则 body.has-results #status 整条 display:none） */
+        const busyStatus = await page.evaluate(() => {
+          const s = document.getElementById('status');
+          const previous = s.textContent;
+          const hadBusy = document.body.classList.contains('is-busy');
+          const hadResults = document.body.classList.contains('has-results');
+          document.body.classList.add('has-results', 'is-busy');
+          s.textContent = '正在处理 1 个文件…';
+          const cs = getComputedStyle(s);
+          const out = { display: cs.display, height: s.getBoundingClientRect().height };
+          s.textContent = previous;
+          if (!hadBusy) document.body.classList.remove('is-busy');
+          if (!hadResults) document.body.classList.remove('has-results');
+          return out;
+        });
+        assert.notEqual(busyStatus.display, 'none', '有结果时「正在处理」状态被 display:none 隐藏：' + JSON.stringify(busyStatus));
+        assert.ok(busyStatus.height > 0, '有结果时「正在处理」状态高度为 0：' + JSON.stringify(busyStatus));
+        /* 卡 068 返修 R6：浅色结果行不得被旧纸墨规则覆盖 */
+        const lightRow = await page.evaluate(async () => {
+          document.querySelector('[data-theme-set="light"]').click();
+          await new Promise((r) => setTimeout(r, 500));
+          const row = document.querySelector('.result-row');
+          const cs = getComputedStyle(row);
+          const name = getComputedStyle(row.querySelector('.name'));
+          const body = getComputedStyle(row.querySelector('.card-body'));
+          return {
+            bg: cs.backgroundColor,
+            radius: cs.borderRadius,
+            nameLine: name.lineHeight,
+            bodyPad: body.padding,
+            theme: document.documentElement.dataset.theme,
+          };
+        });
+        assert.equal(lightRow.theme, 'light', '主题未切到浅色');
+        assert.ok(!/rgba\(0, 0, 0, 0\)/.test(lightRow.bg), '浅色结果行底色仍是 transparent（旧规则覆盖）：' + lightRow.bg);
+        assert.equal(lightRow.radius, '18px', '浅色结果行圆角不是 18px：' + lightRow.radius);
+        assert.ok(Math.abs(parseFloat(lightRow.nameLine) - 20.3) <= 0.3, '浅色结果行文件名行高不是 1.45×14：' + lightRow.nameLine);
+        assert.equal(lightRow.bodyPad, '0px 0px 2px 48px', '浅色结果行正文内边距不是留白版：' + lightRow.bodyPad);
         await page.click('#mdViewerRaw');
         const raw = await page.evaluate(() => {
           const ta = document.querySelector('#mdViewerBody textarea.md-viewer-raw');
@@ -8095,6 +8469,74 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
         assert.equal(gone.btn, true, '离开「文件」页后搜索图标应隐藏');
         assert.equal(gone.bar, true, '离开「文件」页后搜索框应收起（A8：切走 Tab 退出搜索）');
         assert.equal(gone.q, '', '切走 Tab 后关键词应清空');
+
+        /* 卡 068 返修 R5/R6：320px 失效行移除键 44×44；浅色文件行用留白版几何 */
+        await page.setViewportSize({ width: 320, height: 640 });
+        const narrow = await page.evaluate(async () => {
+          const h = window.__doc2md.history;
+          const prevCap = window.Capacitor;
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                historySupport: async () => ({ supported: true, sdkInt: 34 }),
+                historyLoad: async () => ({
+                  ok: true,
+                  json: JSON.stringify({
+                    schemaVersion: 1,
+                    keepHistory: true,
+                    records: [
+                      {
+                        id: '11111111-1111-4111-8111-111111111111',
+                        name: 'gone.md',
+                        uri: 'content://x/gone',
+                        bytes: 512,
+                        mime: 'text/markdown',
+                        kind: 'md',
+                        createdAt: Date.now(),
+                      },
+                    ],
+                  }),
+                }),
+                historySave: async () => ({ ok: true }),
+                historyCheck: async ({ uris }) => ({ ok: true, results: uris.map((uri) => ({ uri, exists: false })) }),
+              },
+            },
+          };
+          h.__setBackend('native');
+          await h.load();
+          await h.refresh();
+          document.getElementById('tab-files').click();
+          await new Promise((r) => setTimeout(r, 200));
+          const row = document.querySelector('#filesList .file-row.invalid');
+          const remove = row && row.querySelector('.row-action.icon-only');
+          const rr = remove ? remove.getBoundingClientRect() : null;
+          document.querySelector('[data-theme-set="light"]').click();
+          await new Promise((r) => setTimeout(r, 500));
+          const cs = getComputedStyle(row);
+          const meta = getComputedStyle(row.querySelector('.file-meta'));
+          const out = {
+            remove: rr ? [rr.width, rr.height] : null,
+            innerWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            light: { padding: cs.padding, radius: cs.borderRadius, meta: meta.fontSize },
+          };
+          window.Capacitor = prevCap;
+          h.__setBackend('memory', { json: '' });
+          await h.load();
+          await h.refresh();
+          document.querySelector('[data-theme-set="dark"]').click();
+          return out;
+        });
+        assert.ok(
+          narrow.remove && narrow.remove[0] >= 43.5 && narrow.remove[1] >= 43.5,
+          '320px 失效行移除键小于 44×44：' + JSON.stringify(narrow),
+        );
+        assert.equal(narrow.scrollWidth, narrow.innerWidth, '320px 文件列表出现横向溢出：' + JSON.stringify(narrow));
+        /* ≤370px 的窄屏内边距按 068 的 7px（非 390px 的 8px） */
+        assert.equal(narrow.light.padding, '7px', '320px 浅色文件行内边距不是窄屏 7px：' + narrow.light.padding);
+        assert.equal(narrow.light.radius, '14px', '浅色文件行圆角不是 14px：' + narrow.light.radius);
+        assert.equal(narrow.light.meta, '11px', '浅色文件行元信息字号不是 11px：' + narrow.light.meta);
+        await page.setViewportSize({ width: 412, height: 892 });
       });
 
       await t.test('Z10-7b A7 分享 MIME（拍板 A 兼容例外）：md ⇒ octet-stream；zip ⇒ application/zip', async () => {

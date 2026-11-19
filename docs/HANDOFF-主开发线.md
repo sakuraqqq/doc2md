@@ -327,3 +327,14 @@
 - ⚠️ **同前提不成立（一并留痕，不随本卡修）**：任务书提到的 `?theme=dark` URL 切主题**改前也不存在**（主题走设置页三档 + `localStorage` + `matchMedia`），不是 065/066 的回归。
 - **F8 超范围留痕**：065 的 12 文件改动中，**用户真机反馈驱动** = `src/ui.js`（结果搜索/显隐/极简）、`tests/contract_v1.test.mjs`（Z6-2 顺序 / Z8-5 搜索入口）、`tools/css-guard.mjs` + `package.json`（守卫与脚本）、`src/template.html`（布局/样式）；其余为产物与文档。逐条清单与追认依据见 `.私档/卡/066/回执-066.md` §R8。
 - **真机纪律**：本批 debug 包装卸与设备取证由执行线完成（与 065 同），⛔ 未 push / tag / 发布。
+
+## 12. 卡 068 星空留白版（2026-11-19）
+
+- 依据：调度卡 068；小样 `index-refined.html` **75,602 B / `F7F30E66…`**、对照 PNG **425,104 B / `322E1E2B…`**（开工回读一致）。067 暂停，无 067 分支。
+- 落地：三页留白版（首页星图/底部蓝晕/偏右猎户座；文件/设置降背景；结果卡名/元数据/状态三层；文件行 62px；单枚 `#navMarker` 280ms 横移；面板 **90/210ms fade-through（DD-21）**；主题圆形揭示沿用；预览轻微上滑；忙态 `is-busy` 暂停呼吸）。
+- 证据：A1–A7 截图/录像/状态 JSON 在 `.私档/卡/068/evidence/`（含 WSL Chromium 151 换环境 A5/A6 一致）；真机 **V2573A / Android 16 / WebView 157.0.8103.38**，安全区 38/18，六张截图双端 SHA 一致。
+- **时点值（仅对账）**：`index.html` **317,518 B / `FADA47086C4EF3C8BA9B3B32363C21775AB40683C0C043D383EBF417B374E807`**；debug APK **22,962,717 B / `708767DFF328D8C327E431110F7611E66F343169B91C8CA2AF9898A2029E0248`**；契约 **413/411/0/2**；`pwa-audit` **62/0**；metrics **37/1161/0/0.5%**。
+- **2026-11-19 切页闪烁修复（四轮）**：① 退场层去掉 `.active` 后先被重排（转换页 520→106 高、x 20→40），随后 `hidden` ⇒ 旧页以错误布局闪一下；② 原循环先入场后抓旧面板 rect，新页在旧页上方时把旧 rect 推下（files→convert +520 / settings→files +357）⇒ fixed 钉错位置；③ 交叉淡入本身让两页文字半透明叠影 ⇒ 按上游 **Material fade-through** 改「旧 90ms 出 → 新 210ms 进、不重叠」，并修掉清理漏 `opacity` 导致新页不可见；④ 设置页子 margin 静态时塌陷到面板外，fixed 建 BFC 后 22px 突然生效 ⇒ 内容 96→118 下移；`.tabpanel.active{display:flow-root}` 固定塌陷态。修法 = 先快照全部退场面板（rect+display）→ 统一 fixed 退场 → 再入场；Z6-1 扩到**全部 6 个方向** + 面板/首个子元素 rect + 落定 `opacity=1` 断言（pre-fix `74c04c4` / `c17e04f` / `f8e81eb` 分别必红）。口径记录 `docs/design-decisions.md` DD-21；红绿证据 `evidence/red-green-flash.json` / `red-green-flash2.json` / `red-green-bfc.json`。
+- 断言过户：只迁移 **Z6-1**（过渡落定后唯一可见 + `#navMarker` 几何），契约数不变；`docs/BASELINE.json` 无当前产物字段 ⇒ 计数/交付面未变，本卡不改。
+- ⛔ 未 push / tag / 发布（分支 `ui/068-starry-refinement` 仅本地）。
+- **2026-11-19 两轮验收返修（累计 R1/R3/R4/R5/R6/R7/R8/R9）**：第一轮 R1/R3/R4/R5/R6；R8 真机取证后改原生 `getSystemTheme()`（Activity uiMode）+ `systemThemeChanged`（DD-22）；R7 APK 安装与安全区。**第三轮（Codex 复验）**：R1 中断空档 → 入场改等剩余退场（`remainingLeaveDelay`）；R8 延迟返回竞态 → `themeSeq/nativeThemeSeq` 最后一次点击胜出；**R8 推送乱序补修** → `onNativeThemeChanged` 在手选分支也先 `nativeThemeSeq++`（旧查询回包不得覆盖先到的 light 推送）；R9 有结果时处理态被 `display:none` → `body.has-results:not(.is-busy)`。最终产物 **323,963 B / `464C5516…`**；APK **22,964,320 B / `1E06560C…`**（装机 SHA 逐字节一致）；`apk-version` / `apk-artifact` 双 PASS；门禁 `npm test` **413/411/0/2 exit 0**（168.9s）、build ×2 同源、lint 0、css 505/0、metrics 37/**1173**/0/0.5%、pwa 62/0、baseline 5/5。真机安全区 38/18。详见 `.私档/卡/068/回执-068.md` §第三轮补修。
