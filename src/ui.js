@@ -1365,9 +1365,12 @@ function reapplySystemTheme() {
   });
 }
 function onNativeThemeChanged(data) {
-  if (data && (data.theme === 'light' || data.theme === 'dark')) nativeTheme = data.theme;
+  if (!data || (data.theme !== 'light' && data.theme !== 'dark')) return;
+  nativeTheme = data.theme;
+  /* 推送是更新的事实：无论当前是手选还是跟随系统，都作废在途的原生查询 */
+  nativeThemeSeq += 1;
   if (themeChoice !== 'system') return;
-  themeSeq += 1; // 原生推送是最新的事实，作废尚未返回的旧请求
+  themeSeq += 1; // 同时作废尚未返回的 system 切换
   applyTheme('system', false);
 }
 function initTheme() {

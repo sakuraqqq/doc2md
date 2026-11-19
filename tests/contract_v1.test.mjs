@@ -6343,6 +6343,45 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.equal(themeRace.after.theme, 'light', '延迟的 system 请求覆盖了最新浅色：' + JSON.stringify(themeRace));
         assert.equal(themeRace.after.selected, 'light', '主题按钮选择被延迟请求改回 system：' + JSON.stringify(themeRace));
         assert.equal(themeRace.after.stored, 'light', 'localStorage 被延迟请求覆盖：' + JSON.stringify(themeRace));
+        /* R8 推送乱序：手选深色时点跟随系统，旧查询回包不得覆盖先到的 light 推送 */
+        await page.context().addInitScript(() => {
+          localStorage.setItem('doc2md-theme', 'dark');
+          window.auditNative = { current: 'dark' };
+          window.Capacitor = {
+            Plugins: {
+              Doc2mdNative: {
+                addListener: (event, handler) => {
+                  if (event === 'systemThemeChanged') window.auditNative.notify = handler;
+                  return Promise.resolve({ remove() {} });
+                },
+                getSystemTheme: () => {
+                  const snapshot = window.auditNative.current;
+                  return new Promise((resolve) => { window.auditNative.finish = () => resolve({ theme: snapshot }); });
+                },
+              },
+            },
+          };
+        });
+        const pushPage = await page.context().newPage();
+        await pushPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+        await pushPage.waitForTimeout(300);
+        await pushPage.emulateMedia({ reducedMotion: 'reduce' });
+        await pushPage.click('#tab-settings');
+        const pushRace = await pushPage.evaluate(async () => {
+          const read = () => ({ theme: document.documentElement.dataset.theme, selection: localStorage.getItem('doc2md-theme') });
+          document.querySelector('[data-theme-set="system"]').click();
+          const pending = typeof window.auditNative.finish === 'function';
+          window.auditNative.current = 'light';
+          window.auditNative.notify({ theme: 'light' });
+          const afterPush = read();
+          window.auditNative.finish();
+          await new Promise((r) => setTimeout(r, 80));
+          return { pending, afterPush, afterReply: read() };
+        });
+        await pushPage.close();
+        assert.ok(pushRace.pending, '推送乱序探针前提不成立（查询未挂起）');
+        assert.equal(pushRace.afterReply.theme, 'light', '先到的 light 推送被旧查询 dark 覆盖：' + JSON.stringify(pushRace));
+        assert.equal(pushRace.afterReply.selection, 'system', '推送乱序后选择不是 system：' + JSON.stringify(pushRace));
         await page.emulateMedia({ colorScheme: null });
 
         await page.focus('#tab-files');

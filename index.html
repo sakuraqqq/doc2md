@@ -4773,7 +4773,9 @@ ${xlsxRowsToMd(kept)}`);
     });
   }
   function onNativeThemeChanged(data) {
-    if (data && (data.theme === "light" || data.theme === "dark")) nativeTheme = data.theme;
+    if (!data || data.theme !== "light" && data.theme !== "dark") return;
+    nativeTheme = data.theme;
+    nativeThemeSeq += 1;
     if (themeChoice !== "system") return;
     themeSeq += 1;
     applyTheme("system", false);
