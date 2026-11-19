@@ -6408,7 +6408,7 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
       });
 
-      await t.test('Z6-2 A3 首屏无 hero：无居中大标题 / 无徽章胶囊 / 无虚线框；主操作是选择文档卡片（2026-11-11 起沉底在上次转换之下）', async () => {
+      await t.test('Z6-2 A3 首屏无 hero：无居中大标题 / 无徽章胶囊 / 无虚线框；主操作是选择文档卡片（卡 069 · R5 起首页无「上次转换」块）', async () => {
         await page.click('#tab-convert');
         const hero = await page.evaluate(() => {
           const conv = document.getElementById('panel-convert');
@@ -6419,10 +6419,9 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
             badges: document.querySelectorAll('.badges, .badge').length,
             borderStyle: getComputedStyle(dz).borderTopStyle,
             pickerText: dz.textContent.replace(/\s+/g, ' ').trim(),
-            lastTitle: (document.getElementById('lastTitle') || {}).textContent || '',
             dzTop: dz.getBoundingClientRect().top,
             dzHeight: Math.round(dz.getBoundingClientRect().height),
-            lastTop: document.getElementById('lastEmpty').getBoundingClientRect().top,
+            legacyLast: document.querySelector('.sect-last, #lastTitle, #lastEmpty'),
           };
         });
         assert.equal(hero.appbarTitle, '文转MD助手', 'app bar 标题应为「文转MD助手」，实测 ' + hero.appbarTitle);
@@ -6433,11 +6432,12 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.ok(hero.pickerText.includes('PDF'), '选择卡片缺格式说明，实测 ' + hero.pickerText);
         assert.ok(hero.pickerText.includes('50 MB'), '选择卡片缺文件大小限制，实测 ' + hero.pickerText);
         assert.ok(hero.dzHeight < 200, '选择卡片高度=' + hero.dzHeight + 'px（应 <200，不能占满首屏）');
-        assert.ok(hero.lastTitle.includes('上次转换'), '缺「上次转换」区块');
-        /* 2026-11-11 用户拍板（真机反馈「选择文档应该在最底部，单手好操控」）：
-         * 首屏顺序由「选择卡 → 上次转换」改为「上次转换 → 选择卡（沉底）」；判据随之改为选择卡在下方，
-         * 其余（无 hero / 无徽章 / 非虚线 / 文案 / 高度 <200）全部不变。 */
-        assert.ok(hero.dzTop > hero.lastTop, '顺序不符：选择文档卡片应沉在底部（上次转换之下），实测 dzTop=' + hero.dzTop.toFixed(1) + ' lastTop=' + hero.lastTop.toFixed(1));
+        /* 卡 069 · R5 断言过户（2026-11-19 用户拍板：推翻 2026-10-18（二）§1「保留上次转换」/
+         * §2「点它跳文件页」，整体去掉该块）⇒ 块本身已不存在。
+         * 原判据 ①「缺「上次转换」区块」与 ②「选择卡沉底在其下」——对象都已不存在 ⇒ 逐条作废；
+         * 其余判据（无 hero / 无徽章 / 非虚线 / 文案 / 高度 <200）原样保留、一条未放宽；
+         * 另补一条反向判据：该块**不得**回来（静默恢复 = 红）。 */
+        assert.equal(hero.legacyLast, null, '「上次转换」块（.sect-last / #lastTitle / #lastEmpty）又出现了');
       });
 
       await t.test('Z6-3 A4 页脚信息从首页移除、只在「设置 › 关于」：无 footer；转换面板不含版本/许可；关于含版本', async () => {

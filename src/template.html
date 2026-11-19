@@ -130,7 +130,7 @@
   #panel-convert { position: relative; display: flex; flex-direction: column; }
   #panel-convert.active { min-height: 100%; }
   /* 选择卡：定位规则见下方 hero 块之后（必须晚于 .#dropzone 基础块，否则被覆盖） */
-  .results-panel, .sect-last { order: 0; }
+  .results-panel { order: 0; }
   #status, #hint { order: 1; }
   body.has-results:not(.is-busy) #status:not(.error) { display: none; }
   /* 极简：可见结果 <2 且不在搜索态时收起搜索框与「已选择/全选」 */
@@ -250,11 +250,7 @@
     border: 1px solid var(--border); border-radius: 14px; background: transparent; color: var(--ink);
     font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
   .btn-ghost:active { background: var(--icon-bg); }
-  .sect-last { margin-top: 10px; }
-  .sect-last .sect-head { margin-bottom: 6px; }
-  .sect-last .sect-empty { padding: 8px 12px; }
   .empty-hint { display: none; }
-  #lastEmpty.lost { color: var(--warm-ink); }
   /* ── 底部 tabbar（星空 78：图标 28 胶囊 + 11px 文字，3 等分，命中 ≥44） ── */
   .navbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
@@ -327,7 +323,7 @@
   .md-preview {
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
     padding: 12px 14px; font-size: 14px; line-height: 1.7;
-    overflow-wrap: anywhere; min-height: 240px;
+    overflow-wrap: break-word; min-height: 240px;
   }
   .md-preview > :first-child { margin-top: 0; }
   .md-preview > :last-child { margin-bottom: 0; }
@@ -342,8 +338,13 @@
   .md-preview code { background: var(--icon-bg); border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: .9em; }
   .md-preview pre { background: var(--icon-bg); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
   .md-preview pre code { background: none; padding: 0; }
-  .md-preview table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
-  .md-preview th, .md-preview td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; }
+  /* 卡 069 · R1（B080）：中文表被挤扁 = min-content 塌到 1 个字（CJK 每字都是断行机会）+
+   * `anywhere` 再把 min-content 也缩成 1 字 + `width:100%` ⇒ 横滑轴永不触发。
+   * 修法（prior-art：先例只借思路，见回执 §R1）：anywhere → break-word 恢复 min-content 语义；
+   * 单元格 8em 下限 ⇒ 放不下时 table 自己的 overflow-x 接管（横滑，不裁切、不压字）。 */
+  .md-preview table { border-collapse: collapse; width: auto; min-width: 100%; display: block; overflow-x: auto; }
+  .md-preview th, .md-preview td { border: 1px solid var(--border); padding: 6px 9px; text-align: left;
+    min-width: 8em; overflow-wrap: break-word; }
   .md-preview th { background: var(--icon-bg); }
   .md-preview img { max-width: 100%; height: auto; border-radius: 6px; }
   .md-preview input[type="checkbox"] { margin-right: 6px; }
@@ -373,14 +374,27 @@
   .md-viewer-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
   .md-viewer-status { padding: 4px 14px 6px; font-size: 13px; color: var(--muted); min-height: 18px; }
   .md-viewer-status.error { color: var(--warm-ink); }
-  .md-viewer-close { border: 0; background: transparent; color: var(--ink); font-size: 18px; line-height: 1; padding: 10px; cursor: pointer; }
+  /* R3：查看器内所有控件触控 ≥48（B084 判据）；闭合键原为 34.7×38。 */
+  .md-viewer-close { display: grid; place-items: center; min-width: 48px; min-height: 48px;
+    border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-size: 18px; line-height: 1; padding: 10px; cursor: pointer; }
   .md-viewer-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .md-viewer-body { flex: 1; overflow: auto; padding: 14px 16px; }
   .md-viewer-body[data-mode="raw"] { display: flex; flex-direction: column; overflow: hidden; }
   .md-viewer .md-preview { border: 0; border-radius: 0; background: transparent; min-height: 0; padding: 0; }
-  .md-viewer-raw { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0; resize: none; border: 0; border-radius: 0; background: var(--bg); }
+  /* 卡 069 · R4：原文态与预览态同形（深色两态都无框、铺在页底、没有拖拽把手）。
+   * ⚠️ 必须写成 `.md-viewer .md-viewer-raw`（0-2-0）才盖得过 `textarea.md`（0-1-1）——
+   *    这就是「原文视图多一个框」的根因：那条 1px 边框 / 8px 圆角 / resize 把手全来自 textarea.md，
+   *    浅色那条 :691 只是事后补丁（还把 padding 改成另一组值，于是深浅两主题更不一致）。 */
+  .md-viewer .md-viewer-raw { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0;
+    border: 0; border-radius: 0; background: transparent; padding: 0; resize: none; box-shadow: none; }
   .md-viewer-foot { padding: 10px 16px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--surface); }
-  .md-viewer-foot .seg-btn { min-height: 40px; }
+  /* 卡 069 · R3（P-5）：底栏只留一颗主按钮「预览」；「原文」降为次级同高（触控 48）。
+   * ⛔ 暂不把「原文」收进 ⋯ 菜单：contract_v1.test.mjs 直接点 #mdViewerRaw / #mdViewerPreview
+   *    （7177 / 7194 / 7987），收起必红，而本卡 inScope 未授权改这些断言 ⇒ B084 完整形态待拍板（回执 §R3）。 */
+  .md-viewer-foot .seg { border: 0; background: transparent; padding: 0; gap: 10px; }
+  .md-viewer-foot .seg-btn { min-height: 48px; border-radius: 999px; font-size: 14px;
+    background: transparent; color: var(--muted); }
+  .md-viewer-foot .seg-btn[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); font-weight: 600; }
   /* 卡 059：外部打开时才有「复制/下载原文」（A7）——其余场景保持原查看器布局不变 */
   .md-viewer-ext { display: flex; gap: 8px; margin-bottom: 10px; }
   .md-viewer-ext[hidden] { display: none; }
@@ -537,8 +551,6 @@
 
   /* ── 区块标题 / 行（设置 15px 主文、12px 副文）── */
   [data-theme="light"] .sect { margin-top: 22px; }
-  /* 0 条上次转换：整块 ≤72（A6）—— 浅色那条 .sect 覆盖优先级更高，这里显式压回 */
-  [data-theme="light"] .sect.sect-last { margin-top: 10px; }
   [data-theme="light"] .sect-head h2 { font-size: 14px; line-height: 1.35; color: var(--ink); letter-spacing: .01em; }
   [data-theme="light"] .sect-title { font-size: 11px; letter-spacing: .08em; color: var(--muted); }
   [data-theme="light"] .sect-head .sect-meta { font-size: 11px; }
@@ -688,9 +700,11 @@
   [data-theme="light"] .md-viewer .md-preview pre { background: var(--icon-bg); border-radius: 6px; padding: 12px; }
   [data-theme="light"] .md-viewer .md-preview th { background: var(--icon-bg); }
   [data-theme="light"] .md-viewer .md-preview a { color: var(--primary); }
-  [data-theme="light"] .md-viewer-raw {
-    padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  /* 卡 069 · R4：浅色走「纸页卡片」——原文与预览用同一组边框/圆角/底色/内边距（预览见 :674 那条）。 */
+  [data-theme="light"] .md-viewer .md-viewer-raw {
+    padding: 20px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     font-size: 13px; line-height: 1.7; color: var(--ink);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 8px 20px rgba(70, 50, 30, .05);
   }
 
   /* ══ 浅色增量（承重，勿按「与基础等价」删除）══════════════════════════════
@@ -701,7 +715,6 @@
   [data-theme="light"] .iconbtn[aria-expanded="true"] { background: var(--icon-bg); color: var(--primary); }
   [data-theme="light"] .files-search svg { color: var(--muted); }
   [data-theme="light"] .navitem { color: var(--muted); }
-  [data-theme="light"] .sect-last .sect-empty { padding: 8px 12px; }
   [data-theme="light"] .row-link:hover { background: var(--icon-bg); }
   [data-theme="light"] .row-chev { color: var(--muted); }
   [data-theme="light"] .btn:hover { border-color: var(--primary); }
@@ -733,24 +746,27 @@
       radial-gradient(ellipse 115% 43% at 20% 103%, var(--glow), transparent 82%),
       linear-gradient(transparent 20%, color-mix(in srgb, var(--glow) 13%, transparent));
   }
+  /* 卡 069 · R6（用户 2026-11-19「浅色不要星星，只留并加强整体渐变」）：
+   * 浅色只保留渐变做纵深——底色 178° linear + 2 片低透明 radial 光晕（prior-art：2–4 片、
+   * alpha .05–.15 量级叠在底色上；渐变只留一个方向）。星点/猎户座两层在浅色整层关闭（见下方 body 段后）。 */
   .sky-day {
     background:
-      radial-gradient(ellipse 100% 52% at 110% 40%, #dce6f2b0, transparent 76%),
-      radial-gradient(ellipse 120% 45% at -5% 105%, #d8e5f2, transparent 82%),
-      linear-gradient(#fbfcfe 12%, #f4f7fb 58%, #edf3f9);
+      radial-gradient(ellipse 80% 42% at 104% 10%, #9dc0e2 0%, #c2d8edb0 44%, transparent 76%),
+      radial-gradient(ellipse 98% 54% at -8% 96%, #9ab8de 0%, #bbd2ebc2 46%, transparent 82%),
+      linear-gradient(178deg, #fbfdff 0%, #eef5fd 46%, #d9e8f7 100%);
   }
   .ambient { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none;
     color: var(--star); opacity: var(--ambient-opacity); transition: opacity 280ms ease-out; }
-  .ambient .distant { fill: currentColor; opacity: .28; }
-  .ambient .near { fill: currentColor; opacity: .52; }
-  .ambient .trace { fill: none; stroke: var(--star-line); stroke-width: .6; opacity: .16; }
-  .ambient .glint { fill: none; stroke: currentColor; stroke-width: .7; opacity: .48;
-    animation: ambient-breathe 11s ease-in-out infinite alternate; animation-play-state: var(--sky-breathe, running); }
-  [data-theme="light"] .ambient .distant { opacity: .15; }
-  [data-theme="light"] .ambient .near { opacity: .38; }
-  [data-theme="light"] .ambient .trace { opacity: .24; }
-  @keyframes ambient-breathe { from { opacity: .24; } to { opacity: .52; } }
-  body[data-tab="files"], body[data-tab="settings"], body.has-results, body.is-busy { --sky-breathe: paused; }
+  /* 卡 069 · R7：星点分三层，深度由「尺寸 + 亮度 + 光晕」共同表达（prior-art：near 大而亮、far 小而暗）；
+   * ⛔ 已删掉四芒星（+）与一条孤立折线——远景看像噪声/贴图（Orion 设计反馈 2026-01 的原话：
+   *   「小而密且只差透明度的星点 = 业余感 / 像 artefacts」）。猎户座连线保留（结构线，0.6px / .11）。 */
+  .ambient .halo { fill: url(#starHalo); }
+  .ambient .halo-core { stop-color: var(--star); stop-opacity: .42; }
+  .ambient .halo-mid { stop-color: var(--star); stop-opacity: .12; }
+  .ambient .halo-edge { stop-color: var(--star); stop-opacity: 0; }
+  .ambient .distant { fill: currentColor; opacity: .26; }
+  .ambient .near { fill: currentColor; opacity: .5; }
+  .ambient .bright { fill: currentColor; opacity: .72; }
   .art { top: 110px; bottom: auto; right: 22px; width: 225px; height: 300px; z-index: -1;
     opacity: var(--orion-opacity); transition: opacity 280ms ease-out; }
   .art .orion { position: static; width: 100%; height: 100%; }
@@ -759,6 +775,10 @@
   body[data-tab="settings"] { --glow-opacity: .34; --ambient-opacity: .08; --orion-opacity: 0; }
   body[data-tab="convert"].has-results { --glow-opacity: .68; --ambient-opacity: .40; --orion-opacity: .27; }
   body[data-tab="convert"].is-busy { --glow-opacity: .56; --ambient-opacity: .25; --orion-opacity: .14; }
+  /* 卡 069 · R6：浅色只留渐变 —— 星点层与猎户座整层关闭（display:none，不参与绘制）。
+   * ⚠️ 必须放在上面 body[data-tab] 的 display:block 之后：两边同为 (0,2,1)，靠源序覆盖。 */
+  [data-theme="light"] body .ambient,
+  [data-theme="light"] body .art { display: none; }
 
   /* ── 顶栏：品牌 20 / 本地标签带状态点 ── */
   .appbar { min-height: calc(var(--safe-top) + 60px); padding: calc(8px + var(--safe-top)) 20px 7px;
@@ -793,14 +813,6 @@
   #dropzone .picker-foot { order: 3; display: flex; width: 100%; justify-content: center; color: var(--muted);
     font-size: 11px; line-height: 1.5; }
   body.has-results #dropzone .picker-sub { display: none; }
-
-  /* ── 「上次转换」：留白版的轻行（不是第二张卡）── */
-  .sect-last { margin-top: 14px; }
-  .sect-last .sect-head { margin-bottom: 2px; }
-  .sect-last .sect-empty { padding: 10px 0 13px; border: 0; border-bottom: 1px solid var(--soft-border);
-    border-radius: 0; background: transparent; color: var(--ink); font-size: 13px; line-height: 1.5; }
-  [data-theme="light"] .sect-last .sect-empty { padding: 10px 0 13px; border: 0; border-bottom: 1px solid var(--soft-border);
-    border-radius: 0; background: transparent; color: var(--ink); }
 
   /* ── 结果区 ── */
   .results-panel { margin-top: 18px; }
@@ -956,8 +968,22 @@
 </header>
 
 <div class="sky" aria-hidden="true"><div class="sky-day"></div><div class="sky-night"></div></div>
-<!-- 卡 068 · 环境星点层（留白版）：文件/设置页降到更淡，转换/结果页更明显；呼吸在结果/处理中暂停 -->
+<!-- 卡 068 · 环境星点层（留白版）：文件/设置页降到更淡，转换/结果页更明显；浅色整层关闭（卡 069 · R6） -->
 <svg class="ambient" viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <!-- 卡 069 · R7：光晕用 radialGradient 一次画好（⛔ 不用 filter: blur/drop-shadow —— 固定层每帧重绘代价高） -->
+  <defs>
+    <radialGradient id="starHalo">
+      <stop class="halo-core" offset="0"/>
+      <stop class="halo-mid" offset="46%"/>
+      <stop class="halo-edge" offset="100%"/>
+    </radialGradient>
+  </defs>
+  <!-- 光晕层：只有近星的 6 颗带晕（prior-art：约 30% 的星带 halo 就有层次，全给反而糊） -->
+  <g class="halo">
+    <circle cx="323" cy="216" r="7"/><circle cx="59" cy="304" r="6"/>
+    <circle cx="336" cy="439" r="7.5"/><circle cx="43" cy="503" r="6.5"/>
+    <circle cx="276" cy="603" r="7"/><circle cx="91" cy="680" r="6"/>
+  </g>
   <g class="distant">
     <circle cx="31" cy="122" r=".7"/><circle cx="175" cy="132" r=".6"/>
     <circle cx="345" cy="164" r=".7"/><circle cx="91" cy="225" r=".65"/>
@@ -977,8 +1003,12 @@
     <circle cx="43" cy="503" r=".95"/><circle cx="276" cy="603" r="1"/>
     <circle cx="91" cy="680" r=".9"/>
   </g>
-  <path class="trace" d="m23 397 36 29 28-12 32 36"/>
-  <path class="glint" d="M351 245v6m-3-3h6M135 557v5m-2.5-2.5h5"/>
+  <!-- 3 颗亮星：比 near 再大一点、亮一点（层次靠尺寸差，⛔ 不靠加四芒星） -->
+  <g class="bright">
+    <circle cx="185" cy="510" r="1.5"/><circle cx="312" cy="561" r="1.4"/><circle cx="110" cy="440" r="1.4"/>
+  </g>
+  <!-- 1 颗暖色星：与冷蓝星群留一点色差（prior-art：冷暖小幅分布才像夜空） -->
+  <circle cx="205" cy="742" r="1.2" fill="var(--warm)" opacity=".5"/>
 </svg>
   <div class="art" aria-hidden="true">
       <svg class="orion" viewBox="0 0 200 300" fill="none">
@@ -1012,11 +1042,6 @@
     </div>
     <input type="file" id="fileInput" hidden multiple accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tiff,.txt,.html,.htm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/*,text/plain,text/html">
     <div id="status" role="status" aria-live="polite"></div>
-
-    <section class="sect sect-last" aria-labelledby="lastTitle">
-      <div class="sect-head"><h2 id="lastTitle">上次转换</h2></div>
-      <p class="sect-empty" id="lastEmpty">还没有转换记录 —— 点击上方「选择文件」开始。</p>
-    </section>
 
     <section class="results-panel" id="resultsPanel" hidden aria-labelledby="resultsTitle">
       <div class="results-head">
