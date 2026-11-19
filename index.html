@@ -772,8 +772,13 @@
   .ambient .distant { fill: currentColor; opacity: .26; }
   .ambient .near { fill: currentColor; opacity: .48; }
   .ambient .bright { fill: currentColor; opacity: .8; }
+  /* 卡 069 · R7 v3（2026-11-20 用户提议）：猎户座逆时针 24°「斜过来」——
+   * 让它的大对角（暖星 → 右下星）与左下角蓝晕的「/」方向形成交叉（相对），
+   * 而不是原来两条腿近乎竖直、与渐变各走各的。旋转是纯静态 transform（无动画）；
+   * ⚠️ .art 是 fixed + z-index:-1 的纯装饰层，没有 fixed/absolute 后代，不会踩「包含块」坑。 */
   .art { top: 110px; bottom: auto; right: 22px; width: 225px; height: 300px; z-index: -1;
-    opacity: var(--orion-opacity); transition: opacity 280ms ease-out; }
+    opacity: var(--orion-opacity); transition: opacity 280ms ease-out;
+    transform: rotate(-24deg); transform-origin: 50% 50%; }
   .art .orion { position: static; width: 100%; height: 100%; }
   body[data-tab="files"] .art, body[data-tab="settings"] .art { display: block; }
   body[data-tab="files"] { --glow-opacity: .48; --ambient-opacity: .16; --orion-opacity: 0; }
