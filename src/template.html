@@ -784,11 +784,11 @@
   /* 卡 069 · v4：猎户座主星光晕（柔和、低 alpha；连线只提亮不加粗，见 --line-opacity 注释） */
   .art .ohalo { fill: url(#orionHalo); }
   .art .ohalo-warm { fill: url(#orionHaloWarm); }
-  .art .oh-core { stop-color: var(--star); stop-opacity: .3; }
-  .art .oh-mid { stop-color: var(--star); stop-opacity: .075; }
+  .art .oh-core { stop-color: var(--star); stop-opacity: .34; }
+  .art .oh-mid { stop-color: var(--star); stop-opacity: .09; }
   .art .oh-edge { stop-color: var(--star); stop-opacity: 0; }
-  .art .ohw-core { stop-color: var(--warm); stop-opacity: .26; }
-  .art .ohw-mid { stop-color: var(--warm); stop-opacity: .06; }
+  .art .ohw-core { stop-color: var(--warm); stop-opacity: .3; }
+  .art .ohw-mid { stop-color: var(--warm); stop-opacity: .075; }
   .art .ohw-edge { stop-color: var(--warm); stop-opacity: 0; }
   body[data-tab="files"] .art, body[data-tab="settings"] .art { display: block; }
   body[data-tab="files"] { --glow-opacity: .48; --ambient-opacity: .16; --orion-opacity: 0; }
@@ -1045,12 +1045,14 @@
             <stop class="ohw-edge" offset="100%"/>
           </radialGradient>
         </defs>
+        <!-- 卡 069 v5：三层分级——① 关键星（2 肩 + 2 足 + 暖星）有「明显但柔和」的光晕；
+             ② 腰带 3 颗**不给光晕**（保持清晰、干净）；③ 背景星点见 .ambient（低亮度） -->
         <g class="ohalo">
-          <circle cx="142" cy="60" r="7"/><circle cx="84" cy="158" r="7"/>
-          <circle cx="100" cy="152" r="7"/><circle cx="116" cy="146" r="7"/>
-          <circle cx="70" cy="250" r="7"/><circle cx="154" cy="238" r="7"/>
+          <circle cx="142" cy="60" r="9.5"/>
+          <circle cx="70" cy="250" r="8.5" opacity=".82"/>
+          <circle cx="154" cy="238" r="8.5" opacity=".82"/>
         </g>
-        <circle class="ohalo-warm" cx="58" cy="50" r="10"/>
+        <circle class="ohalo-warm" cx="58" cy="50" r="11"/>
         <g stroke="var(--star-line)" stroke-opacity="var(--line-opacity)" stroke-width=".6">
           <path d="M58 50 L84 158 L70 250"/>
           <path d="M142 60 L116 146 L154 238"/>
