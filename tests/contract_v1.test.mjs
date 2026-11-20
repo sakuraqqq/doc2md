@@ -7130,12 +7130,16 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
           html: (document.querySelector('#mdViewerBody .md-preview') || {}).innerHTML || '',
           previewPressed: document.getElementById('mdViewerPreview').getAttribute('aria-pressed'),
           rawPressed: document.getElementById('mdViewerRaw').getAttribute('aria-pressed'),
+          primaryCount: document.querySelectorAll('.md-viewer-foot .md-viewer-primary').length,
+          menuHidden: document.getElementById('mdViewerMenu').hidden,
         }));
         assert.equal(first.name, 'toggle.txt', '全屏查看器标题不是文件名');
         assert.equal(first.preview, true, '全屏查看器默认未显示预览');
         assert.ok(first.html.includes('<h1'), '全屏预览未渲染标题');
         assert.equal(first.previewPressed, 'true', '默认「预览」未按下');
         assert.equal(first.rawPressed, 'false', '默认「原文」不应按下');
+        assert.equal(first.primaryCount, 1, '底栏主按钮不是恰好 1 个（P-5：主按钮=预览）');
+        assert.equal(first.menuHidden, true, '⋯ 菜单默认应收起');
         /* 卡 068 返修 R9：有结果时「正在处理」状态必须可见（旧规则 body.has-results #status 整条 display:none） */
         const busyStatus = await page.evaluate(() => {
           const s = document.getElementById('status');
@@ -7174,7 +7178,10 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.equal(lightRow.radius, '18px', '浅色结果行圆角不是 18px：' + lightRow.radius);
         assert.ok(Math.abs(parseFloat(lightRow.nameLine) - 20.3) <= 0.3, '浅色结果行文件名行高不是 1.45×14：' + lightRow.nameLine);
         assert.equal(lightRow.bodyPad, '0px 0px 2px 48px', '浅色结果行正文内边距不是留白版：' + lightRow.bodyPad);
+        await page.click('#mdViewerMore');
+        assert.equal(await page.evaluate(() => document.getElementById('mdViewerMenu').hidden), false, '⋯ 菜单未展开（P-5 原文入口）');
         await page.click('#mdViewerRaw');
+        assert.equal(await page.evaluate(() => document.getElementById('mdViewerMenu').hidden), true, '选「原文」后 ⋯ 菜单未收起');
         const raw = await page.evaluate(() => {
           const ta = document.querySelector('#mdViewerBody textarea.md-viewer-raw');
           const body = document.getElementById('mdViewerBody').getBoundingClientRect();
@@ -7984,6 +7991,7 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
         assert.equal(res && res.truncated, true, '>4 Mi 未标记 truncated');
         const status = await page.evaluate(() => document.getElementById('status').textContent);
         assert.ok(/仅预览/.test(status), '状态栏无「仅预览」提示：' + status);
+        await page.locator('#mdViewerMore').click();
         await page.locator('#mdViewerRaw').click();
         const rawText = await page.evaluate(() => document.getElementById('mdViewerBody').textContent);
         assert.ok(rawText.indexOf('全文未加载（文件过大）') >= 0, 'raw 态未显示「全文未加载」（A8b）');

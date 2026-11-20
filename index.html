@@ -388,13 +388,20 @@
   .md-viewer .md-viewer-raw { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0;
     border: 0; border-radius: 0; background: transparent; padding: 0; resize: none; box-shadow: none; }
   .md-viewer-foot { padding: 10px 16px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--surface); }
-  /* 卡 069 · R3（P-5）：底栏只留一颗主按钮「预览」；「原文」降为次级同高（触控 48）。
-   * ⛔ 暂不把「原文」收进 ⋯ 菜单：contract_v1.test.mjs 直接点 #mdViewerRaw / #mdViewerPreview
-   *    （7177 / 7194 / 7987），收起必红，而本卡 inScope 未授权改这些断言 ⇒ B084 完整形态待拍板（回执 §R3）。 */
-  .md-viewer-foot .seg { border: 0; background: transparent; padding: 0; gap: 10px; }
-  .md-viewer-foot .seg-btn { min-height: 48px; border-radius: 999px; font-size: 14px;
-    background: transparent; color: var(--muted); }
-  .md-viewer-foot .seg-btn[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+  /* 卡 069 · R3（P-5，2026-11-20 拍板 A）：底栏一颗主按钮「预览」，其余操作收进 ⋯ 菜单
+   * （目前菜单内是「原文」；外部打开的「复制/下载原文」仍走 .md-viewer-ext）。触控 48，深浅一致。 */
+  .md-viewer-actions { display: flex; align-items: center; gap: 10px; }
+  .md-viewer-primary { flex: 1 1 auto; min-height: 48px; border: 0; border-radius: 999px;
+    background: var(--primary); color: var(--on-primary); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .md-viewer-more-wrap { position: relative; flex: 0 0 auto; }
+  .md-viewer-more { width: 48px; height: 48px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--icon-bg); color: var(--ink); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; }
+  .md-viewer-menu { position: absolute; right: 0; bottom: calc(100% + 8px); min-width: 168px; padding: 6px;
+    border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .35); }
+  .md-viewer-menu-item { display: flex; align-items: center; width: 100%; min-height: 48px; padding: 0 14px;
+    border: 0; border-radius: 10px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+  .md-viewer-menu-item[aria-pressed="true"] { background: var(--icon-bg); font-weight: 600; }
   /* 卡 059：外部打开时才有「复制/下载原文」（A7）——其余场景保持原查看器布局不变 */
   .md-viewer-ext { display: flex; gap: 8px; margin-bottom: 10px; }
   .md-viewer-ext[hidden] { display: none; }
@@ -1232,9 +1239,14 @@
       <button class="btn" type="button" id="mdViewerCopy">复制原文</button>
       <button class="btn" type="button" id="mdViewerDownload">下载原文</button>
     </div>
-    <div class="seg" role="group" aria-label="预览模式">
-      <button class="seg-btn" type="button" id="mdViewerPreview" aria-pressed="true">预览</button>
-      <button class="seg-btn" type="button" id="mdViewerRaw" aria-pressed="false">原文</button>
+    <div class="md-viewer-actions">
+      <button class="md-viewer-primary" type="button" id="mdViewerPreview" aria-pressed="true">预览</button>
+      <div class="md-viewer-more-wrap">
+        <button class="md-viewer-more" type="button" id="mdViewerMore" aria-label="更多操作" aria-haspopup="true" aria-expanded="false" aria-controls="mdViewerMenu">⋯</button>
+        <div class="md-viewer-menu" id="mdViewerMenu" hidden>
+          <button class="md-viewer-menu-item" type="button" id="mdViewerRaw" aria-pressed="false">原文</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -3696,6 +3708,8 @@ ${xlsxRowsToMd(kept)}`);
   var mdViewerExt = $("#mdViewerExt");
   var mdViewerCopy = $("#mdViewerCopy");
   var mdViewerDownload = $("#mdViewerDownload");
+  var mdViewerMore = $("#mdViewerMore");
+  var mdViewerMenu = $("#mdViewerMenu");
   var pickerTitle = $("#pickerTitle");
   var pickBtn = $("#pickBtn");
   var resultsPanel = $("#resultsPanel");
@@ -4288,6 +4302,18 @@ ${xlsxRowsToMd(kept)}`);
     ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
     mdViewerBody.appendChild(ta);
   }
+  function closeViewerMenu(restoreFocus) {
+    if (!mdViewerMenu || mdViewerMenu.hidden) return;
+    mdViewerMenu.hidden = true;
+    if (mdViewerMore) mdViewerMore.setAttribute("aria-expanded", "false");
+    if (restoreFocus && mdViewerMore) mdViewerMore.focus();
+  }
+  function openViewerMenu() {
+    if (!mdViewerMenu) return;
+    mdViewerMenu.hidden = false;
+    if (mdViewerMore) mdViewerMore.setAttribute("aria-expanded", "true");
+    if (mdViewerRaw) mdViewerRaw.focus();
+  }
   function renderViewerMode(mode) {
     if (!viewerState || !mdViewerBody) return;
     if (viewerState.error) {
@@ -4308,6 +4334,7 @@ ${xlsxRowsToMd(kept)}`);
     viewerTrigger = trigger || document.activeElement;
     if (mdViewerName) mdViewerName.textContent = state2.fileName;
     if (mdViewerExt) mdViewerExt.hidden = !state2.external;
+    closeViewerMenu(false);
     mdViewer.hidden = false;
     document.body.classList.add("md-viewer-open");
     renderViewerMode(state2.defaultMode || "preview");
@@ -4317,6 +4344,7 @@ ${xlsxRowsToMd(kept)}`);
     if (!mdViewer) return;
     mdViewer.hidden = true;
     document.body.classList.remove("md-viewer-open");
+    closeViewerMenu(false);
     if (mdViewerExt) mdViewerExt.hidden = true;
     viewerState = null;
     if (viewerTrigger && typeof viewerTrigger.focus === "function") viewerTrigger.focus();
@@ -4943,16 +4971,50 @@ ${xlsxRowsToMd(kept)}`);
     }
     saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
   }
+  function onViewerKeydown(e) {
+    if (e.key !== "Escape") return;
+    if (mdViewerMenu && !mdViewerMenu.hidden) {
+      e.preventDefault();
+      closeViewerMenu(true);
+      return;
+    }
+    closeMarkdownViewer();
+  }
+  function isViewerMenuClick(e) {
+    const target = e.target;
+    return Boolean(target && typeof target.closest === "function" && target.closest(".md-viewer-more-wrap"));
+  }
+  function wireViewerMenu() {
+    if (mdViewerMore) {
+      mdViewerMore.addEventListener("click", () => {
+        if (mdViewerMenu && mdViewerMenu.hidden) openViewerMenu();
+        else closeViewerMenu(true);
+      });
+    }
+    if (mdViewerPreview) {
+      mdViewerPreview.addEventListener("click", () => {
+        closeViewerMenu(false);
+        renderViewerMode("preview");
+      });
+    }
+    if (mdViewerRaw) {
+      mdViewerRaw.addEventListener("click", () => {
+        renderViewerMode("raw");
+        closeViewerMenu(true);
+      });
+    }
+    document.addEventListener("click", (e) => {
+      if (!mdViewerMenu || mdViewerMenu.hidden || isViewerMenuClick(e)) return;
+      closeViewerMenu(false);
+    });
+  }
   function initMarkdownViewer() {
     if (!mdViewer) return;
     if (mdViewerClose) mdViewerClose.addEventListener("click", closeMarkdownViewer);
-    if (mdViewerPreview) mdViewerPreview.addEventListener("click", () => renderViewerMode("preview"));
-    if (mdViewerRaw) mdViewerRaw.addEventListener("click", () => renderViewerMode("raw"));
     if (mdViewerCopy) mdViewerCopy.addEventListener("click", copyViewerRaw);
     if (mdViewerDownload) mdViewerDownload.addEventListener("click", downloadViewerRaw);
-    mdViewer.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeMarkdownViewer();
-    });
+    wireViewerMenu();
+    mdViewer.addEventListener("keydown", onViewerKeydown);
   }
   var filesQuery = "";
   var filesCleared = false;

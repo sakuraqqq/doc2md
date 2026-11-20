@@ -34,6 +34,8 @@ const mdViewerRaw = $('#mdViewerRaw');
 const mdViewerExt = $('#mdViewerExt');
 const mdViewerCopy = $('#mdViewerCopy');
 const mdViewerDownload = $('#mdViewerDownload');
+const mdViewerMore = $('#mdViewerMore');
+const mdViewerMenu = $('#mdViewerMenu');
 const pickerTitle = $('#pickerTitle');
 const pickBtn = $('#pickBtn');
 const resultsPanel = $('#resultsPanel');
@@ -768,6 +770,18 @@ function renderViewerRaw() {
   ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
   mdViewerBody.appendChild(ta);
 }
+function closeViewerMenu(restoreFocus) {
+  if (!mdViewerMenu || mdViewerMenu.hidden) return;
+  mdViewerMenu.hidden = true;
+  if (mdViewerMore) mdViewerMore.setAttribute('aria-expanded', 'false');
+  if (restoreFocus && mdViewerMore) mdViewerMore.focus();
+}
+function openViewerMenu() {
+  if (!mdViewerMenu) return;
+  mdViewerMenu.hidden = false;
+  if (mdViewerMore) mdViewerMore.setAttribute('aria-expanded', 'true');
+  if (mdViewerRaw) mdViewerRaw.focus();
+}
 function renderViewerMode(mode) {
   if (!viewerState || !mdViewerBody) return;
   if (viewerState.error) {
@@ -789,6 +803,7 @@ function openMarkdownViewer(state, trigger) {
   viewerTrigger = trigger || document.activeElement;
   if (mdViewerName) mdViewerName.textContent = state.fileName;
   if (mdViewerExt) mdViewerExt.hidden = !state.external;
+  closeViewerMenu(false);
   mdViewer.hidden = false;
   document.body.classList.add('md-viewer-open');
   renderViewerMode(state.defaultMode || 'preview');
@@ -799,6 +814,7 @@ function closeMarkdownViewer() {
   if (!mdViewer) return;
   mdViewer.hidden = true;
   document.body.classList.remove('md-viewer-open');
+  closeViewerMenu(false);
   if (mdViewerExt) mdViewerExt.hidden = true;
   viewerState = null;
   if (viewerTrigger && typeof viewerTrigger.focus === 'function') viewerTrigger.focus();
@@ -1484,16 +1500,52 @@ function downloadViewerRaw() {
   }
   saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
 }
+function onViewerKeydown(e) {
+  if (e.key !== 'Escape') return;
+  /* 卡 069 · R3：菜单开着时 Esc 先收菜单，再关查看器 */
+  if (mdViewerMenu && !mdViewerMenu.hidden) {
+    e.preventDefault();
+    closeViewerMenu(true);
+    return;
+  }
+  closeMarkdownViewer();
+}
+function isViewerMenuClick(e) {
+  const target = e.target;
+  return Boolean(target && typeof target.closest === 'function' && target.closest('.md-viewer-more-wrap'));
+}
+function wireViewerMenu() {
+  if (mdViewerMore) {
+    mdViewerMore.addEventListener('click', () => {
+      if (mdViewerMenu && mdViewerMenu.hidden) openViewerMenu();
+      else closeViewerMenu(true);
+    });
+  }
+  if (mdViewerPreview) {
+    mdViewerPreview.addEventListener('click', () => {
+      closeViewerMenu(false);
+      renderViewerMode('preview');
+    });
+  }
+  if (mdViewerRaw) {
+    mdViewerRaw.addEventListener('click', () => {
+      renderViewerMode('raw');
+      closeViewerMenu(true);
+    });
+  }
+  /* 点查看器其它区域 / 页面空白处收起菜单（⋯ 自身由按钮开关处理） */
+  document.addEventListener('click', (e) => {
+    if (!mdViewerMenu || mdViewerMenu.hidden || isViewerMenuClick(e)) return;
+    closeViewerMenu(false);
+  });
+}
 function initMarkdownViewer() {
   if (!mdViewer) return;
   if (mdViewerClose) mdViewerClose.addEventListener('click', closeMarkdownViewer);
-  if (mdViewerPreview) mdViewerPreview.addEventListener('click', () => renderViewerMode('preview'));
-  if (mdViewerRaw) mdViewerRaw.addEventListener('click', () => renderViewerMode('raw'));
   if (mdViewerCopy) mdViewerCopy.addEventListener('click', copyViewerRaw);
   if (mdViewerDownload) mdViewerDownload.addEventListener('click', downloadViewerRaw);
-  mdViewer.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeMarkdownViewer();
-  });
+  wireViewerMenu();
+  mdViewer.addEventListener('keydown', onViewerKeydown);
 }
 /* ── 卡 060 / 2-5：转换历史库（文件页 + 保留开关 + 清除 + 上次转换同源） ────────────────
  * 数据面全部在 src/history-store.js（schema / 200 FIFO / 原子写 / 搜索 / keep）；本段只做 DOM 与原生动作。
