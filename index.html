@@ -34,7 +34,7 @@
     --settings-surface: rgb(22 29 42 / .80);
     --hero-shadow: 0 12px 28px #0002;
     /* 星图层参数（SVG 内用，不进 16 token 契约）*/
-    --line-opacity: .11; --star-opacity: .53; --node-size: 1.9px;
+    --line-opacity: .127; --star-opacity: .53; --node-size: 1.9px;   /* 卡 069 v4：.11 → .127（+15.5%），线宽不动 */
     /* 留白版：三页背景强度（激活页由 body[data-tab] / .has-results / .is-busy 驱动） */
     --glow-opacity: 1; --ambient-opacity: 1; --orion-opacity: 1;
     --radius: 20px; --bar-h: 60px; --nav-h: 64px;
@@ -130,7 +130,7 @@
   #panel-convert { position: relative; display: flex; flex-direction: column; }
   #panel-convert.active { min-height: 100%; }
   /* 选择卡：定位规则见下方 hero 块之后（必须晚于 .#dropzone 基础块，否则被覆盖） */
-  .results-panel, .sect-last { order: 0; }
+  .results-panel { order: 0; }
   #status, #hint { order: 1; }
   body.has-results:not(.is-busy) #status:not(.error) { display: none; }
   /* 极简：可见结果 <2 且不在搜索态时收起搜索框与「已选择/全选」 */
@@ -250,11 +250,7 @@
     border: 1px solid var(--border); border-radius: 14px; background: transparent; color: var(--ink);
     font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
   .btn-ghost:active { background: var(--icon-bg); }
-  .sect-last { margin-top: 10px; }
-  .sect-last .sect-head { margin-bottom: 6px; }
-  .sect-last .sect-empty { padding: 8px 12px; }
   .empty-hint { display: none; }
-  #lastEmpty.lost { color: var(--warm-ink); }
   /* ── 底部 tabbar（星空 78：图标 28 胶囊 + 11px 文字，3 等分，命中 ≥44） ── */
   .navbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
@@ -327,7 +323,7 @@
   .md-preview {
     border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
     padding: 12px 14px; font-size: 14px; line-height: 1.7;
-    overflow-wrap: anywhere; min-height: 240px;
+    overflow-wrap: break-word; min-height: 240px;
   }
   .md-preview > :first-child { margin-top: 0; }
   .md-preview > :last-child { margin-bottom: 0; }
@@ -342,8 +338,13 @@
   .md-preview code { background: var(--icon-bg); border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: .9em; }
   .md-preview pre { background: var(--icon-bg); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
   .md-preview pre code { background: none; padding: 0; }
-  .md-preview table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
-  .md-preview th, .md-preview td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; }
+  /* 卡 069 · R1（B080）：中文表被挤扁 = min-content 塌到 1 个字（CJK 每字都是断行机会）+
+   * `anywhere` 再把 min-content 也缩成 1 字 + `width:100%` ⇒ 横滑轴永不触发。
+   * 修法（prior-art：先例只借思路，见回执 §R1）：anywhere → break-word 恢复 min-content 语义；
+   * 单元格 8em 下限 ⇒ 放不下时 table 自己的 overflow-x 接管（横滑，不裁切、不压字）。 */
+  .md-preview table { border-collapse: collapse; width: auto; min-width: 100%; display: block; overflow-x: auto; }
+  .md-preview th, .md-preview td { border: 1px solid var(--border); padding: 6px 9px; text-align: left;
+    min-width: 8em; overflow-wrap: break-word; }
   .md-preview th { background: var(--icon-bg); }
   .md-preview img { max-width: 100%; height: auto; border-radius: 6px; }
   .md-preview input[type="checkbox"] { margin-right: 6px; }
@@ -373,14 +374,34 @@
   .md-viewer-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
   .md-viewer-status { padding: 4px 14px 6px; font-size: 13px; color: var(--muted); min-height: 18px; }
   .md-viewer-status.error { color: var(--warm-ink); }
-  .md-viewer-close { border: 0; background: transparent; color: var(--ink); font-size: 18px; line-height: 1; padding: 10px; cursor: pointer; }
+  /* R3：查看器内所有控件触控 ≥48（B084 判据）；闭合键原为 34.7×38。 */
+  .md-viewer-close { display: grid; place-items: center; min-width: 48px; min-height: 48px;
+    border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-size: 18px; line-height: 1; padding: 10px; cursor: pointer; }
   .md-viewer-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .md-viewer-body { flex: 1; overflow: auto; padding: 14px 16px; }
   .md-viewer-body[data-mode="raw"] { display: flex; flex-direction: column; overflow: hidden; }
   .md-viewer .md-preview { border: 0; border-radius: 0; background: transparent; min-height: 0; padding: 0; }
-  .md-viewer-raw { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0; resize: none; border: 0; border-radius: 0; background: var(--bg); }
+  /* 卡 069 · R4：原文态与预览态同形（深色两态都无框、铺在页底、没有拖拽把手）。
+   * ⚠️ 必须写成 `.md-viewer .md-viewer-raw`（0-2-0）才盖得过 `textarea.md`（0-1-1）——
+   *    这就是「原文视图多一个框」的根因：那条 1px 边框 / 8px 圆角 / resize 把手全来自 textarea.md，
+   *    浅色那条 :691 只是事后补丁（还把 padding 改成另一组值，于是深浅两主题更不一致）。 */
+  .md-viewer .md-viewer-raw { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0;
+    border: 0; border-radius: 0; background: transparent; padding: 0; resize: none; box-shadow: none; }
   .md-viewer-foot { padding: 10px 16px calc(10px + var(--safe-bottom)); border-top: 1px solid var(--border); background: var(--surface); }
-  .md-viewer-foot .seg-btn { min-height: 40px; }
+  /* 卡 069 · R3（P-5，2026-11-20 拍板 A）：底栏一颗主按钮「预览」，其余操作收进 ⋯ 菜单
+   * （目前菜单内是「原文」；外部打开的「复制/下载原文」仍走 .md-viewer-ext）。触控 48，深浅一致。 */
+  .md-viewer-actions { display: flex; align-items: center; gap: 10px; }
+  .md-viewer-primary { flex: 1 1 auto; min-height: 48px; border: 0; border-radius: 999px;
+    background: var(--primary); color: var(--on-primary); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .md-viewer-more-wrap { position: relative; flex: 0 0 auto; }
+  .md-viewer-more { width: 48px; height: 48px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--icon-bg); color: var(--ink); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; }
+  .md-viewer-menu { position: absolute; right: 0; bottom: calc(100% + 8px); min-width: 168px; padding: 6px;
+    border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .35); }
+  .md-viewer-menu-item { display: flex; align-items: center; width: 100%; min-height: 48px; padding: 0 14px;
+    border: 0; border-radius: 10px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+  .md-viewer-menu-item[aria-pressed="true"] { background: var(--icon-bg); font-weight: 600; }
   /* 卡 059：外部打开时才有「复制/下载原文」（A7）——其余场景保持原查看器布局不变 */
   .md-viewer-ext { display: flex; gap: 8px; margin-bottom: 10px; }
   .md-viewer-ext[hidden] { display: none; }
@@ -537,8 +558,6 @@
 
   /* ── 区块标题 / 行（设置 15px 主文、12px 副文）── */
   [data-theme="light"] .sect { margin-top: 22px; }
-  /* 0 条上次转换：整块 ≤72（A6）—— 浅色那条 .sect 覆盖优先级更高，这里显式压回 */
-  [data-theme="light"] .sect.sect-last { margin-top: 10px; }
   [data-theme="light"] .sect-head h2 { font-size: 14px; line-height: 1.35; color: var(--ink); letter-spacing: .01em; }
   [data-theme="light"] .sect-title { font-size: 11px; letter-spacing: .08em; color: var(--muted); }
   [data-theme="light"] .sect-head .sect-meta { font-size: 11px; }
@@ -688,9 +707,11 @@
   [data-theme="light"] .md-viewer .md-preview pre { background: var(--icon-bg); border-radius: 6px; padding: 12px; }
   [data-theme="light"] .md-viewer .md-preview th { background: var(--icon-bg); }
   [data-theme="light"] .md-viewer .md-preview a { color: var(--primary); }
-  [data-theme="light"] .md-viewer-raw {
-    padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  /* 卡 069 · R4：浅色走「纸页卡片」——原文与预览用同一组边框/圆角/底色/内边距（预览见 :674 那条）。 */
+  [data-theme="light"] .md-viewer .md-viewer-raw {
+    padding: 20px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     font-size: 13px; line-height: 1.7; color: var(--ink);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 8px 20px rgba(70, 50, 30, .05);
   }
 
   /* ══ 浅色增量（承重，勿按「与基础等价」删除）══════════════════════════════
@@ -701,7 +722,6 @@
   [data-theme="light"] .iconbtn[aria-expanded="true"] { background: var(--icon-bg); color: var(--primary); }
   [data-theme="light"] .files-search svg { color: var(--muted); }
   [data-theme="light"] .navitem { color: var(--muted); }
-  [data-theme="light"] .sect-last .sect-empty { padding: 8px 12px; }
   [data-theme="light"] .row-link:hover { background: var(--icon-bg); }
   [data-theme="light"] .row-chev { color: var(--muted); }
   [data-theme="light"] .btn:hover { border-color: var(--primary); }
@@ -729,36 +749,63 @@
   .sky-night {
     background:
       radial-gradient(ellipse 85% 35% at 105% 34%, color-mix(in srgb, var(--nebula) 25%, transparent), transparent 78%),
-      radial-gradient(ellipse 95% 28% at -10% 62%, color-mix(in srgb, var(--glow) 32%, transparent), transparent 80%),
-      radial-gradient(ellipse 115% 43% at 20% 103%, var(--glow), transparent 82%),
-      linear-gradient(transparent 20%, color-mix(in srgb, var(--glow) 13%, transparent));
+      /* 卡 069 v4：底部蓝晕整体 −16% alpha（实测底部带亮度 ≈ −13%，落在用户要求的 10%–15%）——只降 alpha，不改色相 */
+      radial-gradient(ellipse 95% 28% at -10% 62%, color-mix(in srgb, var(--glow) 26%, transparent), transparent 80%),
+      radial-gradient(ellipse 115% 43% at 20% 103%, color-mix(in srgb, var(--glow) 84%, transparent), transparent 82%),
+      linear-gradient(transparent 20%, color-mix(in srgb, var(--glow) 10.5%, transparent));
   }
+  /* 卡 069 · R6（用户 2026-11-19「浅色不要星星，只留并加强整体渐变」）：
+   * 浅色只保留渐变做纵深——底色 178° linear + 2 片低透明 radial 光晕（prior-art：2–4 片、
+   * alpha .05–.15 量级叠在底色上；渐变只留一个方向）。星点/猎户座两层在浅色整层关闭（见下方 body 段后）。 */
   .sky-day {
     background:
-      radial-gradient(ellipse 100% 52% at 110% 40%, #dce6f2b0, transparent 76%),
-      radial-gradient(ellipse 120% 45% at -5% 105%, #d8e5f2, transparent 82%),
-      linear-gradient(#fbfcfe 12%, #f4f7fb 58%, #edf3f9);
+      radial-gradient(ellipse 80% 42% at 104% 10%, #9dc0e2 0%, #c2d8edb0 44%, transparent 76%),
+      radial-gradient(ellipse 98% 54% at -8% 96%, #9ab8de 0%, #bbd2ebc2 46%, transparent 82%),
+      linear-gradient(178deg, #fbfdff 0%, #eef5fd 46%, #d9e8f7 100%);
   }
   .ambient { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none;
     color: var(--star); opacity: var(--ambient-opacity); transition: opacity 280ms ease-out; }
-  .ambient .distant { fill: currentColor; opacity: .28; }
-  .ambient .near { fill: currentColor; opacity: .52; }
-  .ambient .trace { fill: none; stroke: var(--star-line); stroke-width: .6; opacity: .16; }
-  .ambient .glint { fill: none; stroke: currentColor; stroke-width: .7; opacity: .48;
-    animation: ambient-breathe 11s ease-in-out infinite alternate; animation-play-state: var(--sky-breathe, running); }
-  [data-theme="light"] .ambient .distant { opacity: .15; }
-  [data-theme="light"] .ambient .near { opacity: .38; }
-  [data-theme="light"] .ambient .trace { opacity: .24; }
-  @keyframes ambient-breathe { from { opacity: .24; } to { opacity: .52; } }
-  body[data-tab="files"], body[data-tab="settings"], body.has-results, body.is-busy { --sky-breathe: paused; }
+  /* 卡 069 · R7（v2，2026-11-20 复审后重排）：深度由「核心尺寸 + 亮度 + 少量光晕」共同表达。
+   * 规则：① 光晕只给最亮的 3 颗（near/远星一律不发光）——v1 把 6 个大光晕给了 near，
+   *         结果「暗星在发光、亮星不发光」，深度线索是反的；
+   *      ② 半径只留 4 档（.65 / 1 / 1.2 / 1.45）——相邻差 .05px 在 dsf2/dsf3.7 上根本分不出；
+   *      ③ 底部 y ≥ 603 让给 CTA 与两行文案（v1 有 5 颗被按钮/导航盖住、唯一暖星夹在文案缝里）；
+   *      ④ 光晕半径 4.2–4.9（约 4×，v1 是 6–7×）且核心 α .32：是「亮点 + 一圈迅速衰减的光」，
+   *         ⛔ 不是 14px 的实心软盘。猎户座与连线一行未动（结构线 0.6px / .11）。 */
+  .ambient .halo { fill: url(#starHalo); }
+  .ambient .halo-core { stop-color: var(--star); stop-opacity: .32; }
+  .ambient .halo-inner { stop-color: var(--star); stop-opacity: .10; }
+  .ambient .halo-mid { stop-color: var(--star); stop-opacity: .02; }
+  .ambient .halo-edge { stop-color: var(--star); stop-opacity: 0; }
+  .ambient .distant { fill: currentColor; opacity: .26; }
+  .ambient .near { fill: currentColor; opacity: .48; }
+  .ambient .bright { fill: currentColor; opacity: .8; }
+  /* 卡 069 · R7 v3（2026-11-20 用户提议）：猎户座逆时针 24°「斜过来」——
+   * 让它的大对角（暖星 → 右下星）与左下角蓝晕的「/」方向形成交叉（相对），
+   * 而不是原来两条腿近乎竖直、与渐变各走各的。旋转是纯静态 transform（无动画）；
+   * ⚠️ .art 是 fixed + z-index:-1 的纯装饰层，没有 fixed/absolute 后代，不会踩「包含块」坑。 */
   .art { top: 110px; bottom: auto; right: 22px; width: 225px; height: 300px; z-index: -1;
-    opacity: var(--orion-opacity); transition: opacity 280ms ease-out; }
+    opacity: var(--orion-opacity); transition: opacity 280ms ease-out;
+    transform: rotate(-24deg); transform-origin: 50% 50%; }
   .art .orion { position: static; width: 100%; height: 100%; }
+  /* 卡 069 · v4：猎户座主星光晕（柔和、低 alpha；连线只提亮不加粗，见 --line-opacity 注释） */
+  .art .ohalo { fill: url(#orionHalo); }
+  .art .ohalo-warm { fill: url(#orionHaloWarm); }
+  .art .oh-core { stop-color: var(--star); stop-opacity: .34; }
+  .art .oh-mid { stop-color: var(--star); stop-opacity: .09; }
+  .art .oh-edge { stop-color: var(--star); stop-opacity: 0; }
+  .art .ohw-core { stop-color: var(--warm); stop-opacity: .3; }
+  .art .ohw-mid { stop-color: var(--warm); stop-opacity: .075; }
+  .art .ohw-edge { stop-color: var(--warm); stop-opacity: 0; }
   body[data-tab="files"] .art, body[data-tab="settings"] .art { display: block; }
   body[data-tab="files"] { --glow-opacity: .48; --ambient-opacity: .16; --orion-opacity: 0; }
   body[data-tab="settings"] { --glow-opacity: .34; --ambient-opacity: .08; --orion-opacity: 0; }
   body[data-tab="convert"].has-results { --glow-opacity: .68; --ambient-opacity: .40; --orion-opacity: .27; }
   body[data-tab="convert"].is-busy { --glow-opacity: .56; --ambient-opacity: .25; --orion-opacity: .14; }
+  /* 卡 069 · R6：浅色只留渐变 —— 星点层与猎户座整层关闭（display:none，不参与绘制）。
+   * ⚠️ 必须放在上面 body[data-tab] 的 display:block 之后：两边同为 (0,2,1)，靠源序覆盖。 */
+  [data-theme="light"] body .ambient,
+  [data-theme="light"] body .art { display: none; }
 
   /* ── 顶栏：品牌 20 / 本地标签带状态点 ── */
   .appbar { min-height: calc(var(--safe-top) + 60px); padding: calc(8px + var(--safe-top)) 20px 7px;
@@ -793,14 +840,6 @@
   #dropzone .picker-foot { order: 3; display: flex; width: 100%; justify-content: center; color: var(--muted);
     font-size: 11px; line-height: 1.5; }
   body.has-results #dropzone .picker-sub { display: none; }
-
-  /* ── 「上次转换」：留白版的轻行（不是第二张卡）── */
-  .sect-last { margin-top: 14px; }
-  .sect-last .sect-head { margin-bottom: 2px; }
-  .sect-last .sect-empty { padding: 10px 0 13px; border: 0; border-bottom: 1px solid var(--soft-border);
-    border-radius: 0; background: transparent; color: var(--ink); font-size: 13px; line-height: 1.5; }
-  [data-theme="light"] .sect-last .sect-empty { padding: 10px 0 13px; border: 0; border-bottom: 1px solid var(--soft-border);
-    border-radius: 0; background: transparent; color: var(--ink); }
 
   /* ── 结果区 ── */
   .results-panel { margin-top: 18px; }
@@ -952,36 +991,75 @@
     <span class="files-search-count" id="filesSearchCount" aria-live="polite" hidden></span>
     <button type="button" class="files-search-clear" id="filesSearchClose" aria-label="关闭搜索">✕</button>
   </div>
-  <span class="tag">本地 · 零外发</span>
 </header>
 
 <div class="sky" aria-hidden="true"><div class="sky-day"></div><div class="sky-night"></div></div>
-<!-- 卡 068 · 环境星点层（留白版）：文件/设置页降到更淡，转换/结果页更明显；呼吸在结果/处理中暂停 -->
+<!-- 卡 068 · 环境星点层（留白版）：文件/设置页降到更淡，转换/结果页更明显；浅色整层关闭（卡 069 · R6） -->
 <svg class="ambient" viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <!-- 卡 069 · R7 v2：光晕用 radialGradient 一次画好（⛔ 不用 filter: blur/drop-shadow —— 固定层每帧重绘代价高）。
+       4 个 stop：亮核 → 内晕 → 极淡中晕 → 透明；只在 3 颗 bright 上有，半径 4.2–4.9。 -->
+  <defs>
+    <radialGradient id="starHalo">
+      <stop class="halo-core" offset="0"/>
+      <stop class="halo-inner" offset="30%"/>
+      <stop class="halo-mid" offset="66%"/>
+      <stop class="halo-edge" offset="100%"/>
+    </radialGradient>
+  </defs>
+  <!-- 光晕层：只长在最亮 3 颗上（v1 给了 6 颗 near ⇒ 暗星发光、亮星不发光，深度线索反了） -->
+  <g class="halo">
+    <circle cx="185" cy="510" r="4.6"/>
+  </g>
+  <!-- 远星 16（r .65 / α .26）：只做底纹；左右留 28/29px 边距，360 下不出界 -->
   <g class="distant">
-    <circle cx="31" cy="122" r=".7"/><circle cx="175" cy="132" r=".6"/>
-    <circle cx="345" cy="164" r=".7"/><circle cx="91" cy="225" r=".65"/>
-    <circle cx="22" cy="278" r=".8"/><circle cx="161" cy="254" r=".6"/>
-    <circle cx="366" cy="294" r=".65"/><circle cx="129" cy="330" r=".7"/>
-    <circle cx="49" cy="374" r=".6"/><circle cx="306" cy="401" r=".7"/>
-    <circle cx="20" cy="459" r=".65"/><circle cx="110" cy="440" r=".65"/>
-    <circle cx="354" cy="483" r=".75"/><circle cx="185" cy="510" r=".6"/>
-    <circle cx="76" cy="548" r=".7"/><circle cx="312" cy="561" r=".7"/>
-    <circle cx="28" cy="606" r=".65"/><circle cx="145" cy="632" r=".75"/>
-    <circle cx="368" cy="651" r=".7"/><circle cx="240" cy="703" r=".6"/>
-    <circle cx="17" cy="746" r=".75"/><circle cx="376" cy="784" r=".65"/>
+    <circle cx="62" cy="152" r=".65"/><circle cx="175" cy="146" r=".65"/>
+    <circle cx="345" cy="164" r=".65"/><circle cx="91" cy="225" r=".65"/>
+    <circle cx="74" cy="286" r=".65"/><circle cx="161" cy="254" r=".65"/>
+    <circle cx="342" cy="298" r=".65"/><circle cx="129" cy="330" r=".65"/>
+    <circle cx="96" cy="388" r=".65"/><circle cx="306" cy="401" r=".65"/>
+    <circle cx="64" cy="466" r=".65"/><circle cx="346" cy="500" r=".65"/>
+    <circle cx="76" cy="548" r=".65"/><circle cx="74" cy="594" r=".65"/>
+    <circle cx="340" cy="592" r=".65"/><circle cx="145" cy="600" r=".65"/>
   </g>
+  <!-- 近星 6（r 1 / α .48）：不发光晕；y 上限 603，给 CTA（671）与两行文案（725–762）让位 -->
   <g class="near">
-    <circle cx="323" cy="216" r="1.05"/><circle cx="59" cy="304" r="1"/>
-    <circle cx="167" cy="368" r=".9"/><circle cx="336" cy="439" r="1.05"/>
-    <circle cx="43" cy="503" r=".95"/><circle cx="276" cy="603" r="1"/>
-    <circle cx="91" cy="680" r=".9"/>
+    <circle cx="323" cy="216" r="1"/><circle cx="66" cy="330" r="1"/>
+    <circle cx="167" cy="368" r="1"/><circle cx="336" cy="439" r="1"/>
+    <circle cx="43" cy="503" r="1"/><circle cx="276" cy="603" r="1"/>
+    <!-- 卡 069 v4：原 bright 两颗降级为 near（「减少几颗特别亮的星点」，但不再留洞） -->
+    <circle cx="110" cy="440" r="1"/><circle cx="312" cy="561" r="1"/>
   </g>
-  <path class="trace" d="m23 397 36 29 28-12 32 36"/>
-  <path class="glint" d="M351 245v6m-3-3h6M135 557v5m-2.5-2.5h5"/>
+  <!-- 亮星 3（r 1.45 / α .8）：唯一坐标，⛔ 不叠在远星上（v1 有 3 对同坐标 = 最近邻 0） -->
+  <!-- 卡 069 v4：全场只留 1 颗「明显的亮星」（下半部分唯一），且只有它带光晕 -->
+  <g class="bright">
+    <circle cx="185" cy="510" r="1.4"/>
+  </g>
+  <!-- 暖星 1：从文案缝（205,742）移到按钮上方空区；v1 那颗在 430 下会被导航条整块盖住 -->
+  <circle cx="230" cy="600" r="1.1" fill="var(--warm)" opacity=".5"/>
 </svg>
   <div class="art" aria-hidden="true">
       <svg class="orion" viewBox="0 0 200 300" fill="none">
+        <!-- 卡 069 v4：主星加柔和光晕（prior-art：亮核 → 宽低 alpha 晕；⛔ 不用 filter） -->
+        <defs>
+          <radialGradient id="orionHalo">
+            <stop class="oh-core" offset="0"/>
+            <stop class="oh-mid" offset="45%"/>
+            <stop class="oh-edge" offset="100%"/>
+          </radialGradient>
+          <radialGradient id="orionHaloWarm">
+            <stop class="ohw-core" offset="0"/>
+            <stop class="ohw-mid" offset="45%"/>
+            <stop class="ohw-edge" offset="100%"/>
+          </radialGradient>
+        </defs>
+        <!-- 卡 069 v5：三层分级——① 关键星（2 肩 + 2 足 + 暖星）有「明显但柔和」的光晕；
+             ② 腰带 3 颗**不给光晕**（保持清晰、干净）；③ 背景星点见 .ambient（低亮度） -->
+        <g class="ohalo">
+          <circle cx="142" cy="60" r="9.5"/>
+          <circle cx="70" cy="250" r="8.5" opacity=".82"/>
+          <circle cx="154" cy="238" r="8.5" opacity=".82"/>
+        </g>
+        <circle class="ohalo-warm" cx="58" cy="50" r="11"/>
         <g stroke="var(--star-line)" stroke-opacity="var(--line-opacity)" stroke-width=".6">
           <path d="M58 50 L84 158 L70 250"/>
           <path d="M142 60 L116 146 L154 238"/>
@@ -1012,11 +1090,6 @@
     </div>
     <input type="file" id="fileInput" hidden multiple accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tiff,.txt,.html,.htm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/*,text/plain,text/html">
     <div id="status" role="status" aria-live="polite"></div>
-
-    <section class="sect sect-last" aria-labelledby="lastTitle">
-      <div class="sect-head"><h2 id="lastTitle">上次转换</h2></div>
-      <p class="sect-empty" id="lastEmpty">还没有转换记录 —— 点击上方「选择文件」开始。</p>
-    </section>
 
     <section class="results-panel" id="resultsPanel" hidden aria-labelledby="resultsTitle">
       <div class="results-head">
@@ -1166,9 +1239,14 @@
       <button class="btn" type="button" id="mdViewerCopy">复制原文</button>
       <button class="btn" type="button" id="mdViewerDownload">下载原文</button>
     </div>
-    <div class="seg" role="group" aria-label="预览模式">
-      <button class="seg-btn" type="button" id="mdViewerPreview" aria-pressed="true">预览</button>
-      <button class="seg-btn" type="button" id="mdViewerRaw" aria-pressed="false">原文</button>
+    <div class="md-viewer-actions">
+      <button class="md-viewer-primary" type="button" id="mdViewerPreview" aria-pressed="true">预览</button>
+      <div class="md-viewer-more-wrap">
+        <button class="md-viewer-more" type="button" id="mdViewerMore" aria-label="更多操作" aria-haspopup="true" aria-expanded="false" aria-controls="mdViewerMenu">⋯</button>
+        <div class="md-viewer-menu" id="mdViewerMenu" hidden>
+          <button class="md-viewer-menu-item" type="button" id="mdViewerRaw" aria-pressed="false">原文</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -3630,6 +3708,8 @@ ${xlsxRowsToMd(kept)}`);
   var mdViewerExt = $("#mdViewerExt");
   var mdViewerCopy = $("#mdViewerCopy");
   var mdViewerDownload = $("#mdViewerDownload");
+  var mdViewerMore = $("#mdViewerMore");
+  var mdViewerMenu = $("#mdViewerMenu");
   var pickerTitle = $("#pickerTitle");
   var pickBtn = $("#pickBtn");
   var resultsPanel = $("#resultsPanel");
@@ -3913,8 +3993,6 @@ ${xlsxRowsToMd(kept)}`);
     paintSearchChrome();
     if (pickerTitle) pickerTitle.textContent = hasResults ? "\u7EE7\u7EED\u6DFB\u52A0\u6587\u6863" : "\u9009\u62E9\u6587\u6863";
     if (pickBtn) pickBtn.textContent = hasResults ? "\u7EE7\u7EED\u6DFB\u52A0\u6587\u6863" : "\u9009\u62E9\u6587\u4EF6";
-    const lastSect = document.getElementById("lastTitle");
-    if (lastSect && lastSect.closest(".sect")) lastSect.closest(".sect").hidden = hasResults;
     resultsCount.textContent = "\u5DF2\u5B8C\u6210 " + resultRows.length + " \u4E2A\u6587\u4EF6";
     syncSelectAll();
     syncBatchBar();
@@ -4224,6 +4302,18 @@ ${xlsxRowsToMd(kept)}`);
     ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
     mdViewerBody.appendChild(ta);
   }
+  function closeViewerMenu(restoreFocus) {
+    if (!mdViewerMenu || mdViewerMenu.hidden) return;
+    mdViewerMenu.hidden = true;
+    if (mdViewerMore) mdViewerMore.setAttribute("aria-expanded", "false");
+    if (restoreFocus && mdViewerMore) mdViewerMore.focus();
+  }
+  function openViewerMenu() {
+    if (!mdViewerMenu) return;
+    mdViewerMenu.hidden = false;
+    if (mdViewerMore) mdViewerMore.setAttribute("aria-expanded", "true");
+    if (mdViewerRaw) mdViewerRaw.focus();
+  }
   function renderViewerMode(mode) {
     if (!viewerState || !mdViewerBody) return;
     if (viewerState.error) {
@@ -4244,6 +4334,7 @@ ${xlsxRowsToMd(kept)}`);
     viewerTrigger = trigger || document.activeElement;
     if (mdViewerName) mdViewerName.textContent = state2.fileName;
     if (mdViewerExt) mdViewerExt.hidden = !state2.external;
+    closeViewerMenu(false);
     mdViewer.hidden = false;
     document.body.classList.add("md-viewer-open");
     renderViewerMode(state2.defaultMode || "preview");
@@ -4253,6 +4344,7 @@ ${xlsxRowsToMd(kept)}`);
     if (!mdViewer) return;
     mdViewer.hidden = true;
     document.body.classList.remove("md-viewer-open");
+    closeViewerMenu(false);
     if (mdViewerExt) mdViewerExt.hidden = true;
     viewerState = null;
     if (viewerTrigger && typeof viewerTrigger.focus === "function") viewerTrigger.focus();
@@ -4879,16 +4971,50 @@ ${xlsxRowsToMd(kept)}`);
     }
     saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
   }
+  function onViewerKeydown(e) {
+    if (e.key !== "Escape") return;
+    if (mdViewerMenu && !mdViewerMenu.hidden) {
+      e.preventDefault();
+      closeViewerMenu(true);
+      return;
+    }
+    closeMarkdownViewer();
+  }
+  function isViewerMenuClick(e) {
+    const target = e.target;
+    return Boolean(target && typeof target.closest === "function" && target.closest(".md-viewer-more-wrap"));
+  }
+  function wireViewerMenu() {
+    if (mdViewerMore) {
+      mdViewerMore.addEventListener("click", () => {
+        if (mdViewerMenu && mdViewerMenu.hidden) openViewerMenu();
+        else closeViewerMenu(true);
+      });
+    }
+    if (mdViewerPreview) {
+      mdViewerPreview.addEventListener("click", () => {
+        closeViewerMenu(false);
+        renderViewerMode("preview");
+      });
+    }
+    if (mdViewerRaw) {
+      mdViewerRaw.addEventListener("click", () => {
+        renderViewerMode("raw");
+        closeViewerMenu(true);
+      });
+    }
+    document.addEventListener("click", (e) => {
+      if (!mdViewerMenu || mdViewerMenu.hidden || isViewerMenuClick(e)) return;
+      closeViewerMenu(false);
+    });
+  }
   function initMarkdownViewer() {
     if (!mdViewer) return;
     if (mdViewerClose) mdViewerClose.addEventListener("click", closeMarkdownViewer);
-    if (mdViewerPreview) mdViewerPreview.addEventListener("click", () => renderViewerMode("preview"));
-    if (mdViewerRaw) mdViewerRaw.addEventListener("click", () => renderViewerMode("raw"));
     if (mdViewerCopy) mdViewerCopy.addEventListener("click", copyViewerRaw);
     if (mdViewerDownload) mdViewerDownload.addEventListener("click", downloadViewerRaw);
-    mdViewer.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeMarkdownViewer();
-    });
+    wireViewerMenu();
+    mdViewer.addEventListener("keydown", onViewerKeydown);
   }
   var filesQuery = "";
   var filesCleared = false;
@@ -5136,7 +5262,7 @@ ${xlsxRowsToMd(kept)}`);
     const state2 = await loadPanelState();
     await verifyRecords(state2);
     renderFilesPanel(state2);
-    updateLastConversion(state2);
+    paintSessionResult();
     return state2;
   }
   function paintSessionResult() {
@@ -5163,43 +5289,6 @@ ${xlsxRowsToMd(kept)}`);
     const rec = getState().records.find((r) => r.uri === sessionLast.uri);
     if (rec) highlightRecord(rec.id);
     else setStatus("\u672C\u6B21\u8BB0\u5F55\u4E0D\u5728\u5386\u53F2\u91CC\uFF08\u53EF\u80FD\u5DF2\u88AB\u6E05\u9664\u6216\u6DD8\u6C70\uFF09", true);
-  }
-  function updateLastConversion(state2) {
-    paintSessionResult();
-    const empty = document.getElementById("lastEmpty");
-    if (!empty) return;
-    if (sessionLast) {
-      empty.textContent = "\u672C\u6B21\uFF1A" + (sessionLast.name || "\uFF08\u672A\u547D\u540D\uFF09") + (sessionLast.recorded ? " \xB7 \u5DF2\u8BB0\u5165\u5386\u53F2" : " \xB7 \u672A\u8BB0\u5165\u5386\u53F2\uFF08\u4FDD\u7559\u5F00\u5173\u5DF2\u5173\u6216\u672A\u62FF\u5230\u771F\u5B9E\u540D\uFF09") + " \xB7 \u70B9\u6B64\u5B9A\u4F4D\u5230\u300C\u6587\u4EF6\u300D";
-      empty.classList.remove("lost");
-      empty.style.cursor = "pointer";
-      empty.onclick = () => {
-        if (!sessionLast.recorded) {
-          setStatus("\u672C\u6B21\u8F6C\u6362\u672A\u8BB0\u5165\u5386\u53F2\uFF08\u4FDD\u7559\u5F00\u5173\u5DF2\u5173 / \u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D\uFF09\uFF1B\u6587\u4EF6\u5DF2\u4FDD\u5B58\uFF0C\u53EF\u5728\u6587\u4EF6\u7BA1\u7406\u5668\u4E2D\u627E\u5230", true);
-          return;
-        }
-        activateTab("files");
-        const rec2 = state2.records.find((r) => r.uri === sessionLast.uri);
-        if (rec2) highlightRecord(rec2.id);
-        else setStatus("\u672C\u6B21\u8BB0\u5F55\u4E0D\u5728\u5386\u53F2\u91CC\uFF08\u53EF\u80FD\u5DF2\u88AB\u6E05\u9664\u6216\u6DD8\u6C70\uFF09", true);
-      };
-      return;
-    }
-    const rec = state2.records[0];
-    if (!rec) {
-      empty.textContent = "\u8FD8\u6CA1\u6709\u8F6C\u6362\u8BB0\u5F55 \u2014\u2014 \u70B9\u51FB\u4E0A\u65B9\u300C\u9009\u62E9\u6587\u4EF6\u300D\u5F00\u59CB\u3002";
-      empty.classList.remove("lost");
-      empty.style.cursor = "";
-      empty.onclick = null;
-      return;
-    }
-    const lost = invalidByUri.has(rec.uri);
-    empty.textContent = "\u4E0A\u6B21\uFF1A" + rec.name + " \xB7 " + relTime(rec.createdAt) + (lost ? " \xB7 \u6587\u4EF6\u5DF2\u4E0D\u5B58\u5728\uFF0C\u65E0\u6CD5\u6253\u5F00" : "") + " \xB7 \u70B9\u6B64\u5B9A\u4F4D\u5230\u300C\u6587\u4EF6\u300D";
-    empty.classList.toggle("lost", lost);
-    empty.style.cursor = "pointer";
-    empty.onclick = () => {
-      activateTab("files");
-      highlightRecord(rec.id);
-    };
   }
   function flashRow(row) {
     if (!row) return;
@@ -5421,7 +5510,7 @@ ${xlsxRowsToMd(kept)}`);
     if (!res.filename) {
       sessionLast = { name: "", uri: res.uri, recorded: false, reason: "\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D" };
       nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165\uFF08\u672A\u62FF\u5230\u771F\u5B9E\u6587\u4EF6\u540D\uFF09", true);
-      updateLastConversion(getState());
+      paintSessionResult();
       return Promise.resolve({ ok: false, skipped: "no-name" });
     }
     sessionLast = { name: res.filename, uri: res.uri, recorded: false, reason: "" };
@@ -5439,12 +5528,12 @@ ${xlsxRowsToMd(kept)}`);
         recorded: Boolean(r && r.ok),
         reason: sessionReasonOf(r)
       };
-      updateLastConversion(getState());
+      paintSessionResult();
       return r;
     }).catch(() => {
       if (sessionLast) sessionLast.reason = "\u5386\u53F2\u8BB0\u5F55\u5199\u5165\u5931\u8D25";
       nativeNotice("\u5DF2\u4FDD\u5B58\uFF0C\u4F46\u5386\u53F2\u8BB0\u5F55\u672A\u5199\u5165", true);
-      updateLastConversion(getState());
+      paintSessionResult();
       return { ok: false, error: "append-failed" };
     });
   }

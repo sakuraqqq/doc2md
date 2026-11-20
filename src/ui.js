@@ -34,6 +34,8 @@ const mdViewerRaw = $('#mdViewerRaw');
 const mdViewerExt = $('#mdViewerExt');
 const mdViewerCopy = $('#mdViewerCopy');
 const mdViewerDownload = $('#mdViewerDownload');
+const mdViewerMore = $('#mdViewerMore');
+const mdViewerMenu = $('#mdViewerMenu');
 const pickerTitle = $('#pickerTitle');
 const pickBtn = $('#pickBtn');
 const resultsPanel = $('#resultsPanel');
@@ -414,16 +416,14 @@ function updateResultsChrome() {
   const hasResults = resultRows.length > 0;
   resultsPanel.hidden = !hasResults;
   paintSessionResult();
-  /* 卡 063 · A6：0 条时只留一块空提示（#lastEmpty），不再叠第二行长句 ⇒ #hint 恒隐藏
-   *（元素保留：app.js 仍 import hintEl 并在启动时置 none） */
+  /* #hint 恒隐藏（元素保留：app.js 仍 import hintEl 并在启动时置 none）。
+   * 卡 069 · R5 起首页不再有「上次转换」块 ⇒ 这里也不再按 hasResults 收起任何 sect。 */
   hintEl.style.display = 'none';
   document.body.classList.toggle('has-results', hasResults);
   paintSearchChrome();
   if (pickerTitle) pickerTitle.textContent = hasResults ? '继续添加文档' : '选择文档';
   /* 卡 068 · A3：有结果后主按钮文案与「继续添加」一致（同一颗 primary） */
   if (pickBtn) pickBtn.textContent = hasResults ? '继续添加文档' : '选择文件';
-  const lastSect = document.getElementById('lastTitle');
-  if (lastSect && lastSect.closest('.sect')) lastSect.closest('.sect').hidden = hasResults;
   resultsCount.textContent = '已完成 ' + resultRows.length + ' 个文件';
   syncSelectAll();
   syncBatchBar();
@@ -770,6 +770,18 @@ function renderViewerRaw() {
   ta.value = viewerState.fullText ? viewerState.text : truncatePreview(viewerState.text);
   mdViewerBody.appendChild(ta);
 }
+function closeViewerMenu(restoreFocus) {
+  if (!mdViewerMenu || mdViewerMenu.hidden) return;
+  mdViewerMenu.hidden = true;
+  if (mdViewerMore) mdViewerMore.setAttribute('aria-expanded', 'false');
+  if (restoreFocus && mdViewerMore) mdViewerMore.focus();
+}
+function openViewerMenu() {
+  if (!mdViewerMenu) return;
+  mdViewerMenu.hidden = false;
+  if (mdViewerMore) mdViewerMore.setAttribute('aria-expanded', 'true');
+  if (mdViewerRaw) mdViewerRaw.focus();
+}
 function renderViewerMode(mode) {
   if (!viewerState || !mdViewerBody) return;
   if (viewerState.error) {
@@ -791,6 +803,7 @@ function openMarkdownViewer(state, trigger) {
   viewerTrigger = trigger || document.activeElement;
   if (mdViewerName) mdViewerName.textContent = state.fileName;
   if (mdViewerExt) mdViewerExt.hidden = !state.external;
+  closeViewerMenu(false);
   mdViewer.hidden = false;
   document.body.classList.add('md-viewer-open');
   renderViewerMode(state.defaultMode || 'preview');
@@ -801,6 +814,7 @@ function closeMarkdownViewer() {
   if (!mdViewer) return;
   mdViewer.hidden = true;
   document.body.classList.remove('md-viewer-open');
+  closeViewerMenu(false);
   if (mdViewerExt) mdViewerExt.hidden = true;
   viewerState = null;
   if (viewerTrigger && typeof viewerTrigger.focus === 'function') viewerTrigger.focus();
@@ -1486,16 +1500,52 @@ function downloadViewerRaw() {
   }
   saveExternalText(viewerState.fileName, viewerState.raw != null ? viewerState.raw : viewerState.text);
 }
+function onViewerKeydown(e) {
+  if (e.key !== 'Escape') return;
+  /* 卡 069 · R3：菜单开着时 Esc 先收菜单，再关查看器 */
+  if (mdViewerMenu && !mdViewerMenu.hidden) {
+    e.preventDefault();
+    closeViewerMenu(true);
+    return;
+  }
+  closeMarkdownViewer();
+}
+function isViewerMenuClick(e) {
+  const target = e.target;
+  return Boolean(target && typeof target.closest === 'function' && target.closest('.md-viewer-more-wrap'));
+}
+function wireViewerMenu() {
+  if (mdViewerMore) {
+    mdViewerMore.addEventListener('click', () => {
+      if (mdViewerMenu && mdViewerMenu.hidden) openViewerMenu();
+      else closeViewerMenu(true);
+    });
+  }
+  if (mdViewerPreview) {
+    mdViewerPreview.addEventListener('click', () => {
+      closeViewerMenu(false);
+      renderViewerMode('preview');
+    });
+  }
+  if (mdViewerRaw) {
+    mdViewerRaw.addEventListener('click', () => {
+      renderViewerMode('raw');
+      closeViewerMenu(true);
+    });
+  }
+  /* 点查看器其它区域 / 页面空白处收起菜单（⋯ 自身由按钮开关处理） */
+  document.addEventListener('click', (e) => {
+    if (!mdViewerMenu || mdViewerMenu.hidden || isViewerMenuClick(e)) return;
+    closeViewerMenu(false);
+  });
+}
 function initMarkdownViewer() {
   if (!mdViewer) return;
   if (mdViewerClose) mdViewerClose.addEventListener('click', closeMarkdownViewer);
-  if (mdViewerPreview) mdViewerPreview.addEventListener('click', () => renderViewerMode('preview'));
-  if (mdViewerRaw) mdViewerRaw.addEventListener('click', () => renderViewerMode('raw'));
   if (mdViewerCopy) mdViewerCopy.addEventListener('click', copyViewerRaw);
   if (mdViewerDownload) mdViewerDownload.addEventListener('click', downloadViewerRaw);
-  mdViewer.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeMarkdownViewer();
-  });
+  wireViewerMenu();
+  mdViewer.addEventListener('keydown', onViewerKeydown);
 }
 /* ── 卡 060 / 2-5：转换历史库（文件页 + 保留开关 + 清除 + 上次转换同源） ────────────────
  * 数据面全部在 src/history-store.js（schema / 200 FIFO / 原子写 / 搜索 / keep）；本段只做 DOM 与原生动作。
@@ -1795,7 +1845,7 @@ export async function refreshFilesPanel() {
   const state = await loadPanelState();
   await verifyRecords(state);
   renderFilesPanel(state);
-  updateLastConversion(state);
+  paintSessionResult();
   return state;
 }
 
@@ -1827,50 +1877,6 @@ function onSessionResultClick() {
   const rec = historyGetState().records.find((r) => r.uri === sessionLast.uri);
   if (rec) highlightRecord(rec.id);
   else setStatus('本次记录不在历史里（可能已被清除或淘汰）', true);
-}
-
-function updateLastConversion(state) {
-  paintSessionResult();
-  const empty = document.getElementById('lastEmpty');
-  if (!empty) return;
-  // F5：本次会话的结果优先（keep-off 时它不在历史里，但用户刚转完，首页要能看到）。
-  if (sessionLast) {
-    empty.textContent =
-      '本次：' + (sessionLast.name || '（未命名）') +
-      (sessionLast.recorded ? ' · 已记入历史' : ' · 未记入历史（保留开关已关或未拿到真实名）') +
-      ' · 点此定位到「文件」';
-    empty.classList.remove('lost');
-    empty.style.cursor = 'pointer';
-    empty.onclick = () => {
-      if (!sessionLast.recorded) {
-        setStatus('本次转换未记入历史（保留开关已关 / 未拿到真实文件名）；文件已保存，可在文件管理器中找到', true);
-        return;
-      }
-      activateTab('files');
-      const rec = state.records.find((r) => r.uri === sessionLast.uri);
-      if (rec) highlightRecord(rec.id);
-      else setStatus('本次记录不在历史里（可能已被清除或淘汰）', true);
-    };
-    return;
-  }
-  const rec = state.records[0];
-  if (!rec) {
-    empty.textContent = '还没有转换记录 —— 点击上方「选择文件」开始。';
-    empty.classList.remove('lost');
-    empty.style.cursor = '';
-    empty.onclick = null;
-    return;
-  }
-  /* 卡 063 · A6b：记录指向的文件已被删除 ⇒ 首页该条红字说明「打不开」，点击仍定位到文件页的失效行 */
-  const lost = invalidByUri.has(rec.uri);
-  empty.textContent = '上次：' + rec.name + ' · ' + historyRelTime(rec.createdAt) +
-    (lost ? ' · 文件已不存在，无法打开' : '') + ' · 点此定位到「文件」';
-  empty.classList.toggle('lost', lost);
-  empty.style.cursor = 'pointer';
-  empty.onclick = () => {
-    activateTab('files');
-    highlightRecord(rec.id);
-  };
 }
 
 function flashRow(row) {
@@ -2130,7 +2136,7 @@ export function recordHistory(res, kind) {
     // F7：拿不到真实文件名 ⇒ 不记录（避免把请求名当真实名写进历史），但文件已保存 ⇒ 明示。
     sessionLast = { name: '', uri: res.uri, recorded: false, reason: '未拿到真实文件名' };
     nativeNotice('已保存，但历史记录未写入（未拿到真实文件名）', true);
-    updateLastConversion(historyGetState()); // F-06：错误路径也必须重绘「本次结果」，⛔ 残留上一次
+    paintSessionResult(); // F-06：错误路径也必须重绘「本次结果」，⛔ 残留上一次
     return Promise.resolve({ ok: false, skipped: 'no-name' });
   }
   sessionLast = { name: res.filename, uri: res.uri, recorded: false, reason: '' };
@@ -2150,13 +2156,13 @@ export function recordHistory(res, kind) {
         recorded: Boolean(r && r.ok),
         reason: sessionReasonOf(r),
       };
-      updateLastConversion(historyGetState());
+      paintSessionResult();
       return r;
     })
     .catch(() => {
       if (sessionLast) sessionLast.reason = '历史记录写入失败';
       nativeNotice('已保存，但历史记录未写入', true);
-      updateLastConversion(historyGetState()); // F-06：写失败路径同样重绘
+      paintSessionResult(); // F-06：写失败路径同样重绘
       return { ok: false, error: 'append-failed' };
     });
 }

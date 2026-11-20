@@ -6408,7 +6408,7 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.deepEqual(errs, [], '页面有 JS 错误：' + JSON.stringify(errs));
       });
 
-      await t.test('Z6-2 A3 首屏无 hero：无居中大标题 / 无徽章胶囊 / 无虚线框；主操作是选择文档卡片（2026-11-11 起沉底在上次转换之下）', async () => {
+      await t.test('Z6-2 A3 首屏无 hero：无居中大标题 / 无徽章胶囊 / 无虚线框；主操作是选择文档卡片（卡 069 · R5 起首页无「上次转换」块）', async () => {
         await page.click('#tab-convert');
         const hero = await page.evaluate(() => {
           const conv = document.getElementById('panel-convert');
@@ -6419,10 +6419,9 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
             badges: document.querySelectorAll('.badges, .badge').length,
             borderStyle: getComputedStyle(dz).borderTopStyle,
             pickerText: dz.textContent.replace(/\s+/g, ' ').trim(),
-            lastTitle: (document.getElementById('lastTitle') || {}).textContent || '',
             dzTop: dz.getBoundingClientRect().top,
             dzHeight: Math.round(dz.getBoundingClientRect().height),
-            lastTop: document.getElementById('lastEmpty').getBoundingClientRect().top,
+            legacyLast: document.querySelector('.sect-last, #lastTitle, #lastEmpty'),
           };
         });
         assert.equal(hero.appbarTitle, '文转MD助手', 'app bar 标题应为「文转MD助手」，实测 ' + hero.appbarTitle);
@@ -6433,11 +6432,12 @@ test('契约组 Z6：门面骨架（三 Tab / 功能优先首屏 / 页脚进关�
         assert.ok(hero.pickerText.includes('PDF'), '选择卡片缺格式说明，实测 ' + hero.pickerText);
         assert.ok(hero.pickerText.includes('50 MB'), '选择卡片缺文件大小限制，实测 ' + hero.pickerText);
         assert.ok(hero.dzHeight < 200, '选择卡片高度=' + hero.dzHeight + 'px（应 <200，不能占满首屏）');
-        assert.ok(hero.lastTitle.includes('上次转换'), '缺「上次转换」区块');
-        /* 2026-11-11 用户拍板（真机反馈「选择文档应该在最底部，单手好操控」）：
-         * 首屏顺序由「选择卡 → 上次转换」改为「上次转换 → 选择卡（沉底）」；判据随之改为选择卡在下方，
-         * 其余（无 hero / 无徽章 / 非虚线 / 文案 / 高度 <200）全部不变。 */
-        assert.ok(hero.dzTop > hero.lastTop, '顺序不符：选择文档卡片应沉在底部（上次转换之下），实测 dzTop=' + hero.dzTop.toFixed(1) + ' lastTop=' + hero.lastTop.toFixed(1));
+        /* 卡 069 · R5 断言过户（2026-11-19 用户拍板：推翻 2026-10-18（二）§1「保留上次转换」/
+         * §2「点它跳文件页」，整体去掉该块）⇒ 块本身已不存在。
+         * 原判据 ①「缺「上次转换」区块」与 ②「选择卡沉底在其下」——对象都已不存在 ⇒ 逐条作废；
+         * 其余判据（无 hero / 无徽章 / 非虚线 / 文案 / 高度 <200）原样保留、一条未放宽；
+         * 另补一条反向判据：该块**不得**回来（静默恢复 = 红）。 */
+        assert.equal(hero.legacyLast, null, '「上次转换」块（.sect-last / #lastTitle / #lastEmpty）又出现了');
       });
 
       await t.test('Z6-3 A4 页脚信息从首页移除、只在「设置 › 关于」：无 footer；转换面板不含版本/许可；关于含版本', async () => {
@@ -7130,12 +7130,16 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
           html: (document.querySelector('#mdViewerBody .md-preview') || {}).innerHTML || '',
           previewPressed: document.getElementById('mdViewerPreview').getAttribute('aria-pressed'),
           rawPressed: document.getElementById('mdViewerRaw').getAttribute('aria-pressed'),
+          primaryCount: document.querySelectorAll('.md-viewer-foot .md-viewer-primary').length,
+          menuHidden: document.getElementById('mdViewerMenu').hidden,
         }));
         assert.equal(first.name, 'toggle.txt', '全屏查看器标题不是文件名');
         assert.equal(first.preview, true, '全屏查看器默认未显示预览');
         assert.ok(first.html.includes('<h1'), '全屏预览未渲染标题');
         assert.equal(first.previewPressed, 'true', '默认「预览」未按下');
         assert.equal(first.rawPressed, 'false', '默认「原文」不应按下');
+        assert.equal(first.primaryCount, 1, '底栏主按钮不是恰好 1 个（P-5：主按钮=预览）');
+        assert.equal(first.menuHidden, true, '⋯ 菜单默认应收起');
         /* 卡 068 返修 R9：有结果时「正在处理」状态必须可见（旧规则 body.has-results #status 整条 display:none） */
         const busyStatus = await page.evaluate(() => {
           const s = document.getElementById('status');
@@ -7174,7 +7178,10 @@ test('契约组 Z7：Markdown 渲染预览（卡 058）—— 先红', async (t)
         assert.equal(lightRow.radius, '18px', '浅色结果行圆角不是 18px：' + lightRow.radius);
         assert.ok(Math.abs(parseFloat(lightRow.nameLine) - 20.3) <= 0.3, '浅色结果行文件名行高不是 1.45×14：' + lightRow.nameLine);
         assert.equal(lightRow.bodyPad, '0px 0px 2px 48px', '浅色结果行正文内边距不是留白版：' + lightRow.bodyPad);
+        await page.click('#mdViewerMore');
+        assert.equal(await page.evaluate(() => document.getElementById('mdViewerMenu').hidden), false, '⋯ 菜单未展开（P-5 原文入口）');
         await page.click('#mdViewerRaw');
+        assert.equal(await page.evaluate(() => document.getElementById('mdViewerMenu').hidden), true, '选「原文」后 ⋯ 菜单未收起');
         const raw = await page.evaluate(() => {
           const ta = document.querySelector('#mdViewerBody textarea.md-viewer-raw');
           const body = document.getElementById('mdViewerBody').getBoundingClientRect();
@@ -7984,6 +7991,7 @@ test('契约组 Z9：用本 App 打开 .md（卡 059 · B018）—— 先红', a
         assert.equal(res && res.truncated, true, '>4 Mi 未标记 truncated');
         const status = await page.evaluate(() => document.getElementById('status').textContent);
         assert.ok(/仅预览/.test(status), '状态栏无「仅预览」提示：' + status);
+        await page.locator('#mdViewerMore').click();
         await page.locator('#mdViewerRaw').click();
         const rawText = await page.evaluate(() => document.getElementById('mdViewerBody').textContent);
         assert.ok(rawText.indexOf('全文未加载（文件过大）') >= 0, 'raw 态未显示「全文未加载」（A8b）');
