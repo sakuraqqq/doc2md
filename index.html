@@ -917,12 +917,15 @@
     -webkit-backdrop-filter: blur(12px) saturate(115%); backdrop-filter: blur(12px) saturate(115%); }
   [data-theme="light"] .navbar { background: #ffffffe0; border-color: #c8d6e5;
     box-shadow: 0 3px 10px #223d6210, inset 0 1px 0 #ffffff; }
-  /* 卡 070 · R3：果冻过冲（easeOutBack 近似；峰值过冲 ~10%，卡面上限 15%）。
-   * 拖拽期由 .dragging 关掉过渡 —— transform 直接跟手，松手后走这条曲线回弹。 */
+  /* 卡 070 · R3：拖拽期胶囊朝目标 Tab 跟手（不做过冲回弹——过冲会先反向再回来，
+   * 真机实测被判成 bug；松手用 ease-out 直接落位）。 */
   .nav-marker { position: absolute; z-index: 0; top: 9px; left: 0; width: 0; height: 44px; border-radius: 999px;
     background: var(--icon-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent);
-    transition: transform 280ms cubic-bezier(.34, 1.45, .64, 1), width 180ms var(--ease-standard); pointer-events: none; }
+    transition: transform 260ms cubic-bezier(.2, .7, .2, 1), width 180ms var(--ease-standard); pointer-events: none; }
   .nav-marker.dragging { transition: none; }
+  /* 卡 070 修：fade-through 的退场层只保留几何/透明度机制（Z6-1 契约），
+   * 但**不再绘制旧内容** —— 旧内容同帧隐藏，消除切换瞬间的方框重影。 */
+  .tabpanel.leaving > * { visibility: hidden; }
   [data-theme="light"] .nav-marker { background: #e0eaf7; box-shadow: inset 0 0 0 1px #adc4e34d; }
   .navitem { z-index: 1; flex-direction: row; gap: 7px; height: 44px; min-height: 44px; padding: 0 6px; font-size: 12px; }
   .navitem .nav-pill { width: 22px; height: 24px; border-radius: 0; background: transparent; }
@@ -4660,7 +4663,6 @@ ${xlsxRowsToMd(kept)}`);
     const id = tab.getAttribute("aria-controls");
     return id ? document.getElementById(id) : null;
   }
-  var markerBase = null;
   function updateNavMarker(target) {
     const marker = document.getElementById("navMarker");
     if (!navEl || !marker || !target) return;
@@ -4670,7 +4672,6 @@ ${xlsxRowsToMd(kept)}`);
     const left = tab.left - bar.left + 2;
     marker.style.width = tab.width - 4 + "px";
     marker.style.transform = "translateX(" + left + "px)";
-    markerBase = { left, width: tab.width - 4 };
   }
   var PANEL_LEAVE_KEYS = ["position", "top", "right", "bottom", "left", "width", "height", "display", "overflow", "margin", "zIndex", "transform", "opacity"];
   function clearPanelOverride(panel) {
@@ -4685,7 +4686,6 @@ ${xlsxRowsToMd(kept)}`);
     return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
   }
   function finishLeave(panel) {
-    leaveDeadline.delete(panel);
     panel.classList.remove("leaving");
     panel.setAttribute("hidden", "");
     clearPanelOverride(panel);
@@ -4693,11 +4693,9 @@ ${xlsxRowsToMd(kept)}`);
   }
   var ENTER_MS = 210;
   var LEAVE_MS = 90;
-  var leaveDeadline = /* @__PURE__ */ new WeakMap();
   function enterPanel(panel, reduce, delay = 0) {
     const wasVisible = !panel.hidden && !panel.classList.contains("leaving");
     const from = wasVisible ? panelOpacity(panel) : 0;
-    leaveDeadline.delete(panel);
     panel.getAnimations().forEach((a) => a.cancel());
     clearPanelOverride(panel);
     panel.classList.remove("leaving");
@@ -4746,7 +4744,6 @@ ${xlsxRowsToMd(kept)}`);
       finishLeave(panel);
       return;
     }
-    leaveDeadline.set(panel, performance.now() + LEAVE_MS);
     const anim = panel.animate([{ opacity: from }, { opacity: 0 }], { duration: LEAVE_MS, easing: "cubic-bezier(.4,0,1,1)", fill: "both" });
     anim.onfinish = () => {
       if (panel.classList.contains("active")) return;
@@ -4755,15 +4752,28 @@ ${xlsxRowsToMd(kept)}`);
       finishLeave(panel);
     };
   }
-  function remainingLeaveDelay(reduce) {
-    if (reduce) return 0;
-    const now = performance.now();
-    let delay = 0;
-    for (const panel of document.querySelectorAll(".tabpanel")) {
-      const end = leaveDeadline.get(panel);
-      if (end) delay = Math.max(delay, end - now);
-    }
-    return Math.max(0, Math.min(LEAVE_MS, delay));
+  function enterPanelQuick(panel) {
+    enterPanel(panel, true);
+    if (prefersReducedMotion() || typeof panel.animate !== "function") return;
+    panel.style.opacity = "0.9";
+    const anim = panel.animate([{ opacity: 0.9 }, { opacity: 1 }], {
+      duration: 120,
+      easing: "cubic-bezier(.2,0,0,1)",
+      fill: "both"
+    });
+    anim.onfinish = () => {
+      anim.cancel();
+      clearPanelOverride(panel);
+    };
+  }
+  function hideLeavingVisual(panel) {
+    panel.getAnimations().forEach((a) => a.cancel());
+    panel.style.opacity = "0";
+    setTimeout(() => {
+      if (panel.classList.contains("active")) return;
+      panel.setAttribute("hidden", "");
+      finishLeave(panel);
+    }, LEAVE_MS);
   }
   function collectTabPanels(target) {
     const toEnter = [];
@@ -4786,8 +4796,11 @@ ${xlsxRowsToMd(kept)}`);
     const targetPanel = panelOf(target);
     const { toEnter, toLeave } = collectTabPanels(target);
     const home = targetPanel && targetPanel.classList.contains("active") && !targetPanel.hidden && !targetPanel.classList.contains("leaving") && toLeave.length === 0;
-    for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
-    if (!home) for (const panel of toEnter) enterPanel(panel, reduce, remainingLeaveDelay(reduce));
+    for (const { panel, snap } of toLeave) {
+      leavePanel(panel, reduce, snap);
+      hideLeavingVisual(panel);
+    }
+    if (!home) for (const panel of toEnter) enterPanelQuick(panel);
     updateNavMarker(target);
   }
   function afterTabChange(active) {
@@ -4914,7 +4927,9 @@ ${xlsxRowsToMd(kept)}`);
       window.addEventListener("resize", syncMarker);
     }
   }
-  var SWIPE_MIN = 56;
+  var SWIPE_LOCK_PX = 10;
+  var SWIPE_COMMIT_RATIO = 0.3;
+  var SWIPE_FLICK_V = 0.35;
   var swipeState = null;
   function activeTabButton() {
     return tabButtons().find((t) => t.getAttribute("aria-selected") === "true") || null;
@@ -4939,68 +4954,118 @@ ${xlsxRowsToMd(kept)}`);
     if (document.querySelector(".dialog:not([hidden])")) return true;
     return hasHorizontalScroller(target);
   }
-  function followMarker(dx) {
-    const marker = document.getElementById("navMarker");
-    if (!marker || !markerBase || !navEl) return;
-    const tabs = tabButtons();
-    if (!tabs.length) return;
+  function markerRectOf(tab) {
     const bar = navEl.getBoundingClientRect();
-    const first = tabs[0].getBoundingClientRect();
-    const last = tabs[tabs.length - 1].getBoundingClientRect();
-    const min = first.left - bar.left + 2;
-    const max = last.left - bar.left + 2;
-    const left = Math.max(min, Math.min(max, markerBase.left + dx));
+    const r = tab.getBoundingClientRect();
+    return { left: r.left - bar.left + 2, width: r.width - 4 };
+  }
+  function swipeTargetFor(dx) {
+    const tabs = tabButtons();
+    const current = activeTabButton();
+    const idx = tabs.indexOf(current);
+    if (idx < 0) return null;
+    const dir = dx < 0 ? 1 : -1;
+    const target = Math.max(0, Math.min(tabs.length - 1, idx + dir));
+    return { tabs, current, idx, target, dir };
+  }
+  function followSwipe(dx) {
+    const marker = document.getElementById("navMarker");
+    const t = swipeTargetFor(dx);
+    if (!marker || !t || !navEl) return;
+    const from = markerRectOf(t.current);
+    const to = markerRectOf(t.tabs[t.target]);
+    const edge = t.target === t.idx;
+    const p = Math.min(1, Math.abs(dx) / (window.innerWidth * 0.4));
+    const k = edge ? p * 0.25 : p;
     marker.classList.add("dragging");
-    marker.style.transform = "translateX(" + left + "px)";
+    marker.style.width = from.width + (to.width - from.width) * k + "px";
+    marker.style.transform = "translateX(" + (from.left + (to.left - from.left) * k) + "px)";
   }
   function onSwipeStart(e) {
-    if (e.pointerType === "mouse" || swipeState) return;
+    if (e.touches.length !== 1) return;
     if (swipeBlocked(e.target)) return;
-    swipeState = { id: e.pointerId, x: e.clientX, y: e.clientY, axis: 0, dx: 0 };
+    const t = e.touches[0];
+    swipeState = { id: t.identifier, x0: t.clientX, y0: t.clientY, lastX: t.clientX, lastT: performance.now(), dx: 0, v: 0, locked: false, vertical: false };
+    swipeSuppressClick = false;
+  }
+  function swipeAxisLock(s, dx, dy) {
+    if (s.locked) return true;
+    if (Math.abs(dx) >= SWIPE_LOCK_PX && Math.abs(dx) > Math.abs(dy) * 1.1) {
+      s.locked = true;
+      return true;
+    }
+    if (Math.abs(dy) >= 12 && Math.abs(dy) > Math.abs(dx) * 1.2) s.vertical = true;
+    if (s.vertical && Math.abs(dx) > Math.abs(dy) * 1.2 && Math.abs(dx) >= 24) {
+      s.locked = true;
+      return true;
+    }
+    return false;
+  }
+  function trackSwipe(s, x) {
+    const now = performance.now();
+    const dt = now - s.lastT;
+    if (dt > 0) s.v = (x - s.lastX) / dt;
+    s.lastX = x;
+    s.lastT = now;
   }
   function onSwipeMove(e) {
     const s = swipeState;
-    if (!s || e.pointerId !== s.id) return;
-    const dx = e.clientX - s.x;
-    const dy = e.clientY - s.y;
-    if (s.axis === 0) {
-      if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
-      if (Math.abs(dx) > Math.abs(dy) * 1.2) s.axis = 1;
-      else {
-        swipeState = null;
-        return;
-      }
-    }
-    if (e.cancelable) e.preventDefault();
+    if (!s) return;
+    const t = [...e.touches].find((x) => x.identifier === s.id);
+    if (!t) return;
+    const dx = t.clientX - s.x0;
+    const dy = t.clientY - s.y0;
+    const locked = swipeAxisLock(s, dx, dy);
+    if (e.cancelable && (locked || !s.vertical && Math.abs(dy) < 12)) e.preventDefault();
+    if (!locked) return;
+    trackSwipe(s, t.clientX);
     s.dx = dx;
-    followMarker(dx);
+    if (Math.abs(dx) > 12) swipeSuppressClick = true;
+    followSwipe(dx);
   }
-  function onSwipeEnd(e) {
+  function swipeShouldCommit(dx, v) {
+    const dist = Math.abs(dx);
+    return dist > window.innerWidth * SWIPE_COMMIT_RATIO || Math.abs(v) > SWIPE_FLICK_V && dist > 20;
+  }
+  function endSwipe(allowCommit) {
     const s = swipeState;
-    if (!s || e.pointerId !== void 0 && e.pointerId !== s.id) return;
     swipeState = null;
+    if (swipeSuppressClick) setTimeout(() => {
+      swipeSuppressClick = false;
+    }, 300);
     const marker = document.getElementById("navMarker");
     if (marker) marker.classList.remove("dragging");
     const current = activeTabButton();
     if (!current) return;
-    if (s.axis === 1 && Math.abs(s.dx) >= SWIPE_MIN) {
-      const tabs = tabButtons();
-      const idx = tabs.indexOf(current);
-      const dir = s.dx < 0 ? 1 : -1;
-      const next = Math.max(0, Math.min(tabs.length - 1, idx + dir));
-      if (next !== idx) {
-        activateTab(tabs[next].dataset.tab);
-        return;
-      }
+    const t = s && s.locked && allowCommit ? swipeTargetFor(s.dx) : null;
+    if (t && t.target !== t.idx && swipeShouldCommit(s.dx, s.v)) {
+      activateTab(t.tabs[t.target].dataset.tab);
+      return;
     }
     updateNavMarker(current);
   }
+  var swipeSuppressClick = false;
+  function onSwipeEnd() {
+    if (!swipeState) return;
+    endSwipe(true);
+  }
+  function onSwipeCancel() {
+    if (!swipeState) return;
+    endSwipe(false);
+  }
+  function suppressClickAfterSwipe(e) {
+    if (!swipeSuppressClick || !e.isTrusted) return;
+    swipeSuppressClick = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }
   function initSwipe() {
     if (typeof document === "undefined") return;
-    document.addEventListener("pointerdown", onSwipeStart, { passive: true });
-    document.addEventListener("pointermove", onSwipeMove, { passive: false });
-    document.addEventListener("pointerup", onSwipeEnd);
-    document.addEventListener("pointercancel", onSwipeEnd);
+    document.addEventListener("touchstart", onSwipeStart, { passive: true });
+    document.addEventListener("touchmove", onSwipeMove, { passive: false });
+    document.addEventListener("touchend", onSwipeEnd);
+    document.addEventListener("touchcancel", onSwipeCancel);
+    document.addEventListener("click", suppressClickAfterSwipe, true);
   }
   function spawnRipple(target, e) {
     const rect = target.getBoundingClientRect();

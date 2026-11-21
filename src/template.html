@@ -917,12 +917,15 @@
     -webkit-backdrop-filter: blur(12px) saturate(115%); backdrop-filter: blur(12px) saturate(115%); }
   [data-theme="light"] .navbar { background: #ffffffe0; border-color: #c8d6e5;
     box-shadow: 0 3px 10px #223d6210, inset 0 1px 0 #ffffff; }
-  /* 卡 070 · R3：果冻过冲（easeOutBack 近似；峰值过冲 ~10%，卡面上限 15%）。
-   * 拖拽期由 .dragging 关掉过渡 —— transform 直接跟手，松手后走这条曲线回弹。 */
+  /* 卡 070 · R3：拖拽期胶囊朝目标 Tab 跟手（不做过冲回弹——过冲会先反向再回来，
+   * 真机实测被判成 bug；松手用 ease-out 直接落位）。 */
   .nav-marker { position: absolute; z-index: 0; top: 9px; left: 0; width: 0; height: 44px; border-radius: 999px;
     background: var(--icon-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent);
-    transition: transform 280ms cubic-bezier(.34, 1.45, .64, 1), width 180ms var(--ease-standard); pointer-events: none; }
+    transition: transform 260ms cubic-bezier(.2, .7, .2, 1), width 180ms var(--ease-standard); pointer-events: none; }
   .nav-marker.dragging { transition: none; }
+  /* 卡 070 修：fade-through 的退场层只保留几何/透明度机制（Z6-1 契约），
+   * 但**不再绘制旧内容** —— 旧内容同帧隐藏，消除切换瞬间的方框重影。 */
+  .tabpanel.leaving > * { visibility: hidden; }
   [data-theme="light"] .nav-marker { background: #e0eaf7; box-shadow: inset 0 0 0 1px #adc4e34d; }
   .navitem { z-index: 1; flex-direction: row; gap: 7px; height: 44px; min-height: 44px; padding: 0 6px; font-size: 12px; }
   .navitem .nav-pill { width: 22px; height: 24px; border-radius: 0; background: transparent; }

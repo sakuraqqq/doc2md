@@ -1132,8 +1132,7 @@ function panelOf(tab) {
   return id ? document.getElementById(id) : null;
 }
 /** 卡 068 · A5：单枚胶囊横移 —— 宽度与位移按当前 Tab 实测（不依赖固定等分）。
- *  卡 070 · R2/R3：记下基准位供手势跟手；拖拽类由 swipe 代码加/去。 */
-let markerBase = null;
+ *  卡 070 · R3：拖拽期由 swipe 代码直接写 transform（.dragging 关过渡）。 */
 function updateNavMarker(target) {
   const marker = document.getElementById('navMarker');
   if (!navEl || !marker || !target) return;
@@ -1143,7 +1142,6 @@ function updateNavMarker(target) {
   const left = tab.left - bar.left + 2;
   marker.style.width = (tab.width - 4) + 'px';
   marker.style.transform = 'translateX(' + left + 'px)';
-  markerBase = { left, width: tab.width - 4 };
 }
 /** 退场层的内联锁定字段（切回时要清干净，避免污染下一次布局） */
 const PANEL_LEAVE_KEYS = ['position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'display', 'overflow', 'margin', 'zIndex', 'transform', 'opacity'];
@@ -1161,25 +1159,20 @@ function panelOpacity(panel) {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
 }
 function finishLeave(panel) {
-  leaveDeadline.delete(panel);
   panel.classList.remove('leaving');
   /* 先隐藏再清内联：WAAPI 结束后底层 opacity 会回弹到 1，清样式前必须已经不可见 */
   panel.setAttribute('hidden', '');
   clearPanelOverride(panel);
   panel.style.opacity = '';
 }
-/** 卡 068 · A5（2026-11-19 按 Material fade-through 改）：
- *  旧页淡出 90ms → 新页淡入 210ms，**两页不重叠**（Material 对底部导航的标准做法）。
- *  起因：交叉淡入会让两页文字同时半透明（叠影被用户判成闪烁）；fade through 用一瞬背景换掉叠影。
+/** 卡 070 返修：旧页内容同帧隐藏（退场层只留几何/透明度契约 Z6-1），新页 120ms 从 90% 入场。
+ *  原因：fade-through 的旧内容淡出在真机被看成「方框重影」，90ms 空档还会闪背景。
  *  ⚠️ 不缩放整块面板：面板里 `#dropzone` 是 fixed，transform 会把它变成相对面板定位而跳位。 */
 const ENTER_MS = 210;
 const LEAVE_MS = 90;
-/** 每次退场的结束时刻；中断时新面板按剩余退场时间入场，避免多等一个完整 90ms 出现空档。 */
-const leaveDeadline = new WeakMap();
 function enterPanel(panel, reduce, delay = 0) {
   const wasVisible = !panel.hidden && !panel.classList.contains('leaving');
   const from = wasVisible ? panelOpacity(panel) : 0;
-  leaveDeadline.delete(panel);
   panel.getAnimations().forEach((a) => a.cancel());
   clearPanelOverride(panel);
   panel.classList.remove('leaving');
@@ -1232,7 +1225,6 @@ function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
     finishLeave(panel);
     return;
   }
-  leaveDeadline.set(panel, performance.now() + LEAVE_MS);
   const anim = panel.animate([{ opacity: from }, { opacity: 0 }], { duration: LEAVE_MS, easing: 'cubic-bezier(.4,0,1,1)', fill: 'both' });
   anim.onfinish = () => {
     if (panel.classList.contains('active')) return;
@@ -1242,16 +1234,28 @@ function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
   };
 }
 /** 同步 aria/tabindex，并把「要入场的面板 / 要退场的面板（含退场前快照）」分桶。 */
-/** 中断 = 新的退场调度：入场只等还在退场的面板剩余时间，不再固定等满 90ms。 */
-function remainingLeaveDelay(reduce) {
-  if (reduce) return 0;
-  const now = performance.now();
-  let delay = 0;
-  for (const panel of document.querySelectorAll('.tabpanel')) {
-    const end = leaveDeadline.get(panel);
-    if (end) delay = Math.max(delay, end - now);
-  }
-  return Math.max(0, Math.min(LEAVE_MS, delay));
+/** 卡 070 返修：退场层只留几何/透明度契约（Z6-1），旧内容同帧隐藏；
+ * 新页改即时上场（不再等 90ms 淡出 + 210ms 淡入）⇒ 无方框重影、无空档。 */
+function enterPanelQuick(panel) {
+  enterPanel(panel, true);
+  if (prefersReducedMotion() || typeof panel.animate !== 'function') return;
+  panel.style.opacity = '0.9';
+  const anim = panel.animate([{ opacity: 0.9 }, { opacity: 1 }], {
+    duration: 120, easing: 'cubic-bezier(.2,0,0,1)', fill: 'both',
+  });
+  anim.onfinish = () => {
+    anim.cancel();
+    clearPanelOverride(panel);
+  };
+}
+function hideLeavingVisual(panel) {
+  panel.getAnimations().forEach((a) => a.cancel());
+  panel.style.opacity = '0';
+  setTimeout(() => {
+    if (panel.classList.contains('active')) return;
+    panel.setAttribute('hidden', '');
+    finishLeave(panel);
+  }, LEAVE_MS);
 }
 function collectTabPanels(target) {
   const toEnter = [];
@@ -1281,8 +1285,11 @@ function syncTabButtons(target) {
   /* 目标已在场且没有要退场的面板 ⇒ 只同步 aria，不再重播过渡（重复点当前 Tab） */
   const home = targetPanel && targetPanel.classList.contains('active') && !targetPanel.hidden &&
     !targetPanel.classList.contains('leaving') && toLeave.length === 0;
-  for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
-  if (!home) for (const panel of toEnter) enterPanel(panel, reduce, remainingLeaveDelay(reduce));
+  for (const { panel, snap } of toLeave) {
+    leavePanel(panel, reduce, snap);
+    hideLeavingVisual(panel);
+  }
+  if (!home) for (const panel of toEnter) enterPanelQuick(panel);
   updateNavMarker(target);
 }
 
@@ -1418,10 +1425,13 @@ function initTabs() {
   }
 }
 /* ── 卡 070 · R2：左右滑动切 Tab ─────────────────────────────────────────────
- * 方向锁：|dx| > |dy|*1.2 且 |dx| ≥ 12 才接管；纵向立刻放手（原生滚动优先）。
- * 排除：输入框/文本域、预览层、搜索页、对话框、行菜单、导航栏本身、横向滚动容器。
- * 阈值 56px；拖拽期胶囊跟手（R3），松手后才切 Tab（无空白帧）。 */
-const SWIPE_MIN = 56;
+ * 成熟做法（Swiper / ViewPager2 / WebKit bug 203335）：方向锁不因一次纵向抖动就放弃；
+ * 横向锁定后胶囊**朝目标 Tab** 跟手（与 content offset 同向，⛔ 不是 1:1 跟手指 ——
+ * 后者会先反向再回弹，真机实测被判成 bug）。松手判定 = 距离 >30% 宽 或快速轻扫。
+ * 排除：输入框/文本域、预览层、搜索页、对话框、行菜单、导航栏本身、横向滚动容器。 */
+const SWIPE_LOCK_PX = 10;
+const SWIPE_COMMIT_RATIO = 0.3;
+const SWIPE_FLICK_V = 0.35;
 let swipeState = null;
 function activeTabButton() {
   return tabButtons().find((t) => t.getAttribute('aria-selected') === 'true') || null;
@@ -1446,62 +1456,120 @@ function swipeBlocked(target) {
   if (document.querySelector('.dialog:not([hidden])')) return true;
   return hasHorizontalScroller(target);
 }
-function followMarker(dx) {
-  const marker = document.getElementById('navMarker');
-  if (!marker || !markerBase || !navEl) return;
-  const tabs = tabButtons();
-  if (!tabs.length) return;
+function markerRectOf(tab) {
   const bar = navEl.getBoundingClientRect();
-  const first = tabs[0].getBoundingClientRect();
-  const last = tabs[tabs.length - 1].getBoundingClientRect();
-  const min = first.left - bar.left + 2;
-  const max = last.left - bar.left + 2;
-  const left = Math.max(min, Math.min(max, markerBase.left + dx));
+  const r = tab.getBoundingClientRect();
+  return { left: r.left - bar.left + 2, width: r.width - 4 };
+}
+function swipeTargetFor(dx) {
+  const tabs = tabButtons();
+  const current = activeTabButton();
+  const idx = tabs.indexOf(current);
+  if (idx < 0) return null;
+  const dir = dx < 0 ? 1 : -1;
+  const target = Math.max(0, Math.min(tabs.length - 1, idx + dir));
+  return { tabs, current, idx, target, dir };
+}
+function followSwipe(dx) {
+  const marker = document.getElementById('navMarker');
+  const t = swipeTargetFor(dx);
+  if (!marker || !t || !navEl) return;
+  const from = markerRectOf(t.current);
+  const to = markerRectOf(t.tabs[t.target]);
+  const edge = t.target === t.idx;
+  const p = Math.min(1, Math.abs(dx) / (window.innerWidth * 0.4));
+  const k = edge ? p * 0.25 : p;
   marker.classList.add('dragging');
-  marker.style.transform = 'translateX(' + left + 'px)';
+  marker.style.width = (from.width + (to.width - from.width) * k) + 'px';
+  marker.style.transform = 'translateX(' + (from.left + (to.left - from.left) * k) + 'px)';
 }
 function onSwipeStart(e) {
-  if (e.pointerType === 'mouse' || swipeState) return;
+  if (e.touches.length !== 1) return;
   if (swipeBlocked(e.target)) return;
-  swipeState = { id: e.pointerId, x: e.clientX, y: e.clientY, axis: 0, dx: 0 };
+  const t = e.touches[0];
+  swipeState = { id: t.identifier, x0: t.clientX, y0: t.clientY, lastX: t.clientX, lastT: performance.now(), dx: 0, v: 0, locked: false, vertical: false };
+  swipeSuppressClick = false;
+}
+function swipeAxisLock(s, dx, dy) {
+  if (s.locked) return true;
+  if (Math.abs(dx) >= SWIPE_LOCK_PX && Math.abs(dx) > Math.abs(dy) * 1.1) {
+    s.locked = true;
+    return true;
+  }
+  if (Math.abs(dy) >= 12 && Math.abs(dy) > Math.abs(dx) * 1.2) s.vertical = true;
+  if (s.vertical && Math.abs(dx) > Math.abs(dy) * 1.2 && Math.abs(dx) >= 24) {
+    s.locked = true;
+    return true;
+  }
+  return false;
+}
+function trackSwipe(s, x) {
+  const now = performance.now();
+  const dt = now - s.lastT;
+  if (dt > 0) s.v = (x - s.lastX) / dt;
+  s.lastX = x;
+  s.lastT = now;
 }
 function onSwipeMove(e) {
   const s = swipeState;
-  if (!s || e.pointerId !== s.id) return;
-  const dx = e.clientX - s.x;
-  const dy = e.clientY - s.y;
-  if (s.axis === 0) {
-    if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
-    if (Math.abs(dx) > Math.abs(dy) * 1.2) s.axis = 1;
-    else { swipeState = null; return; } // 纵向：交给浏览器
-  }
-  if (e.cancelable) e.preventDefault();
+  if (!s) return;
+  const t = [...e.touches].find((x) => x.identifier === s.id);
+  if (!t) return;
+  const dx = t.clientX - s.x0;
+  const dy = t.clientY - s.y0;
+  const locked = swipeAxisLock(s, dx, dy);
+  /* 横向锁定即阻止原生滚动；方向未定时先用头 12px 按住，给判定留几帧。
+   * 即使纵向滚动已经启动，也继续记录 —— 后续横向位移够大仍可切（真机抖动实测）。 */
+  if (e.cancelable && (locked || (!s.vertical && Math.abs(dy) < 12))) e.preventDefault();
+  if (!locked) return;
+  trackSwipe(s, t.clientX);
   s.dx = dx;
-  followMarker(dx);
+  if (Math.abs(dx) > 12) swipeSuppressClick = true;
+  followSwipe(dx);
 }
-function onSwipeEnd(e) {
+function swipeShouldCommit(dx, v) {
+  const dist = Math.abs(dx);
+  return dist > window.innerWidth * SWIPE_COMMIT_RATIO || (Math.abs(v) > SWIPE_FLICK_V && dist > 20);
+}
+function endSwipe(allowCommit) {
   const s = swipeState;
-  if (!s || (e.pointerId !== undefined && e.pointerId !== s.id)) return;
   swipeState = null;
+  if (swipeSuppressClick) setTimeout(() => { swipeSuppressClick = false; }, 300);
   const marker = document.getElementById('navMarker');
   if (marker) marker.classList.remove('dragging');
   const current = activeTabButton();
   if (!current) return;
-  if (s.axis === 1 && Math.abs(s.dx) >= SWIPE_MIN) {
-    const tabs = tabButtons();
-    const idx = tabs.indexOf(current);
-    const dir = s.dx < 0 ? 1 : -1;
-    const next = Math.max(0, Math.min(tabs.length - 1, idx + dir));
-    if (next !== idx) { activateTab(tabs[next].dataset.tab); return; }
+  const t = s && s.locked && allowCommit ? swipeTargetFor(s.dx) : null;
+  if (t && t.target !== t.idx && swipeShouldCommit(s.dx, s.v)) {
+    activateTab(t.tabs[t.target].dataset.tab);
+    return;
   }
   updateNavMarker(current);
 }
+let swipeSuppressClick = false;
+function onSwipeEnd() {
+  if (!swipeState) return;
+  endSwipe(true);
+}
+function onSwipeCancel() {
+  if (!swipeState) return;
+  endSwipe(false);
+}
+function suppressClickAfterSwipe(e) {
+  if (!swipeSuppressClick || !e.isTrusted) return;
+  swipeSuppressClick = false;
+  e.preventDefault();
+  e.stopPropagation();
+}
 function initSwipe() {
   if (typeof document === 'undefined') return;
-  document.addEventListener('pointerdown', onSwipeStart, { passive: true });
-  document.addEventListener('pointermove', onSwipeMove, { passive: false });
-  document.addEventListener('pointerup', onSwipeEnd);
-  document.addEventListener('pointercancel', onSwipeEnd);
+  /* 触摸事件而不是 Pointer Events：横向手势在纵向滚动启动后会被 pointercancel
+   * 掐断（WebKit bug 203335 / MDN touch-action），touchmove 仍可继续跟踪。 */
+  document.addEventListener('touchstart', onSwipeStart, { passive: true });
+  document.addEventListener('touchmove', onSwipeMove, { passive: false });
+  document.addEventListener('touchend', onSwipeEnd);
+  document.addEventListener('touchcancel', onSwipeCancel);
+  document.addEventListener('click', suppressClickAfterSwipe, true);
 }
 
 /* ── 卡 070 · R4：按下涟漪（WAAPI，不阻塞点击；reduced-motion 全关） ───────── */
