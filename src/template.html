@@ -917,9 +917,12 @@
     -webkit-backdrop-filter: blur(12px) saturate(115%); backdrop-filter: blur(12px) saturate(115%); }
   [data-theme="light"] .navbar { background: #ffffffe0; border-color: #c8d6e5;
     box-shadow: 0 3px 10px #223d6210, inset 0 1px 0 #ffffff; }
+  /* 卡 070 · R3：果冻过冲（easeOutBack 近似；峰值过冲 ~10%，卡面上限 15%）。
+   * 拖拽期由 .dragging 关掉过渡 —— transform 直接跟手，松手后走这条曲线回弹。 */
   .nav-marker { position: absolute; z-index: 0; top: 9px; left: 0; width: 0; height: 44px; border-radius: 999px;
     background: var(--icon-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent);
-    transition: transform 280ms cubic-bezier(.2, .9, .2, 1), width 180ms; pointer-events: none; }
+    transition: transform 280ms cubic-bezier(.34, 1.45, .64, 1), width 180ms var(--ease-standard); pointer-events: none; }
+  .nav-marker.dragging { transition: none; }
   [data-theme="light"] .nav-marker { background: #e0eaf7; box-shadow: inset 0 0 0 1px #adc4e34d; }
   .navitem { z-index: 1; flex-direction: row; gap: 7px; height: 44px; min-height: 44px; padding: 0 6px; font-size: 12px; }
   .navitem .nav-pill { width: 22px; height: 24px; border-radius: 0; background: transparent; }
@@ -970,6 +973,20 @@
     .navitem .nav-label { font-size: 11px; }
     html[data-theme] .file-row { padding: 7px; }
   }
+
+  /* 卡 070 · R2：纵向滚动交给浏览器原生；横向留给 JS 手势（不锁纵向） */
+  .content, .tabpanel { touch-action: pan-y; }
+
+  /* 卡 070 · R4：按下涟漪（JS 生成 span；WAAPI 负责缩放，⛔ 不进 CSS keyframes） */
+  .ripple { position: absolute; border-radius: 50%; background: currentColor; opacity: .3;
+    pointer-events: none; will-change: transform, opacity; }
+
+  /* 卡 070 · R5：列表错峰入场（只动 opacity；相邻 30ms，整批 ≤390ms） */
+  @keyframes rowIn { from { opacity: 0; } to { opacity: 1; } }
+  /* ⚠️ fill=backwards（不是 both）+ JS 动画结束即摘类：opacity 动画会建包含块/层叠上下文，
+   *    残留会把行菜单的 z-index 锁在行内 ⇒ 菜单被固定 CTA（z=9）盖住（Z4 实测）。 */
+  .row-enter { --enter-i: 0; animation: rowIn 240ms cubic-bezier(.2, 0, 0, 1) backwards;
+    animation-delay: min(calc(var(--enter-i) * 30ms), 150ms); }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;

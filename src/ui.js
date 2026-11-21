@@ -1047,6 +1047,29 @@ function wireSuccessRow(row, card, head) {
     openMarkdownViewer({ fileName: row.file.name, text: row.text }, card);
   });
 }
+/* ── 卡 070 · R5：列表错峰入场 ─────────────────────────────────────────────
+ * 结果行按「本批」递增序号（600ms 无新行即重置）；文件行按「进入文件页」的令牌只播一次。
+ * 相邻 30ms、封顶 150ms，配 240ms 动画 ⇒ 整批 ≤390ms；reduced-motion 不加类。 */
+let resultEnterSeq = 0;
+let resultEnterTimer = null;
+function nextResultEnterIndex() {
+  const i = resultEnterSeq++;
+  if (resultEnterTimer) clearTimeout(resultEnterTimer);
+  resultEnterTimer = setTimeout(() => { resultEnterSeq = 0; }, 600);
+  return i;
+}
+function markRowEnter(el, index) {
+  if (prefersReducedMotion()) return;
+  el.classList.add('row-enter');
+  el.style.setProperty('--enter-i', String(Math.min(index, 5)));
+  /* 动画结束即摘类：opacity 动画的残留会让行成为层叠上下文，把行菜单压在固定 CTA 之下 */
+  const done = () => {
+    el.classList.remove('row-enter');
+    el.style.removeProperty('--enter-i');
+  };
+  el.addEventListener('animationend', done, { once: true });
+  setTimeout(done, 800);
+}
 function createResultRow(file, result) {
   const success = !result.error;
   let text = '';
@@ -1074,6 +1097,7 @@ function createResultRow(file, result) {
   row.checkbox.addEventListener('change', () => setRowSelected(row, row.checkbox.checked));
   resultRows.push(row);
   resultsEl.appendChild(card);
+  markRowEnter(card, nextResultEnterIndex());
   return row;
 }
 /** 记一条转换结果：只记类型/成败/耗时 —— ⛔ 不记文件名（隐私） */
@@ -1107,15 +1131,19 @@ function panelOf(tab) {
   const id = tab.getAttribute('aria-controls');
   return id ? document.getElementById(id) : null;
 }
-/** 卡 068 · A5：单枚胶囊横移 —— 宽度与位移按当前 Tab 实测（不依赖固定等分） */
+/** 卡 068 · A5：单枚胶囊横移 —— 宽度与位移按当前 Tab 实测（不依赖固定等分）。
+ *  卡 070 · R2/R3：记下基准位供手势跟手；拖拽类由 swipe 代码加/去。 */
+let markerBase = null;
 function updateNavMarker(target) {
   const marker = document.getElementById('navMarker');
   if (!navEl || !marker || !target) return;
   const bar = navEl.getBoundingClientRect();
   const tab = target.getBoundingClientRect();
   if (!bar.width || !tab.width) return;
+  const left = tab.left - bar.left + 2;
   marker.style.width = (tab.width - 4) + 'px';
-  marker.style.transform = 'translateX(' + (tab.left - bar.left + 2) + 'px)';
+  marker.style.transform = 'translateX(' + left + 'px)';
+  markerBase = { left, width: tab.width - 4 };
 }
 /** 退场层的内联锁定字段（切回时要清干净，避免污染下一次布局） */
 const PANEL_LEAVE_KEYS = ['position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'display', 'overflow', 'margin', 'zIndex', 'transform', 'opacity'];
@@ -1260,7 +1288,10 @@ function syncTabButtons(target) {
 
 /** 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。 */
 function afterTabChange(active) {
-  if (active === 'files') refreshFilesPanel().catch(() => {});
+  if (active === 'files') {
+    filesEnterToken += 1;
+    refreshFilesPanel().catch(() => {});
+  }
   else toggleFilesSearch(false);
   /* 搜索入口的显隐跟着 Tab 走（文件页常显 / 转换页有结果才给） */
   paintSearchButton(filesEls());
@@ -1298,6 +1329,20 @@ function nativeThemePlugin() {
   const p = nativePluginObject();
   return p && typeof p.getSystemTheme === 'function' ? p : null;
 }
+/** 卡 070 · R1：Capacitor 8 的 SystemBars（核心插件）—— 状态栏图标明暗跟随主题。
+ *  ⚠️ 命名反直觉：SystemBarsStyle.Light = 浅底深图标；Dark = 深底浅图标（原生映射见 SystemBars.java）。
+ *  桥不可用（浏览器 / 老 APK）时静默跳过：Web 端没有状态栏。 */
+function nativeSystemBarsPlugin() {
+  const cap = typeof window === 'undefined' ? null : window.Capacitor;
+  const p = cap && cap.Plugins && cap.Plugins.SystemBars;
+  return p && typeof p.setStyle === 'function' ? p : null;
+}
+function syncSystemBars(resolvedTheme) {
+  const plugin = nativeSystemBarsPlugin();
+  if (!plugin) return;
+  const style = resolvedTheme === 'light' ? 'LIGHT' : 'DARK';
+  Promise.resolve(plugin.setStyle({ style: style, bar: 'StatusBar' })).catch(() => { });
+}
 async function refreshNativeTheme() {
   const my = ++nativeThemeSeq;
   const p = nativeThemePlugin();
@@ -1327,7 +1372,9 @@ function paintThemeButtons() {
 /** 应用主题。choice ∈ system|light|dark；persist=true 时写入 localStorage。 */
 export function applyTheme(choice, persist) {
   themeChoice = THEME_CHOICES.includes(choice) ? choice : 'system';
-  document.documentElement.dataset.theme = resolveTheme(themeChoice);
+  const resolved = resolveTheme(themeChoice);
+  document.documentElement.dataset.theme = resolved;
+  syncSystemBars(resolved);
   paintThemeButtons();
   if (persist) {
     try { localStorage.setItem(THEME_KEY, themeChoice); } catch { /* 隐私模式下忽略 */ }
@@ -1370,6 +1417,141 @@ function initTabs() {
     window.addEventListener('resize', syncMarker);
   }
 }
+/* ── 卡 070 · R2：左右滑动切 Tab ─────────────────────────────────────────────
+ * 方向锁：|dx| > |dy|*1.2 且 |dx| ≥ 12 才接管；纵向立刻放手（原生滚动优先）。
+ * 排除：输入框/文本域、预览层、搜索页、对话框、行菜单、导航栏本身、横向滚动容器。
+ * 阈值 56px；拖拽期胶囊跟手（R3），松手后才切 Tab（无空白帧）。 */
+const SWIPE_MIN = 56;
+let swipeState = null;
+function activeTabButton() {
+  return tabButtons().find((t) => t.getAttribute('aria-selected') === 'true') || null;
+}
+function hasHorizontalScroller(target) {
+  let el = target;
+  while (el && el !== document.body && el !== document.documentElement) {
+    if (el.scrollWidth > el.clientWidth + 2) {
+      const ox = getComputedStyle(el).overflowX;
+      if (ox === 'auto' || ox === 'scroll') return true;
+    }
+    el = el.parentElement;
+  }
+  return false;
+}
+function swipeBlocked(target) {
+  if (!target || typeof target.closest !== 'function') return true;
+  if (!mdViewer || !mdViewer.hidden) return true;
+  const searchPage = document.getElementById('searchPage');
+  if (searchPage && !searchPage.hidden) return true;
+  if (target.closest('input, textarea, select, [contenteditable="true"], .md-viewer, .search-page, .dialog, .row-menu, .navbar')) return true;
+  if (document.querySelector('.dialog:not([hidden])')) return true;
+  return hasHorizontalScroller(target);
+}
+function followMarker(dx) {
+  const marker = document.getElementById('navMarker');
+  if (!marker || !markerBase || !navEl) return;
+  const tabs = tabButtons();
+  if (!tabs.length) return;
+  const bar = navEl.getBoundingClientRect();
+  const first = tabs[0].getBoundingClientRect();
+  const last = tabs[tabs.length - 1].getBoundingClientRect();
+  const min = first.left - bar.left + 2;
+  const max = last.left - bar.left + 2;
+  const left = Math.max(min, Math.min(max, markerBase.left + dx));
+  marker.classList.add('dragging');
+  marker.style.transform = 'translateX(' + left + 'px)';
+}
+function onSwipeStart(e) {
+  if (e.pointerType === 'mouse' || swipeState) return;
+  if (swipeBlocked(e.target)) return;
+  swipeState = { id: e.pointerId, x: e.clientX, y: e.clientY, axis: 0, dx: 0 };
+}
+function onSwipeMove(e) {
+  const s = swipeState;
+  if (!s || e.pointerId !== s.id) return;
+  const dx = e.clientX - s.x;
+  const dy = e.clientY - s.y;
+  if (s.axis === 0) {
+    if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+    if (Math.abs(dx) > Math.abs(dy) * 1.2) s.axis = 1;
+    else { swipeState = null; return; } // 纵向：交给浏览器
+  }
+  if (e.cancelable) e.preventDefault();
+  s.dx = dx;
+  followMarker(dx);
+}
+function onSwipeEnd(e) {
+  const s = swipeState;
+  if (!s || (e.pointerId !== undefined && e.pointerId !== s.id)) return;
+  swipeState = null;
+  const marker = document.getElementById('navMarker');
+  if (marker) marker.classList.remove('dragging');
+  const current = activeTabButton();
+  if (!current) return;
+  if (s.axis === 1 && Math.abs(s.dx) >= SWIPE_MIN) {
+    const tabs = tabButtons();
+    const idx = tabs.indexOf(current);
+    const dir = s.dx < 0 ? 1 : -1;
+    const next = Math.max(0, Math.min(tabs.length - 1, idx + dir));
+    if (next !== idx) { activateTab(tabs[next].dataset.tab); return; }
+  }
+  updateNavMarker(current);
+}
+function initSwipe() {
+  if (typeof document === 'undefined') return;
+  document.addEventListener('pointerdown', onSwipeStart, { passive: true });
+  document.addEventListener('pointermove', onSwipeMove, { passive: false });
+  document.addEventListener('pointerup', onSwipeEnd);
+  document.addEventListener('pointercancel', onSwipeEnd);
+}
+
+/* ── 卡 070 · R4：按下涟漪（WAAPI，不阻塞点击；reduced-motion 全关） ───────── */
+function spawnRipple(target, e) {
+  const rect = target.getBoundingClientRect();
+  if (!rect.width || !rect.height || typeof target.appendChild !== 'function') return;
+  const size = Math.max(rect.width, rect.height) * 2;
+  const span = document.createElement('span');
+  span.className = 'ripple';
+  span.style.width = size + 'px';
+  span.style.height = size + 'px';
+  span.style.left = (e.clientX - rect.left - size / 2) + 'px';
+  span.style.top = (e.clientY - rect.top - size / 2) + 'px';
+  const prevPos = target.style.position;
+  const prevOverflow = target.style.overflow;
+  if (getComputedStyle(target).position === 'static') target.style.position = 'relative';
+  target.style.overflow = 'hidden';
+  target.appendChild(span);
+  const cleanup = () => {
+    span.remove();
+    target.style.position = prevPos;
+    target.style.overflow = prevOverflow;
+  };
+  if (typeof span.animate !== 'function') { cleanup(); return; }
+  /* 缩放走 ease-out；透明度线性 + 先托住 35% 再淡出（同一条曲线把 opacity 一起 ease-out
+   * 会在 140ms 就掉到 3% ⇒ 截图上什么都看不见，卡 070 真机取证实测）。 */
+  let cleaned = false;
+  const done = () => {
+    if (cleaned) return;
+    cleaned = true;
+    cleanup();
+  };
+  const scale = span.animate([{ transform: 'scale(0)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'cubic-bezier(.2, .7, .2, 1)' });
+  const fade = span.animate([{ opacity: 0.3 }, { opacity: 0.3, offset: 0.35 }, { opacity: 0 }], { duration: 320, easing: 'linear' });
+  scale.onfinish = done;
+  fade.onfinish = done;
+  scale.oncancel = done;
+  fade.oncancel = done;
+}
+function initRipple() {
+  if (typeof document === 'undefined') return;
+  document.addEventListener('pointerdown', (e) => {
+    if (prefersReducedMotion()) return;
+    const target = e.target && e.target.closest
+      ? e.target.closest('.btn, .pick-btn, .navitem, .iconbtn, .file-row, [data-ripple]')
+      : null;
+    if (!target || target.disabled) return;
+    spawnRipple(target, e);
+  }, { passive: true });
+}
 function reapplySystemTheme() {
   if (themeChoice !== 'system') return;
   const my = ++themeSeq;
@@ -1400,6 +1582,9 @@ function initTheme() {
   }
   const plugin = nativeThemePlugin();
   if (plugin && typeof plugin.addListener === 'function') plugin.addListener('systemThemeChanged', onNativeThemeChanged);
+  /* 卡 070 · R1：桥就绪后再同步一次（首帧时插件可能还没注册） */
+  document.addEventListener('deviceready', () => syncSystemBars(resolveTheme(themeChoice)));
+  syncSystemBars(resolveTheme(themeChoice));
   reapplySystemTheme();
 }
 /** 主题切换的「圆形揭幕」（原型 v8 的艺术样式）：从被点的按钮位置绽开，380ms。
@@ -1803,6 +1988,13 @@ function renderRecordRow(rec, supported) {
   return row;
 }
 
+let filesEnterToken = 0;
+let filesEnterDone = -1;
+function staggerFilesIfNeeded(rows) {
+  if (!rows.length || filesEnterDone === filesEnterToken) return;
+  filesEnterDone = filesEnterToken;
+  rows.forEach((row, i) => markRowEnter(row, i));
+}
 function renderFilesPanel(state) {
   const el = filesEls();
   if (!el.panel) return;
@@ -1810,9 +2002,15 @@ function renderFilesPanel(state) {
   const shown = filesQuery.trim() ? historySearch(filesQuery) : all;
   const supported = Boolean(state.support && state.support.supported);
   if (el.list) el.list.innerHTML = '';
+  const rows = [];
   if (el.list && shown.length) {
-    for (const rec of shown) el.list.append(renderRecordRow(rec, supported));
+    for (const rec of shown) {
+      const row = renderRecordRow(rec, supported);
+      rows.push(row);
+      el.list.append(row);
+    }
   }
+  staggerFilesIfNeeded(rows);
   paintChrome(state, shown.length, all.length);
   paintEmptyStates(state, shown.length, all.length);
 }
@@ -2220,6 +2418,8 @@ function initHistoryUI() {
 
 function initShell() {
   initTabs();
+  initSwipe();
+  initRipple();
   initTheme();
   initMarkdownViewer();
   initResultsControls();
