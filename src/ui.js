@@ -1607,7 +1607,7 @@ function initRipple() {
   document.addEventListener('pointerdown', (e) => {
     if (prefersReducedMotion()) return;
     const target = e.target && e.target.closest
-      ? e.target.closest('.btn, .pick-btn, .navitem, .iconbtn, .file-row, [data-ripple]')
+      ? e.target.closest('.btn, .pick-btn, .iconbtn, .file-row, [data-ripple]')
       : null;
     if (!target || target.disabled) return;
     spawnRipple(target, e);
