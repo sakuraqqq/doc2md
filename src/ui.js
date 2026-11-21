@@ -1133,15 +1133,20 @@ function panelOf(tab) {
 }
 /** 卡 068 · A5：单枚胶囊横移 —— 宽度与位移按当前 Tab 实测（不依赖固定等分）。
  *  卡 070 · R3：拖拽期由 swipe 代码直接写 transform（.dragging 关过渡）。 */
-function updateNavMarker(target) {
+function updateNavMarker(target, instant = false) {
   const marker = document.getElementById('navMarker');
   if (!navEl || !marker || !target) return;
   const bar = navEl.getBoundingClientRect();
   const tab = target.getBoundingClientRect();
   if (!bar.width || !tab.width) return;
   const left = tab.left - bar.left + 2;
+  if (instant) {
+    marker.classList.add('instant');
+    marker.getBoundingClientRect(); // 冲刷样式：本帧就落在新位置，不播过渡
+  }
   marker.style.width = (tab.width - 4) + 'px';
   marker.style.transform = 'translateX(' + left + 'px)';
+  if (instant) requestAnimationFrame(() => marker.classList.remove('instant'));
 }
 /** 退场层的内联锁定字段（切回时要清干净，避免污染下一次布局） */
 const PANEL_LEAVE_KEYS = ['position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'display', 'overflow', 'margin', 'zIndex', 'transform', 'opacity'];
@@ -1165,8 +1170,8 @@ function finishLeave(panel) {
   clearPanelOverride(panel);
   panel.style.opacity = '';
 }
-/** 卡 070 返修：旧页内容同帧隐藏（退场层只留几何/透明度契约 Z6-1），新页 120ms 从 90% 入场。
- *  原因：fade-through 的旧内容淡出在真机被看成「方框重影」，90ms 空档还会闪背景。
+/** 卡 070 返修：旧页内容同帧隐藏（退场层只留几何/透明度契约 Z6-1），新页瞬时在场、不做整页淡入。
+ *  原因：fade-through 的旧内容淡出被看成「方框重影」，整页 0.9→1 的淡入又像卡片闪。
  *  ⚠️ 不缩放整块面板：面板里 `#dropzone` 是 fixed，transform 会把它变成相对面板定位而跳位。 */
 const ENTER_MS = 210;
 const LEAVE_MS = 90;
@@ -1236,18 +1241,6 @@ function leavePanel(panel, reduce, snap = snapshotPanel(panel)) {
 /** 同步 aria/tabindex，并把「要入场的面板 / 要退场的面板（含退场前快照）」分桶。 */
 /** 卡 070 返修：退场层只留几何/透明度契约（Z6-1），旧内容同帧隐藏；
  * 新页改即时上场（不再等 90ms 淡出 + 210ms 淡入）⇒ 无方框重影、无空档。 */
-function enterPanelQuick(panel) {
-  enterPanel(panel, true);
-  if (prefersReducedMotion() || typeof panel.animate !== 'function') return;
-  panel.style.opacity = '0.9';
-  const anim = panel.animate([{ opacity: 0.9 }, { opacity: 1 }], {
-    duration: 120, easing: 'cubic-bezier(.2,0,0,1)', fill: 'both',
-  });
-  anim.onfinish = () => {
-    anim.cancel();
-    clearPanelOverride(panel);
-  };
-}
 function hideLeavingVisual(panel) {
   panel.getAnimations().forEach((a) => a.cancel());
   panel.style.opacity = '0';
@@ -1278,7 +1271,7 @@ function collectTabPanels(target) {
  *   结束后新面板 210ms 入场；减少动态效果时即时切换。
  *   退场层只是视觉副本 —— 不拦截点击（pointer-events:none）。
  *   ⚠️ 必须**先快照/退场、后入场**，否则新面板插入上方会推动旧面板的 rect。 */
-function syncTabButtons(target) {
+function syncTabButtons(target, opts = {}) {
   const reduce = prefersReducedMotion();
   const targetPanel = panelOf(target);
   const { toEnter, toLeave } = collectTabPanels(target);
@@ -1289,14 +1282,14 @@ function syncTabButtons(target) {
     leavePanel(panel, reduce, snap);
     hideLeavingVisual(panel);
   }
-  if (!home) for (const panel of toEnter) enterPanelQuick(panel);
-  updateNavMarker(target);
+  if (!home) for (const panel of toEnter) enterPanel(panel, true);
+  updateNavMarker(target, Boolean(opts.instantMarker));
 }
 
 /** 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。 */
 function afterTabChange(active) {
   if (active === 'files') {
-    filesEnterToken += 1;
+    filesEnterQuiet = true;
     refreshFilesPanel().catch(() => {});
   }
   else toggleFilesSearch(false);
@@ -1305,11 +1298,11 @@ function afterTabChange(active) {
 }
 
 /** 切到某个 Tab */
-export function activateTab(name) {
+export function activateTab(name, opts = {}) {
   const tabs = tabButtons();
   if (!tabs.length) return null;
   const target = tabs.find((t) => t.dataset.tab === name) || tabs[0];
-  syncTabButtons(target);
+  syncTabButtons(target, opts);
   const active = target.dataset.tab || null;
   activeTabName = active;
   /* 星图（fixed 背景层）只在「转换」显示：body[data-tab] 供 CSS 判断（卡 065 真机反馈） */
@@ -1414,7 +1407,7 @@ function onNavKey(e) {
 }
 function initTabs() {
   for (const t of tabButtons()) {
-    t.addEventListener('click', () => activateTab(t.dataset.tab));
+    t.addEventListener('click', () => activateTab(t.dataset.tab, { instantMarker: true }));
   }
   if (navEl) navEl.addEventListener('keydown', onNavKey);
   /* 卡 068 · A5：首帧与视口变化时重算胶囊（字体/安全区/横竖屏都会改变 Tab 宽度） */
@@ -2056,12 +2049,16 @@ function renderRecordRow(rec, supported) {
   return row;
 }
 
-let filesEnterToken = 0;
-let filesEnterDone = -1;
+const filesAnimatedIds = new Set();
+let filesEnterQuiet = false;
 function staggerFilesIfNeeded(rows) {
-  if (!rows.length || filesEnterDone === filesEnterToken) return;
-  filesEnterDone = filesEnterToken;
-  rows.forEach((row, i) => markRowEnter(row, i));
+  const fresh = rows.filter((row) => !filesAnimatedIds.has(row.dataset.id));
+  for (const row of rows) filesAnimatedIds.add(row.dataset.id);
+  /* 进入文件页这一笔刷新不播入场（真机反馈卡片闪）；只有停留期间新到的一批才播。 */
+  const quiet = filesEnterQuiet;
+  filesEnterQuiet = false;
+  if (quiet || activeTabName !== 'files') return;
+  fresh.forEach((row, i) => markRowEnter(row, i));
 }
 function renderFilesPanel(state) {
   const el = filesEls();
