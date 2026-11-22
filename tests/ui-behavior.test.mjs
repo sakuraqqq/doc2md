@@ -90,13 +90,23 @@ async function openPage(browser, base, { reducedMotion = 'no-preference' } = {})
 const touch = (cdp, type, points) => cdp.send('Input.dispatchTouchEvent', {
   type, touchPoints: points.map(([x, y], i) => ({ x, y, id: i + 1, radiusX: 6, radiusY: 6, force: 1 })),
 });
-async function swipe(cdp, points, { delay = 22, hold = 0 } = {}) {
+async function swipe(cdp, points, { delay = 22, hold = 0, noEnd = false } = {}) {
   await touch(cdp, 'touchStart', [points[0]]);
   for (const p of points.slice(1)) {
     await sleep(delay);
     await touch(cdp, 'touchMove', [p]);
   }
   if (hold) await sleep(hold);
+  if (!noEnd) await touch(cdp, 'touchEnd', []);
+}
+/** 结束坐标区别于最后一条 MOVE：用带 changedTouches 的 touchend 模拟原生 UP 坐标。 */
+async function endSwipeAt(page, cdp, point) {
+  await page.evaluate(({ x, y }) => {
+    const t = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: y, pageX: x, pageY: y, screenX: x, screenY: y });
+    document.dispatchEvent(new TouchEvent('touchend', {
+      bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [t],
+    }));
+  }, { x: point[0], y: point[1] });
   await touch(cdp, 'touchEnd', []);
 }
 const state = (page) => page.evaluate(() => ({
@@ -240,17 +250,30 @@ test('契约组 UI-B：卡 070 行为门禁（R1–R6；2026-11-22 补）', asyn
     await server.close();
   });
 
-  await t.test('UI-B1 R2 方向锁：斜向拖不切页且原生纵滚可用', async () => {
+  await t.test('UI-B1 R2 方向锁：斜向拖 / 独立 UP 坐标 / 原生纵滚', async () => {
     const { ctx, page, cdp } = await openPage(browser, server.base);
     try {
       await chooseTab(page, 'settings');
       await swipe(cdp, [[90, 620], [106, 618], [121, 577], [148, 523], [175, 456], [200, 392], [224, 330]]);
       await page.waitForTimeout(450);
-      const st = await state(page);
-      const moves = await page.evaluate(() => window.__uiBehavior.touchmoves);
+      let st = await state(page);
+      let moves = await page.evaluate(() => window.__uiBehavior.touchmoves);
       assert.equal(st.active, 'tab-settings', '斜向拖误切页：' + st.active);
       assert.ok(st.y > 100, '斜向拖把纵向滚动吃掉：scrollY=' + st.y);
       assert.equal(moves.filter((m) => m.prevented).length, 0, '斜向拖仍被 preventDefault（应回落到原生纵滚）');
+      /* 近对角（report D2）：最终 |dx|=150 < |dy|=166；可滚页不得停 0，也不得误切 */
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await swipe(cdp, [[70, 650], [120, 647], [150, 630], [182, 550], [192, 520], [205, 500], [220, 484]]);
+      await page.waitForTimeout(450);
+      st = await state(page);
+      assert.equal(st.active, 'tab-settings', '近对角拖误切页：' + st.active);
+      assert.ok(st.y > 100, '近对角拖把纵向滚动吃掉：scrollY=' + st.y);
+      /* 独立 UP 坐标（report D1）：最后 MOVE 在横位，UP 已回起点附近 */
+      await chooseTab(page, 'convert');
+      await swipe(cdp, [[300, 398], [285, 398], [260, 398], [230, 398], [200, 398], [160, 398]], { noEnd: true });
+      await endSwipeAt(page, cdp, [294, 650]);
+      await page.waitForTimeout(450);
+      assert.equal((await state(page)).active, 'tab-convert', '独立 UP 坐标仍按旧 MOVE 切页');
     } finally { await ctx.close(); }
   });
 
@@ -264,26 +287,47 @@ test('契约组 UI-B：卡 070 行为门禁（R1–R6；2026-11-22 补）', asyn
     } finally { await ctx.close(); }
   });
 
-  await t.test('UI-B3 R2 横滑后立即点 Tab 不被吞', async () => {
+  await t.test('UI-B3 R2 跨输入：触摸后鼠标/Enter 点击不被吞', async () => {
     const { ctx, page, cdp } = await openPage(browser, server.base);
     try {
+      const settingsPoint = async () => {
+        const box = await page.locator('#tab-settings').boundingBox();
+        assert.ok(box, '设置 Tab 不可见');
+        return [box.x + box.width / 2, box.y + box.height / 2];
+      };
+      /* 触摸 → 触摸（原回归） */
       await chooseTab(page, 'convert');
       await swipe(cdp, [[315, 398], [285, 398], [252, 399], [212, 400], [180, 400]]);
-      const box = await page.locator('#tab-settings').boundingBox();
-      assert.ok(box, '设置 Tab 不可见');
-      const pt = [box.x + box.width / 2, box.y + box.height / 2];
+      let pt = await settingsPoint();
       await touch(cdp, 'touchStart', [pt]);
       await touch(cdp, 'touchEnd', []);
       await page.waitForTimeout(250);
-      const st = await state(page);
-      const clicks = await page.evaluate(() => window.__uiBehavior.clicks);
-      assert.equal(st.active, 'tab-settings', '横滑后点击未生效：' + st.active);
-      assert.ok(clicks.some((c) => c.target === 'tab-settings' && c.prevented === false), '横滑后的点击被 preventDefault：' + JSON.stringify(clicks));
+      let clicks = await page.evaluate(() => window.__uiBehavior.clicks);
+      assert.equal((await state(page)).active, 'tab-settings', '横滑后触摸点击未生效');
+      assert.ok(clicks.some((c) => c.target === 'tab-settings' && c.prevented === false), '横滑后的触摸点击被 preventDefault：' + JSON.stringify(clicks));
+      /* 触摸 → 鼠标（report D3）：独立输入不继承触摸的 click 抑制 */
+      await chooseTab(page, 'convert');
+      await swipe(cdp, [[315, 398], [285, 398], [252, 399], [212, 400], [180, 400]]);
+      pt = await settingsPoint();
+      await page.mouse.click(pt[0], pt[1]);
+      await page.waitForTimeout(250);
+      clicks = await page.evaluate(() => window.__uiBehavior.clicks);
+      assert.equal((await state(page)).active, 'tab-settings', '横滑后鼠标点击未生效');
+      assert.ok(clicks.some((c) => c.target === 'tab-settings' && c.prevented === false), '横滑后的鼠标点击被 preventDefault：' + JSON.stringify(clicks));
+      /* 触摸 → Enter（report D3） */
+      await chooseTab(page, 'convert');
+      await swipe(cdp, [[315, 398], [285, 398], [252, 399], [212, 400], [180, 400]]);
+      await page.locator('#tab-settings').focus();
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(250);
+      clicks = await page.evaluate(() => window.__uiBehavior.clicks);
+      assert.equal((await state(page)).active, 'tab-settings', '横滑后 Enter 激活未生效');
+      assert.ok(clicks.some((c) => c.target === 'tab-settings' && c.prevented === false), '横滑后的 Enter click 被 preventDefault：' + JSON.stringify(clicks));
     } finally { await ctx.close(); }
   });
 
-  await t.test('UI-B4 R3 胶囊 5–15% 过冲 + 280ms 过渡', async () => {
-    const { ctx, page } = await openPage(browser, server.base);
+  await t.test('UI-B4 R3 胶囊 5–15% 过冲：点击/短滑/长滑', async () => {
+    const { ctx, page, cdp } = await openPage(browser, server.base);
     try {
       await chooseTab(page, 'convert');
       const before = await markerX(page);
@@ -310,6 +354,32 @@ test('契约组 UI-B：卡 070 行为门禁（R1–R6；2026-11-22 补）', asyn
       assert.ok(timeline.duration.includes('0.28s'), '胶囊过渡不是 280ms：' + timeline.duration);
       assert.ok(ratio > 0, '实测零过冲（peak=' + peak + ', dest=' + dest + '）');
       assert.ok(ratio <= 0.15, '实测过冲 >15%：' + (ratio * 100).toFixed(2) + '%');
+      /* 长滑 210 CSS px（report D4）：40% 视口宽之后仍要允许越过目标，不能按住即落定 */
+      await chooseTab(page, 'convert');
+      const start = await markerX(page);
+      await page.evaluate(() => {
+        const marker = document.getElementById('navMarker');
+        window.__markerFrames = [];
+        window.__markerStop = false;
+        const t0 = performance.now();
+        const tick = (t) => {
+          window.__markerFrames.push({ t: t - t0, x: marker.getBoundingClientRect().left });
+          if (!window.__markerStop) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      await swipe(cdp, [[310, 398], [270, 398], [230, 398], [190, 398], [150, 398], [100, 398]]);
+      await page.waitForTimeout(450);
+      const long = await page.evaluate(() => {
+        window.__markerStop = true;
+        return { frames: window.__markerFrames, end: document.getElementById('navMarker').getBoundingClientRect().left };
+      });
+      const longPeak = Math.max(...long.frames.map((f) => f.x));
+      const longDistance = long.end - start;
+      const longRatio = longDistance > 5 ? (longPeak - long.end) / longDistance : 0;
+      assert.equal((await state(page)).active, 'tab-files', '长滑未切页');
+      assert.ok(longPeak > long.end, '长滑按住已落定，零过冲：peak=' + longPeak + ', end=' + long.end);
+      assert.ok(longRatio <= 0.15, '长滑过冲 >15%：' + (longRatio * 100).toFixed(2) + '%');
     } finally { await ctx.close(); }
   });
 
@@ -389,9 +459,19 @@ test('契约组 UI-B：卡 070 行为门禁（R1–R6；2026-11-22 补）', asyn
     } finally { await ctx.close(); }
   });
 
-  await t.test('UI-B8 R5 100 条结果整批 ≤400ms', async () => {
+  await t.test('UI-B8 R5 100 条结果 + 两批独立', async () => {
     const { ctx, page } = await openPage(browser, server.base);
     try {
+      /* 两批间隔 450ms（< 600ms 旧空闲阈值）：第二批必须有自己的入场时钟 */
+      await uploadResults(page, 1);
+      await page.waitForTimeout(450);
+      await monitorRows(page, '#results', '.result-row');
+      await uploadResults(page, 4);
+      await page.waitForTimeout(600);
+      const second = await readRows(page);
+      assert.equal(second.inserted, 4, '第二批结果行插入数不是 4：' + second.inserted);
+      assert.equal(second.starts, 4, '第二批没有入场动画（继承了第一批时钟）：' + second.starts);
+      assert.equal(second.ends, 4, '第二批入场未结束：' + second.ends);
       await monitorRows(page, '#results', '.result-row');
       await uploadResults(page, 100);
       await page.waitForTimeout(900);
