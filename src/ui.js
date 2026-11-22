@@ -500,6 +500,8 @@ export function renderBatchSave() {
   updateResultsChrome();
 }
 function initResultsControls() {
+  fileInput.addEventListener('change', beginResultBatch);
+  if (typeof window !== 'undefined') window.addEventListener('drop', beginResultBatch);
   selectAllEl.addEventListener('change', () => toggleAllVisible(selectAllEl.checked));
   selectAllBtn.addEventListener('click', () => {
     const visible = resultRows.filter((r) => r.success && !r.el.hidden);
@@ -1059,8 +1061,17 @@ const ROW_ENTER_GAP_MS = 600;
 let resultEnterSeq = 0;
 let resultEnterTimer = null;
 let resultEnterBatch = null;
+/** 一次新的选择/拖放 = 独立批次：清零序号与预算，第二批不从第一批的时钟起算。 */
+function beginResultBatch() {
+  resultEnterSeq = 0;
+  if (resultEnterTimer) {
+    clearTimeout(resultEnterTimer);
+    resultEnterTimer = null;
+  }
+  resultEnterBatch = { start: performance.now(), budget: ROW_ENTER_BUDGET_MS };
+}
 function nextResultEnter() {
-  if (!resultEnterBatch) resultEnterBatch = { start: performance.now(), budget: ROW_ENTER_BUDGET_MS };
+  if (!resultEnterBatch) beginResultBatch();
   const index = resultEnterSeq++;
   if (resultEnterTimer) clearTimeout(resultEnterTimer);
   resultEnterTimer = setTimeout(() => { resultEnterSeq = 0; resultEnterBatch = null; }, ROW_ENTER_GAP_MS);
@@ -1439,7 +1450,6 @@ function initTabs() {
  * 后者会先反向再回弹，真机实测被判成 bug）。松手判定 = 距离 >30% 宽 或快速轻扫。
  * 排除：输入框/文本域、预览层、搜索页、对话框、行菜单、导航栏本身、横向滚动容器。 */
 const SWIPE_LOCK_PX = 10;
-const SWIPE_CLAIM_PX = 24;
 const SWIPE_RELOCK_PX = 24;
 const SWIPE_AXIS_RATIO = 1.2;
 const SWIPE_COMMIT_RATIO = 0.3;
@@ -1493,8 +1503,11 @@ function followSwipe(dx) {
   const from = markerRectOf(t.current);
   const to = markerRectOf(t.tabs[t.target]);
   const edge = t.target === t.idx;
-  const p = Math.min(1, Math.abs(dx) / (window.innerWidth * 0.4));
-  const k = edge ? p * 0.25 : p;
+  /* 40% 视口宽 = 1；继续拖按 0.35 阻尼往外走，封顶 1.15（卡面 ≤15%）。
+   * 这样长滑在按住时也越过目标，松手后才有非零回弹。 */
+  const raw = Math.abs(dx) / (window.innerWidth * 0.4);
+  const p = raw <= 1 ? raw : Math.min(1.15, 1 + (raw - 1) * 0.35);
+  const k = edge ? Math.min(0.25, p * 0.25) : p;
   marker.classList.add('dragging');
   marker.style.width = (from.width + (to.width - from.width) * k) + 'px';
   marker.style.transform = 'translateX(' + (from.left + (to.left - from.left) * k) + 'px)';
@@ -1508,6 +1521,7 @@ function onSwipeStart(e) {
   swipeState = {
     id: t.identifier, x0: t.clientX, y0: t.clientY, x: t.clientX, y: t.clientY,
     axis: 'none', dx: 0, dy: 0, samples: [{ t: performance.now(), x: t.clientX }],
+    scrollY0: window.scrollY, manualDy: 0, startedHorizontal: false,
   };
 }
 function isHorizontalSwipe(ax, ay) {
@@ -1520,11 +1534,24 @@ function isVerticalSwipe(ax, ay) {
 function swipeAxisFor(s, dx, dy) {
   const ax = Math.abs(dx);
   const ay = Math.abs(dy);
-  if (s.axis === 'h') return ay >= 18 && ay > ax * SWIPE_AXIS_RATIO ? 'v' : 'h';
+  if (s.axis === 'h') return ay >= 18 && ay > ax ? 'v' : 'h';
   if (s.axis === 'v') return ax >= SWIPE_RELOCK_PX && ax > ay * SWIPE_AXIS_RATIO ? 'h' : 'v';
   if (isHorizontalSwipe(ax, ay)) return 'h';
   if (isVerticalSwipe(ax, ay)) return 'v';
   return s.axis;
+}
+/* 浏览器对「先横后纵」有方向锁：passive 监听无法让它把手势交回纵滚。
+ * 仅在本手势曾横向锁定、随后明确转纵、且原生还没滚时，按未消费的 dy 补滚。 */
+function swipeManualScroll(s, dy) {
+  if (!s.startedHorizontal || Math.abs(dy) < 24) return;
+  const expected = s.scrollY0 - s.manualDy;
+  if (Math.abs(window.scrollY - expected) > 2) {
+    s.startedHorizontal = false;
+    return;
+  }
+  const delta = -dy - -s.manualDy;
+  if (delta) window.scrollBy(0, delta);
+  s.manualDy = dy;
 }
 function trackSwipe(s, x) {
   const now = performance.now();
@@ -1559,11 +1586,14 @@ function onSwipeMove(e) {
   s.dx = dx;
   s.dy = dy;
   const axis = swipeAxisFor(s, dx, dy);
+  if (axis === 'h') s.startedHorizontal = true;
   if (axis !== s.axis && axis !== 'h') stopFollowSwipe();
   s.axis = axis;
-  if (axis !== 'h') return;
-  /* 明确横向后再接管（此前不 preventDefault，斜向拖仍可回落到原生纵滚） */
-  if (e.cancelable && Math.abs(dx) >= SWIPE_CLAIM_PX) e.preventDefault();
+  if (axis !== 'h') {
+    swipeManualScroll(s, dy);
+    return;
+  }
+  /* 不 preventDefault：touch-action:auto 交给浏览器；斜向转纵时原生滚动不被本手势掐死。 */
   trackSwipe(s, t.clientX);
   if (Math.abs(dx) > 12) swipeSuppressUntil = performance.now() + SWIPE_CLICK_GUARD_MS;
   followSwipe(dx);
@@ -1572,50 +1602,76 @@ function swipeShouldCommit(dx, v) {
   const dist = Math.abs(dx);
   return dist > window.innerWidth * SWIPE_COMMIT_RATIO || (Math.abs(v) > SWIPE_FLICK_V && dist > 20);
 }
-/** 松手判定用**当前**位移/速度：横向仍须占优，停住 950ms 后旧速度不再算数 */
-function swipeCommitTarget(s, allowCommit) {
-  if (!s || s.axis !== 'h' || !allowCommit) return null;
-  if (Math.abs(s.dx) < SWIPE_LOCK_PX || Math.abs(s.dx) <= Math.abs(s.dy) * 1.1) return null;
-  return swipeTargetFor(s.dx);
+/** 松手用**结束事件**的坐标，不用最后一条 MOVE；近对角转向按最终比例重判。 */
+function swipeFinalPoint(e, s) {
+  const t = e && e.changedTouches && e.changedTouches[0];
+  if (t) return { x: t.clientX, y: t.clientY };
+  return { x: s.x, y: s.y };
 }
-function endSwipe(allowCommit) {
+function swipeCommitTarget(dx, dy, allowCommit) {
+  if (!allowCommit) return null;
+  if (Math.abs(dx) < SWIPE_LOCK_PX || Math.abs(dx) <= Math.abs(dy) * 1.1) return null;
+  return swipeTargetFor(dx);
+}
+function endSwipe(allowCommit, endEvent) {
   const s = swipeState;
   swipeState = null;
   const marker = document.getElementById('navMarker');
   if (marker) marker.classList.remove('dragging');
   const current = activeTabButton();
   if (!current) return;
-  const t = swipeCommitTarget(s, allowCommit);
-  if (t && t.target !== t.idx && swipeShouldCommit(s.dx, swipeVelocity(s, performance.now()))) {
+  if (!s) { updateNavMarker(current); return; }
+  const end = swipeFinalPoint(endEvent, s);
+  const now = performance.now();
+  const dx = end.x - s.x0;
+  const dy = end.y - s.y0;
+  s.dx = dx;
+  s.dy = dy;
+  s.x = end.x;
+  s.samples.push({ t: now, x: end.x });
+  /* 松手判定用**结束事件**的当前位移/速度；停住 950ms 后旧速度不再算数 */
+  const horizontal = Math.abs(dx) >= SWIPE_LOCK_PX && Math.abs(dx) > Math.abs(dy) * 1.1;
+  if (!horizontal) swipeSuppressUntil = 0;
+  const t = swipeCommitTarget(dx, dy, allowCommit);
+  if (t && t.target !== t.idx && swipeShouldCommit(dx, swipeVelocity(s, now))) {
     activateTab(t.tabs[t.target].dataset.tab);
     return;
   }
   updateNavMarker(current);
 }
-function onSwipeEnd() {
+function onSwipeEnd(e) {
   if (!swipeState) return;
-  endSwipe(true);
+  endSwipe(true, e);
 }
-function onSwipeCancel() {
+function onSwipeCancel(e) {
   if (!swipeState) return;
-  endSwipe(false);
+  endSwipe(false, e);
+}
+/** 只有触摸产生的 click 才继承上一条滑动的抑制；鼠标/键盘是独立激活。 */
+function isTouchGeneratedClick(e) {
+  if (e.pointerType) return e.pointerType === 'touch';
+  return Boolean(e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents);
 }
 function suppressClickAfterSwipe(e) {
   if (!swipeSuppressUntil || !e.isTrusted) return;
   if (performance.now() > swipeSuppressUntil) { swipeSuppressUntil = 0; return; }
+  if (!isTouchGeneratedClick(e)) { swipeSuppressUntil = 0; return; }
   swipeSuppressUntil = 0;
   e.preventDefault();
   e.stopPropagation();
 }
 function initSwipe() {
   if (typeof document === 'undefined') return;
-  /* Touch Events：方向逐帧判定；只在明确横向（≥24px）时 preventDefault 接管。
-   * 此前不拦默认 ⇒ 斜向拖可以回落到原生纵滚。 */
+  /* Touch Events + 全程 passive：纵向滚动交给浏览器（.tabpanel 的 touch-action:auto）。
+   * 不做 preventDefault ⇒ 斜向拖/长按选择都不会被本手势掐死。 */
   document.addEventListener('touchstart', onSwipeStart, { passive: true });
-  document.addEventListener('touchmove', onSwipeMove, { passive: false });
+  document.addEventListener('touchmove', onSwipeMove, { passive: true });
   document.addEventListener('touchend', onSwipeEnd);
   document.addEventListener('touchcancel', onSwipeCancel);
   document.addEventListener('click', suppressClickAfterSwipe, true);
+  /* 非触摸的新输入不继承上一条触摸滑动的点击抑制 */
+  document.addEventListener('pointerdown', (ev) => { if (ev.pointerType !== 'touch') swipeSuppressUntil = 0; }, { passive: true });
+  document.addEventListener('keydown', () => { swipeSuppressUntil = 0; }, true);
 }
 
 /* ── 卡 070 · R4：按下涟漪（WAAPI，不阻塞点击；reduced-motion 全关） ───────── */

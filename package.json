@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "node tools/build.mjs",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1",
     "test:race": "node tools/race-059.mjs",
     "lint": "eslint \"src/**/*.js\" \"tools/**/*.mjs\"",
     "metrics": "node tools/metrics.mjs",
