@@ -63,7 +63,8 @@ async function openPage(browser, base, { reducedMotion = 'no-preference' } = {})
   }
   await page.addInitScript(() => {
     window.__uiBehavior = { clicks: [], bars: [], touchmoves: [] };
-    window.Capacitor = { Plugins: { SystemBars: {
+    // 本组以原生运行时为前提；PWA 不接管横滑（2026-11-24 拍板①）。
+    window.Capacitor = { getPlatform: () => 'android', Plugins: { SystemBars: {
       setStyle: (s) => {
         window.__uiBehavior.bars.push({ theme: document.documentElement.dataset.theme, ...s });
         return Promise.resolve();
