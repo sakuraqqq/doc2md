@@ -411,16 +411,18 @@ test('契约组 UI-B：卡 070 行为门禁（R1–R6；2026-11-22 补）', asyn
     } finally { await ctx.close(); }
   });
 
-  await t.test('UI-B6 R4 涟漪覆盖 CTA/Tab/预览⋯', async () => {
+  await t.test('UI-B6 R4 CTA/预览⋯保留涟漪，点击 Tab 不产生涟漪', async () => {
     const { ctx, page } = await openPage(browser, server.base);
     try {
       const cta = await press(page, '#pickBtn', { chooser: true });
       assert.equal(cta.during.count, 1, 'CTA 按下没有涟漪');
       assert.ok(cta.during.durations.every((d) => d >= 200 && d <= 400), 'CTA 涟漪时长不在 200–400ms：' + cta.during.durations);
       assert.equal(cta.after.count, 0, 'CTA 涟漪未清理');
+      // 卡 070 R4：dd9818b → 306ffd1 曾重新引入 Tab 涟漪，导致真机矩形残影回归。
       const tab = await press(page, '#tab-files');
-      assert.equal(tab.during.count, 1, 'Tab 按下没有涟漪');
-      assert.equal(tab.after.count, 0, 'Tab 涟漪未清理');
+      assert.equal(tab.during.count, 0, 'Tab 按下产生了涟漪');
+      assert.equal(tab.after.count, 0, 'Tab 点击后存在涟漪');
+      assert.equal((await state(page)).active, 'tab-files', '点击 Tab 未切换到文件页');
       await openViewer(page);
       const more = await press(page, '#mdViewerMore');
       assert.equal(more.during.count, 1, '预览⋯按下没有涟漪');

@@ -1765,7 +1765,7 @@ function finishRipplesNow() {
 function onRipplePointerDown(e) {
   if (prefersReducedMotion()) return;
   const target = e.target && e.target.closest
-    ? e.target.closest('.btn, .pick-btn, .iconbtn, .file-row, .navitem, .md-viewer-more, [data-ripple]')
+    ? e.target.closest('.btn, .pick-btn, .iconbtn, .file-row, .md-viewer-more, [data-ripple]')
     : null;
   if (!target || target.disabled) return;
   spawnRipple(target, e);
