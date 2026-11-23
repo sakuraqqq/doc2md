@@ -4088,8 +4088,8 @@ ${xlsxRowsToMd(kept)}`);
     updateResultsChrome();
   }
   function initResultsControls() {
-    fileInput.addEventListener("change", beginResultBatch);
-    if (typeof window !== "undefined") window.addEventListener("drop", beginResultBatch);
+    fileInput.addEventListener("change", beginResultBatch, true);
+    if (typeof window !== "undefined") window.addEventListener("drop", beginResultBatch, true);
     selectAllEl.addEventListener("change", () => toggleAllVisible(selectAllEl.checked));
     selectAllBtn.addEventListener("click", () => {
       const visible = resultRows.filter((r) => r.success && !r.el.hidden);
@@ -4602,27 +4602,41 @@ ${xlsxRowsToMd(kept)}`);
   var ROW_STAGGER_MS = 30;
   var ROW_STAGGER_CAP = 150;
   var ROW_ENTER_BUDGET_MS = 380;
-  var ROW_ENTER_GAP_MS = 600;
-  var resultEnterSeq = 0;
-  var resultEnterTimer = null;
-  var resultEnterBatch = null;
-  function beginResultBatch() {
-    resultEnterSeq = 0;
-    if (resultEnterTimer) {
-      clearTimeout(resultEnterTimer);
-      resultEnterTimer = null;
-    }
-    resultEnterBatch = { start: performance.now(), budget: ROW_ENTER_BUDGET_MS };
+  var resultEnterByFile = /* @__PURE__ */ new WeakMap();
+  function makeResultEnterBatch(count) {
+    return { start: performance.now(), budget: ROW_ENTER_BUDGET_MS, count, rows: [] };
   }
-  function nextResultEnter() {
-    if (!resultEnterBatch) beginResultBatch();
-    const index = resultEnterSeq++;
-    if (resultEnterTimer) clearTimeout(resultEnterTimer);
-    resultEnterTimer = setTimeout(() => {
-      resultEnterSeq = 0;
-      resultEnterBatch = null;
-    }, ROW_ENTER_GAP_MS);
-    return { index, batch: resultEnterBatch };
+  function beginResultBatch(e) {
+    const list = e.type === "drop" ? e.dataTransfer && e.dataTransfer.files : fileInput.files;
+    const files = Array.from(list || []);
+    const batch = makeResultEnterBatch(files.length);
+    files.forEach((file, index) => resultEnterByFile.set(file, { index, batch }));
+  }
+  function nextResultEnter(file) {
+    const enter = resultEnterByFile.get(file);
+    resultEnterByFile.delete(file);
+    return enter || { index: 0, batch: makeResultEnterBatch(1) };
+  }
+  function syncResultEnterClock(rows) {
+    const start = performance.now();
+    for (const row of rows) {
+      for (const animation of row.el.getAnimations()) {
+        if (animation.animationName === "rowIn") animation.startTime = start;
+      }
+    }
+  }
+  function queueResultEnter(el, enter) {
+    const { batch, index } = enter;
+    batch.rows.push({ el, index });
+    if (batch.rows.length < batch.count) return;
+    const fragment = document.createDocumentFragment();
+    for (const row of batch.rows) {
+      markRowEnter(row.el, row.index, batch);
+      fragment.appendChild(row.el);
+    }
+    resultsEl.appendChild(fragment);
+    syncResultEnterClock(batch.rows);
+    batch.rows.length = 0;
   }
   function markRowEnter(el, index, batch) {
     if (prefersReducedMotion()) return;
@@ -4668,9 +4682,8 @@ ${xlsxRowsToMd(kept)}`);
     row.checkbox.addEventListener("click", (e) => e.stopPropagation());
     row.checkbox.addEventListener("change", () => setRowSelected(row, row.checkbox.checked));
     resultRows.push(row);
-    const enter = nextResultEnter();
-    resultsEl.appendChild(card);
-    markRowEnter(card, enter.index, enter.batch);
+    const enter = nextResultEnter(file);
+    queueResultEnter(card, enter);
     return row;
   }
   function diagConvert(result) {
@@ -5002,7 +5015,7 @@ ${xlsxRowsToMd(kept)}`);
     const to = markerRectOf(t.tabs[t.target]);
     const edge = t.target === t.idx;
     const raw = Math.abs(dx) / (window.innerWidth * 0.4);
-    const p = raw <= 1 ? raw : Math.min(1.15, 1 + (raw - 1) * 0.35);
+    const p = raw <= 1 ? raw * 1.08 : Math.min(1.15, 1.08 + (raw - 1) * 0.35);
     const k = edge ? Math.min(0.25, p * 0.25) : p;
     marker.classList.add("dragging");
     marker.style.width = from.width + (to.width - from.width) * k + "px";
@@ -5101,14 +5114,21 @@ ${xlsxRowsToMd(kept)}`);
     return dist > window.innerWidth * SWIPE_COMMIT_RATIO || Math.abs(v) > SWIPE_FLICK_V && dist > 20;
   }
   function swipeFinalPoint(e, s) {
-    const t = e && e.changedTouches && e.changedTouches[0];
-    if (t) return { x: t.clientX, y: t.clientY };
-    return { x: s.x, y: s.y };
+    const touches = e && e.changedTouches ? [...e.changedTouches] : [];
+    const t = touches.find((point) => point.identifier === s.id);
+    return t ? { x: t.clientX, y: t.clientY } : null;
   }
   function swipeCommitTarget(dx, dy, allowCommit) {
     if (!allowCommit) return null;
     if (Math.abs(dx) < SWIPE_LOCK_PX || Math.abs(dx) <= Math.abs(dy) * 1.1) return null;
     return swipeTargetFor(dx);
+  }
+  function finishSwipeMarker(dx) {
+    followSwipe(dx);
+    const marker = document.getElementById("navMarker");
+    if (!marker) return;
+    marker.getBoundingClientRect();
+    marker.classList.remove("dragging");
   }
   function endSwipe(allowCommit, endEvent) {
     const s = swipeState;
@@ -5122,6 +5142,10 @@ ${xlsxRowsToMd(kept)}`);
       return;
     }
     const end = swipeFinalPoint(endEvent, s);
+    if (!end) {
+      updateNavMarker(current);
+      return;
+    }
     const now = performance.now();
     const dx = end.x - s.x0;
     const dy = end.y - s.y0;
@@ -5133,17 +5157,19 @@ ${xlsxRowsToMd(kept)}`);
     if (!horizontal) swipeSuppressUntil = 0;
     const t = swipeCommitTarget(dx, dy, allowCommit);
     if (t && t.target !== t.idx && swipeShouldCommit(dx, swipeVelocity(s, now))) {
+      finishSwipeMarker(dx);
       activateTab(t.tabs[t.target].dataset.tab);
       return;
     }
     updateNavMarker(current);
   }
   function onSwipeEnd(e) {
-    if (!swipeState) return;
+    if (!swipeState || !swipeFinalPoint(e, swipeState)) return;
     endSwipe(true, e);
   }
   function onSwipeCancel(e) {
     if (!swipeState) return;
+    if (e.touches.length && !swipeFinalPoint(e, swipeState)) return;
     endSwipe(false, e);
   }
   function isTouchGeneratedClick(e) {
@@ -5165,7 +5191,7 @@ ${xlsxRowsToMd(kept)}`);
     e.stopPropagation();
   }
   function initSwipe() {
-    if (typeof document === "undefined") return;
+    if (typeof document === "undefined" || !isNativeRuntime()) return;
     document.addEventListener("touchstart", onSwipeStart, { passive: true });
     document.addEventListener("touchmove", onSwipeMove, { passive: true });
     document.addEventListener("touchend", onSwipeEnd);

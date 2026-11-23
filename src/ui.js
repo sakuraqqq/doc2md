@@ -500,8 +500,8 @@ export function renderBatchSave() {
   updateResultsChrome();
 }
 function initResultsControls() {
-  fileInput.addEventListener('change', beginResultBatch);
-  if (typeof window !== 'undefined') window.addEventListener('drop', beginResultBatch);
+  fileInput.addEventListener('change', beginResultBatch, true);
+  if (typeof window !== 'undefined') window.addEventListener('drop', beginResultBatch, true);
   selectAllEl.addEventListener('change', () => toggleAllVisible(selectAllEl.checked));
   selectAllBtn.addEventListener('click', () => {
     const visible = resultRows.filter((r) => r.success && !r.el.hidden);
@@ -1057,25 +1057,44 @@ const ROW_STAGGER_MS = 30;
 const ROW_STAGGER_CAP = 150;
 /* 卡面整批 ≤400ms；预算留 20ms 给插入/首帧调度，实测「首行插入→末行结束」也能压进 400 */
 const ROW_ENTER_BUDGET_MS = 380;
-const ROW_ENTER_GAP_MS = 600;
-let resultEnterSeq = 0;
-let resultEnterTimer = null;
-let resultEnterBatch = null;
-/** 一次新的选择/拖放 = 独立批次：清零序号与预算，第二批不从第一批的时钟起算。 */
-function beginResultBatch() {
-  resultEnterSeq = 0;
-  if (resultEnterTimer) {
-    clearTimeout(resultEnterTimer);
-    resultEnterTimer = null;
-  }
-  resultEnterBatch = { start: performance.now(), budget: ROW_ENTER_BUDGET_MS };
+const resultEnterByFile = new WeakMap();
+function makeResultEnterBatch(count) {
+  return { start: performance.now(), budget: ROW_ENTER_BUDGET_MS, count, rows: [] };
 }
-function nextResultEnter() {
-  if (!resultEnterBatch) beginResultBatch();
-  const index = resultEnterSeq++;
-  if (resultEnterTimer) clearTimeout(resultEnterTimer);
-  resultEnterTimer = setTimeout(() => { resultEnterSeq = 0; resultEnterBatch = null; }, ROW_ENTER_GAP_MS);
-  return { index, batch: resultEnterBatch };
+/** 在入口快照 File 身份：异步结果交错时仍使用各自批次的起点与行序号。 */
+function beginResultBatch(e) {
+  const list = e.type === 'drop' ? e.dataTransfer && e.dataTransfer.files : fileInput.files;
+  const files = Array.from(list || []);
+  const batch = makeResultEnterBatch(files.length);
+  files.forEach((file, index) => resultEnterByFile.set(file, { index, batch }));
+}
+function nextResultEnter(file) {
+  const enter = resultEnterByFile.get(file);
+  resultEnterByFile.delete(file);
+  return enter || { index: 0, batch: makeResultEnterBatch(1) };
+}
+/** 冲刷样式并共用同一时间原点，避免 CSS 等到后续绘制才开始计时。 */
+function syncResultEnterClock(rows) {
+  const start = performance.now();
+  for (const row of rows) {
+    for (const animation of row.el.getAnimations()) {
+      if (animation.animationName === 'rowIn') animation.startTime = start;
+    }
+  }
+}
+/** 本批行备齐再一同起播，转换耗时不能撑大相邻行的动画间隔。 */
+function queueResultEnter(el, enter) {
+  const { batch, index } = enter;
+  batch.rows.push({ el, index });
+  if (batch.rows.length < batch.count) return;
+  const fragment = document.createDocumentFragment();
+  for (const row of batch.rows) {
+    markRowEnter(row.el, row.index, batch);
+    fragment.appendChild(row.el);
+  }
+  resultsEl.appendChild(fragment);
+  syncResultEnterClock(batch.rows);
+  batch.rows.length = 0;
 }
 function markRowEnter(el, index, batch) {
   if (prefersReducedMotion()) return;
@@ -1123,9 +1142,8 @@ function createResultRow(file, result) {
   row.checkbox.addEventListener('click', (e) => e.stopPropagation());
   row.checkbox.addEventListener('change', () => setRowSelected(row, row.checkbox.checked));
   resultRows.push(row);
-  const enter = nextResultEnter();
-  resultsEl.appendChild(card);
-  markRowEnter(card, enter.index, enter.batch);
+  const enter = nextResultEnter(file);
+  queueResultEnter(card, enter);
   return row;
 }
 /** 记一条转换结果：只记类型/成败/耗时 —— ⛔ 不记文件名（隐私） */
@@ -1503,10 +1521,10 @@ function followSwipe(dx) {
   const from = markerRectOf(t.current);
   const to = markerRectOf(t.tabs[t.target]);
   const edge = t.target === t.idx;
-  /* 40% 视口宽 = 1；继续拖按 0.35 阻尼往外走，封顶 1.15（卡面 ≤15%）。
-   * 这样长滑在按住时也越过目标，松手后才有非零回弹。 */
+  /* 40% 视口宽时预留 8% 回弹；两段连续，继续拖按 0.35 阻尼、封顶 15%。
+   * 边界点也越过目标，避免按住时恰好落定、松手后零过冲。 */
   const raw = Math.abs(dx) / (window.innerWidth * 0.4);
-  const p = raw <= 1 ? raw : Math.min(1.15, 1 + (raw - 1) * 0.35);
+  const p = raw <= 1 ? raw * 1.08 : Math.min(1.15, 1.08 + (raw - 1) * 0.35);
   const k = edge ? Math.min(0.25, p * 0.25) : p;
   marker.classList.add('dragging');
   marker.style.width = (from.width + (to.width - from.width) * k) + 'px';
@@ -1604,14 +1622,22 @@ function swipeShouldCommit(dx, v) {
 }
 /** 松手用**结束事件**的坐标，不用最后一条 MOVE；近对角转向按最终比例重判。 */
 function swipeFinalPoint(e, s) {
-  const t = e && e.changedTouches && e.changedTouches[0];
-  if (t) return { x: t.clientX, y: t.clientY };
-  return { x: s.x, y: s.y };
+  const touches = e && e.changedTouches ? [...e.changedTouches] : [];
+  const t = touches.find((point) => point.identifier === s.id);
+  return t ? { x: t.clientX, y: t.clientY } : null;
 }
 function swipeCommitTarget(dx, dy, allowCommit) {
   if (!allowCommit) return null;
   if (Math.abs(dx) < SWIPE_LOCK_PX || Math.abs(dx) <= Math.abs(dy) * 1.1) return null;
   return swipeTargetFor(dx);
+}
+/** 最后一条 MOVE 可能被合并：回弹也从真实 UP 位置起算。 */
+function finishSwipeMarker(dx) {
+  followSwipe(dx);
+  const marker = document.getElementById('navMarker');
+  if (!marker) return;
+  marker.getBoundingClientRect();
+  marker.classList.remove('dragging');
 }
 function endSwipe(allowCommit, endEvent) {
   const s = swipeState;
@@ -1622,6 +1648,7 @@ function endSwipe(allowCommit, endEvent) {
   if (!current) return;
   if (!s) { updateNavMarker(current); return; }
   const end = swipeFinalPoint(endEvent, s);
+  if (!end) { updateNavMarker(current); return; }
   const now = performance.now();
   const dx = end.x - s.x0;
   const dy = end.y - s.y0;
@@ -1634,17 +1661,20 @@ function endSwipe(allowCommit, endEvent) {
   if (!horizontal) swipeSuppressUntil = 0;
   const t = swipeCommitTarget(dx, dy, allowCommit);
   if (t && t.target !== t.idx && swipeShouldCommit(dx, swipeVelocity(s, now))) {
+    finishSwipeMarker(dx);
     activateTab(t.tabs[t.target].dataset.tab);
     return;
   }
   updateNavMarker(current);
 }
 function onSwipeEnd(e) {
-  if (!swipeState) return;
+  /* 另一指先抬起时继续跟踪原触点，不能把两指间距误当成横移。 */
+  if (!swipeState || !swipeFinalPoint(e, swipeState)) return;
   endSwipe(true, e);
 }
 function onSwipeCancel(e) {
   if (!swipeState) return;
+  if (e.touches.length && !swipeFinalPoint(e, swipeState)) return;
   endSwipe(false, e);
 }
 /** 只有触摸产生的 click 才继承上一条滑动的抑制；鼠标/键盘是独立激活。 */
@@ -1661,7 +1691,8 @@ function suppressClickAfterSwipe(e) {
   e.stopPropagation();
 }
 function initSwipe() {
-  if (typeof document === 'undefined') return;
+  /* 卡 071：浏览器保留系统横扫导航，应用切 Tab 仅点击；横滑只在原生壳接管。 */
+  if (typeof document === 'undefined' || !isNativeRuntime()) return;
   /* Touch Events + 全程 passive：纵向滚动交给浏览器（.tabpanel 的 touch-action:auto）。
    * 不做 preventDefault ⇒ 斜向拖/长按选择都不会被本手势掐死。 */
   document.addEventListener('touchstart', onSwipeStart, { passive: true });
