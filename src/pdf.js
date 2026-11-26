@@ -315,7 +315,11 @@ function isCodeLine(line, monoFonts) {
 /** 行对象（A3）：{ text, code }——行序与文本走同一条基线（groupRunsIntoLines + lineText）。
  * monoFonts 由调用方传入（F1：全篇统计），不再在本函数内按页统计。 */
 function pageLineObjects(runs, monoFonts) {
-  return groupRunsIntoLines(runs).map((line) => ({ text: lineText(line), code: isCodeLine(line, monoFonts) }));
+  return groupRunsIntoLines(runs).map((line) => renderPdfLine(line, monoFonts));
+}
+
+function renderPdfLine(line, monoFonts) {
+  return { text: lineText(line), code: isCodeLine(line, monoFonts) };
 }
 
 /** 行对象 → 页正文（A3）：连续代码行合并为一个 ``` 围栏块（语言标注留空），块前后各留一个空行；
