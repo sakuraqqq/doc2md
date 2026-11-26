@@ -106,6 +106,7 @@ async function convert(file /* File */) -> Promise<{
 - 契约：C6（GFM 表格结构断言，gfmTableIssues）+ keyTokens（`DOC2MD-DOCX-OK-2026` 等）——共享 htmlToMarkdown 的 TXT/HTML 回归由 text-html 契约用例保障。
 
 ### 4.3 pdf —— B线已实现 ✅（pdf.js 3.11.174 vendor 分文件 + tesseract OCR 降级）
+- 页面级版面重建对原始 TextItem 做水平占用投影；全文至少 60% 页满足分栏判据时，候选页在全宽块之间先读左栏再读右栏。跨页重复的页眉页脚按边带识别，版面无法确定时沿用原顺序并提示。
 - 文本层：`pdfjs-dist@3.11.174`（Apache-2.0，**legacy UMD** 同源分文件 `vendor/pdfjs.pdf.min.js`，全局 `pdfjsLib`）；
   worker 同源文件 `./vendor/pdfjs.pdf.worker.min.js` 赋 `GlobalWorkerOptions.workerSrc`（T9′，零外发；file:// 下 pdf.js 自动回退主线程 fake worker）。
 - 逐页门（审查报告 §2.3 逐页判断 + t27/t8 质量门槛）：页文本量 <10 字符 **或** 有效占比 <40% → 该页 OCR 降级；质量判类（t8）仅私用区（E000-F8FF/F0000-10FFFF）/替换符 FFFD/控制符记 garbage，字母/数字/符号/全角/emoji 等不误杀（纯符号文本层、西里尔/阿拉伯/泰文页不再误触发 OCR）；OCR = tesseract.js LSTM（见 §4.5 资源说明），逐页 render（scale 2）→ canvas → PNG → 识别。

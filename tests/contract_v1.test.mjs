@@ -8892,3 +8892,100 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
     await server.close();
   }
 });
+
+test('卡073 A1 同行跨栏间隙分段，单栏缩进与表格少数页保留旧顺序', async () => {
+  const { mergeRuns, detectColumns, readingOrder } = await import('../src/pdf-layout.js');
+  const run = (x, sy, str) => ({ x, sy, w: 45, fontSize: 10, str });
+  const single = Array.from({ length: 10 }, (_, i) => run(50 + (i === 1 ? 6 : 0), 700 - 20*i, 'body'));
+  const paired = single.flatMap((left) => [left, run(320, left.sy, 'right')]);
+  const columns = mergeRuns(paired);
+  assert.equal(columns.length, 20, '左右栏的同行文字必须分开');
+  const narrow = mergeRuns([run(50, 700, 'a'), run(120, 699, 'b')]);
+  assert.equal(narrow.length, 1, '间隙恰为 2.5 倍字号，仍在同一行');
+  const toItems = (runs) => runs.map(({ x, w }) => ({ x0: x, x1: x + w }));
+  assert.equal(detectColumns(toItems(single), 600).kind, 'single');
+  const decisions = [single, paired, single].map((runs) => detectColumns(toItems(runs), 600));
+  assert.equal(decisions[1].kind, 'double');
+  assert.equal(readingOrder([mergeRuns(single), columns, mergeRuns(single)], decisions).lineIdsByPage[1], null);
+});
+
+test('卡073 PDF 版面 A1–A4、A6 公开入口', async (t) => {
+  const server = await startServer(ROOT);
+  let browser;
+  try {
+    browser = await launchBrowser(await loadPlaywright());
+    const page = await browser.newPage();
+    await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded' });
+    const convert = async (name) => {
+      const bytes = fs.readFileSync(nodePath.join(DATA, name));
+      assert.deepEqual(readManifest().files[name], {
+        bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
+      });
+      const result = await page.evaluate(async ({ name, b64 }) =>
+        window.__doc2md.convert(new File([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], name)),
+      { name, b64: bytes.toString('base64') });
+      assert.equal(result.error, undefined);
+      return result;
+    };
+    await t.test('A1/A2 全宽块切断左右栏，逐页按段落标签对照', async () => {
+      const { markdown } = await convert('sample-layout-double.pdf');
+      const expected = [];
+      for (const p of [1, 2]) {
+        expected.push('TITLE', 'ABSTRACT');
+        for (const first of [0, 20]) {
+          if (first) expected.push('TABLE');
+          for (const col of ['L', 'R']) {
+            for (let i = first; i < first + 20; i++) expected.push(`P${p}-${col}${i}`);
+          }
+        }
+      }
+      assert.deepEqual(markdown.match(/TITLE|ABSTRACT|TABLE|P\d+-[LR]\d+/g), expected);
+      assert.equal(markdown.split('\n').filter(line => /^(TITLE|ABSTRACT|TABLE) .*END$/.test(line)).length, 6);
+    });
+    await t.test('A3 重复带内行移除，正文首行保留', async () => {
+      const { markdown } = await convert('sample-layout-margins.pdf');
+      assert.doesNotMatch(markdown, /Journal|^\d+$/m);
+      for (const p of [1, 2]) assert.match(markdown, new RegExp(`P${p}-L0 body text`));
+    });
+    await t.test('A4 单栏与含表格旧产物的 UTF-8 字节锁；A6 不规则旧序及一次提示', async () => {
+      const hashes = {
+        'sample.pdf': '8161e5c51237f6a2e53fc4aa5520c2f1c0ced65b69ceee14d79266f8eb949cdb',
+        'sample-layout-single.pdf': '65ec490836e8ad0c60f44b94b8c46a65b29948df4c08181dd7bdaa5713ca722a',
+        'sample-layout-table.pdf': '5b7164e2313fbe6a28bbde6dfa1261d344bba923f1e2229e6a79e49964e4773a',
+        'sample-layout-irregular.pdf': 'a421f6930e766156fd491f4538a087640a40033832e1fd6c6a18233e0519e31b',
+      };
+      for (const [name, hash] of Object.entries(hashes)) {
+        const { markdown, meta } = await convert(name);
+        assert.equal(crypto.createHash('sha256').update(markdown).digest('hex'), hash, name);
+        if (name.includes('irregular')) {
+          assert.equal(meta.warnings.length, 1);
+          assert.match(meta.warnings[0], /版面/);
+        }
+      }
+    });
+  } finally {
+    try { await browser?.close(); } finally { await server.close(); }
+  }
+});
+
+test('卡073 原始 TextItem 投影边界、全篇投票与边带负例', async () => {
+  const { detectColumns, readingOrder, repeatedMargins } = await import('../src/pdf-layout.js');
+  const intervals = (n, x0, x1) => Array.from({ length: n }, () => ({ x0, x1 }));
+  const span = intervals(1, 10, 190);
+  const exact = [...intervals(14, 10, 95), ...intervals(5, 105, 190), ...span];
+  assert.deepEqual(detectColumns(exact, 200), { kind: 'double', gutter: 100 }, '5% 占用、10pt、25% 右侧均含等号');
+  assert.equal(detectColumns([...exact, ...span], 200).kind, 'single', '超过 5% 的带不合格');
+  assert.equal(detectColumns([...intervals(10, 10, 96), ...intervals(10, 105, 190)], 200).kind, 'single');
+  assert.equal(detectColumns([...intervals(16, 10, 95), ...intervals(4, 105, 190)], 200).kind, 'uncertain');
+  const multiple = [...intervals(19, 10, 65), ...intervals(21, 80, 105), ...intervals(20, 130, 190)];
+  assert.equal(detectColumns(multiple, 200).gutter, 117.5, '选择两侧较小计数最高的带');
+  const vote = ['double','single','double','single','double'].map(kind => ({ kind, gutter: 100 }));
+  assert.deepEqual(readingOrder(vote.map(() => []), vote).lineIdsByPage, [[],null,[],null,[]]);
+  const doc = [1, 2].map(p => ({ height: 100, lines: [
+    { id: 0, y: 92, text: 'Journal-' + p }, { id: 1, y: 8, text: String(p) },
+    { id: 2, y: 83, text: 'common first paragraph' }, { id: 3, y: 95, text: 'A'.repeat(80) },
+    { id: 4, y: 94, text: ['unique first','unique second'][p - 1] },
+    { id: 5, y: p === 1 ? 95 : 5, text: 'different edges' },
+  ] }));
+  assert.deepEqual(repeatedMargins(doc), [new Set([0, 1]), new Set([0, 1])]);
+});

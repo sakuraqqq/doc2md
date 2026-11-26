@@ -127,6 +127,26 @@
       "bytes": 870,
       "sha256": "efe20796a6a2126b5ed993973db5c4946f94c6e65e7d93d00e50384ba7c0ce95"
     },
+    "sample-layout-double.pdf": {
+      "bytes": 1991,
+      "sha256": "4b6c1b229e710749c938fe60f556911f882fc3a493c505ea2e2c54f68cdd523d"
+    },
+    "sample-layout-margins.pdf": {
+      "bytes": 2051,
+      "sha256": "0bbe551f309ad48c3661501bdb607a5dacd66ac8d70cccda6dfba57539fec16d"
+    },
+    "sample-layout-single.pdf": {
+      "bytes": 1476,
+      "sha256": "ab866abcef9ad7280cd3a9e4df74994896a4f8f5babb3b0181ded928638ba2a9"
+    },
+    "sample-layout-table.pdf": {
+      "bytes": 2215,
+      "sha256": "2d87478d5c5ceb43d924e16d4a3f921a6e65e9348b658273659b1de95b037b75"
+    },
+    "sample-layout-irregular.pdf": {
+      "bytes": 1591,
+      "sha256": "99b63ae00cca84d0ada630c7230b2b97c5cc3bf7210f518fd22740fc2718daa4"
+    },
     "sample-bmw-text.txt": {
       "bytes": 145,
       "sha256": "4e13a90d312f7e2f2d5fea5d402e7f7de8d536d90fda636612296cc59a4717d7"
