@@ -6195,12 +6195,14 @@ ${xlsxRowsToMd(kept)}`);
     });
     return decision;
   }
-  function readingOrder(pages, decisions) {
-    const enabled = decisions.filter((d) => d.kind === "double").length >= pages.length * 0.6;
+  var ENABLE_COLUMN_REORDER = false;
+  function readingOrder(pages, decisions, enabled = ENABLE_COLUMN_REORDER) {
+    if (!enabled) return { lineIdsByPage: pages.map(() => null), fallbackPages: [] };
+    const hasConsensus = decisions.filter((d) => d.kind === "double").length >= pages.length * 0.6;
     const fallbackPages = [];
     const lineIdsByPage = pages.map((lines, i) => {
       const { kind, gutter } = decisions[i];
-      if (!enabled || kind !== "double") {
+      if (!hasConsensus || kind !== "double") {
         if (kind !== "single") fallbackPages.push(i);
         return null;
       }
@@ -6570,7 +6572,7 @@ ${xlsxRowsToMd(kept)}`);
     const viewport = page.getViewport({ scale: 1 });
     const content = await page.getTextContent();
     const runs = content.items.filter((item) => item.str?.trim()).map((item) => layoutRun(item, viewport));
-    const decision = detectColumns(runs.map((r) => ({ x0: r.x, x1: r.x + r.w })), viewport.width);
+    const decision = ENABLE_COLUMN_REORDER ? detectColumns(runs.map((r) => ({ x0: r.x, x1: r.x + r.w })), viewport.width) : { kind: "single" };
     const usedRuns = decision.kind === "double" ? runs : runs.filter((r) => r.sy <= viewport.height * 0.08 || r.sy >= viewport.height * 0.92);
     const lines = mergeRuns(usedRuns).map(({ runs: parts, ...bounds }) => ({ ...bounds, ...renderPdfLine(parts, monoFonts) }));
     return { lines, decision, height: viewport.height };
@@ -6591,11 +6593,9 @@ ${xlsxRowsToMd(kept)}`);
   function applyPageLayout(layouts, pages, warnings) {
     const order = readingOrder(layouts.map((p) => p.lines), layouts.map((p) => p.decision));
     const margins = repeatedMargins(layouts);
-    const fallback = new Set(order.fallbackPages);
-    if (fallback.size) warnings.push("\u90E8\u5206\u9875\u9762\u7684\u7248\u9762\u65E0\u6CD5\u786E\u5B9A\uFF0C\u5DF2\u6CBF\u7528\u539F\u9605\u8BFB\u987A\u5E8F");
+    if (order.fallbackPages.length) warnings.push("\u90E8\u5206\u9875\u9762\u7684\u7248\u9762\u65E0\u6CD5\u786E\u5B9A\uFF0C\u5DF2\u6CBF\u7528\u539F\u9605\u8BFB\u987A\u5E8F");
     for (const entry of pages) {
       const i = entry.idx - 1;
-      if (fallback.has(i)) continue;
       const ids = order.lineIdsByPage[i], lines = layouts[i].lines;
       if (ids) entry.text = linesToMarkdown(ids.filter((id) => !margins[i].has(id)).map((id) => lines[id]));
       else if (margins[i].size) entry.text = stripMatchingMargins(entry.text, lines, margins[i]);

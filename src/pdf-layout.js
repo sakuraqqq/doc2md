@@ -66,13 +66,16 @@ export function detectColumns(items, pageWidth) {
   return decision;
 }
 
+export const ENABLE_COLUMN_REORDER = false;
+
 /** null 表示使用该页原有 Markdown；只有各页索引参与整篇投票。 */
-export function readingOrder(pages, decisions) {
-  const enabled = decisions.filter(d => d.kind === 'double').length >= pages.length * 0.6;
+export function readingOrder(pages, decisions, enabled = ENABLE_COLUMN_REORDER) {
+  if (!enabled) return { lineIdsByPage: pages.map(() => null), fallbackPages: [] };
+  const hasConsensus = decisions.filter(d => d.kind === 'double').length >= pages.length * 0.6;
   const fallbackPages = [];
   const lineIdsByPage = pages.map((lines, i) => {
     const { kind, gutter } = decisions[i];
-    if (!enabled || kind !== 'double') {
+    if (!hasConsensus || kind !== 'double') {
       if (kind !== 'single') fallbackPages.push(i);
       return null;
     }

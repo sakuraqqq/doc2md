@@ -15,7 +15,7 @@
 import BLINE from './bline.js';
 import { collapseCjkSpaces } from './cjk.js';
 import { getOcrWorker } from './ocr.js';
-import { detectColumns, mergeRuns, readingOrder, repeatedMargins } from './pdf-layout.js';
+import { ENABLE_COLUMN_REORDER, detectColumns, mergeRuns, readingOrder, repeatedMargins } from './pdf-layout.js';
 import { setStatus } from './ui.js';
 
 /* ---------- PDF 单页 OCR 降级（P1 二批，审查报告 §2.3：逐页判断，扫描页才 OCR；进度回填 #status） ---------- */
@@ -491,7 +491,9 @@ async function layoutPage(page, monoFonts) {
   const viewport = page.getViewport({ scale: 1 });
   const content = await page.getTextContent();
   const runs = content.items.filter(item => item.str?.trim()).map(item => layoutRun(item, viewport));
-  const decision = detectColumns(runs.map(r => ({ x0: r.x, x1: r.x + r.w })), viewport.width);
+  const decision = ENABLE_COLUMN_REORDER
+    ? detectColumns(runs.map(r => ({ x0: r.x, x1: r.x + r.w })), viewport.width)
+    : { kind: 'single' };
   const usedRuns = decision.kind === 'double' ? runs : runs.filter(r =>
     r.sy <= viewport.height * 0.08 || r.sy >= viewport.height * 0.92);
   const lines = mergeRuns(usedRuns).map(({ runs: parts, ...bounds }) =>
@@ -517,11 +519,9 @@ function stripMatchingMargins(text, lines, mask) {
 function applyPageLayout(layouts, pages, warnings) {
   const order = readingOrder(layouts.map(p => p.lines), layouts.map(p => p.decision));
   const margins = repeatedMargins(layouts);
-  const fallback = new Set(order.fallbackPages);
-  if (fallback.size) warnings.push('部分页面的版面无法确定，已沿用原阅读顺序');
+  if (order.fallbackPages.length) warnings.push('部分页面的版面无法确定，已沿用原阅读顺序');
   for (const entry of pages) {
     const i = entry.idx - 1;
-    if (fallback.has(i)) continue;
     const ids = order.lineIdsByPage[i], lines = layouts[i].lines;
     if (ids) entry.text = linesToMarkdown(ids.filter(id => !margins[i].has(id)).map(id => lines[id]));
     else if (margins[i].size) entry.text = stripMatchingMargins(entry.text, lines, margins[i]);

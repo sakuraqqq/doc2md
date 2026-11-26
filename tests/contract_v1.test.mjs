@@ -8893,7 +8893,7 @@ test('契约组 Z10：转换历史库（200 FIFO / 只记成功 / 只删记录 /
   }
 });
 
-test('卡073 A1 同行跨栏间隙分段，单栏缩进与表格少数页保留旧顺序', async () => {
+test('卡073 实验配置 A1 同行跨栏间隙分段，单栏缩进与表格少数页保留旧顺序', async () => {
   const { mergeRuns, detectColumns, readingOrder } = await import('../src/pdf-layout.js');
   const run = (x, sy, str) => ({ x, sy, w: 45, fontSize: 10, str });
   const single = Array.from({ length: 10 }, (_, i) => run(50 + (i === 1 ? 6 : 0), 700 - 20*i, 'body'));
@@ -8906,29 +8906,51 @@ test('卡073 A1 同行跨栏间隙分段，单栏缩进与表格少数页保留�
   assert.equal(detectColumns(toItems(single), 600).kind, 'single');
   const decisions = [single, paired, single].map((runs) => detectColumns(toItems(runs), 600));
   assert.equal(decisions[1].kind, 'double');
-  assert.equal(readingOrder([mergeRuns(single), columns, mergeRuns(single)], decisions).lineIdsByPage[1], null);
+  assert.equal(readingOrder([mergeRuns(single), columns, mergeRuns(single)], decisions, true).lineIdsByPage[1], null);
 });
 
-test('卡073 PDF 版面 A1–A4、A6 公开入口', async (t) => {
+test('卡073 PDF 默认转换与合成夹具实验', async (t) => {
   const server = await startServer(ROOT);
   let browser;
   try {
     browser = await launchBrowser(await loadPlaywright());
-    const page = await browser.newPage();
+    const page = await browser.newPage({ serviceWorkers: 'block' });
     await page.goto(server.base + '/index.html', { waitUntil: 'domcontentloaded' });
-    const convert = async (name) => {
+    // 仅实验用的 ES 模块图显式启用双栏；公开入口始终使用构建产物。
+    await page.route('**/src/pdf-layout.js', route => route.fulfill({
+      contentType: 'text/javascript',
+      body: `export * from './pdf-layout.js?original';
+        import { readingOrder as order } from './pdf-layout.js?original';
+        export const ENABLE_COLUMN_REORDER = true;
+        export const readingOrder = (pages, decisions) => order(pages, decisions, true);`,
+    }));
+    const convert = async (name, experimental = false) => {
       const bytes = fs.readFileSync(nodePath.join(DATA, name));
       assert.deepEqual(readManifest().files[name], {
         bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
       });
-      const result = await page.evaluate(async ({ name, b64 }) =>
-        window.__doc2md.convert(new File([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], name)),
-      { name, b64: bytes.toString('base64') });
+      const result = await page.evaluate(async ({ name, b64, experimental }) => {
+        const api = experimental ? await import('/src/convert.js') : window.__doc2md;
+        return api.convert(new File([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], name));
+      }, { name, b64: bytes.toString('base64'), experimental });
       assert.equal(result.error, undefined);
       return result;
     };
-    await t.test('A1/A2 全宽块切断左右栏，逐页按段落标签对照', async () => {
-      const { markdown } = await convert('sample-layout-double.pdf');
+    await t.test('默认关闭 B006：双栏沿用原序，不规则页不报版面 warning', async () => {
+      const double = await convert('sample-layout-double.pdf');
+      const legacyHash = 'af3191cddc1bac4a9971351d977c3803acc815a3913aaba48a434bc952a0641c';
+      assert.equal(crypto.createHash('sha256').update(double.markdown).digest('hex'), legacyHash);
+      assert.deepEqual(double.meta.warnings, []);
+      const irregular = await convert('sample-layout-irregular.pdf');
+      assert.deepEqual(irregular.meta.warnings, []);
+      const { ENABLE_COLUMN_REORDER, readingOrder } = await import('../src/pdf-layout.js');
+      assert.equal(ENABLE_COLUMN_REORDER, false);
+      assert.deepEqual(readingOrder([[], []], [{ kind: 'double' }, { kind: 'uncertain' }]), {
+        lineIdsByPage: [null, null], fallbackPages: [],
+      });
+    });
+    await t.test('实验 A1/A2 全宽块切断左右栏，逐页按段落标签对照', async () => {
+      const { markdown } = await convert('sample-layout-double.pdf', true);
       const expected = [];
       for (const p of [1, 2]) {
         expected.push('TITLE', 'ABSTRACT');
@@ -8947,7 +8969,7 @@ test('卡073 PDF 版面 A1–A4、A6 公开入口', async (t) => {
       assert.doesNotMatch(markdown, /Journal|^\d+$/m);
       for (const p of [1, 2]) assert.match(markdown, new RegExp(`P${p}-L0 body text`));
     });
-    await t.test('A4 单栏与含表格旧产物的 UTF-8 字节锁；A6 不规则旧序及一次提示', async () => {
+    await t.test('A4 单栏与含表格旧产物的 UTF-8 字节锁；实验 A6 不规则旧序及一次提示', async () => {
       const hashes = {
         'sample.pdf': '8161e5c51237f6a2e53fc4aa5520c2f1c0ced65b69ceee14d79266f8eb949cdb',
         'sample-layout-single.pdf': '65ec490836e8ad0c60f44b94b8c46a65b29948df4c08181dd7bdaa5713ca722a',
@@ -8955,7 +8977,7 @@ test('卡073 PDF 版面 A1–A4、A6 公开入口', async (t) => {
         'sample-layout-irregular.pdf': 'a421f6930e766156fd491f4538a087640a40033832e1fd6c6a18233e0519e31b',
       };
       for (const [name, hash] of Object.entries(hashes)) {
-        const { markdown, meta } = await convert(name);
+        const { markdown, meta } = await convert(name, name.includes('irregular'));
         assert.equal(crypto.createHash('sha256').update(markdown).digest('hex'), hash, name);
         if (name.includes('irregular')) {
           assert.equal(meta.warnings.length, 1);
@@ -8980,7 +9002,7 @@ test('卡073 原始 TextItem 投影边界、全篇投票与边带负例', async 
   const multiple = [...intervals(19, 10, 65), ...intervals(21, 80, 105), ...intervals(20, 130, 190)];
   assert.equal(detectColumns(multiple, 200).gutter, 117.5, '选择两侧较小计数最高的带');
   const vote = ['double','single','double','single','double'].map(kind => ({ kind, gutter: 100 }));
-  assert.deepEqual(readingOrder(vote.map(() => []), vote).lineIdsByPage, [[],null,[],null,[]]);
+  assert.deepEqual(readingOrder(vote.map(() => []), vote, true).lineIdsByPage, [[],null,[],null,[]]);
   const doc = [1, 2].map(p => ({ height: 100, lines: [
     { id: 0, y: 92, text: 'Journal-' + p }, { id: 1, y: 8, text: String(p) },
     { id: 2, y: 83, text: 'common first paragraph' }, { id: 3, y: 95, text: 'A'.repeat(80) },
