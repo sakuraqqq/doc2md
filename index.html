@@ -223,10 +223,15 @@
   .row-chev { color: var(--muted); font-size: 18px; line-height: 1; }
   .row-link { cursor: pointer; }
   .row-link:hover { background: var(--icon-bg); }
-  .switch { width: 46px; height: 28px; border-radius: 999px; background: var(--icon-bg); border: 1px solid var(--border); position: relative; flex: 0 0 auto; }
-  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--muted); }
-  .switch[aria-checked="true"] { background: rgba(79,140,255,.25); border-color: var(--primary); }
-  .switch[aria-checked="true"]::after { left: 21px; background: var(--primary); }
+  /* 44px 命中区；28px 轨道由 ::before 画，视觉尺寸不变 */
+  .switch { width: 48px; height: 44px; border: 0; border-radius: 999px; background: transparent; position: relative; flex: 0 0 auto; }
+  .switch::before { content: ""; position: absolute; left: 0; top: 8px; width: 48px; height: 28px; border-radius: 999px;
+    background: var(--icon-bg); box-shadow: inset 0 0 0 1px var(--border); transition: background var(--dur-fast) var(--ease-standard); }
+  .switch::after { content: ""; position: absolute; top: 11px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--muted); transition: left var(--dur-fast) var(--ease-standard); }
+  .switch[aria-checked="true"] { background: transparent; }
+  .switch[aria-checked="true"]::before { background: rgba(79,140,255,.25); box-shadow: inset 0 0 0 1px var(--primary); }
+  .switch[aria-checked="true"]::after { left: 23px; background: var(--primary); }
   .seg { display: flex; gap: 6px; flex-wrap: wrap; }
   .seg-btn { flex: 1 1 0; min-height: 40px; padding: 8px 10px; font: inherit; font-size: 13.5px; cursor: pointer;
     border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink); }
@@ -424,7 +429,7 @@
   .results-selectbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 8px; color: var(--muted); font-size: 12.5px; }
   .results-selectall { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .results-selectall input, .row-select { width: 20px; height: 20px; accent-color: var(--primary); flex: 0 0 auto; }
-  .linkbtn { border: 0; background: transparent; color: var(--primary); font: inherit; font-size: 12.5px; cursor: pointer; padding: 6px; }
+  .linkbtn { border: 0; background: transparent; color: var(--primary); font: inherit; font-size: 12.5px; cursor: pointer; padding: 6px; min-width: 44px; min-height: 44px; }
   /* 结果列表：整块半透明底 → 卡片与 gap 落在同一层遮罩上，滚动时星图不再一闪一闪 */
   .results-nomatch { margin: 10px 2px 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
   .results-list {
@@ -490,16 +495,16 @@
   }
 
   /* 卡 060 / 2-5：文件页（App 转换历史库） */
-  .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; background: transparent; color: var(--ink); border-radius: 10px; padding: 0; }
+  .iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; background: transparent; color: var(--ink); border-radius: 10px; padding: 0; }
   .iconbtn svg { width: 20px; height: 20px; }
   .iconbtn[aria-expanded="true"] { background: var(--icon-bg); color: var(--primary); }
-  .files-search { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; margin: 0; padding: 0 4px 0 12px; height: 40px; border: 1px solid var(--border); border-radius: 999px; background: var(--icon-bg); }
+  .files-search { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; margin: -1px 0; padding: 0 2px 0 12px; height: 46px; border: 1px solid var(--border); border-radius: 999px; background: var(--icon-bg); }
 /* 卡 060 / A8/A16：app bar 搜索态 —— 标题 / 间隔 / 标签 / 图标让位给输入框（v8 原型口径） */
 .appbar.searching h1, .appbar.searching .grow, .appbar.searching .tag, .appbar.searching #filesSearchBtn { display: none; }
   .files-search svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; color: var(--muted); flex: 0 0 auto; }
-  .files-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--ink); font: inherit; padding: 2px 0; }
+  .files-search input { flex: 1 1 auto; min-width: 0; height: 44px; border: 0; background: transparent; color: var(--ink); font: inherit; padding: 2px 0; }
   .files-search input:focus { outline: none; }
-  .files-search-clear { border: 0; background: var(--icon-bg); color: var(--muted); width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto; }
+  .files-search-clear { border: 0; background: var(--icon-bg); color: var(--muted); width: 44px; height: 44px; border-radius: 50%; flex: 0 0 auto; }
   .files-search-count { flex: 0 0 auto; font-size: 12px; color: var(--muted); background: var(--icon-bg); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
   .files-list { display: flex; flex-direction: column; gap: 8px; }
   .file-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 88px; padding: 12px 8px 12px 14px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: var(--hero-shadow); }
@@ -515,7 +520,7 @@
   .file-share { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border); background: var(--icon-bg); color: var(--ink); font-size: 15px; }
   .file-share[disabled] { opacity: .45; }
   .file-share:active { background: var(--surface); }
-  .row-action { border: 1px solid var(--border); background: var(--icon-bg); color: var(--ink); border-radius: 9px; padding: 6px 10px; font-size: 13px; }
+  .row-action { min-height: 44px; border: 1px solid var(--border); background: var(--icon-bg); color: var(--ink); border-radius: 9px; padding: 6px 10px; font-size: 13px; }
   .row-action[aria-disabled="true"] { opacity: .45; }
   .switch { padding: 0; }
   .switch[aria-disabled="true"] { opacity: .45; }
@@ -857,7 +862,7 @@
   .result-row .card-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px;
     grid-template-areas: "check name menu" "check meta menu"; grid-column: 1 / -1; align-items: start;
     gap: 1px 4px; padding: 0; border: 0; background: transparent; }
-  .result-row .row-select { grid-area: check; align-self: center; justify-self: center; width: 20px; height: 20px; margin: 0; }
+  .result-row .row-select { grid-area: check; align-self: center; justify-self: center; width: 44px; height: 44px; margin: 0; }
   .result-row .name { grid-area: name; font-size: 14px; font-weight: 550; line-height: 1.45;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     white-space: normal; overflow-wrap: anywhere; }
@@ -869,7 +874,7 @@
   .result-row-sub { min-height: 24px; gap: 8px; font-size: 12px; }
   .result-row-sub .ok { color: var(--success); }
   .result-row-sub .err { color: var(--warm-ink); white-space: nowrap; }
-  .row-preview { color: var(--primary); font-size: 12px; padding: 4px 2px; min-height: 28px; }
+  .row-preview { color: var(--primary); font-size: 12px; padding: 4px 2px; min-height: 44px; }
   .result-row .warnings { margin: 2px 0; }
   .result-row.failed .row-error { color: var(--warm-ink); }
   .result-row.failed { background: color-mix(in srgb, var(--result-surface) 72%, transparent); }
@@ -917,11 +922,14 @@
     -webkit-backdrop-filter: blur(12px) saturate(115%); backdrop-filter: blur(12px) saturate(115%); }
   [data-theme="light"] .navbar { background: #ffffffe0; border-color: #c8d6e5;
     box-shadow: 0 3px 10px #223d6210, inset 0 1px 0 #ffffff; }
+  /* 卡 070 · R3：拖拽期胶囊朝目标 Tab 跟手，松手/点击走 280ms 轻微过冲（easeOutBack 族，
+   * 峰值 ≈10%，卡面 5–15%）。 */
   .nav-marker { position: absolute; z-index: 0; top: 9px; left: 0; width: 0; height: 44px; border-radius: 999px;
     background: var(--icon-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent);
-    transition: transform 280ms cubic-bezier(.2, .9, .2, 1), width 180ms; pointer-events: none; }
+    transition: transform 280ms cubic-bezier(.3, 1.45, .3, 1), width 180ms var(--ease-standard); pointer-events: none; }
+  .nav-marker.dragging, .nav-marker.instant { transition: none; }
   [data-theme="light"] .nav-marker { background: #e0eaf7; box-shadow: inset 0 0 0 1px #adc4e34d; }
-  .navitem { z-index: 1; flex-direction: row; gap: 7px; height: 44px; min-height: 44px; padding: 0 6px; font-size: 12px; }
+  .navitem { z-index: 1; flex-direction: row; gap: 7px; height: 44px; min-height: 44px; padding: 0 6px; font-size: 12px; border-radius: 18px; }
   .navitem .nav-pill { width: 22px; height: 24px; border-radius: 0; background: transparent; }
   .navitem[aria-selected="true"] .nav-pill { background: transparent; }
   .navitem .nav-label { font-size: 12px; letter-spacing: 0; }
@@ -970,6 +978,21 @@
     .navitem .nav-label { font-size: 11px; }
     html[data-theme] .file-row { padding: 7px; }
   }
+
+  /* 卡 070 · R2：方向先交给浏览器判定；JS 只在明确横向（≥24px）时 preventDefault 接管。
+   * ⛔ 不写 pan-y：它会把横向滚动容器（结果里的宽表）一起锁死，也会让斜向拖无法回落到纵滚。 */
+  .content, .tabpanel { touch-action: auto; }
+
+  /* 卡 070 · R4：按下涟漪（JS 生成 span；WAAPI 负责缩放，⛔ 不进 CSS keyframes） */
+  .ripple { position: absolute; border-radius: 50%; background: currentColor; opacity: .3;
+    pointer-events: none; will-change: transform, opacity; }
+
+  /* 卡 070 · R5：列表错峰入场（只动 opacity；相邻 30ms、封顶 150ms，整批 ≤400ms）。
+   * 延迟/时长由 JS 按本批起点逐行算（内联 animation-delay/duration），CSS 只给默认值。 */
+  @keyframes rowIn { from { opacity: 0; } to { opacity: 1; } }
+  /* ⚠️ fill=backwards（不是 both）+ JS 动画结束即摘类：opacity 动画会建包含块/层叠上下文，
+   *    残留会把行菜单的 z-index 锁在行内 ⇒ 菜单被固定 CTA（z=9）盖住（Z4 实测）。 */
+  .row-enter { animation: rowIn 240ms cubic-bezier(.2, 0, 0, 1) backwards; }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
@@ -4065,6 +4088,8 @@ ${xlsxRowsToMd(kept)}`);
     updateResultsChrome();
   }
   function initResultsControls() {
+    fileInput.addEventListener("change", beginResultBatch, true);
+    if (typeof window !== "undefined") window.addEventListener("drop", beginResultBatch, true);
     selectAllEl.addEventListener("change", () => toggleAllVisible(selectAllEl.checked));
     selectAllBtn.addEventListener("click", () => {
       const visible = resultRows.filter((r) => r.success && !r.el.hidden);
@@ -4573,6 +4598,64 @@ ${xlsxRowsToMd(kept)}`);
       openMarkdownViewer({ fileName: row.file.name, text: row.text }, card);
     });
   }
+  var ROW_ENTER_MS = 240;
+  var ROW_STAGGER_MS = 30;
+  var ROW_STAGGER_CAP = 150;
+  var ROW_ENTER_BUDGET_MS = 380;
+  var resultEnterByFile = /* @__PURE__ */ new WeakMap();
+  function makeResultEnterBatch(count) {
+    return { start: performance.now(), budget: ROW_ENTER_BUDGET_MS, count, rows: [] };
+  }
+  function beginResultBatch(e) {
+    const list = e.type === "drop" ? e.dataTransfer && e.dataTransfer.files : fileInput.files;
+    const files = Array.from(list || []);
+    const batch = makeResultEnterBatch(files.length);
+    files.forEach((file, index) => resultEnterByFile.set(file, { index, batch }));
+  }
+  function nextResultEnter(file) {
+    const enter = resultEnterByFile.get(file);
+    resultEnterByFile.delete(file);
+    return enter || { index: 0, batch: makeResultEnterBatch(1) };
+  }
+  function syncResultEnterClock(rows) {
+    const start = performance.now();
+    for (const row of rows) {
+      for (const animation of row.el.getAnimations()) {
+        if (animation.animationName === "rowIn") animation.startTime = start;
+      }
+    }
+  }
+  function queueResultEnter(el, enter) {
+    const { batch, index } = enter;
+    batch.rows.push({ el, index });
+    if (batch.rows.length < batch.count) return;
+    const fragment = document.createDocumentFragment();
+    for (const row of batch.rows) {
+      markRowEnter(row.el, row.index, batch);
+      fragment.appendChild(row.el);
+    }
+    resultsEl.appendChild(fragment);
+    syncResultEnterClock(batch.rows);
+    batch.rows.length = 0;
+  }
+  function markRowEnter(el, index, batch) {
+    if (prefersReducedMotion()) return;
+    const elapsed = performance.now() - batch.start;
+    const delay = Math.max(0, Math.min(index * ROW_STAGGER_MS, ROW_STAGGER_CAP) - elapsed);
+    const remaining = batch.budget - elapsed - delay;
+    if (remaining < 60) return;
+    const duration = Math.min(ROW_ENTER_MS, remaining);
+    el.classList.add("row-enter");
+    el.style.animationDelay = delay + "ms";
+    el.style.animationDuration = duration + "ms";
+    const done = () => {
+      el.classList.remove("row-enter");
+      el.style.removeProperty("animation-delay");
+      el.style.removeProperty("animation-duration");
+    };
+    el.addEventListener("animationend", done, { once: true });
+    setTimeout(done, delay + duration + 200);
+  }
   function createResultRow(file, result) {
     const success = !result.error;
     let text = "";
@@ -4599,7 +4682,8 @@ ${xlsxRowsToMd(kept)}`);
     row.checkbox.addEventListener("click", (e) => e.stopPropagation());
     row.checkbox.addEventListener("change", () => setRowSelected(row, row.checkbox.checked));
     resultRows.push(row);
-    resultsEl.appendChild(card);
+    const enter = nextResultEnter(file);
+    queueResultEnter(card, enter);
     return row;
   }
   function diagConvert(result) {
@@ -4621,14 +4705,20 @@ ${xlsxRowsToMd(kept)}`);
     const id = tab.getAttribute("aria-controls");
     return id ? document.getElementById(id) : null;
   }
-  function updateNavMarker(target) {
+  function updateNavMarker(target, instant = false) {
     const marker = document.getElementById("navMarker");
     if (!navEl || !marker || !target) return;
     const bar = navEl.getBoundingClientRect();
     const tab = target.getBoundingClientRect();
     if (!bar.width || !tab.width) return;
+    const left = tab.left - bar.left + 2;
+    if (instant) {
+      marker.classList.add("instant");
+      marker.getBoundingClientRect();
+    }
     marker.style.width = tab.width - 4 + "px";
-    marker.style.transform = "translateX(" + (tab.left - bar.left + 2) + "px)";
+    marker.style.transform = "translateX(" + left + "px)";
+    if (instant) requestAnimationFrame(() => marker.classList.remove("instant"));
   }
   var PANEL_LEAVE_KEYS = ["position", "top", "right", "bottom", "left", "width", "height", "display", "overflow", "margin", "zIndex", "transform", "opacity"];
   function clearPanelOverride(panel) {
@@ -4739,14 +4829,14 @@ ${xlsxRowsToMd(kept)}`);
     }
     return { toEnter, toLeave };
   }
-  function syncTabButtons(target) {
+  function syncTabButtons(target, opts = {}) {
     const reduce = prefersReducedMotion();
     const targetPanel = panelOf(target);
     const { toEnter, toLeave } = collectTabPanels(target);
     const home = targetPanel && targetPanel.classList.contains("active") && !targetPanel.hidden && !targetPanel.classList.contains("leaving") && toLeave.length === 0;
     for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
     if (!home) for (const panel of toEnter) enterPanel(panel, reduce, remainingLeaveDelay(reduce));
-    updateNavMarker(target);
+    updateNavMarker(target, Boolean(opts.instantMarker));
   }
   function afterTabChange(active) {
     if (active === "files") refreshFilesPanel().catch(() => {
@@ -4754,11 +4844,11 @@ ${xlsxRowsToMd(kept)}`);
     else toggleFilesSearch(false);
     paintSearchButton(filesEls());
   }
-  function activateTab(name) {
+  function activateTab(name, opts = {}) {
     const tabs = tabButtons();
     if (!tabs.length) return null;
     const target = tabs.find((t) => t.dataset.tab === name) || tabs[0];
-    syncTabButtons(target);
+    syncTabButtons(target, opts);
     const active = target.dataset.tab || null;
     activeTabName = active;
     document.body.dataset.tab = active || "convert";
@@ -4782,6 +4872,18 @@ ${xlsxRowsToMd(kept)}`);
   function nativeThemePlugin() {
     const p = nativePluginObject();
     return p && typeof p.getSystemTheme === "function" ? p : null;
+  }
+  function nativeSystemBarsPlugin() {
+    const cap = typeof window === "undefined" ? null : window.Capacitor;
+    const p = cap && cap.Plugins && cap.Plugins.SystemBars;
+    return p && typeof p.setStyle === "function" ? p : null;
+  }
+  function syncSystemBars(resolvedTheme) {
+    const plugin = nativeSystemBarsPlugin();
+    if (!plugin) return;
+    const style = resolvedTheme === "light" ? "LIGHT" : "DARK";
+    Promise.resolve(plugin.setStyle({ style, bar: "StatusBar" })).catch(() => {
+    });
   }
   async function refreshNativeTheme() {
     const my = ++nativeThemeSeq;
@@ -4810,7 +4912,9 @@ ${xlsxRowsToMd(kept)}`);
   }
   function applyTheme(choice, persist2) {
     themeChoice = THEME_CHOICES.includes(choice) ? choice : "system";
-    document.documentElement.dataset.theme = resolveTheme(themeChoice);
+    const resolved = resolveTheme(themeChoice);
+    document.documentElement.dataset.theme = resolved;
+    syncSystemBars(resolved);
     paintThemeButtons();
     if (persist2) {
       try {
@@ -4856,6 +4960,331 @@ ${xlsxRowsToMd(kept)}`);
       window.addEventListener("resize", syncMarker);
     }
   }
+  var SWIPE_LOCK_PX = 10;
+  var SWIPE_RELOCK_PX = 24;
+  var SWIPE_AXIS_RATIO = 1.2;
+  var SWIPE_COMMIT_RATIO = 0.3;
+  var SWIPE_FLICK_V = 0.35;
+  var SWIPE_VELOCITY_MS = 100;
+  var SWIPE_SAMPLE_KEEP_MS = 120;
+  var SWIPE_CLICK_GUARD_MS = 400;
+  var swipeState = null;
+  var swipeSuppressUntil = 0;
+  function activeTabButton() {
+    return tabButtons().find((t) => t.getAttribute("aria-selected") === "true") || null;
+  }
+  function hasHorizontalScroller(target) {
+    let el = target;
+    while (el && el !== document.body && el !== document.documentElement) {
+      if (el.scrollWidth > el.clientWidth + 2) {
+        const ox = getComputedStyle(el).overflowX;
+        if (ox === "auto" || ox === "scroll") return true;
+      }
+      el = el.parentElement;
+    }
+    return false;
+  }
+  function swipeBlocked(target) {
+    if (!target || typeof target.closest !== "function") return true;
+    if (!mdViewer || !mdViewer.hidden) return true;
+    const searchPage = document.getElementById("searchPage");
+    if (searchPage && !searchPage.hidden) return true;
+    if (target.closest('input, textarea, select, [contenteditable="true"], .md-viewer, .search-page, .dialog, .row-menu, .navbar')) return true;
+    if (document.querySelector(".dialog:not([hidden])")) return true;
+    return hasHorizontalScroller(target);
+  }
+  function markerRectOf(tab) {
+    const bar = navEl.getBoundingClientRect();
+    const r = tab.getBoundingClientRect();
+    return { left: r.left - bar.left + 2, width: r.width - 4 };
+  }
+  function swipeTargetFor(dx) {
+    const tabs = tabButtons();
+    const current = activeTabButton();
+    const idx = tabs.indexOf(current);
+    if (idx < 0) return null;
+    const dir = dx < 0 ? 1 : -1;
+    const target = Math.max(0, Math.min(tabs.length - 1, idx + dir));
+    return { tabs, current, idx, target, dir };
+  }
+  function followSwipe(dx) {
+    const marker = document.getElementById("navMarker");
+    const t = swipeTargetFor(dx);
+    if (!marker || !t || !navEl) return;
+    const from = markerRectOf(t.current);
+    const to = markerRectOf(t.tabs[t.target]);
+    const edge = t.target === t.idx;
+    const raw = Math.abs(dx) / (window.innerWidth * 0.4);
+    const p = raw <= 1 ? raw * 1.08 : Math.min(1.15, 1.08 + (raw - 1) * 0.35);
+    const k = edge ? Math.min(0.25, p * 0.25) : p;
+    marker.classList.add("dragging");
+    marker.style.width = from.width + (to.width - from.width) * k + "px";
+    marker.style.transform = "translateX(" + (from.left + (to.left - from.left) * k) + "px)";
+  }
+  function onSwipeStart(e) {
+    swipeSuppressUntil = 0;
+    if (e.touches.length !== 1) return;
+    if (swipeBlocked(e.target)) return;
+    const t = e.touches[0];
+    swipeState = {
+      id: t.identifier,
+      x0: t.clientX,
+      y0: t.clientY,
+      x: t.clientX,
+      y: t.clientY,
+      axis: "none",
+      dx: 0,
+      dy: 0,
+      samples: [{ t: performance.now(), x: t.clientX }],
+      scrollY0: window.scrollY,
+      manualDy: 0,
+      startedHorizontal: false
+    };
+  }
+  function isHorizontalSwipe(ax, ay) {
+    return ax >= SWIPE_LOCK_PX && ax > ay * SWIPE_AXIS_RATIO;
+  }
+  function isVerticalSwipe(ax, ay) {
+    return ay >= 12 && ay > ax * SWIPE_AXIS_RATIO;
+  }
+  function swipeAxisFor(s, dx, dy) {
+    const ax = Math.abs(dx);
+    const ay = Math.abs(dy);
+    if (s.axis === "h") return ay >= 18 && ay > ax ? "v" : "h";
+    if (s.axis === "v") return ax >= SWIPE_RELOCK_PX && ax > ay * SWIPE_AXIS_RATIO ? "h" : "v";
+    if (isHorizontalSwipe(ax, ay)) return "h";
+    if (isVerticalSwipe(ax, ay)) return "v";
+    return s.axis;
+  }
+  function swipeManualScroll(s, dy) {
+    if (!s.startedHorizontal || Math.abs(dy) < 24) return;
+    const expected = s.scrollY0 - s.manualDy;
+    if (Math.abs(window.scrollY - expected) > 2) {
+      s.startedHorizontal = false;
+      return;
+    }
+    const delta = -dy - -s.manualDy;
+    if (delta) window.scrollBy(0, delta);
+    s.manualDy = dy;
+  }
+  function trackSwipe(s, x) {
+    const now = performance.now();
+    s.x = x;
+    s.samples.push({ t: now, x });
+    while (s.samples.length && now - s.samples[0].t > SWIPE_SAMPLE_KEEP_MS) s.samples.shift();
+  }
+  function swipeVelocity(s, now) {
+    const recent = s.samples.filter((p) => now - p.t <= SWIPE_VELOCITY_MS);
+    if (recent.length < 2) return 0;
+    const first = recent[0];
+    const last = recent[recent.length - 1];
+    const dt = last.t - first.t;
+    return dt > 0 ? (last.x - first.x) / dt : 0;
+  }
+  function stopFollowSwipe() {
+    const marker = document.getElementById("navMarker");
+    if (!marker || !marker.classList.contains("dragging")) return;
+    marker.classList.remove("dragging");
+    const current = activeTabButton();
+    if (current) updateNavMarker(current);
+  }
+  function onSwipeMove(e) {
+    const s = swipeState;
+    if (!s) return;
+    const t = [...e.touches].find((x) => x.identifier === s.id);
+    if (!t) return;
+    const dx = t.clientX - s.x0;
+    const dy = t.clientY - s.y0;
+    s.dx = dx;
+    s.dy = dy;
+    const axis = swipeAxisFor(s, dx, dy);
+    if (axis === "h") s.startedHorizontal = true;
+    if (axis !== s.axis && axis !== "h") stopFollowSwipe();
+    s.axis = axis;
+    if (axis !== "h") {
+      swipeManualScroll(s, dy);
+      return;
+    }
+    trackSwipe(s, t.clientX);
+    if (Math.abs(dx) > 12) swipeSuppressUntil = performance.now() + SWIPE_CLICK_GUARD_MS;
+    followSwipe(dx);
+  }
+  function swipeShouldCommit(dx, v) {
+    const dist = Math.abs(dx);
+    return dist > window.innerWidth * SWIPE_COMMIT_RATIO || Math.abs(v) > SWIPE_FLICK_V && dist > 20;
+  }
+  function swipeFinalPoint(e, s) {
+    const touches = e && e.changedTouches ? [...e.changedTouches] : [];
+    const t = touches.find((point) => point.identifier === s.id);
+    return t ? { x: t.clientX, y: t.clientY } : null;
+  }
+  function swipeCommitTarget(dx, dy, allowCommit) {
+    if (!allowCommit) return null;
+    if (Math.abs(dx) < SWIPE_LOCK_PX || Math.abs(dx) <= Math.abs(dy) * 1.1) return null;
+    return swipeTargetFor(dx);
+  }
+  function finishSwipeMarker(dx) {
+    followSwipe(dx);
+    const marker = document.getElementById("navMarker");
+    if (!marker) return;
+    marker.getBoundingClientRect();
+    marker.classList.remove("dragging");
+  }
+  function endSwipe(allowCommit, endEvent) {
+    const s = swipeState;
+    swipeState = null;
+    const marker = document.getElementById("navMarker");
+    if (marker) marker.classList.remove("dragging");
+    const current = activeTabButton();
+    if (!current) return;
+    if (!s) {
+      updateNavMarker(current);
+      return;
+    }
+    const end = swipeFinalPoint(endEvent, s);
+    if (!end) {
+      updateNavMarker(current);
+      return;
+    }
+    const now = performance.now();
+    const dx = end.x - s.x0;
+    const dy = end.y - s.y0;
+    s.dx = dx;
+    s.dy = dy;
+    s.x = end.x;
+    s.samples.push({ t: now, x: end.x });
+    const horizontal = Math.abs(dx) >= SWIPE_LOCK_PX && Math.abs(dx) > Math.abs(dy) * 1.1;
+    if (!horizontal) swipeSuppressUntil = 0;
+    const t = swipeCommitTarget(dx, dy, allowCommit);
+    if (t && t.target !== t.idx && swipeShouldCommit(dx, swipeVelocity(s, now))) {
+      finishSwipeMarker(dx);
+      activateTab(t.tabs[t.target].dataset.tab);
+      return;
+    }
+    updateNavMarker(current);
+  }
+  function onSwipeEnd(e) {
+    if (!swipeState || !swipeFinalPoint(e, swipeState)) return;
+    endSwipe(true, e);
+  }
+  function onSwipeCancel(e) {
+    if (!swipeState) return;
+    if (e.touches.length && !swipeFinalPoint(e, swipeState)) return;
+    endSwipe(false, e);
+  }
+  function isTouchGeneratedClick(e) {
+    if (e.pointerType) return e.pointerType === "touch";
+    return Boolean(e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents);
+  }
+  function suppressClickAfterSwipe(e) {
+    if (!swipeSuppressUntil || !e.isTrusted) return;
+    if (performance.now() > swipeSuppressUntil) {
+      swipeSuppressUntil = 0;
+      return;
+    }
+    if (!isTouchGeneratedClick(e)) {
+      swipeSuppressUntil = 0;
+      return;
+    }
+    swipeSuppressUntil = 0;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  function initSwipe() {
+    if (typeof document === "undefined" || !isNativeRuntime()) return;
+    document.addEventListener("touchstart", onSwipeStart, { passive: true });
+    document.addEventListener("touchmove", onSwipeMove, { passive: true });
+    document.addEventListener("touchend", onSwipeEnd);
+    document.addEventListener("touchcancel", onSwipeCancel);
+    document.addEventListener("click", suppressClickAfterSwipe, true);
+    document.addEventListener("pointerdown", (ev) => {
+      if (ev.pointerType !== "touch") swipeSuppressUntil = 0;
+    }, { passive: true });
+    document.addEventListener("keydown", () => {
+      swipeSuppressUntil = 0;
+    }, true);
+  }
+  var RIPPLE_DURATION = 320;
+  var rippleHosts = /* @__PURE__ */ new WeakMap();
+  var rippleFinishers = /* @__PURE__ */ new Set();
+  function beginRippleHost(target) {
+    const held = rippleHosts.get(target);
+    if (held) {
+      held.count += 1;
+      return;
+    }
+    rippleHosts.set(target, { count: 1, position: target.style.position, overflow: target.style.overflow });
+    if (getComputedStyle(target).position === "static") target.style.position = "relative";
+    target.style.overflow = "hidden";
+  }
+  function endRippleHost(target) {
+    const held = rippleHosts.get(target);
+    if (!held) return;
+    held.count -= 1;
+    if (held.count > 0) return;
+    target.style.position = held.position;
+    target.style.overflow = held.overflow;
+    rippleHosts.delete(target);
+  }
+  function spawnRipple(target, e) {
+    const rect = target.getBoundingClientRect();
+    if (!rect.width || !rect.height || typeof target.appendChild !== "function") return;
+    const size = Math.max(rect.width, rect.height) * 2;
+    const span = document.createElement("span");
+    span.className = "ripple";
+    span.style.width = size + "px";
+    span.style.height = size + "px";
+    span.style.left = e.clientX - rect.left - size / 2 + "px";
+    span.style.top = e.clientY - rect.top - size / 2 + "px";
+    beginRippleHost(target);
+    target.appendChild(span);
+    let cleaned = false;
+    const done = () => {
+      if (cleaned) return;
+      cleaned = true;
+      rippleFinishers.delete(done);
+      span.remove();
+      endRippleHost(target);
+    };
+    rippleFinishers.add(done);
+    if (typeof span.animate !== "function") {
+      done();
+      return;
+    }
+    const scale = span.animate([{ transform: "scale(0)" }, { transform: "scale(1)" }], { duration: RIPPLE_DURATION, easing: "cubic-bezier(.2, .7, .2, 1)" });
+    const fade = span.animate([{ opacity: 0.3 }, { opacity: 0.3, offset: 0.35 }, { opacity: 0 }], { duration: RIPPLE_DURATION, easing: "linear" });
+    scale.onfinish = done;
+    fade.onfinish = done;
+    scale.oncancel = done;
+    fade.oncancel = done;
+    setTimeout(done, RIPPLE_DURATION + 200);
+  }
+  function finishRipplesNow() {
+    for (const done of [...rippleFinishers]) done();
+  }
+  function onRipplePointerDown(e) {
+    if (prefersReducedMotion()) return;
+    const target = e.target && e.target.closest ? e.target.closest(".btn, .pick-btn, .iconbtn, .file-row, .md-viewer-more, [data-ripple]") : null;
+    if (!target || target.disabled) return;
+    spawnRipple(target, e);
+  }
+  function watchRippleReducedMotion() {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = () => {
+      if (mq.matches) finishRipplesNow();
+    };
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", onChange);
+      return;
+    }
+    if (typeof mq.addListener === "function") mq.addListener(onChange);
+  }
+  function initRipple() {
+    if (typeof document === "undefined") return;
+    document.addEventListener("pointerdown", onRipplePointerDown, { passive: true });
+    watchRippleReducedMotion();
+  }
   function reapplySystemTheme() {
     if (themeChoice !== "system") return;
     const my = ++themeSeq;
@@ -4887,6 +5316,8 @@ ${xlsxRowsToMd(kept)}`);
     }
     const plugin = nativeThemePlugin();
     if (plugin && typeof plugin.addListener === "function") plugin.addListener("systemThemeChanged", onNativeThemeChanged);
+    document.addEventListener("deviceready", () => syncSystemBars(resolveTheme(themeChoice)));
+    syncSystemBars(resolveTheme(themeChoice));
     reapplySystemTheme();
   }
   function prefersReducedMotion() {
@@ -5225,6 +5656,13 @@ ${xlsxRowsToMd(kept)}`);
     row.append(makeShareButton(rec, invalid, supported));
     return row;
   }
+  var filesAnimatedIds = /* @__PURE__ */ new Set();
+  function staggerFilesIfNeeded(rows, batch) {
+    const fresh = rows.filter((row) => !filesAnimatedIds.has(row.dataset.id));
+    if (activeTabName !== "files" || !fresh.length) return;
+    for (const row of fresh) filesAnimatedIds.add(row.dataset.id);
+    fresh.forEach((row, i) => markRowEnter(row, i, batch));
+  }
   function renderFilesPanel(state2) {
     const el = filesEls();
     if (!el.panel) return;
@@ -5232,9 +5670,16 @@ ${xlsxRowsToMd(kept)}`);
     const shown = filesQuery.trim() ? search(filesQuery) : all;
     const supported = Boolean(state2.support && state2.support.supported);
     if (el.list) el.list.innerHTML = "";
+    const rows = [];
+    const enterBatch = { start: performance.now(), budget: ROW_ENTER_BUDGET_MS };
     if (el.list && shown.length) {
-      for (const rec of shown) el.list.append(renderRecordRow(rec, supported));
+      for (const rec of shown) {
+        const row = renderRecordRow(rec, supported);
+        rows.push(row);
+        el.list.append(row);
+      }
     }
+    staggerFilesIfNeeded(rows, enterBatch);
     paintChrome(state2, shown.length, all.length);
     paintEmptyStates(state2, shown.length, all.length);
   }
@@ -5587,6 +6032,8 @@ ${xlsxRowsToMd(kept)}`);
   }
   function initShell() {
     initTabs();
+    initSwipe();
+    initRipple();
     initTheme();
     initMarkdownViewer();
     initResultsControls();
@@ -5601,7 +6048,7 @@ ${xlsxRowsToMd(kept)}`);
       });
     }
     applyTheme(storedTheme(), false);
-    activateTab("convert");
+    activateTab("convert", { instantMarker: true });
   }
   initShell();
 

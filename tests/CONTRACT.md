@@ -1386,6 +1386,29 @@ npm run gen:samples           # 重新生成样例（确定性）
 - **Y4 负对照做法（写死，供 Linux 侧复跑）**：`git checkout ed183ab -- src index.html`（= 本批前的实现与产物）⇒ 复跑组 Y：**Y2 必红**（无 `meta.scan`）· **Y3 必红**（55–99 s）· **大档 Y1 也会红**（回库路径 ⇒ 变回旧库路径字节，正好反证「重冻后的基线 = 快路径产物」）；随后 `git checkout HEAD -- src index.html` **完整还原**并复跑确认回到本节基线与 `0 fail`。
 - ⚠️ **本组在 CI 上整体跳过**（夹具不入库）⇒ **不要用 CI 绿灯推断 Y2/Y3 已达标**；判定必须在**有夹具的机器**上跑。两个口径（2026-09-20 卡 007 后）：**本机带夹具 = `297 / 295 pass / 0 fail / 2 skip`** vs **CI 干净检出 = `294 / 291 / 0 / 3`**（见 `docs/BASELINE.json`）。
 
+### 契约组 UI-B — 卡 070 行为门禁（2026-11-22 用户指令补；行为级，不只看 DOM 几何）
+
+> 背景：卡 070 对抗复验发现「五项数值门禁全过，但手势/动效/触控有可复现违约」；移除实现后全量 413 仍绿（复验 guard-mutation 实测）。本组把用户可见行为锁成断言，并配红例。
+> 实现：`tests/ui-behavior.test.mjs`；红例：`tests/ui-behavior.redcheck.mjs`（当前产物 14/14 绿；`7079933:index.html` 复跑 UI-B1…UI-B10 必红；第二轮候选 `2348c8c:index.html` 精确复现 UI-B1/B3/B4/B8 四条新覆盖。UI-B11…UI-B13 为预防性守卫）。
+> **契约数唯一登记 = `docs/BASELINE.json`**（本组补入后本机 427/425/0/2；CI 口径按固定映射 424/421/0/3，待 CI 对账）。
+
+| 编号 | 断言 | 标准 | 当前 |
+|---|---|---|---|
+| UI-B1 | R2 方向锁：原负例（横移 16→纵移 290）+ 近对角（150×166）+ 独立 UP 坐标（最后 MOVE 横位、UP 已回起点附近） | 原负例/近对角 active=settings、scrollY>100、0 个 prevented；独立 UP 后 active=convert | 🟢 绿（7079933 红；2348c8c 红：近对角 scroll=0 / UP 误切） |
+| UI-B2 | R2 停住 950ms 后松手：不得按停住前的旧速度切页 | active 仍为 convert | 🟢 绿（旧产物红：files） |
+| UI-B3 | R2 跨输入：横滑后分别用触摸 / 鼠标 / Enter 激活设置，点击不得被吞 | 三种输入均 click trusted、prevented=false、active=settings | 🟢 绿（2348c8c 红：鼠标/Enter click 被 preventDefault） |
+| UI-B4 | R3 胶囊 5–15% 过冲 + 280ms 过渡：点击 / 短滑 / 长滑 210px | 曲线 y 峰值 5–15%、duration=0.28s、三种实测过冲 >0 且 ≤15%；长滑按住时必须越过目标 | 🟢 绿（7079933 红；2348c8c 红：长滑 peak=end） |
+| UI-B5 | DD-21 90/210 fade-through 可见 | 切换当帧旧层 opacity>0.9、新层<0.5；旧层最低<0.2 后隐藏；新层落定≈1 | 🟢 绿（旧产物红：当帧旧层=0） |
+| UI-B6 | R4 涟漪覆盖 CTA / Tab / 预览⋯，时长 200–400ms，结束后内联样式还原 | 按下各 1 条、时长∈[200,400]、结束后 0 条且 overflow/position 为空 | 🟢 绿（旧产物红：Tab/预览⋯无涟漪） |
+| UI-B7 | R4 连按两条涟漪后宿主样式还原；运行中开 reduced-motion 立即收掉 | 结束后 0 条、overflow/position 为空；emulateMedia 后 80ms 内 0 条 | 🟢 绿（旧产物红：连按后 overflow=hidden 残留；运行中降级不生效） |
+| UI-B8 | R5 结果列表 100 条转换记录整批 ≤400ms + 两批独立（间隔 450ms） | 100 条 animationstart/end；首帧→末帧 ≤400ms；相邻 ≤50ms；第二批 4/4 有自己的入场类/开始/结束 | 🟢 绿（2348c8c 红：第二批 0 行入场） |
+| UI-B9 | R5 文件行首次进入有错峰，按记录 id 只播一次 | 首次 4 行全部入场且整批 ≤400ms；再次进页不重播 | 🟢 绿（旧产物红：首进 0 行入场） |
+| UI-B10 | R6 三视口 × 双主题：触控 ≥44、无横向溢出、字号 ≥11 | 每个状态的 `small=[]`、scrollWidth≤clientWidth、minText≥11 | 🟢 绿（旧产物红：深色开关 46×28 等） |
+| UI-B11 | R1 状态栏桥桩双向：浅色发 LIGHT、深色发 DARK | 同一主题下所有 setStyle 读数一致 | 🟢 绿（预防性守卫；旧产物也满足） |
+| UI-B12 | R6 reduced-motion 下 R3/R4/R5 全瞬时 | 胶囊 transition=1e-05s、无涟漪、结果/文件行无 row-enter | 🟢 绿（预防性守卫） |
+| UI-B13 | R2 手势范围：搜索框文本选择不被劫持；预览层内纵滚可用、横滑不切页 | 选择 [6,19] 保持；viewerY>100；active 仍 convert | 🟢 绿（预防性守卫） |
+
+**红例实测（2026-11-22）**：`node tests/ui-behavior.redcheck.mjs` → 当前产物 **14/14 绿**；`7079933:index.html` → **UI-B1…UI-B10 全红**（11 fail 含组壳）；`2348c8c:index.html` → **精确 UI-B1/B3/B4/B8 红、其余 10 绿**（第二轮报告的 D1/D2/D3/D4/D5 全被抓住）。证据 `.私档/卡/070/返修/ui-behavior-redcheck-r3.log`。这一组证明「把实现删回旧版/退回上一轮候选，门禁会红」，不是只测 DOM 的假绿。
 ## 8. 精确输出快照清单（契约组 D/E；2026-09-05 契约先红 t1 登记）
 
 > **快照 = 规格**：下列期望输出与 `tests/contract_v1.test.mjs` 的断言一一对应（D/E 组逐字符/逐字段相等）；

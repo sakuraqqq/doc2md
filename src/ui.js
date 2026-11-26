@@ -500,6 +500,8 @@ export function renderBatchSave() {
   updateResultsChrome();
 }
 function initResultsControls() {
+  fileInput.addEventListener('change', beginResultBatch, true);
+  if (typeof window !== 'undefined') window.addEventListener('drop', beginResultBatch, true);
   selectAllEl.addEventListener('change', () => toggleAllVisible(selectAllEl.checked));
   selectAllBtn.addEventListener('click', () => {
     const visible = resultRows.filter((r) => r.success && !r.el.hidden);
@@ -1047,6 +1049,73 @@ function wireSuccessRow(row, card, head) {
     openMarkdownViewer({ fileName: row.file.name, text: row.text }, card);
   });
 }
+/* ── 卡 070 · R5：列表错峰入场 ─────────────────────────────────────────────
+ * 相邻 30ms、封顶 150ms；每行延迟按「本批起点」折算，整批最晚 400ms 收尾。
+ * 只给新行加类（按 id 去重）；文件行按记录 id 只播一次，再次进页不重播（防卡片闪）。 */
+const ROW_ENTER_MS = 240;
+const ROW_STAGGER_MS = 30;
+const ROW_STAGGER_CAP = 150;
+/* 卡面整批 ≤400ms；预算留 20ms 给插入/首帧调度，实测「首行插入→末行结束」也能压进 400 */
+const ROW_ENTER_BUDGET_MS = 380;
+const resultEnterByFile = new WeakMap();
+function makeResultEnterBatch(count) {
+  return { start: performance.now(), budget: ROW_ENTER_BUDGET_MS, count, rows: [] };
+}
+/** 在入口快照 File 身份：异步结果交错时仍使用各自批次的起点与行序号。 */
+function beginResultBatch(e) {
+  const list = e.type === 'drop' ? e.dataTransfer && e.dataTransfer.files : fileInput.files;
+  const files = Array.from(list || []);
+  const batch = makeResultEnterBatch(files.length);
+  files.forEach((file, index) => resultEnterByFile.set(file, { index, batch }));
+}
+function nextResultEnter(file) {
+  const enter = resultEnterByFile.get(file);
+  resultEnterByFile.delete(file);
+  return enter || { index: 0, batch: makeResultEnterBatch(1) };
+}
+/** 冲刷样式并共用同一时间原点，避免 CSS 等到后续绘制才开始计时。 */
+function syncResultEnterClock(rows) {
+  const start = performance.now();
+  for (const row of rows) {
+    for (const animation of row.el.getAnimations()) {
+      if (animation.animationName === 'rowIn') animation.startTime = start;
+    }
+  }
+}
+/** 本批行备齐再一同起播，转换耗时不能撑大相邻行的动画间隔。 */
+function queueResultEnter(el, enter) {
+  const { batch, index } = enter;
+  batch.rows.push({ el, index });
+  if (batch.rows.length < batch.count) return;
+  const fragment = document.createDocumentFragment();
+  for (const row of batch.rows) {
+    markRowEnter(row.el, row.index, batch);
+    fragment.appendChild(row.el);
+  }
+  resultsEl.appendChild(fragment);
+  syncResultEnterClock(batch.rows);
+  batch.rows.length = 0;
+}
+function markRowEnter(el, index, batch) {
+  if (prefersReducedMotion()) return;
+  const elapsed = performance.now() - batch.start;
+  const delay = Math.max(0, Math.min(index * ROW_STAGGER_MS, ROW_STAGGER_CAP) - elapsed);
+  const remaining = batch.budget - elapsed - delay;
+  /* 本批剩余窗口不够一帧可感知的动画：直接出现，不把尾巴拖过整批上限 */
+  if (remaining < 60) return;
+  const duration = Math.min(ROW_ENTER_MS, remaining);
+  el.classList.add('row-enter');
+  el.style.animationDelay = delay + 'ms';
+  el.style.animationDuration = duration + 'ms';
+  /* 动画结束即摘类：opacity 动画的残留会让行成为层叠上下文，把行菜单压在固定 CTA 之下 */
+  const done = () => {
+    el.classList.remove('row-enter');
+    el.style.removeProperty('animation-delay');
+    el.style.removeProperty('animation-duration');
+  };
+  el.addEventListener('animationend', done, { once: true });
+  setTimeout(done, delay + duration + 200);
+}
 function createResultRow(file, result) {
   const success = !result.error;
   let text = '';
@@ -1073,7 +1142,8 @@ function createResultRow(file, result) {
   row.checkbox.addEventListener('click', (e) => e.stopPropagation());
   row.checkbox.addEventListener('change', () => setRowSelected(row, row.checkbox.checked));
   resultRows.push(row);
-  resultsEl.appendChild(card);
+  const enter = nextResultEnter(file);
+  queueResultEnter(card, enter);
   return row;
 }
 /** 记一条转换结果：只记类型/成败/耗时 —— ⛔ 不记文件名（隐私） */
@@ -1107,15 +1177,22 @@ function panelOf(tab) {
   const id = tab.getAttribute('aria-controls');
   return id ? document.getElementById(id) : null;
 }
-/** 卡 068 · A5：单枚胶囊横移 —— 宽度与位移按当前 Tab 实测（不依赖固定等分） */
-function updateNavMarker(target) {
+/** 卡 068 · A5：单枚胶囊横移 —— 宽度与位移按当前 Tab 实测（不依赖固定等分）。
+ *  卡 070 · R3：拖拽期由 swipe 代码直接写 transform（.dragging 关过渡）。 */
+function updateNavMarker(target, instant = false) {
   const marker = document.getElementById('navMarker');
   if (!navEl || !marker || !target) return;
   const bar = navEl.getBoundingClientRect();
   const tab = target.getBoundingClientRect();
   if (!bar.width || !tab.width) return;
+  const left = tab.left - bar.left + 2;
+  if (instant) {
+    marker.classList.add('instant');
+    marker.getBoundingClientRect(); // 冲刷样式：本帧就落在新位置，不播过渡
+  }
   marker.style.width = (tab.width - 4) + 'px';
-  marker.style.transform = 'translateX(' + (tab.left - bar.left + 2) + 'px)';
+  marker.style.transform = 'translateX(' + left + 'px)';
+  if (instant) requestAnimationFrame(() => marker.classList.remove('instant'));
 }
 /** 退场层的内联锁定字段（切回时要清干净，避免污染下一次布局） */
 const PANEL_LEAVE_KEYS = ['position', 'top', 'right', 'bottom', 'left', 'width', 'height', 'display', 'overflow', 'margin', 'zIndex', 'transform', 'opacity'];
@@ -1140,13 +1217,12 @@ function finishLeave(panel) {
   clearPanelOverride(panel);
   panel.style.opacity = '';
 }
-/** 卡 068 · A5（2026-11-19 按 Material fade-through 改）：
- *  旧页淡出 90ms → 新页淡入 210ms，**两页不重叠**（Material 对底部导航的标准做法）。
- *  起因：交叉淡入会让两页文字同时半透明（叠影被用户判成闪烁）；fade through 用一瞬背景换掉叠影。
+/** Material fade-through（DD-21）：旧页 90ms 淡出，新页等旧页退场后再 210ms 淡入。
+ *  退场层只留 fixed 几何，动画只动透明度。
  *  ⚠️ 不缩放整块面板：面板里 `#dropzone` 是 fixed，transform 会把它变成相对面板定位而跳位。 */
 const ENTER_MS = 210;
 const LEAVE_MS = 90;
-/** 每次退场的结束时刻；中断时新面板按剩余退场时间入场，避免多等一个完整 90ms 出现空档。 */
+/** 每次退场的结束时刻；快切时新面板只等剩余退场时间，避免多等一个完整 90ms 出现空档。 */
 const leaveDeadline = new WeakMap();
 function enterPanel(panel, reduce, delay = 0) {
   const wasVisible = !panel.hidden && !panel.classList.contains('leaving');
@@ -1246,7 +1322,7 @@ function collectTabPanels(target) {
  *   结束后新面板 210ms 入场；减少动态效果时即时切换。
  *   退场层只是视觉副本 —— 不拦截点击（pointer-events:none）。
  *   ⚠️ 必须**先快照/退场、后入场**，否则新面板插入上方会推动旧面板的 rect。 */
-function syncTabButtons(target) {
+function syncTabButtons(target, opts = {}) {
   const reduce = prefersReducedMotion();
   const targetPanel = panelOf(target);
   const { toEnter, toLeave } = collectTabPanels(target);
@@ -1255,7 +1331,7 @@ function syncTabButtons(target) {
     !targetPanel.classList.contains('leaving') && toLeave.length === 0;
   for (const { panel, snap } of toLeave) leavePanel(panel, reduce, snap);
   if (!home) for (const panel of toEnter) enterPanel(panel, reduce, remainingLeaveDelay(reduce));
-  updateNavMarker(target);
+  updateNavMarker(target, Boolean(opts.instantMarker));
 }
 
 /** 卡 060：进「文件」页才刷新历史（读盘 + 核验 uri）；离开时退出搜索并清关键词（A8）。 */
@@ -1267,11 +1343,11 @@ function afterTabChange(active) {
 }
 
 /** 切到某个 Tab */
-export function activateTab(name) {
+export function activateTab(name, opts = {}) {
   const tabs = tabButtons();
   if (!tabs.length) return null;
   const target = tabs.find((t) => t.dataset.tab === name) || tabs[0];
-  syncTabButtons(target);
+  syncTabButtons(target, opts);
   const active = target.dataset.tab || null;
   activeTabName = active;
   /* 星图（fixed 背景层）只在「转换」显示：body[data-tab] 供 CSS 判断（卡 065 真机反馈） */
@@ -1297,6 +1373,20 @@ let themeSeq = 0;
 function nativeThemePlugin() {
   const p = nativePluginObject();
   return p && typeof p.getSystemTheme === 'function' ? p : null;
+}
+/** 卡 070 · R1：Capacitor 8 的 SystemBars（核心插件）—— 状态栏图标明暗跟随主题。
+ *  ⚠️ 命名反直觉：SystemBarsStyle.Light = 浅底深图标；Dark = 深底浅图标（原生映射见 SystemBars.java）。
+ *  桥不可用（浏览器 / 老 APK）时静默跳过：Web 端没有状态栏。 */
+function nativeSystemBarsPlugin() {
+  const cap = typeof window === 'undefined' ? null : window.Capacitor;
+  const p = cap && cap.Plugins && cap.Plugins.SystemBars;
+  return p && typeof p.setStyle === 'function' ? p : null;
+}
+function syncSystemBars(resolvedTheme) {
+  const plugin = nativeSystemBarsPlugin();
+  if (!plugin) return;
+  const style = resolvedTheme === 'light' ? 'LIGHT' : 'DARK';
+  Promise.resolve(plugin.setStyle({ style: style, bar: 'StatusBar' })).catch(() => { });
 }
 async function refreshNativeTheme() {
   const my = ++nativeThemeSeq;
@@ -1327,7 +1417,9 @@ function paintThemeButtons() {
 /** 应用主题。choice ∈ system|light|dark；persist=true 时写入 localStorage。 */
 export function applyTheme(choice, persist) {
   themeChoice = THEME_CHOICES.includes(choice) ? choice : 'system';
-  document.documentElement.dataset.theme = resolveTheme(themeChoice);
+  const resolved = resolveTheme(themeChoice);
+  document.documentElement.dataset.theme = resolved;
+  syncSystemBars(resolved);
   paintThemeButtons();
   if (persist) {
     try { localStorage.setItem(THEME_KEY, themeChoice); } catch { /* 隐私模式下忽略 */ }
@@ -1370,6 +1462,327 @@ function initTabs() {
     window.addEventListener('resize', syncMarker);
   }
 }
+/* ── 卡 070 · R2：左右滑动切 Tab ─────────────────────────────────────────────
+ * 成熟做法（Swiper / ViewPager2 / WebKit bug 203335）：方向锁不因一次纵向抖动就放弃；
+ * 横向锁定后胶囊**朝目标 Tab** 跟手（与 content offset 同向，⛔ 不是 1:1 跟手指 ——
+ * 后者会先反向再回弹，真机实测被判成 bug）。松手判定 = 距离 >30% 宽 或快速轻扫。
+ * 排除：输入框/文本域、预览层、搜索页、对话框、行菜单、导航栏本身、横向滚动容器。 */
+const SWIPE_LOCK_PX = 10;
+const SWIPE_RELOCK_PX = 24;
+const SWIPE_AXIS_RATIO = 1.2;
+const SWIPE_COMMIT_RATIO = 0.3;
+const SWIPE_FLICK_V = 0.35;
+const SWIPE_VELOCITY_MS = 100;
+const SWIPE_SAMPLE_KEEP_MS = 120;
+const SWIPE_CLICK_GUARD_MS = 400;
+let swipeState = null;
+let swipeSuppressUntil = 0;
+function activeTabButton() {
+  return tabButtons().find((t) => t.getAttribute('aria-selected') === 'true') || null;
+}
+function hasHorizontalScroller(target) {
+  let el = target;
+  while (el && el !== document.body && el !== document.documentElement) {
+    if (el.scrollWidth > el.clientWidth + 2) {
+      const ox = getComputedStyle(el).overflowX;
+      if (ox === 'auto' || ox === 'scroll') return true;
+    }
+    el = el.parentElement;
+  }
+  return false;
+}
+function swipeBlocked(target) {
+  if (!target || typeof target.closest !== 'function') return true;
+  if (!mdViewer || !mdViewer.hidden) return true;
+  const searchPage = document.getElementById('searchPage');
+  if (searchPage && !searchPage.hidden) return true;
+  if (target.closest('input, textarea, select, [contenteditable="true"], .md-viewer, .search-page, .dialog, .row-menu, .navbar')) return true;
+  if (document.querySelector('.dialog:not([hidden])')) return true;
+  return hasHorizontalScroller(target);
+}
+function markerRectOf(tab) {
+  const bar = navEl.getBoundingClientRect();
+  const r = tab.getBoundingClientRect();
+  return { left: r.left - bar.left + 2, width: r.width - 4 };
+}
+function swipeTargetFor(dx) {
+  const tabs = tabButtons();
+  const current = activeTabButton();
+  const idx = tabs.indexOf(current);
+  if (idx < 0) return null;
+  const dir = dx < 0 ? 1 : -1;
+  const target = Math.max(0, Math.min(tabs.length - 1, idx + dir));
+  return { tabs, current, idx, target, dir };
+}
+function followSwipe(dx) {
+  const marker = document.getElementById('navMarker');
+  const t = swipeTargetFor(dx);
+  if (!marker || !t || !navEl) return;
+  const from = markerRectOf(t.current);
+  const to = markerRectOf(t.tabs[t.target]);
+  const edge = t.target === t.idx;
+  /* 40% 视口宽时预留 8% 回弹；两段连续，继续拖按 0.35 阻尼、封顶 15%。
+   * 边界点也越过目标，避免按住时恰好落定、松手后零过冲。 */
+  const raw = Math.abs(dx) / (window.innerWidth * 0.4);
+  const p = raw <= 1 ? raw * 1.08 : Math.min(1.15, 1.08 + (raw - 1) * 0.35);
+  const k = edge ? Math.min(0.25, p * 0.25) : p;
+  marker.classList.add('dragging');
+  marker.style.width = (from.width + (to.width - from.width) * k) + 'px';
+  marker.style.transform = 'translateX(' + (from.left + (to.left - from.left) * k) + 'px)';
+}
+function onSwipeStart(e) {
+  /* 新手势 ⇒ 上一条滑动的点击抑制立即失效：滑完立刻点 Tab 不能被吞 */
+  swipeSuppressUntil = 0;
+  if (e.touches.length !== 1) return;
+  if (swipeBlocked(e.target)) return;
+  const t = e.touches[0];
+  swipeState = {
+    id: t.identifier, x0: t.clientX, y0: t.clientY, x: t.clientX, y: t.clientY,
+    axis: 'none', dx: 0, dy: 0, samples: [{ t: performance.now(), x: t.clientX }],
+    scrollY0: window.scrollY, manualDy: 0, startedHorizontal: false,
+  };
+}
+function isHorizontalSwipe(ax, ay) {
+  return ax >= SWIPE_LOCK_PX && ax > ay * SWIPE_AXIS_RATIO;
+}
+function isVerticalSwipe(ax, ay) {
+  return ay >= 12 && ay > ax * SWIPE_AXIS_RATIO;
+}
+/** 每次 touchmove 重算轴向：横向锁定不是一次性置位；纵向占优立即让位给原生滚动。 */
+function swipeAxisFor(s, dx, dy) {
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  if (s.axis === 'h') return ay >= 18 && ay > ax ? 'v' : 'h';
+  if (s.axis === 'v') return ax >= SWIPE_RELOCK_PX && ax > ay * SWIPE_AXIS_RATIO ? 'h' : 'v';
+  if (isHorizontalSwipe(ax, ay)) return 'h';
+  if (isVerticalSwipe(ax, ay)) return 'v';
+  return s.axis;
+}
+/* 浏览器对「先横后纵」有方向锁：passive 监听无法让它把手势交回纵滚。
+ * 仅在本手势曾横向锁定、随后明确转纵、且原生还没滚时，按未消费的 dy 补滚。 */
+function swipeManualScroll(s, dy) {
+  if (!s.startedHorizontal || Math.abs(dy) < 24) return;
+  const expected = s.scrollY0 - s.manualDy;
+  if (Math.abs(window.scrollY - expected) > 2) {
+    s.startedHorizontal = false;
+    return;
+  }
+  const delta = -dy - -s.manualDy;
+  if (delta) window.scrollBy(0, delta);
+  s.manualDy = dy;
+}
+function trackSwipe(s, x) {
+  const now = performance.now();
+  s.x = x;
+  s.samples.push({ t: now, x });
+  while (s.samples.length && now - s.samples[0].t > SWIPE_SAMPLE_KEEP_MS) s.samples.shift();
+}
+/** 松手速度只用最近 100ms 的采样；手指停住后按 0 算（AndroidX VelocityTracker 同窗口）。 */
+function swipeVelocity(s, now) {
+  const recent = s.samples.filter((p) => now - p.t <= SWIPE_VELOCITY_MS);
+  if (recent.length < 2) return 0;
+  const first = recent[0];
+  const last = recent[recent.length - 1];
+  const dt = last.t - first.t;
+  return dt > 0 ? (last.x - first.x) / dt : 0;
+}
+/** 横向让位给纵向时立即收起胶囊跟手，原生滚动继续。 */
+function stopFollowSwipe() {
+  const marker = document.getElementById('navMarker');
+  if (!marker || !marker.classList.contains('dragging')) return;
+  marker.classList.remove('dragging');
+  const current = activeTabButton();
+  if (current) updateNavMarker(current);
+}
+function onSwipeMove(e) {
+  const s = swipeState;
+  if (!s) return;
+  const t = [...e.touches].find((x) => x.identifier === s.id);
+  if (!t) return;
+  const dx = t.clientX - s.x0;
+  const dy = t.clientY - s.y0;
+  s.dx = dx;
+  s.dy = dy;
+  const axis = swipeAxisFor(s, dx, dy);
+  if (axis === 'h') s.startedHorizontal = true;
+  if (axis !== s.axis && axis !== 'h') stopFollowSwipe();
+  s.axis = axis;
+  if (axis !== 'h') {
+    swipeManualScroll(s, dy);
+    return;
+  }
+  /* 不 preventDefault：touch-action:auto 交给浏览器；斜向转纵时原生滚动不被本手势掐死。 */
+  trackSwipe(s, t.clientX);
+  if (Math.abs(dx) > 12) swipeSuppressUntil = performance.now() + SWIPE_CLICK_GUARD_MS;
+  followSwipe(dx);
+}
+function swipeShouldCommit(dx, v) {
+  const dist = Math.abs(dx);
+  return dist > window.innerWidth * SWIPE_COMMIT_RATIO || (Math.abs(v) > SWIPE_FLICK_V && dist > 20);
+}
+/** 松手用**结束事件**的坐标，不用最后一条 MOVE；近对角转向按最终比例重判。 */
+function swipeFinalPoint(e, s) {
+  const touches = e && e.changedTouches ? [...e.changedTouches] : [];
+  const t = touches.find((point) => point.identifier === s.id);
+  return t ? { x: t.clientX, y: t.clientY } : null;
+}
+function swipeCommitTarget(dx, dy, allowCommit) {
+  if (!allowCommit) return null;
+  if (Math.abs(dx) < SWIPE_LOCK_PX || Math.abs(dx) <= Math.abs(dy) * 1.1) return null;
+  return swipeTargetFor(dx);
+}
+/** 最后一条 MOVE 可能被合并：回弹也从真实 UP 位置起算。 */
+function finishSwipeMarker(dx) {
+  followSwipe(dx);
+  const marker = document.getElementById('navMarker');
+  if (!marker) return;
+  marker.getBoundingClientRect();
+  marker.classList.remove('dragging');
+}
+function endSwipe(allowCommit, endEvent) {
+  const s = swipeState;
+  swipeState = null;
+  const marker = document.getElementById('navMarker');
+  if (marker) marker.classList.remove('dragging');
+  const current = activeTabButton();
+  if (!current) return;
+  if (!s) { updateNavMarker(current); return; }
+  const end = swipeFinalPoint(endEvent, s);
+  if (!end) { updateNavMarker(current); return; }
+  const now = performance.now();
+  const dx = end.x - s.x0;
+  const dy = end.y - s.y0;
+  s.dx = dx;
+  s.dy = dy;
+  s.x = end.x;
+  s.samples.push({ t: now, x: end.x });
+  /* 松手判定用**结束事件**的当前位移/速度；停住 950ms 后旧速度不再算数 */
+  const horizontal = Math.abs(dx) >= SWIPE_LOCK_PX && Math.abs(dx) > Math.abs(dy) * 1.1;
+  if (!horizontal) swipeSuppressUntil = 0;
+  const t = swipeCommitTarget(dx, dy, allowCommit);
+  if (t && t.target !== t.idx && swipeShouldCommit(dx, swipeVelocity(s, now))) {
+    finishSwipeMarker(dx);
+    activateTab(t.tabs[t.target].dataset.tab);
+    return;
+  }
+  updateNavMarker(current);
+}
+function onSwipeEnd(e) {
+  /* 另一指先抬起时继续跟踪原触点，不能把两指间距误当成横移。 */
+  if (!swipeState || !swipeFinalPoint(e, swipeState)) return;
+  endSwipe(true, e);
+}
+function onSwipeCancel(e) {
+  if (!swipeState) return;
+  if (e.touches.length && !swipeFinalPoint(e, swipeState)) return;
+  endSwipe(false, e);
+}
+/** 只有触摸产生的 click 才继承上一条滑动的抑制；鼠标/键盘是独立激活。 */
+function isTouchGeneratedClick(e) {
+  if (e.pointerType) return e.pointerType === 'touch';
+  return Boolean(e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents);
+}
+function suppressClickAfterSwipe(e) {
+  if (!swipeSuppressUntil || !e.isTrusted) return;
+  if (performance.now() > swipeSuppressUntil) { swipeSuppressUntil = 0; return; }
+  if (!isTouchGeneratedClick(e)) { swipeSuppressUntil = 0; return; }
+  swipeSuppressUntil = 0;
+  e.preventDefault();
+  e.stopPropagation();
+}
+function initSwipe() {
+  /* 卡 071：浏览器保留系统横扫导航，应用切 Tab 仅点击；横滑只在原生壳接管。 */
+  if (typeof document === 'undefined' || !isNativeRuntime()) return;
+  /* Touch Events + 全程 passive：纵向滚动交给浏览器（.tabpanel 的 touch-action:auto）。
+   * 不做 preventDefault ⇒ 斜向拖/长按选择都不会被本手势掐死。 */
+  document.addEventListener('touchstart', onSwipeStart, { passive: true });
+  document.addEventListener('touchmove', onSwipeMove, { passive: true });
+  document.addEventListener('touchend', onSwipeEnd);
+  document.addEventListener('touchcancel', onSwipeCancel);
+  document.addEventListener('click', suppressClickAfterSwipe, true);
+  /* 非触摸的新输入不继承上一条触摸滑动的点击抑制 */
+  document.addEventListener('pointerdown', (ev) => { if (ev.pointerType !== 'touch') swipeSuppressUntil = 0; }, { passive: true });
+  document.addEventListener('keydown', () => { swipeSuppressUntil = 0; }, true);
+}
+
+/* ── 卡 070 · R4：按下涟漪（WAAPI，不阻塞点击；reduced-motion 全关） ───────── */
+const RIPPLE_DURATION = 320;
+const rippleHosts = new WeakMap();
+const rippleFinishers = new Set();
+/** 同一宿主并发多条涟漪：引用计数，最后一条结束才还原内联样式。 */
+function beginRippleHost(target) {
+  const held = rippleHosts.get(target);
+  if (held) { held.count += 1; return; }
+  rippleHosts.set(target, { count: 1, position: target.style.position, overflow: target.style.overflow });
+  if (getComputedStyle(target).position === 'static') target.style.position = 'relative';
+  target.style.overflow = 'hidden';
+}
+function endRippleHost(target) {
+  const held = rippleHosts.get(target);
+  if (!held) return;
+  held.count -= 1;
+  if (held.count > 0) return;
+  target.style.position = held.position;
+  target.style.overflow = held.overflow;
+  rippleHosts.delete(target);
+}
+function spawnRipple(target, e) {
+  const rect = target.getBoundingClientRect();
+  if (!rect.width || !rect.height || typeof target.appendChild !== 'function') return;
+  const size = Math.max(rect.width, rect.height) * 2;
+  const span = document.createElement('span');
+  span.className = 'ripple';
+  span.style.width = size + 'px';
+  span.style.height = size + 'px';
+  span.style.left = (e.clientX - rect.left - size / 2) + 'px';
+  span.style.top = (e.clientY - rect.top - size / 2) + 'px';
+  beginRippleHost(target);
+  target.appendChild(span);
+  let cleaned = false;
+  const done = () => {
+    if (cleaned) return;
+    cleaned = true;
+    rippleFinishers.delete(done);
+    span.remove();
+    endRippleHost(target);
+  };
+  rippleFinishers.add(done);
+  if (typeof span.animate !== 'function') { done(); return; }
+  /* 缩放走 ease-out；透明度线性 + 先托住 35% 再淡出（同一条曲线把 opacity 一起 ease-out
+   * 会在 140ms 就掉到 3% ⇒ 截图上什么都看不见，真机取证实测）。 */
+  const scale = span.animate([{ transform: 'scale(0)' }, { transform: 'scale(1)' }], { duration: RIPPLE_DURATION, easing: 'cubic-bezier(.2, .7, .2, 1)' });
+  const fade = span.animate([{ opacity: 0.3 }, { opacity: 0.3, offset: 0.35 }, { opacity: 0 }], { duration: RIPPLE_DURATION, easing: 'linear' });
+  scale.onfinish = done;
+  fade.onfinish = done;
+  scale.oncancel = done;
+  fade.oncancel = done;
+  /* 兜底：宿主被移除 / 动画被替换时也要把内联样式还回去 */
+  setTimeout(done, RIPPLE_DURATION + 200);
+}
+function finishRipplesNow() {
+  for (const done of [...rippleFinishers]) done();
+}
+function onRipplePointerDown(e) {
+  if (prefersReducedMotion()) return;
+  const target = e.target && e.target.closest
+    ? e.target.closest('.btn, .pick-btn, .iconbtn, .file-row, .md-viewer-more, [data-ripple]')
+    : null;
+  if (!target || target.disabled) return;
+  spawnRipple(target, e);
+}
+/* 运行中打开「减弱动态效果」：已开始的涟漪也要立即收掉，不能等它自己结束 */
+function watchRippleReducedMotion() {
+  if (typeof window === 'undefined' || !window.matchMedia) return;
+  const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const onChange = () => { if (mq.matches) finishRipplesNow(); };
+  if (typeof mq.addEventListener === 'function') { mq.addEventListener('change', onChange); return; }
+  if (typeof mq.addListener === 'function') mq.addListener(onChange);
+}
+function initRipple() {
+  if (typeof document === 'undefined') return;
+  document.addEventListener('pointerdown', onRipplePointerDown, { passive: true });
+  watchRippleReducedMotion();
+}
 function reapplySystemTheme() {
   if (themeChoice !== 'system') return;
   const my = ++themeSeq;
@@ -1400,6 +1813,9 @@ function initTheme() {
   }
   const plugin = nativeThemePlugin();
   if (plugin && typeof plugin.addListener === 'function') plugin.addListener('systemThemeChanged', onNativeThemeChanged);
+  /* 卡 070 · R1：桥就绪后再同步一次（首帧时插件可能还没注册） */
+  document.addEventListener('deviceready', () => syncSystemBars(resolveTheme(themeChoice)));
+  syncSystemBars(resolveTheme(themeChoice));
   reapplySystemTheme();
 }
 /** 主题切换的「圆形揭幕」（原型 v8 的艺术样式）：从被点的按钮位置绽开，380ms。
@@ -1803,6 +2219,14 @@ function renderRecordRow(rec, supported) {
   return row;
 }
 
+const filesAnimatedIds = new Set();
+function staggerFilesIfNeeded(rows, batch) {
+  const fresh = rows.filter((row) => !filesAnimatedIds.has(row.dataset.id));
+  /* 只在文件页播；每条记录只播一次（再次进页不重播，防真机反馈的卡片闪） */
+  if (activeTabName !== 'files' || !fresh.length) return;
+  for (const row of fresh) filesAnimatedIds.add(row.dataset.id);
+  fresh.forEach((row, i) => markRowEnter(row, i, batch));
+}
 function renderFilesPanel(state) {
   const el = filesEls();
   if (!el.panel) return;
@@ -1810,9 +2234,17 @@ function renderFilesPanel(state) {
   const shown = filesQuery.trim() ? historySearch(filesQuery) : all;
   const supported = Boolean(state.support && state.support.supported);
   if (el.list) el.list.innerHTML = '';
+  const rows = [];
+  /* 批次时钟从渲染开始计，行插入耗掉的时间从错峰预算里扣（整批仍 ≤400ms） */
+  const enterBatch = { start: performance.now(), budget: ROW_ENTER_BUDGET_MS };
   if (el.list && shown.length) {
-    for (const rec of shown) el.list.append(renderRecordRow(rec, supported));
+    for (const rec of shown) {
+      const row = renderRecordRow(rec, supported);
+      rows.push(row);
+      el.list.append(row);
+    }
   }
+  staggerFilesIfNeeded(rows, enterBatch);
   paintChrome(state, shown.length, all.length);
   paintEmptyStates(state, shown.length, all.length);
 }
@@ -2220,6 +2652,8 @@ function initHistoryUI() {
 
 function initShell() {
   initTabs();
+  initSwipe();
+  initRipple();
   initTheme();
   initMarkdownViewer();
   initResultsControls();
@@ -2234,7 +2668,7 @@ function initShell() {
     });
   }
   applyTheme(storedTheme(), false);
-  activateTab('convert');
+  activateTab('convert', { instantMarker: true });
 }
 initShell();
 
