@@ -6136,6 +6136,110 @@ ${xlsxRowsToMd(kept)}`);
     return out || blob;
   }
 
+  // src/pdf-layout.js
+  function mergeRuns(runs) {
+    const rows = [];
+    for (const run of [...runs].sort((a, b) => b.sy - a.sy)) {
+      const row = rows.at(-1);
+      if (!row || row[0].sy - run.sy > Math.max(2, 0.4 * run.fontSize)) rows.push([run]);
+      else row.push(run);
+    }
+    const lines = [];
+    rows.forEach((row) => {
+      const y = row[0].sy;
+      let line;
+      for (const run of row.sort((a, b) => a.x - b.x)) {
+        if (!line || run.x - line.x1 > 2.5 * run.fontSize) {
+          line = { id: lines.length, y, x0: run.x, x1: run.x, runs: [] };
+          lines.push(line);
+        }
+        line.x1 = Math.max(line.x1, run.x + run.w);
+        line.runs.push(run);
+      }
+    });
+    return lines;
+  }
+  function detectColumns(items, pageWidth) {
+    const lo = pageWidth * 0.15, hi = pageWidth * 0.85;
+    const events = /* @__PURE__ */ new Map([[lo, 0], [hi, items.length + 1]]);
+    const starts = items.map((item) => item.x0).sort((a, b) => a - b);
+    const ends = items.map((item) => item.x1).sort((a, b) => a - b);
+    items.forEach(({ x0, x1 }) => {
+      const a = Math.min(hi, Math.max(lo, x0));
+      const b = Math.min(hi, Math.max(lo, x1));
+      events.set(a, (events.get(a) ?? 0) + 1);
+      events.set(b, (events.get(b) ?? 0) - 1);
+    });
+    const bands = [];
+    let coverage = 0, start = lo;
+    const limit = items.length * 0.05;
+    [...events].sort(([a], [b]) => a - b).forEach(([x, change]) => {
+      const next = coverage + change;
+      if (coverage <= limit !== next <= limit) {
+        if (next > limit) bands.push([start, x]);
+        else start = x;
+      }
+      coverage = next;
+    });
+    let left = 0, beforeRight = 0, score = 0;
+    let decision = { kind: "single" };
+    starts.push(Infinity);
+    ends.push(Infinity);
+    bands.filter(([a, b]) => b - a >= 10).forEach(([a, b]) => {
+      while (ends[left] <= a + 2) left++;
+      while (starts[beforeRight] < b - 2) beforeRight++;
+      const balance = Math.min(left, items.length - beforeRight);
+      if (balance <= score) return;
+      score = balance;
+      decision = balance >= items.length * 0.25 ? { kind: "double", gutter: (a + b) / 2 } : { kind: "uncertain" };
+    });
+    return decision;
+  }
+  var ENABLE_COLUMN_REORDER = false;
+  function readingOrder(pages, decisions, enabled = ENABLE_COLUMN_REORDER) {
+    if (!enabled) return { lineIdsByPage: pages.map(() => null), fallbackPages: [] };
+    const hasConsensus = decisions.filter((d) => d.kind === "double").length >= pages.length * 0.6;
+    const fallbackPages = [];
+    const lineIdsByPage = pages.map((lines, i) => {
+      const { kind, gutter } = decisions[i];
+      if (!hasConsensus || kind !== "double") {
+        if (kind !== "single") fallbackPages.push(i);
+        return null;
+      }
+      const ids = [], right = [];
+      for (const line of [...lines].sort((a, b) => b.y - a.y)) {
+        if (line.x0 < gutter - 5 && line.x1 > gutter + 5) {
+          for (const id of right) ids.push(id);
+          right.length = 0;
+          ids.push(line.id);
+        } else if ((line.x0 + line.x1) / 2 < gutter) ids.push(line.id);
+        else right.push(line.id);
+      }
+      return ids.concat(right);
+    });
+    return { lineIdsByPage, fallbackPages };
+  }
+  function repeatedMargins(pages) {
+    const seen = /* @__PURE__ */ new Map();
+    pages.forEach(({ lines, height }, page) => {
+      lines.forEach(({ y, text, id }) => {
+        if (y > height * 0.08 && y < height * 0.92) return;
+        const value = text.trim();
+        if (!value || [...value].length >= 80) return;
+        const key = (y < height / 2 ? "bottom:" : "top:") + value.replace(/[\p{N}\p{P}\s]/gu, "");
+        const hits = seen.get(key) ?? [];
+        hits.push({ page, id });
+        seen.set(key, hits);
+      });
+    });
+    const masks = pages.map(() => /* @__PURE__ */ new Set());
+    for (const hits of seen.values()) {
+      if (hits[0].page === hits.at(-1).page) continue;
+      for (const { page, id } of hits) masks[page].add(id);
+    }
+    return masks;
+  }
+
   // src/pdf.js
   async function ocrPageToText(page, idx, pageCount) {
     setStatus(`OCR \u7B2C ${idx}/${pageCount} \u9875\u2026`);
@@ -6335,7 +6439,10 @@ ${xlsxRowsToMd(kept)}`);
     return ascii >= CODE_MIN_ASCII;
   }
   function pageLineObjects(runs, monoFonts) {
-    return groupRunsIntoLines(runs).map((line) => ({ text: lineText(line), code: isCodeLine(line, monoFonts) }));
+    return groupRunsIntoLines(runs).map((line) => renderPdfLine(line, monoFonts));
+  }
+  function renderPdfLine(line, monoFonts) {
+    return { text: lineText(line), code: isCodeLine(line, monoFonts) };
   }
   function linesToMarkdown(lines) {
     const out = [];
@@ -6437,7 +6544,7 @@ ${xlsxRowsToMd(kept)}`);
   async function collectPage(page, idx, pageCount, pages, warnings, monoFonts) {
     const text = await pageText(page, monoFonts);
     if (!needsOcr(text)) {
-      pages.push({ idx, text });
+      pages.push({ idx, text, hasTextLayer: true });
       setStatus(`\u8F6C\u6362\u4E2D\uFF1A\u7B2C ${idx}/${pageCount} \u9875`);
       return false;
     }
@@ -6445,6 +6552,80 @@ ${xlsxRowsToMd(kept)}`);
     if (!r) return false;
     pages.push({ idx, text: r.text });
     return r.ocr;
+  }
+  function layoutRun(item, viewport) {
+    const [a, b, , , x, y] = item.transform;
+    const scale = Math.hypot(a, b) || 1;
+    const [start, top] = viewport.convertToViewportPoint(x, y);
+    const [end] = viewport.convertToViewportPoint(x + item.width * a / scale, y + item.width * b / scale);
+    return {
+      str: item.str,
+      x: Math.min(start, end),
+      sy: viewport.height - top,
+      w: Math.abs(end - start),
+      fontSize: Math.abs(item.height),
+      fontId: item.fontName,
+      ascii: (item.str.match(/[!-~]/g) || []).length
+    };
+  }
+  async function layoutPage(page, monoFonts) {
+    const viewport = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    const runs = content.items.filter((item) => item.str?.trim()).map((item) => layoutRun(item, viewport));
+    const decision = ENABLE_COLUMN_REORDER ? detectColumns(runs.map((r) => ({ x0: r.x, x1: r.x + r.w })), viewport.width) : { kind: "single" };
+    const usedRuns = decision.kind === "double" ? runs : runs.filter((r) => r.sy <= viewport.height * 0.08 || r.sy >= viewport.height * 0.92);
+    const lines = mergeRuns(usedRuns).map(({ runs: parts, ...bounds }) => ({ ...bounds, ...renderPdfLine(parts, monoFonts) }));
+    return { lines, decision, height: viewport.height };
+  }
+  function stripMatchingMargins(text, lines, mask) {
+    const body = text.split("\n");
+    let start = 0, end = body.length;
+    for (const line of lines.filter((line2) => mask.has(line2.id))) {
+      if (body[start] === line.text) start++;
+      else break;
+    }
+    for (const line of lines.filter((line2) => mask.has(line2.id)).reverse()) {
+      if (end > start && body[end - 1] === line.text) end--;
+      else break;
+    }
+    return body.slice(start, end).join("\n");
+  }
+  function applyPageLayout(layouts, pages, warnings) {
+    const order = readingOrder(layouts.map((p) => p.lines), layouts.map((p) => p.decision));
+    const margins = repeatedMargins(layouts);
+    if (order.fallbackPages.length) warnings.push("\u90E8\u5206\u9875\u9762\u7684\u7248\u9762\u65E0\u6CD5\u786E\u5B9A\uFF0C\u5DF2\u6CBF\u7528\u539F\u9605\u8BFB\u987A\u5E8F");
+    for (const entry of pages) {
+      const i = entry.idx - 1;
+      const ids = order.lineIdsByPage[i], lines = layouts[i].lines;
+      if (ids) entry.text = linesToMarkdown(ids.filter((id) => !margins[i].has(id)).map((id) => lines[id]));
+      else if (margins[i].size) entry.text = stripMatchingMargins(entry.text, lines, margins[i]);
+    }
+  }
+  async function collectDocumentPages(doc, pages, warnings) {
+    const count = doc.numPages;
+    const monoFonts = await documentMonospaceFonts(doc, count);
+    const layouts = [];
+    let ocrCount = 0;
+    for (let i = 1; i <= count; i++) {
+      const page = await doc.getPage(i);
+      try {
+        if (await collectPage(page, i, count, pages, warnings, monoFonts)) ocrCount++;
+        const entry = pages.at(-1);
+        let layout = { lines: [], height: 0, decision: { kind: "single" } };
+        if (entry?.idx === i && entry.hasTextLayer) {
+          try {
+            layout = await layoutPage(page, monoFonts);
+          } catch {
+            layout.decision.kind = "uncertain";
+          }
+        }
+        layouts.push(layout);
+      } finally {
+        page.cleanup();
+      }
+    }
+    applyPageLayout(layouts, pages, warnings);
+    return ocrCount;
   }
   async function pdfConvert(file, buf) {
     if (!window.pdfjsLib) throw new Error("pdf.js \u5E93\u672A\u52A0\u8F7D");
@@ -6458,17 +6639,9 @@ ${xlsxRowsToMd(kept)}`);
     const pageCount = doc.numPages;
     const pages = [];
     const warnings = [];
-    let ocrCount = 0;
+    let ocrCount;
     try {
-      const monoFonts = await documentMonospaceFonts(doc, pageCount);
-      for (let i = 1; i <= pageCount; i++) {
-        const page = await doc.getPage(i);
-        try {
-          if (await collectPage(page, i, pageCount, pages, warnings, monoFonts)) ocrCount++;
-        } finally {
-          page.cleanup();
-        }
-      }
+      ocrCount = await collectDocumentPages(doc, pages, warnings);
     } finally {
       await doc.destroy();
     }

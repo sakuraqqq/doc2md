@@ -15,6 +15,7 @@
 import BLINE from './bline.js';
 import { collapseCjkSpaces } from './cjk.js';
 import { getOcrWorker } from './ocr.js';
+import { ENABLE_COLUMN_REORDER, detectColumns, mergeRuns, readingOrder, repeatedMargins } from './pdf-layout.js';
 import { setStatus } from './ui.js';
 
 /* ---------- PDF 单页 OCR 降级（P1 二批，审查报告 §2.3：逐页判断，扫描页才 OCR；进度回填 #status） ---------- */
@@ -315,7 +316,11 @@ function isCodeLine(line, monoFonts) {
 /** 行对象（A3）：{ text, code }——行序与文本走同一条基线（groupRunsIntoLines + lineText）。
  * monoFonts 由调用方传入（F1：全篇统计），不再在本函数内按页统计。 */
 function pageLineObjects(runs, monoFonts) {
-  return groupRunsIntoLines(runs).map((line) => ({ text: lineText(line), code: isCodeLine(line, monoFonts) }));
+  return groupRunsIntoLines(runs).map((line) => renderPdfLine(line, monoFonts));
+}
+
+function renderPdfLine(line, monoFonts) {
+  return { text: lineText(line), code: isCodeLine(line, monoFonts) };
 }
 
 /** 行对象 → 页正文（A3）：连续代码行合并为一个 ``` 围栏块（语言标注留空），块前后各留一个空行；
@@ -462,7 +467,7 @@ async function pageTextWithOcr(page, idx, pageCount, text, warnings) {
 async function collectPage(page, idx, pageCount, pages, warnings, monoFonts) {
   const text = await pageText(page, monoFonts);
   if (!needsOcr(text)) {
-    pages.push({ idx, text });
+    pages.push({ idx, text, hasTextLayer: true });
     setStatus(`转换中：第 ${idx}/${pageCount} 页`);
     return false;
   }
@@ -470,6 +475,85 @@ async function collectPage(page, idx, pageCount, pages, warnings, monoFonts) {
   if (!r) return false;
   pages.push({ idx, text: r.text });
   return r.ocr;
+}
+
+/* TextItem 的坐标已包含图形矩阵。将其投到同一个页框，供占用投影、行序和边带共用。 */
+function layoutRun(item, viewport) {
+  const [a, b, , , x, y] = item.transform;
+  const scale = Math.hypot(a, b) || 1;
+  const [start, top] = viewport.convertToViewportPoint(x, y);
+  const [end] = viewport.convertToViewportPoint(x + item.width * a / scale, y + item.width * b / scale);
+  return { str: item.str, x: Math.min(start, end), sy: viewport.height - top, w: Math.abs(end - start),
+    fontSize: Math.abs(item.height), fontId: item.fontName, ascii: (item.str.match(/[!-~]/g) || []).length };
+}
+
+async function layoutPage(page, monoFonts) {
+  const viewport = page.getViewport({ scale: 1 });
+  const content = await page.getTextContent();
+  const runs = content.items.filter(item => item.str?.trim()).map(item => layoutRun(item, viewport));
+  const decision = ENABLE_COLUMN_REORDER
+    ? detectColumns(runs.map(r => ({ x0: r.x, x1: r.x + r.w })), viewport.width)
+    : { kind: 'single' };
+  const usedRuns = decision.kind === 'double' ? runs : runs.filter(r =>
+    r.sy <= viewport.height * 0.08 || r.sy >= viewport.height * 0.92);
+  const lines = mergeRuns(usedRuns).map(({ runs: parts, ...bounds }) =>
+    ({ ...bounds, ...renderPdfLine(parts, monoFonts) }));
+  return { lines, decision, height: viewport.height };
+}
+
+/** 单栏保留旧版行文本与围栏，仅在两端原文吻合时移除已确认的重复行。 */
+function stripMatchingMargins(text, lines, mask) {
+  const body = text.split('\n');
+  let start = 0, end = body.length;
+  for (const line of lines.filter(line => mask.has(line.id))) {
+    if (body[start] === line.text) start++;
+    else break;
+  }
+  for (const line of lines.filter(line => mask.has(line.id)).reverse()) {
+    if (end > start && body[end - 1] === line.text) end--;
+    else break;
+  }
+  return body.slice(start, end).join('\n');
+}
+
+function applyPageLayout(layouts, pages, warnings) {
+  const order = readingOrder(layouts.map(p => p.lines), layouts.map(p => p.decision));
+  const margins = repeatedMargins(layouts);
+  if (order.fallbackPages.length) warnings.push('部分页面的版面无法确定，已沿用原阅读顺序');
+  for (const entry of pages) {
+    const i = entry.idx - 1;
+    const ids = order.lineIdsByPage[i], lines = layouts[i].lines;
+    if (ids) entry.text = linesToMarkdown(ids.filter(id => !margins[i].has(id)).map(id => lines[id]));
+    else if (margins[i].size) entry.text = stripMatchingMargins(entry.text, lines, margins[i]);
+  }
+}
+
+/** 两遍解析中的输出遍同时收集版面；扫描页仅参与总页数分母。 */
+async function collectDocumentPages(doc, pages, warnings) {
+  const count = doc.numPages;
+  const monoFonts = await documentMonospaceFonts(doc, count);
+  const layouts = [];
+  let ocrCount = 0;
+  for (let i = 1; i <= count; i++) {
+    const page = await doc.getPage(i);
+    try {
+      if (await collectPage(page, i, count, pages, warnings, monoFonts)) ocrCount++;
+      const entry = pages.at(-1);
+      let layout = { lines: [], height: 0, decision: { kind: 'single' } };
+      if (entry?.idx === i && entry.hasTextLayer) {
+        try {
+          layout = await layoutPage(page, monoFonts);
+        } catch {
+          layout.decision.kind = 'uncertain';
+        }
+      }
+      layouts.push(layout);
+    } finally {
+      page.cleanup();
+    }
+  }
+  applyPageLayout(layouts, pages, warnings);
+  return ocrCount;
 }
 
 /** PDF 转换器（注册表 contract：见 docs/architecture.md §4.3） */
@@ -487,18 +571,9 @@ export async function pdfConvert(file, buf) {
   const pageCount = doc.numPages;
   const pages = [];
   const warnings = [];
-  let ocrCount = 0;
+  let ocrCount;
   try {
-    // F1（2026-09-14）：第一遍全篇统计等宽字体（不产文本、不 cleanup → 第二遍算子列表命中缓存）
-    const monoFonts = await documentMonospaceFonts(doc, pageCount);
-    for (let i = 1; i <= pageCount; i++) {
-      const page = await doc.getPage(i);
-      try {
-        if (await collectPage(page, i, pageCount, pages, warnings, monoFonts)) ocrCount++;
-      } finally {
-        page.cleanup(); // 第二遍逐页释放（缓存已消费；_intentStates 在此清空）
-      }
-    }
+    ocrCount = await collectDocumentPages(doc, pages, warnings);
   } finally {
     await doc.destroy();
   }

@@ -518,7 +518,7 @@ const P1_MULTIPAGE_STREAMS = [
   multiPageScaled(0.03, 88.8, ['RA', 'RB', 'RC', 'RD']),
 ];
 /** 多页版 buildV014Pdf：对象编号 = 1 Catalog · 2 Pages · 3+2i Page · 4+2i Contents · 末尾两个字体 */
-function buildV014PdfPages(streams) {
+function buildV014PdfPages(streams, compress = false) {
   const n = streams.length;
   const f1 = 3 + 2 * n;
   const f2 = f1 + 1;
@@ -528,11 +528,14 @@ function buildV014PdfPages(streams) {
     objs.push(
       `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${4 + 2 * i} 0 R >>`
     );
-    objs.push(`<< /Length ${Buffer.byteLength(s, 'latin1')} >>\nstream\n${s}\nendstream`);
+    const data = Buffer.from(s, 'latin1');
+    const payload = compress ? zlib.deflateSync(data) : data;
+    const filter = compress ? ' /Filter /FlateDecode' : '';
+    objs.push(`<< /Length ${payload.length}${filter} >>\nstream\n${payload.toString('latin1')}\nendstream`);
   });
   objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
   objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>');
-  return buildPdfShell(objs);
+  return buildPdfShell(objs, compress ? '\r' : '\n');
 }
 
 /* ---------------- sample-comment-subset.pdf（F1 回归守护：文档级等宽判据；2026-09-14） ----------------
@@ -734,6 +737,32 @@ for (const [name, stream] of Object.entries(V014_PDF_STREAMS)) put(name, buildV0
 put('sample-scale-td.pdf', buildV014Pdf(P1_SCALE_TD_STREAM));
 put('sample-scale-multipage.pdf', buildV014PdfPages(P1_MULTIPAGE_STREAMS));
 put('sample-comment-subset.pdf', buildCommentSubsetPdf());
+/* 卡 073：绝对坐标与明确的段落标签供浏览器端逐段核对。 */
+function layoutStream(kind, page) {
+  const paint = (x, y, text) => `BT /F1 10 Tf 1 0 0 1 ${x} ${y} Tm (${text}) Tj ET`;
+  const pieces = [];
+  const paired = kind === 'double' || kind === 'margins';
+  const spanning = (tag) => paint(110, tag === 'TITLE' ? 713 : tag === 'ABSTRACT' ? 700 : 397,
+    `${tag} ${'wide text '.repeat(7)}END`);
+  if (kind === 'margins') pieces.push(paint(48, 766, `Journal - ${page}`), paint(300, 24, String(page)));
+  if (paired) pieces.push(spanning('TITLE'), spanning('ABSTRACT'), spanning('TABLE'));
+  for (let i = 0; i < 40; i++) {
+    const y = 684 - 14 * i - (i >= 20 ? 20 : 0);
+    pieces.push(paint(48, y, `P${page}-L${i} body text`));
+    if (paired || (kind === 'partial' && i < 8) || kind === 'table') pieces.push(paint(350, y, `P${page}-R${i} body text`));
+  }
+  return pieces.join('\n');
+}
+for (const [name, kinds] of Object.entries({
+  double: ['double', 'double'],
+  margins: ['margins', 'margins'],
+  single: ['single', 'single'],
+  table: ['single', 'table', 'single'],
+  irregular: ['partial', 'partial'],
+})) {
+  put(`sample-layout-${name}.pdf`, buildV014PdfPages(kinds.map((kind, i) => layoutStream(kind, i + 1)), true));
+}
+
 /* 批 3 契约组 V 样例（7 个：3 嗅探负例 + 2 真格式正例 + 1 Big5 大写 META + 1 docx alt） */
 put('sample-bmw-text.txt', Buffer.from(BMW_TEXT, 'utf8'));
 put('sample-gif8-text.txt', Buffer.from(GIF8_TEXT, 'utf8'));
@@ -935,7 +964,8 @@ function buildRelsDotdotXlsx() {
 }
 
 /* ---------------- PDF 通用壳（buildPdf 同构：xref 动态偏移，确定性） ---------------- */
-function buildPdfShell(objs) {
+// PDF xref records are 20 bytes with either a CR or LF end-of-line marker.
+function buildPdfShell(objs, xrefEol = '\n') {
   let body = '%PDF-1.4\n';
   const offs = [0];
   objs.forEach((o, i) => {
@@ -943,8 +973,8 @@ function buildPdfShell(objs) {
     body += `${i + 1} 0 obj\n${o}\nendobj\n`;
   });
   const xrefPos = Buffer.byteLength(body, 'ascii');
-  body += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 0; i < objs.length; i++) body += `${String(offs[i + 1]).padStart(10, '0')} 00000 n \n`;
+  body += `xref\n0 ${objs.length + 1}\n0000000000 65535 f ${xrefEol}`;
+  for (let i = 0; i < objs.length; i++) body += `${String(offs[i + 1]).padStart(10, '0')} 00000 n ${xrefEol}`;
   body += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`;
   return Buffer.from(body, 'ascii');
 }

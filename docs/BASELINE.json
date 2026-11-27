@@ -4,27 +4,27 @@
   "contract": {
     "local_with_fixtures": {
       "counts": {
-        "total": 427,
-        "pass": 425,
+        "total": 434,
+        "pass": 432,
         "fail": 0,
         "skip": 2
       },
       "measured": {
-        "at": "2026-11-22",
-        "source": "2026-11-22 卡 070 第三轮复验返修后：本机 npm test（node --test --test-concurrency=1，串行避免 Z4-0 滚动现场与行为时序断言争 CPU）实测 # tests 427 / # pass 425 / # fail 0 / # skipped 2（约 202s）；TAP 与 baseline-check --from-tap 逐项一致。红例 tests/ui-behavior.redcheck.mjs：当前 14/14 绿；7079933:index.html 复跑 UI-B1…UI-B10 全红；2348c8c:index.html 精确复现 UI-B1/B3/B4/B8（第二轮 D1/D2/D3/D4/D5）。历史：2026-11-06 413/411/0/2。"
+        "at": "2026-11-27",
+        "source": "2026-11-27 卡 073 A2 默认关后：本机 npm test（node --test --test-concurrency=1，串行）实测 # tests 434 / # pass 432 / # fail 0 / # skipped 2（TAP A2-final.tap，约 208s）；较 2026-11-22 新增默认关 B006 回归 1 项。B005 交付；B006 默认关（A5 真实样本未过，记录保留）。baseline-check --from-tap 逐项一致。历史：2026-11-22 427/425/0/2；2026-11-06 413/411/0/2。"
       },
       "scope": "本机口径：.私档/传输-手机-20260918 四档夹具在位 ⇒ 组 Y 真跑（组壳+Y1+Y2+Y3，全绿）；卡 002 前为 271/3（组 Y 预期先红：Y2 无 meta.scan · Y3 超 5s · 组壳）。与 CI 口径不可混用"
     },
     "ci_clean_checkout": {
       "counts": {
-        "total": 424,
-        "pass": 421,
+        "total": 431,
+        "pass": 428,
         "fail": 0,
         "skip": 3
       },
       "measured": {
-        "at": "2026-11-22",
-        "source": "2026-11-22 卡 070 第三轮复验返修后 CI 口径：按本机 427/425/0/2 的固定映射推得 424/421/0/3（干净检出无 .私档/ ⇒ 组 Y 整体 skip：total −3 / pass −4 / skip +1；UI-B 不依赖夹具，两口径都跑）；CI 的 npm test 现为串行（--test-concurrency=1）。待 CI run 的 baseline-check --from-tap 对账确认；历史：2026-11-06 410/407/0/3。"
+        "at": "2026-11-27",
+        "source": "2026-11-27 卡 073 A2 默认关后 CI 口径：按本机 434/432/0/2 的固定映射推得 431/428/0/3（干净检出无 .私档/ ⇒ 组 Y 整体 skip：total −3 / pass −4 / skip +1；UI-B 不依赖夹具，两口径都跑）；CI 的 npm test 现为串行（--test-concurrency=1）。待 CI run 的 baseline-check --from-tap 对账确认；历史：2026-11-22 424/421/0/3；2026-11-06 410/407/0/3。"
       },
       "scope": "CI 口径：干净检出无 .私档/ ⇒ 组 Y 整体 t.skip ⇒ 组 Y 由 4 条变 1 条 skip：total −3 / pass −4 / skip +1。故 CI 绿 ≠ 组 Y 绿。**卡 005/006/007 新增的组 G8/G9/I2 都不依赖大夹具 ⇒ 两个口径都会跑**（这正是每轮 +7 在两口径上一致的原因）；**卡 003 起由 CI 自动对账**（紧跟 `npm test` 之后）"
     }
