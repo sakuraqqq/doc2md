@@ -20,6 +20,7 @@ import nodePath from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { runInNewContext } from 'node:vm';
 import { readZip } from './lib/zipio.mjs';
 import { startServer } from './lib/server.mjs';
 
@@ -1616,6 +1617,75 @@ const H_URL_WHITELIST_HOSTS = new Set([
   'schemas.openxmlformats.org', // OOXML 命名空间（wordprocessingml/drawingml/relationship 等 xmlns 标识）
   'www.w3.org',                 // XML/HTML 命名空间与 DTD 标识（www.w3.org/2001/XMLSchema、www.w3.org/1999/xhtml 等）
 ]);
+for (const { name, previous, failure } of [
+  { name: '单项 404', previous: 'doc2md-sw-v5', failure: new TypeError('HTTP 404') },
+  { name: '单项 abort', previous: 'doc2md-sw-v4', failure: new DOMException('网络中断', 'AbortError') },
+  { name: '全部成功', previous: 'doc2md-sw-v5', failure: null },
+]) {
+  test(`H7 B091 离线升级失败安全：${name}`, async () => {
+    const target = './vendor/mammoth.browser.min.js';
+    const oldResource = new Map([[target, '旧版本资源']]);
+    const cacheStore = new Map([[previous, new Map(oldResource)], ['other-app', new Map()]]);
+    const handlers = new Map();
+    const calls = [];
+    const errors = [];
+    const sw = fs.readFileSync(nodePath.join(ROOT, 'sw.js'), 'utf8');
+    const precache = Array.from(runInNewContext(sw + '\nPRECACHE;', {
+      self: {
+        addEventListener: (event, callback) => handlers.set(event, callback),
+        skipWaiting: () => { calls.push('skipWaiting'); },
+        clients: { claim: () => { calls.push('claim'); } },
+      },
+      caches: {
+        keys: async () => [...cacheStore.keys()],
+        open: async (key) => {
+          if (!cacheStore.has(key)) cacheStore.set(key, new Map());
+          const entries = cacheStore.get(key);
+          return {
+            add: async (url) => {
+              if (url === target && failure) throw failure;
+              entries.set(url, '新版本资源');
+            },
+          };
+        },
+        delete: async (key) => {
+          calls.push(`delete:${key}`);
+          return cacheStore.delete(key);
+        },
+      },
+      console: { error: (error) => errors.push(String(error)) },
+    }));
+    assert.ok(precache.includes(target));
+    const dispatch = (event) => {
+      let completion;
+      handlers.get(event)({ waitUntil: (promise) => { completion = promise; } });
+      assert.ok(completion, `${event} 必须等待异步工作完成`);
+      return completion;
+    };
+
+    if (failure) {
+      await assert.rejects(dispatch('install'), /mammoth\.browser\.min\.js/);
+      assert.match(errors.join('\n'), /mammoth\.browser\.min\.js/);
+      assert.equal(calls.length, 1, '失败只能清理本次缓存');
+      assert.match(calls[0], /^delete:doc2md-/);
+      assert.notEqual(calls[0], `delete:${previous}`);
+      assert.deepEqual([...cacheStore.keys()], [previous, 'other-app']);
+      assert.deepEqual(cacheStore.get(previous), oldResource);
+      return;
+    }
+
+    await dispatch('install');
+    assert.deepEqual(calls, ['skipWaiting']);
+    assert.deepEqual(cacheStore.get(previous), oldResource);
+    const newKeys = [...cacheStore.keys()].filter((key) => key !== previous && key !== 'other-app');
+    assert.equal(newKeys.length, 1, '新版本独立缓存');
+    assert.deepEqual([...cacheStore.get(newKeys[0]).keys()], precache);
+    await dispatch('activate');
+    assert.deepEqual(calls, ['skipWaiting', `delete:${previous}`, 'claim']);
+    assert.deepEqual([...cacheStore.keys()], ['other-app', newKeys[0]]);
+  });
+}
+
 test('契约组 H：corePath 同源 / 零外域 fetchable URL / SW v4 分段缓存（离线源码断言）', async (t) => {
   const src = fs.readFileSync(PAGE, 'utf8');
   await t.test('H1 源码不含 doc2md.local（伪域名 corePath = 外域请求违约，红线）', () => {
