@@ -3,13 +3,15 @@
  * 版本：doc2md-sw-v5（卡 058：PRECACHE 增加 Markdown 渲染两库；v4 起分段缓存，PRECACHE 只保留应用外壳——
  *       index/manifest/图标 + 转换器主库与 worker 入口；剔除两个 wasm core 与语言包）
  * 红线：零外发 —— 只缓存/响应同源请求；绝不 fetch 外域资源；SW 自身零外部依赖。
- * 策略：install 预缓存（PRECACHE，Promise.allSettled——单资源失败不阻塞安装）+ 同源 GET
+ * 策略：install 预缓存（PRECACHE 全部成功才接管，失败删除本次缓存并保留上一版）+ 同源 GET
  *       cache-first（miss 时网络并写入——core/语言包走此路径：首次 OCR 同源加载后写缓存，
  *       此后离线可用）；导航请求离线时回退到预缓存的 index.html（离线可用）。
  * 注意：service worker 仅在 http(s)/localhost 生效（file:// 双击打开时静默跳过，
  *       此时页面以同目录相对路径加载 vendor/ 与 langs/，天然离线可用）。
  * ============================================================ */
 const CACHE_NAME = 'doc2md-sw-v5';
+// 与线上旧 v5 的缓存隔离。发布新 SW 脚本时更换此后缀，避免安装期间改写活动缓存。
+const CACHE_KEY = `${CACHE_NAME}-atomic`;
 const PRECACHE = [
   './',
   './index.html',
@@ -36,9 +38,20 @@ const PRECACHE = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
+    caches.open(CACHE_KEY)
       .then((cache) => Promise.allSettled(PRECACHE.map((u) => cache.add(u))))
-      .then(() => self.skipWaiting())
+      .then(async (results) => {
+        const failures = results.flatMap((result, i) =>
+          result.status === 'rejected' ? [`${PRECACHE[i]}: ${result.reason}`] : []
+        );
+        if (failures.length > 0) {
+          const error = new Error(`预缓存失败：${failures.join('；')}`);
+          console.error(error);
+          await caches.delete(CACHE_KEY);
+          throw error;
+        }
+        return self.skipWaiting();
+      })
   );
 });
 
@@ -46,7 +59,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
-        keys.filter((k) => k.startsWith('doc2md-') && k !== CACHE_NAME).map((k) => caches.delete(k))
+        keys.filter((k) => k.startsWith('doc2md-') && k !== CACHE_KEY).map((k) => caches.delete(k))
       ))
       .then(() => self.clients.claim())
   );
@@ -68,7 +81,7 @@ self.addEventListener('fetch', (event) => {
           if (res.ok) {
             const copy = res.clone();
             // 写缓存失败不得阻塞响应（拒绝处理；多行链式——H9 契约形态）
-            caches.open(CACHE_NAME)
+            caches.open(CACHE_KEY)
               .then((c) => c.put(req, copy))
               .catch(() => {});
           }
@@ -88,7 +101,7 @@ self.addEventListener('fetch', (event) => {
         if (res.ok) {
           const copy = res.clone();
           // 写缓存失败不得阻塞响应（拒绝处理；多行链式——H9 契约形态）
-          caches.open(CACHE_NAME)
+          caches.open(CACHE_KEY)
             .then((c) => c.put(req, copy))
             .catch(() => {});
         }

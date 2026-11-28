@@ -168,7 +168,7 @@ async function convert(file /* File */) -> Promise<{
 | 文件 | 说明 |
 |---|---|
 | `manifest.json` | Web App Manifest：name/short_name/描述图标/`display: standalone`/theme_color |
-| `sw.js` | service worker：预缓存 + cache-first 离线策略（版本 `CACHE_NAME`，bump 即换缓存） |
+| `sw.js` | service worker：原子预缓存、导航网络优先、其余同源资源缓存优先 |
 | `icons/icon-192.png` / `icon-512.png` | 安装图标（RGBA，any purpose） |
 | `icons/icon-512-maskable.png` | maskable 图标（内容缩至 88% 安全区，背景铺满） |
 | `icons/icon-180.png` | iOS `apple-touch-icon`（180×180 规格） |
@@ -178,13 +178,13 @@ async function convert(file /* File */) -> Promise<{
 
 ### 8.2 service worker 离线策略
 
-- **install**：`cache.addAll(PRECACHE)`（`./`、`index.html`、`manifest.json`、4 个图标）+ `skipWaiting`。
-- **activate**：删除非当前 `CACHE_NAME` 的旧缓存 + `clients.claim()`。
+- **install**：使用独立的 `CACHE_KEY` 和 `Promise.allSettled` 预缓存应用外壳及转换器必需资源。全部成功后调用 `skipWaiting`。任一失败时在 SW 控制台记下资源和原因，删除本次缓存并拒绝安装。上一版继续控制页面并保有缓存，下次更新重新尝试。
+- **activate**：新 SW 安装成功后，清理除当前 `CACHE_KEY` 外的 `doc2md-` 缓存，再调用 `clients.claim()`。同源其他应用的缓存保留。
 - **fetch**：
   - 仅处理**同源 GET**；外域/非 GET 一律不拦截（页面本无外域引用，双保险）。
-  - 导航请求：cache-first，离线时回退 `caches.match('./index.html')` —— **离线打开可用**。
+  - 导航请求优先走网络，离线时从缓存回退到 `index.html` 或 `./`。
   - 其余同源资源：cache-first，miss 则网络并写入缓存（运行时缓存兜底）。
-- **版本管理**：修改 PRECACHE 或策略 → bump `CACHE_NAME`（如 `doc2md-sw-v2`）→ 旧缓存 activate 时自动清理。
+- **版本管理**：`CACHE_NAME` 标识 PRECACHE 清单版本，`CACHE_KEY` 是实际存储键。发布新 SW 脚本时必须换用新的存储键，使安装可与活动版本隔离。
 - **局限**：SW 仅 http(s)/localhost 生效；`file://` 双击打开时应用仍离线可用（单文件本质），PWA 安装提示不出现（无桌面安装入口）——这是浏览器的平台限制，如实记录。
 
 ### 8.3 手机适配规格（照 <项目B> GLM 评审教训）

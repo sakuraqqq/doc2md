@@ -154,7 +154,7 @@
 > 同一 URL 出现在 href 之外（fetch / import / src / 普通字符串）**照样判违约**；白名单域名集**一个没加**。
 > 授权 = 用户 2026-10-18 拍板「选 1」（卡 056 门面三 Tab 带来设置页外链）；登记见 §6 **T-8**。
 
-离线静态断言（读 index.html/sw.js 源码，无浏览器依赖）。H3-H6 为 t7 独立验收新增（任务授权：SW 分段缓存 PRECACHE 清单断言）；卡 058 起 CACHE_NAME 升 v5（PRECACHE 增加 rendered preview 两库）。
+离线契约包括源码检查与 H7 B091 的 SW 事件模拟，均无需浏览器。H3-H6 锁定分段缓存的清单及预缓存方式。卡 058 起 PRECACHE 版本为 v5。
 
 | 编号 | 断言 | 标准 | 当前 |
 |---|---|---|---|
@@ -163,8 +163,9 @@
 | H3 | sw.js `CACHE_NAME = 'doc2md-sw-v5'`（卡 058：PRECACHE 增加 marked/DOMPurify 两库，版本必须 bump） | match | 🟢 绿（卡 058 更新；v4 断言随 PRECACHE 变更同步） |
 | H4 | PRECACHE 不含 OCR 大资源（core wasm ×2 + langs 语言包 ×2） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过——v4 起运行时缓存） |
 | H5 | PRECACHE 包含应用外壳（index/manifest/图标/4 主库 + pdf/tess worker 入口） | deepEqual [] | 🟢 绿（t7 新增断言，离线实测通过） |
-| H6 | SW install 使用 `Promise.allSettled`（单资源失败不阻塞安装） | match | 🟢 绿（t7 新增断言，离线实测通过） |
+| H6 | SW install 使用 `Promise.allSettled` | match | 🟢 绿（t7 原静态断言，安装失败安全由 H7 B091 覆盖） |
 | H7 | sw.js activate 只清理 `doc2md-` 前缀缓存（不误删同源其他缓存） | 前缀过滤 | 🔴 红（**t23 新增·先红**：实测 `keys.filter((k) => k !== CACHE_NAME)` 无前缀过滤——会把同源其他 SW 缓存一并删掉；修复方向=t24 改 `k.startsWith('doc2md-')`） |
+| H7 B091 | 必需 PRECACHE 单项 404 或 abort 时，报告失败资源、删除本次新缓存、拒绝安装并保留旧缓存。全部成功时先完整写入独立缓存，激活后才清理旧缓存并接管客户端。 | VM 模拟 install/activate，断言拒绝、缓存内容和调用顺序 | 🟢 绿（原 H7 前缀过滤断言保留） |
 | H8 | ocr.js 含 `file:` 检测分支 + 可行动错误文案 | location.protocol + 文案 | 🔴 红（**t23 新增·先红**：实测 ocr.js 无 `location.protocol` 检测、无可行动文案（仅注释提及 file://）；修复方向=t24 `location.protocol === 'file:'` → setStatus/throw 可行动提示（如「OCR 需在 http 服务下使用」）） |
 | H9 | sw.js 浮动 `caches.open(...).then(...)` 均链式带 `.catch` | 链式 .catch | 🔴 红（**t23 新增·先红**：实测 2 处（navigate/资源路径）`caches.open(CACHE_NAME).then((c) => c.put(...))` 未接 `.catch`——v3 有 catch、v4 重写丢失（备注：断言用精确链式匹配，不误吞外层 fetch 的 .catch）；修复方向=t24 补链式 `.catch`） |
 | H10 | sw.js **导航分支**：`cache.put` 前须有 `res.ok` 判断（非 2xx 不得缓存——404/500 离线回放） | 导航块内 ok 先于 put | 🔴 红（**t10 新增·先红**：实测导航分支（`req.mode === 'navigate'`）写缓存无 `res.ok`（资源分支已有 `if (res.ok)`，导航分支缺失——修复=同款一行包裹；报告 §2.5）） |
